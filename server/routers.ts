@@ -781,9 +781,13 @@ export const appRouter = router({
     }),
     routes: router({
       list: commercialProcedure.input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
-      create: commercialProcedure.input(z.object({ name: z.string().min(2), date: z.string().min(8), promoterId: z.number().int().positive(), teamId: z.number().int().positive().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
+      create: commercialProcedure.input(z.object({ name: z.string().min(2), date: z.string().min(8), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1), teamId: z.number().int().positive().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Promotores não podem criar roteiros." });
-        return db.createOperationalRoute({ ...input, date: new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" });
+        const members = await memberAuth.listMemberAccounts(ctx.accountId);
+        const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
+        if (!promoter) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        const { storeIds, ...route } = input;
+        return db.createOperationalRouteWithVisits({ route: { ...route, date: new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" }, storeIds });
       }),
     }),
     visits: router({

@@ -755,6 +755,7 @@ __export(db_exports, {
   createCompanySubscription: () => createCompanySubscription,
   createExtinguisher: () => createExtinguisher,
   createOperationalRoute: () => createOperationalRoute,
+  createOperationalRouteWithVisits: () => createOperationalRouteWithVisits,
   createOperationalStore: () => createOperationalStore,
   createPaymentRecord: () => createPaymentRecord,
   createServiceOrder: () => createServiceOrder,
@@ -2038,6 +2039,22 @@ async function createOperationalRoute(input) {
   const result = await database.insert(routes).values(input);
   const rows = await database.select().from(routes).where(eq(routes.id, Number(result[0]?.insertId))).limit(1);
   return rows[0];
+}
+async function createOperationalRouteWithVisits(input) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const companyId = requireAccountId(input.route.companyId);
+  const uniqueStoreIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
+  if (!uniqueStoreIds.length) throw new Error("Selecione ao menos uma loja para o roteiro.");
+  return database.transaction(async (tx) => {
+    const stores2 = await tx.select({ id: stores.id }).from(stores).where(and(inArray(stores.id, uniqueStoreIds), eq(stores.companyId, companyId), eq(stores.active, true)));
+    if (stores2.length !== uniqueStoreIds.length) throw new Error("Uma ou mais lojas n\xE3o pertencem a esta empresa.");
+    const result = await tx.insert(routes).values(input.route);
+    const routeId = Number(result[0]?.insertId);
+    await tx.insert(visits).values(stores2.map((store) => ({ companyId, routeId, storeId: store.id, promoterId: input.route.promoterId, status: "pending" })));
+    const rows = await tx.select().from(routes).where(eq(routes.id, routeId)).limit(1);
+    return rows[0];
+  });
 }
 async function listOperationalVisits(companyId, options = {}) {
   const database = await getDb();
@@ -4324,9 +4341,13 @@ var appRouter = router({
     }),
     routes: router({
       list: commercialProcedure.input(z3.object({ date: z3.string().optional(), promoterId: z3.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
-      create: commercialProcedure.input(z3.object({ name: z3.string().min(2), date: z3.string().min(8), promoterId: z3.number().int().positive(), teamId: z3.number().int().positive().optional(), notes: z3.string().optional() })).mutation(async ({ ctx, input }) => {
+      create: commercialProcedure.input(z3.object({ name: z3.string().min(2), date: z3.string().min(8), promoterId: z3.number().int().positive(), storeIds: z3.array(z3.number().int().positive()).min(1), teamId: z3.number().int().positive().optional(), notes: z3.string().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError5({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
-        return createOperationalRoute({ ...input, date: /* @__PURE__ */ new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" });
+        const members = await listMemberAccounts(ctx.accountId);
+        const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
+        if (!promoter) throw new TRPCError5({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        const { storeIds, ...route } = input;
+        return createOperationalRouteWithVisits({ route: { ...route, date: /* @__PURE__ */ new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" }, storeIds });
       })
     }),
     visits: router({

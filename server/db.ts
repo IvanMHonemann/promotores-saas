@@ -1477,6 +1477,24 @@ export async function createOperationalRoute(input: typeof operationalRoutes.$in
   return rows[0];
 }
 
+export async function createOperationalRouteWithVisits(input: { route: typeof operationalRoutes.$inferInsert; storeIds: number[] }) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const companyId = requireAccountId(input.route.companyId);
+  const uniqueStoreIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
+  if (!uniqueStoreIds.length) throw new Error("Selecione ao menos uma loja para o roteiro.");
+  return database.transaction(async (tx) => {
+    const stores = await tx.select({ id: operationalStores.id }).from(operationalStores)
+      .where(and(inArray(operationalStores.id, uniqueStoreIds), eq(operationalStores.companyId, companyId), eq(operationalStores.active, true)));
+    if (stores.length !== uniqueStoreIds.length) throw new Error("Uma ou mais lojas não pertencem a esta empresa.");
+    const result = await tx.insert(operationalRoutes).values(input.route);
+    const routeId = Number((result as any)[0]?.insertId);
+    await tx.insert(operationalVisits).values(stores.map((store) => ({ companyId, routeId, storeId: store.id, promoterId: input.route.promoterId, status: "pending" as const })));
+    const rows = await tx.select().from(operationalRoutes).where(eq(operationalRoutes.id, routeId)).limit(1);
+    return rows[0];
+  });
+}
+
 export async function listOperationalVisits(companyId: number, options: { date?: string; promoterId?: number; routeId?: number } = {}) {
   const database = await getDb();
   if (!database) return [];

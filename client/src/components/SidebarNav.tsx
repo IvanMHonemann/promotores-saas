@@ -28,16 +28,16 @@ export function SidebarNav() {
       ]
     : role === "promoter"
       ? [
-          { href: "/#ponto", label: "Ponto eletrônico", icon: Clock3 },
-          { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
-          { href: "/#historico", label: "Histórico e GPS", icon: CalendarDays },
-          { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
-          { href: "/#correcoes", label: "Correções de ponto", icon: ClipboardList },
+          { href: "#ponto", label: "Ponto eletrônico", icon: Clock3 },
+          { href: "#inicio", label: "Visão geral", icon: LayoutDashboard },
+          { href: "#historico", label: "Histórico e GPS", icon: CalendarDays },
+          { href: "#roteiro", label: "Meu roteiro", icon: ClipboardList },
+          { href: "#correcoes", label: "Correções de ponto", icon: ClipboardList },
         ]
       : [
-          { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
-          { href: "/#roteiros", label: "Roteiros", icon: ClipboardList },
-          { href: "/#visitas", label: "Visitas", icon: CalendarDays },
+          { href: "#inicio", label: "Visão geral", icon: LayoutDashboard },
+          { href: "#roteiros", label: "Roteiros", icon: ClipboardList },
+          { href: "#visitas", label: "Visitas", icon: CalendarDays },
           ...(role === "company_admin" ? [{ href: "/admin/usuarios", label: "Equipe e usuários", icon: UsersRound }] : []),
           ...(role === "company_admin" ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList }] : []),
         ];

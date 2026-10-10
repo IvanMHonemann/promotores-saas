@@ -12,11 +12,21 @@ const labels: Record<EventType, string> = { clock_in: "Entrada", break_start: "I
 
 function currentPosition() {
   return new Promise<{ latitude: number; longitude: number; accuracy: number }>((resolve, reject) => {
+    if (!window.isSecureContext) return reject(new Error("O registro de ponto com GPS exige uma conexão segura HTTPS."));
     if (!navigator.geolocation) return reject(new Error("Este navegador não oferece GPS."));
     navigator.geolocation.getCurrentPosition(
       (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy }),
-      () => reject(new Error("Autorize o GPS para registrar o ponto.")),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+      (error) => {
+        const message = error.code === error.PERMISSION_DENIED
+          ? "A localização foi bloqueada. Nas permissões do site, permita Localização e tente novamente."
+          : error.code === error.POSITION_UNAVAILABLE
+            ? "O aparelho não conseguiu determinar a localização. Ative o GPS e tente em um local aberto."
+            : error.code === error.TIMEOUT
+              ? "A localização demorou para responder. Ative o GPS e tente novamente."
+              : "Não foi possível obter a localização. Confira as permissões do GPS e tente novamente.";
+        reject(new Error(message));
+      },
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 },
     );
   });
 }
@@ -33,9 +43,7 @@ function LocationLabel({ latitude, longitude }: { latitude: number | null; longi
 }
 
 function ClockGate({ timeZone, onPunch, loading = false, closed = false, error }: { timeZone: string; onPunch?: () => void; loading?: boolean; closed?: boolean; error?: string }) {
-  const [gpsRequested, setGpsRequested] = useState(false);
-  useEffect(() => { if (closed || loading || gpsRequested || !navigator.geolocation) return; setGpsRequested(true); navigator.geolocation.getCurrentPosition(() => undefined, () => undefined, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); }, [closed, loading, gpsRequested]);
-  return <main className="saas-page flex min-h-screen items-center justify-center bg-[#07111f] px-4 py-8 text-white"><div className="w-full max-w-xl"><div className="mb-6 text-center"><p className="text-xs font-bold uppercase tracking-[.2em] text-teal-300">Promotores SaaS</p><h1 className="mt-2 text-3xl font-black">Ponto eletrônico</h1><p className="mt-2 text-slate-300">A entrada com GPS é obrigatória para acessar o aplicativo.</p></div><Card className="border-teal-300/25 bg-gradient-to-br from-slate-900 to-teal-950/30"><CardHeader><CardTitle className="flex items-center gap-3 text-2xl text-white"><Clock3 className="h-7 w-7 text-teal-300" /> {closed ? "Jornada encerrada" : "Bata sua entrada"}</CardTitle></CardHeader><CardContent className="space-y-5"><p className="text-slate-200">{closed ? "Sua saída já foi registrada hoje. O aplicativo será liberado novamente no próximo dia, após uma nova entrada." : "Para acessar o painel, roteiros e visitas, primeiro registre sua entrada com localização GPS válida."}</p><div className="rounded-xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-teal-300" /><span>{gpsRequested ? "Permissão de localização solicitada. Confirme no navegador." : "Solicitando acesso ao GPS..."}</span></div><p className="mt-2 text-xs text-slate-400">Fuso horário detectado: <strong className="text-slate-200">{timeZone}</strong></p></div>{error && <p className="rounded-lg border border-rose-300/30 bg-rose-300/10 p-3 text-sm font-semibold text-rose-200">Não foi possível consultar a jornada: {error}. Atualize a página ou tente novamente.</p>}{!closed && <Button onClick={onPunch} disabled={loading} className="h-12 w-full bg-teal-300 text-base font-bold text-slate-950 hover:bg-teal-200">{loading ? "Obtendo localização..." : "Permitir GPS e bater entrada"}</Button>}</CardContent></Card></div></main>;
+  return <main className="saas-page flex min-h-screen items-center justify-center bg-[#07111f] px-4 py-8 text-white"><div className="w-full max-w-xl"><div className="mb-6 text-center"><p className="text-xs font-bold uppercase tracking-[.2em] text-teal-300">Promotores SaaS</p><h1 className="mt-2 text-3xl font-black">Ponto eletrônico</h1><p className="mt-2 text-slate-300">A entrada com GPS é obrigatória para acessar o aplicativo.</p></div><Card className="border-teal-300/25 bg-gradient-to-br from-slate-900 to-teal-950/30"><CardHeader><CardTitle className="flex items-center gap-3 text-2xl text-white"><Clock3 className="h-7 w-7 text-teal-300" /> {closed ? "Jornada encerrada" : "Bata sua entrada"}</CardTitle></CardHeader><CardContent className="space-y-5"><p className="text-slate-200">{closed ? "Sua saída já foi registrada hoje. O aplicativo será liberado novamente no próximo dia, após uma nova entrada." : "Para acessar o painel, roteiros e visitas, primeiro registre sua entrada com localização GPS válida."}</p><div className="rounded-xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-teal-300" /><span>O GPS será solicitado pelo navegador quando você tocar no botão abaixo.</span></div><p className="mt-2 text-xs text-slate-400">Fuso horário detectado: <strong className="text-slate-200">{timeZone}</strong></p></div>{error && <p className="rounded-lg border border-rose-300/30 bg-rose-300/10 p-3 text-sm font-semibold text-rose-200">{error}</p>}{!closed && <Button onClick={onPunch} disabled={loading} className="h-12 w-full bg-teal-300 text-base font-bold text-slate-950 hover:bg-teal-200">{loading ? "Obtendo localização..." : "Permitir GPS e bater entrada"}</Button>}</CardContent></Card></div></main>;
 }
 
 export default function PromoterDashboard() {
@@ -43,6 +51,7 @@ export default function PromoterDashboard() {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const [selectedDate, setSelectedDate] = useState(today);
   const [loading, setLoading] = useState(false);
+  const [punchError, setPunchError] = useState("");
   const [selectedEventId, setSelectedEventId] = useState("");
   const [requestedTime, setRequestedTime] = useState("");
   const [justification, setJustification] = useState("");
@@ -51,22 +60,23 @@ export default function PromoterDashboard() {
   const corrections = trpc.timeTracking.myCorrections.useQuery();
   const visits = trpc.operations.visits.today.useQuery();
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone });
-  const register = trpc.timeTracking.registerEvent.useMutation({ onSuccess: () => { toast.success("Marcação registrada"); utils.timeTracking.myHistory.invalidate(); utils.timeTracking.shiftStatus.invalidate(); }, onError: (err) => toast.error(err.message || "Erro ao registrar") });
+  const register = trpc.timeTracking.registerEvent.useMutation({ onSuccess: () => { setPunchError(""); toast.success("Marcação registrada"); utils.timeTracking.myHistory.invalidate(); utils.timeTracking.shiftStatus.invalidate(); } });
   const correction = trpc.timeTracking.requestCorrection.useMutation({ onSuccess: () => { toast.success("Pedido enviado ao administrador da empresa"); setSelectedEventId(""); setRequestedTime(""); setJustification(""); utils.timeTracking.myCorrections.invalidate(); }, onError: (err) => toast.error(err.message || "Não foi possível enviar o pedido") });
   const startVisit = trpc.operations.visits.start.useMutation({ onSuccess: () => { toast.success("Visita iniciada"); utils.operations.visits.today.invalidate(); }, onError: (err) => toast.error(err.message || "Não foi possível iniciar a visita") });
   const completeVisit = trpc.operations.visits.complete.useMutation({ onSuccess: () => { toast.success("Visita concluída"); utils.operations.visits.today.invalidate(); }, onError: (err) => toast.error(err.message || "Não foi possível concluir a visita") });
 
   const handlePunch = async (eventType: EventType) => {
     setLoading(true);
-    try { const position = await currentPosition(); await register.mutateAsync({ eventType, timeZone, deviceTime: new Date().toISOString(), ...position, locationStatus: "success", deviceInfo: navigator.userAgent, idempotencyKey: `${eventType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Autorize o GPS para registrar o ponto."); }
+    setPunchError("");
+    try { const position = await currentPosition(); if (position.accuracy > 10000) throw new Error("O GPS informou uma precisão muito baixa. Ative a localização precisa e tente em um local aberto."); await register.mutateAsync({ eventType, timeZone, deviceTime: new Date().toISOString(), ...position, locationStatus: "success", deviceInfo: navigator.userAgent, idempotencyKey: `${eventType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }); }
+    catch (error) { const message = error instanceof Error ? error.message : "Não foi possível registrar o ponto."; setPunchError(message); toast.error(message); }
     finally { setLoading(false); }
   };
   const actOnVisit = async (id: number, action: "start" | "complete") => { try { const position = await currentPosition(); if (action === "start") await startVisit.mutateAsync({ id, ...position }); else await completeVisit.mutateAsync({ id, ...position }); } catch (error) { toast.error(error instanceof Error ? error.message : "Autorize o GPS para continuar."); } };
   const submitCorrection = (event: React.FormEvent) => { event.preventDefault(); const eventId = Number(selectedEventId); if (!eventId || !requestedTime || justification.trim().length < 10) return; const original = history.data?.find((item) => item.id === eventId); if (!original) return; correction.mutate({ timeEventId: eventId, requestedType: original.eventType as EventType, requestedTime: new Date(`${selectedDate}T${requestedTime}:00`).toISOString(), justification: justification.trim() }); };
 
   if (shift.isLoading) return <ClockGate timeZone={timeZone} loading />;
-  if (!shift.data?.active) return <ClockGate timeZone={shift.data?.timeZone || timeZone} error={shift.error?.message} closed={shift.data?.status === "closed"} onPunch={() => handlePunch("clock_in")} loading={loading} />;
+  if (!shift.data?.active) return <ClockGate timeZone={shift.data?.timeZone || timeZone} error={punchError || shift.error?.message} closed={shift.data?.status === "closed"} onPunch={() => handlePunch("clock_in")} loading={loading} />;
 
   return <DashboardLayout title="Meu ponto, GPS e roteiro" description="Registre sua jornada, consulte o histórico e execute suas visitas.">
     <div id="ponto"><Card><CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="h-5 w-5 text-teal-300" /> Registrar ponto e GPS</CardTitle></CardHeader><CardContent><div className="grid grid-cols-2 gap-3"><Button onClick={() => handlePunch("clock_in")} disabled={loading}>Entrada</Button><Button onClick={() => handlePunch("break_start")} disabled={loading} variant="outline">Início intervalo</Button><Button onClick={() => handlePunch("break_end")} disabled={loading} variant="outline">Fim intervalo</Button><Button onClick={() => handlePunch("clock_out")} disabled={loading}>Saída</Button></div><p className="mt-3 text-xs text-slate-300">Cada marcação exige localização GPS válida e registra o endereço do aparelho.</p></CardContent></Card></div>

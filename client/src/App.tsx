@@ -58,8 +58,8 @@ function RootRoute() {
   if (!user) return <LandingPage />;
   if (user.role === "platform_admin") return <PlatformDashboard />;
   if (user.role === "promoter") return <PromoterDashboard />;
-  if (user.companyId && ["company_admin", "supervisor"].includes(user.role)) return <OperationsDashboard />;
-  return <Home />;
+  if (user.companyId) return <OperationsDashboard />;
+  return <LandingPage />;
 }
 
 function Router() {

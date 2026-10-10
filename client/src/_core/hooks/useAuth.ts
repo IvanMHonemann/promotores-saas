@@ -16,7 +16,10 @@ function readCachedUser() {
     if (!raw || raw === "null") return null;
     const user = JSON.parse(raw);
     if (!user || typeof user.id !== "number" || typeof user.role !== "string") return null;
-    if (!["platform_admin", "company_admin", "supervisor", "promoter", "operator", "technician"].includes(user.role)) return null;
+    if (!["platform_admin", "company_admin", "supervisor", "promoter"].includes(user.role)) {
+      localStorage.removeItem(LOCAL_SESSION_KEY);
+      return null;
+    }
     return user;
   } catch {
     return null;

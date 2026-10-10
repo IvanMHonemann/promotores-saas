@@ -201,7 +201,7 @@ export default function AdminAssinaturasPage() {
 
   if (!isPlatformAdmin) {
     return (
-      <main className="min-h-screen bg-slate-50 p-6">
+      <main className="saas-page min-h-screen p-6">
         <Card>
           <CardContent className="p-8 text-center text-slate-600">
             Acesso restrito ao administrador da plataforma.
@@ -301,7 +301,7 @@ export default function AdminAssinaturasPage() {
   const previewPlan = companyEdit.planId ? plansById.get(Number(companyEdit.planId)) : null;
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="saas-page min-h-screen">
       <div className="mx-auto max-w-6xl space-y-6 p-4 md:p-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">

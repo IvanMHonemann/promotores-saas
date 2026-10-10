@@ -1,10 +1,43 @@
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import mysql from "mysql2/promise";
-import { spawnSync } from "node:child_process";
 
-const BASELINE_MIGRATION = 1791168000000; // 0010_extinguisher_public_token
-const TARGET_MIGRATION = 1791667915456; // 0012_time_tracking
-const REQUIRED_BASE_TABLES = ["companies", "member_accounts"];
 const TARGET_TABLES = ["time_events", "time_correction_requests"];
+const REQUIRED_BASE_TABLES = ["companies", "member_accounts"];
+const EXPECTED_COLUMNS = {
+  time_events: [
+    "id",
+    "companyId",
+    "memberAccountId",
+    "eventType",
+    "serverTime",
+    "deviceTime",
+    "latitude",
+    "longitude",
+    "accuracy",
+    "locationStatus",
+    "locationError",
+    "deviceInfo",
+    "idempotencyKey",
+    "synced",
+    "notes",
+    "createdAt",
+  ],
+  time_correction_requests: [
+    "id",
+    "companyId",
+    "memberAccountId",
+    "timeEventId",
+    "requestedType",
+    "requestedTime",
+    "justification",
+    "status",
+    "reviewedByUserId",
+    "reviewNotes",
+    "reviewedAt",
+    "createdAt",
+  ],
+};
 
 if (
   process.env.VERCEL_ENV !== "production" ||
@@ -34,43 +67,48 @@ function connectionOptions() {
   };
 }
 
-async function inspectDatabase() {
-  const connection = await mysql.createConnection(connectionOptions());
-  try {
-    const [tableRows] = await connection.query(
-      "SELECT TABLE_NAME AS tableName FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?, ?, ?)",
-      [...REQUIRED_BASE_TABLES, ...TARGET_TABLES, "__drizzle_migrations"],
-    );
-    const tableNames = new Set(tableRows.map((row) => String(row.tableName).toLowerCase()));
-    const missingBase = REQUIRED_BASE_TABLES.filter((table) => !tableNames.has(table));
-    if (missingBase.length) {
-      throw new Error(`Banco não reconhecido: tabelas-base ausentes (${missingBase.join(", ")}).`);
-    }
-    if (!tableNames.has("__drizzle_migrations")) {
-      throw new Error("Histórico do Drizzle ausente; migração interrompida sem alterações.");
-    }
+async function inspectDatabase(connection) {
+  const [tableRows] = await connection.query(
+    "SELECT TABLE_NAME AS tableName FROM information_schema.tables WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?, ?, ?)",
+    [...REQUIRED_BASE_TABLES, ...TARGET_TABLES, "__drizzle_migrations"],
+  );
+  const tableNames = new Set(tableRows.map((row) => String(row.tableName).toLowerCase()));
+  const missingBase = REQUIRED_BASE_TABLES.filter((table) => !tableNames.has(table));
+  if (missingBase.length) {
+    throw new Error(`Banco não reconhecido: tabelas-base ausentes (${missingBase.join(", ")}).`);
+  }
 
+  const [columnRows] = await connection.query(
+    "SELECT TABLE_NAME AS tableName, COLUMN_NAME AS columnName FROM information_schema.columns WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?)",
+    TARGET_TABLES,
+  );
+  const columnsByTable = new Map(TARGET_TABLES.map((table) => [table, new Set()]));
+  for (const row of columnRows) {
+    columnsByTable.get(String(row.tableName).toLowerCase())?.add(String(row.columnName));
+  }
+
+  for (const table of TARGET_TABLES) {
+    if (!tableNames.has(table)) continue;
+    const missing = EXPECTED_COLUMNS[table].filter((column) => !columnsByTable.get(table).has(column));
+    if (missing.length) {
+      throw new Error(`Tabela ${table} existente não corresponde ao schema esperado; faltam colunas necessárias.`);
+    }
+  }
+
+  let latestMigration = null;
+  if (tableNames.has("__drizzle_migrations")) {
     const [historyRows] = await connection.query(
       "SELECT created_at AS createdAt FROM `__drizzle_migrations` ORDER BY created_at DESC LIMIT 1",
     );
-    if (!historyRows.length) {
-      throw new Error("Histórico do Drizzle vazio; migração interrompida sem alterações.");
-    }
-    const latestMigration = Number(historyRows[0].createdAt);
-    if (!Number.isFinite(latestMigration) || latestMigration < BASELINE_MIGRATION) {
-      throw new Error("Histórico anterior à migração-base 0010; migração interrompida sem alterações.");
-    }
-
-    const existingTargets = TARGET_TABLES.filter((table) => tableNames.has(table));
-    const targetsComplete = existingTargets.length === TARGET_TABLES.length;
-    if (latestMigration >= TARGET_MIGRATION && !targetsComplete) {
-      throw new Error("Histórico aponta migração aplicada, mas as tabelas esperadas não existem.");
-    }
-
-    return { latestMigration, targetsComplete };
-  } finally {
-    await connection.end();
+    if (historyRows.length) latestMigration = Number(historyRows[0].createdAt);
   }
+
+  return {
+    tableNames,
+    columnsByTable,
+    latestMigration,
+    targetsComplete: TARGET_TABLES.every((table) => tableNames.has(table)),
+  };
 }
 
 function isSafeErrorMessage(error) {
@@ -82,27 +120,57 @@ function isSafeErrorMessage(error) {
 }
 
 try {
-  const before = await inspectDatabase();
-  if (before.latestMigration >= TARGET_MIGRATION) {
-    console.log("[time-tracking-migration] Já aplicada; tabelas confirmadas.");
-    process.exit(0);
-  }
+  const connection = await mysql.createConnection(connectionOptions());
+  try {
+    const before = await inspectDatabase(connection);
+    if (before.latestMigration !== null && before.latestMigration >= 1791667915456) {
+      if (!before.targetsComplete) {
+        throw new Error("Histórico aponta 0012 aplicada, mas as duas tabelas esperadas não existem.");
+      }
+      console.log("[time-tracking-migration] Migração 0012 já registrada; tabelas confirmadas.");
+    } else if (before.targetsComplete) {
+      console.log("[time-tracking-migration] As duas tabelas e as colunas esperadas já existem.");
+    } else {
+      if (before.latestMigration === null) {
+        console.log("[time-tracking-migration] Histórico Drizzle ausente; somente o SQL 0012 será executado.");
+      } else {
+        console.log("[time-tracking-migration] Histórico existente; somente o SQL 0012 será executado.");
+      }
 
-  console.log("[time-tracking-migration] Baseline válida; executando Drizzle 0012.");
-  const result = spawnSync("pnpm", ["exec", "drizzle-kit", "migrate"], {
-    stdio: "inherit",
-    env: process.env,
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
+      const migrationPath = fileURLToPath(new URL("../drizzle/0012_time_tracking.sql", import.meta.url));
+      const migrationSource = await readFile(migrationPath, "utf8");
+      const statements = migrationSource
+        .split("--> statement-breakpoint")
+        .map((statement) =>
+          statement
+            .split(/\r?\n/)
+            .filter((line) => !line.trimStart().startsWith("--"))
+            .join("\n")
+            .trim(),
+        )
+        .filter(Boolean);
 
-  const after = await inspectDatabase();
-  if (after.latestMigration < TARGET_MIGRATION || !after.targetsComplete) {
-    throw new Error("Verificação pós-migração não confirmou o registro e as duas tabelas.");
+      if (
+        statements.length !== 2 ||
+        !statements[0].startsWith("CREATE TABLE IF NOT EXISTS `time_events`") ||
+        !statements[1].startsWith("CREATE TABLE IF NOT EXISTS `time_correction_requests`")
+      ) {
+        throw new Error("O arquivo 0012 não corresponde às duas tabelas aditivas esperadas; nenhuma alteração executada.");
+      }
+
+      for (const statement of statements) {
+        await connection.query(statement);
+      }
+
+      const after = await inspectDatabase(connection);
+      if (!after.targetsComplete) {
+        throw new Error("Verificação pós-migração não encontrou as duas tabelas.");
+      }
+      console.log("[time-tracking-migration] SQL 0012 aplicado e as duas tabelas verificadas.");
+    }
+  } finally {
+    await connection.end();
   }
-  console.log("[time-tracking-migration] Migração 0012 aplicada e verificada.");
 } catch (error) {
   console.error(`[time-tracking-migration] Interrompida: ${isSafeErrorMessage(error)}`);
   process.exit(1);

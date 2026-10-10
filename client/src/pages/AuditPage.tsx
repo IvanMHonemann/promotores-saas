@@ -78,7 +78,7 @@ const FIELD_LABEL: Record<string, string> = {
   replacedAndDelivered: "Substituído e entregue",
   leftReserve: "Deixou reserva",
   reserveDetails: "Detalhes da reserva",
-  extinguisherExpiration: "Validade do extintor",
+  extinguisherExpiration: "Validade do cadastro",
   licenseExpiration: "Validade da licença",
   totalAmount: "Valor total",
   paymentMethod: "Forma de pagamento",

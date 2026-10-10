@@ -144,7 +144,7 @@ export default function SignupPage() {
             <ul className="space-y-1 pt-2">
               <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Usuários: {selectedPlan.maxUsers ?? "Ilimitado"}</li>
               <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Clientes: {selectedPlan.maxClients ?? "Ilimitado"}</li>
-              <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Extintores: {selectedPlan.maxExtinguishers ?? "Ilimitado"}</li>
+              <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Pontos de venda: {selectedPlan.maxExtinguishers ?? "Ilimitado"}</li>
             </ul>
             <p className="pt-4 text-xs text-slate-400">
               A conta só é criada após a confirmação do pagamento. Em modo demonstração a cobrança é simulada.

@@ -32,7 +32,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 const FEATURES = [
   { key: "featureDashboard", label: "Painel e indicadores" },
   { key: "featureClients", label: "Cadastro de clientes" },
-  { key: "featureExtinguishers", label: "Cadastro de extintores" },
+  { key: "featureExtinguishers", label: "Cadastro de pontos de venda" },
   { key: "featureServiceOrders", label: "Ordens de serviço" },
   { key: "featureAlerts", label: "Alertas de vencimento" },
   { key: "featureReports", label: "Relatórios e histórico" },
@@ -457,7 +457,7 @@ export default function AdminAssinaturasPage() {
                                 <Users className="h-3.5 w-3.5" /> {fmtLimit(s.maxUsers)} usuários
                               </span>
                               <span>· Clientes: {fmtLimit(s.maxClients)}</span>
-                              <span>· Extintores: {fmtLimit(s.maxExtinguishers)}</span>
+                              <span>· Pontos de venda: {fmtLimit(s.maxExtinguishers)}</span>
                             </p>
                             <div className="flex flex-wrap gap-1.5 pt-1">
                               {feats.length === 0 ? (
@@ -519,7 +519,7 @@ export default function AdminAssinaturasPage() {
                         <ul className="space-y-1 text-xs text-slate-600">
                           <li>Usuários: {fmtLimit(plan.maxUsers)}</li>
                           <li>Clientes: {fmtLimit(plan.maxClients)}</li>
-                          <li>Extintores: {fmtLimit(plan.maxExtinguishers)}</li>
+                          <li>Pontos de venda: {fmtLimit(plan.maxExtinguishers)}</li>
                         </ul>
                         <div className="flex flex-wrap gap-1">
                           {feats.map((f) => (
@@ -588,7 +588,7 @@ export default function AdminAssinaturasPage() {
                 [
                   ["unlimitedUsers", "maxUsers", "Usuários"],
                   ["unlimitedClients", "maxClients", "Clientes"],
-                  ["unlimitedExtinguishers", "maxExtinguishers", "Extintores"],
+                  ["unlimitedExtinguishers", "maxExtinguishers", "Pontos de venda"],
                 ] as const
               ).map(([unlimitedKey, maxKey, label]) => (
                 <div key={maxKey} className="flex items-center gap-3">
@@ -761,7 +761,7 @@ export default function AdminAssinaturasPage() {
                 </div>
                 <p className="text-[11px] text-slate-500">
                   Limites: {fmtLimit(previewPlan?.maxUsers)} usuários · {fmtLimit(previewPlan?.maxClients)} clientes ·{" "}
-                  {fmtLimit(previewPlan?.maxExtinguishers)} extintores
+                  {fmtLimit(previewPlan?.maxExtinguishers)} pontos de venda
                 </p>
                 <div className="grid gap-1.5 sm:grid-cols-2">
                   {FEATURES.map((f) => {

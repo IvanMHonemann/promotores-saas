@@ -39,7 +39,7 @@ const statusLabel: Record<string, string> = {
 const FEATURE_ROWS: { key: string; label: string }[] = [
   { key: "featureDashboard", label: "Painel e indicadores" },
   { key: "featureClients", label: "Cadastro de clientes" },
-  { key: "featureExtinguishers", label: "Cadastro de extintores" },
+  { key: "featureExtinguishers", label: "Cadastro de pontos de venda" },
   { key: "featureServiceOrders", label: "Ordens de serviço" },
   { key: "featureAlerts", label: "Alertas de vencimento" },
   { key: "featureReports", label: "Histórico e auditoria" },
@@ -345,8 +345,8 @@ export default function MySubscriptionPage() {
                 <p>{fmtLimit(plan?.maxClients, "cliente(s)")}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Extintores</p>
-                <p>{fmtLimit(plan?.maxExtinguishers, "extintor(es)")}</p>
+                <p className="text-xs text-slate-400">Pontos de venda</p>
+                <p>{fmtLimit(plan?.maxExtinguishers, "ponto(s) de venda")}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-400">Início / validade</p>

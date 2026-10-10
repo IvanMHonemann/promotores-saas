@@ -14,6 +14,7 @@ import LoginPage from "./pages/LoginPage";
 import UpgradePlanPage from "./pages/UpgradePlanPage";
 import MySubscriptionPage from "./pages/MySubscriptionPage";
 import PaymentHistoryPage from "./pages/PaymentHistoryPage";
+import MyAccountPage from "./pages/MyAccountPage";
 import AuditPage from "./pages/AuditPage";
 import PromoterDashboard from "./pages/promoter/PromoterDashboard";
 import OperationsDashboard from "./pages/operations/OperationsDashboard";
@@ -73,6 +74,7 @@ function Router() {
       <Route path="/upgrade"><CompanyAdminProtected><UpgradePlanPage /></CompanyAdminProtected></Route>
       <Route path="/minha-assinatura"><CompanyAdminProtected><MySubscriptionPage /></CompanyAdminProtected></Route>
       <Route path="/pagamentos"><CompanyAdminProtected><PaymentHistoryPage /></CompanyAdminProtected></Route>
+      <Route path="/minha-conta"><AdminProtected><MyAccountPage /></AdminProtected></Route>
       <Route path="/auditoria"><CompanyAdminProtected><AuditPage /></CompanyAdminProtected></Route>
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

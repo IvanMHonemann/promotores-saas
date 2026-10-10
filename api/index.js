@@ -333,6 +333,416 @@ var init_env = __esm({
   }
 });
 
+// drizzle/schema.ts
+var schema_exports = {};
+__export(schema_exports, {
+  auditLogs: () => auditLogs2,
+  brands: () => brands,
+  checklistQuestions: () => checklistQuestions,
+  checklistResponses: () => checklistResponses,
+  checklists: () => checklists,
+  clients: () => clients2,
+  companies: () => companies2,
+  companySubscriptions: () => companySubscriptions2,
+  evidences: () => evidences,
+  memberAccounts: () => memberAccounts2,
+  memberSessions: () => memberSessions2,
+  platformAdmins: () => platformAdmins2,
+  platformSessions: () => platformSessions2,
+  retailChains: () => retailChains,
+  routes: () => routes,
+  stores: () => stores,
+  subscriptionPlans: () => subscriptionPlans2,
+  systemSettings: () => systemSettings2,
+  teams: () => teams,
+  timeCorrectionRequests: () => timeCorrectionRequests,
+  timeEvents: () => timeEvents,
+  users: () => users2,
+  visits: () => visits
+});
+import { boolean as boolean2, date as date2, decimal as decimal2, index as index2, int as int2, mysqlEnum as mysqlEnum2, mysqlTable as mysqlTable2, text as text2, timestamp as timestamp2, uniqueIndex as uniqueIndex2, varchar as varchar2, double } from "drizzle-orm/mysql-core";
+var users2, companies2, platformAdmins2, memberAccounts2, memberSessions2, platformSessions2, clients2, brands, retailChains, stores, teams, routes, visits, timeEvents, timeCorrectionRequests, checklists, checklistQuestions, checklistResponses, evidences, auditLogs2, subscriptionPlans2, companySubscriptions2, systemSettings2;
+var init_schema = __esm({
+  "drizzle/schema.ts"() {
+    "use strict";
+    users2 = mysqlTable2("users", {
+      id: int2("id").autoincrement().primaryKey(),
+      openId: varchar2("openId", { length: 64 }).notNull().unique(),
+      name: text2("name"),
+      email: varchar2("email", { length: 320 }),
+      loginMethod: varchar2("loginMethod", { length: 64 }),
+      role: mysqlEnum2("role", ["oauth_user", "platform_admin"]).default("oauth_user").notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull(),
+      lastSignedIn: timestamp2("lastSignedIn").defaultNow().notNull()
+    });
+    companies2 = mysqlTable2("companies", {
+      id: int2("id").autoincrement().primaryKey(),
+      name: varchar2("name", { length: 255 }).notNull(),
+      active: boolean2("active").default(true).notNull(),
+      planId: int2("planId"),
+      subscriptionStatus: mysqlEnum2("subscriptionStatus", ["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]),
+      asaasCustomerId: varchar2("asaasCustomerId", { length: 64 }),
+      asaasSubscriptionId: varchar2("asaasSubscriptionId", { length: 64 }),
+      subscriptionStartedAt: timestamp2("subscriptionStartedAt"),
+      subscriptionExpiresAt: timestamp2("subscriptionExpiresAt"),
+      trialEndsAt: timestamp2("trialEndsAt"),
+      gracePeriodEndsAt: timestamp2("gracePeriodEndsAt"),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      activeIdx: index2("companies_active_idx").on(table.active),
+      nameIdx: index2("companies_name_idx").on(table.name),
+      planIdx: index2("companies_plan_idx").on(table.planId),
+      subscriptionStatusIdx: index2("companies_subscription_status_idx").on(table.subscriptionStatus)
+    }));
+    platformAdmins2 = mysqlTable2("platform_admins", {
+      id: int2("id").autoincrement().primaryKey(),
+      userName: varchar2("userName", { length: 255 }).notNull(),
+      email: varchar2("email", { length: 320 }).notNull().unique(),
+      passwordHash: varchar2("passwordHash", { length: 255 }).notNull(),
+      recoveryCodeHash: varchar2("recoveryCodeHash", { length: 255 }),
+      active: boolean2("active").default(true).notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    });
+    memberAccounts2 = mysqlTable2("member_accounts", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      userName: varchar2("userName", { length: 255 }).notNull(),
+      email: varchar2("email", { length: 320 }).notNull().unique(),
+      passwordHash: varchar2("passwordHash", { length: 255 }).notNull(),
+      recoveryCodeHash: varchar2("recoveryCodeHash", { length: 255 }),
+      role: mysqlEnum2("role", ["company_admin", "supervisor", "promoter"]).default("promoter").notNull(),
+      active: boolean2("active").default(true).notNull(),
+      employeeCode: varchar2("employeeCode", { length: 50 }),
+      phone: varchar2("phone", { length: 50 }),
+      supervisorId: int2("supervisorId"),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("member_accounts_company_idx").on(table.companyId),
+      companyRoleIdx: index2("member_accounts_company_role_idx").on(table.companyId, table.role),
+      employeeCodeIdx: index2("member_accounts_employee_code_idx").on(table.companyId, table.employeeCode)
+    }));
+    memberSessions2 = mysqlTable2("member_sessions", {
+      id: int2("id").autoincrement().primaryKey(),
+      memberAccountId: int2("memberAccountId").notNull().references(() => memberAccounts2.id, { onDelete: "cascade" }),
+      tokenHash: varchar2("tokenHash", { length: 128 }).notNull().unique(),
+      expiresAt: timestamp2("expiresAt").notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull()
+    }, (table) => ({
+      accountExpiryIdx: index2("member_sessions_account_expiry_idx").on(table.memberAccountId, table.expiresAt)
+    }));
+    platformSessions2 = mysqlTable2("platform_sessions", {
+      id: int2("id").autoincrement().primaryKey(),
+      platformAdminId: int2("platformAdminId").notNull().references(() => platformAdmins2.id, { onDelete: "cascade" }),
+      tokenHash: varchar2("tokenHash", { length: 128 }).notNull().unique(),
+      expiresAt: timestamp2("expiresAt").notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull()
+    }, (table) => ({
+      adminExpiryIdx: index2("platform_sessions_admin_expiry_idx").on(table.platformAdminId, table.expiresAt)
+    }));
+    clients2 = mysqlTable2("clients", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      name: varchar2("name", { length: 255 }).notNull(),
+      cnpj: varchar2("cnpj", { length: 30 }),
+      contactName: varchar2("contactName", { length: 255 }),
+      phone: varchar2("phone", { length: 50 }),
+      email: varchar2("email", { length: 320 }),
+      notes: text2("notes"),
+      active: boolean2("active").default(true).notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("clients_company_idx").on(table.companyId),
+      nameIdx: index2("clients_company_name_idx").on(table.companyId, table.name)
+    }));
+    brands = mysqlTable2("brands", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      clientId: int2("clientId").references(() => clients2.id, { onDelete: "set null" }),
+      name: varchar2("name", { length: 255 }).notNull(),
+      notes: text2("notes"),
+      active: boolean2("active").default(true).notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("brands_company_idx").on(table.companyId),
+      clientIdx: index2("brands_client_idx").on(table.clientId)
+    }));
+    retailChains = mysqlTable2("retail_chains", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      name: varchar2("name", { length: 255 }).notNull(),
+      notes: text2("notes"),
+      active: boolean2("active").default(true).notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("retail_chains_company_idx").on(table.companyId)
+    }));
+    stores = mysqlTable2("stores", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      clientId: int2("clientId").references(() => clients2.id, { onDelete: "set null" }),
+      brandId: int2("brandId").references(() => brands.id, { onDelete: "set null" }),
+      retailChainId: int2("retailChainId").references(() => retailChains.id, { onDelete: "set null" }),
+      name: varchar2("name", { length: 255 }).notNull(),
+      code: varchar2("code", { length: 50 }),
+      address: text2("address"),
+      city: varchar2("city", { length: 120 }).notNull(),
+      state: varchar2("state", { length: 2 }),
+      cep: varchar2("cep", { length: 20 }),
+      latitude: double("latitude"),
+      longitude: double("longitude"),
+      contactName: varchar2("contactName", { length: 255 }),
+      phone: varchar2("phone", { length: 50 }),
+      expectedVisitFrequency: varchar2("expectedVisitFrequency", { length: 50 }),
+      notes: text2("notes"),
+      active: boolean2("active").default(true).notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("stores_company_idx").on(table.companyId),
+      clientIdx: index2("stores_client_idx").on(table.clientId),
+      cityIdx: index2("stores_company_city_idx").on(table.companyId, table.city),
+      geoIdx: index2("stores_geo_idx").on(table.latitude, table.longitude)
+    }));
+    teams = mysqlTable2("teams", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      name: varchar2("name", { length: 255 }).notNull(),
+      supervisorId: int2("supervisorId"),
+      notes: text2("notes"),
+      active: boolean2("active").default(true).notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("teams_company_idx").on(table.companyId)
+    }));
+    routes = mysqlTable2("routes", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      name: varchar2("name", { length: 255 }).notNull(),
+      date: date2("date").notNull(),
+      promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
+      teamId: int2("teamId").references(() => teams.id, { onDelete: "set null" }),
+      status: mysqlEnum2("status", ["draft", "assigned", "in_progress", "completed", "cancelled"]).default("assigned").notNull(),
+      notes: text2("notes"),
+      createdByUserId: int2("createdByUserId"),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("routes_company_idx").on(table.companyId),
+      promoterDateIdx: index2("routes_promoter_date_idx").on(table.promoterId, table.date),
+      dateIdx: index2("routes_company_date_idx").on(table.companyId, table.date)
+    }));
+    visits = mysqlTable2("visits", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      routeId: int2("routeId").references(() => routes.id, { onDelete: "cascade" }),
+      storeId: int2("storeId").notNull().references(() => stores.id, { onDelete: "restrict" }),
+      promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
+      plannedStart: timestamp2("plannedStart"),
+      plannedEnd: timestamp2("plannedEnd"),
+      actualStart: timestamp2("actualStart"),
+      actualEnd: timestamp2("actualEnd"),
+      status: mysqlEnum2("status", ["pending", "in_progress", "completed", "not_done", "cancelled"]).default("pending").notNull(),
+      startLatitude: double("startLatitude"),
+      startLongitude: double("startLongitude"),
+      startAccuracy: double("startAccuracy"),
+      endLatitude: double("endLatitude"),
+      endLongitude: double("endLongitude"),
+      endAccuracy: double("endAccuracy"),
+      distanceMeters: double("distanceMeters"),
+      justification: text2("justification"),
+      notes: text2("notes"),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("visits_company_idx").on(table.companyId),
+      routeIdx: index2("visits_route_idx").on(table.routeId),
+      storeIdx: index2("visits_store_idx").on(table.storeId),
+      promoterIdx: index2("visits_promoter_idx").on(table.promoterId),
+      statusIdx: index2("visits_status_idx").on(table.companyId, table.status)
+    }));
+    timeEvents = mysqlTable2("time_events", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      memberAccountId: int2("memberAccountId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
+      eventType: mysqlEnum2("eventType", ["clock_in", "break_start", "break_end", "clock_out"]).notNull(),
+      serverTime: timestamp2("serverTime").defaultNow().notNull(),
+      deviceTime: timestamp2("deviceTime"),
+      latitude: double("latitude"),
+      longitude: double("longitude"),
+      accuracy: double("accuracy"),
+      locationStatus: mysqlEnum2("locationStatus", ["success", "permission_denied", "unavailable", "timeout", "error"]).default("success"),
+      locationError: text2("locationError"),
+      deviceInfo: text2("deviceInfo"),
+      idempotencyKey: varchar2("idempotencyKey", { length: 64 }),
+      synced: boolean2("synced").default(true).notNull(),
+      notes: text2("notes"),
+      createdAt: timestamp2("createdAt").defaultNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("time_events_company_idx").on(table.companyId),
+      memberIdx: index2("time_events_member_idx").on(table.memberAccountId),
+      memberTimeIdx: index2("time_events_member_time_idx").on(table.memberAccountId, table.serverTime),
+      idempotencyIdx: uniqueIndex2("time_events_idempotency_unique").on(table.idempotencyKey)
+    }));
+    timeCorrectionRequests = mysqlTable2("time_correction_requests", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      memberAccountId: int2("memberAccountId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
+      timeEventId: int2("timeEventId").references(() => timeEvents.id, { onDelete: "set null" }),
+      requestedType: mysqlEnum2("requestedType", ["clock_in", "break_start", "break_end", "clock_out"]).notNull(),
+      requestedTime: timestamp2("requestedTime").notNull(),
+      justification: text2("justification").notNull(),
+      status: mysqlEnum2("status", ["pending", "approved", "rejected"]).default("pending").notNull(),
+      reviewedByUserId: int2("reviewedByUserId"),
+      reviewNotes: text2("reviewNotes"),
+      reviewedAt: timestamp2("reviewedAt"),
+      createdAt: timestamp2("createdAt").defaultNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("time_corrections_company_idx").on(table.companyId),
+      memberIdx: index2("time_corrections_member_idx").on(table.memberAccountId),
+      statusIdx: index2("time_corrections_status_idx").on(table.companyId, table.status)
+    }));
+    checklists = mysqlTable2("checklists", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      name: varchar2("name", { length: 255 }).notNull(),
+      clientId: int2("clientId").references(() => clients2.id, { onDelete: "set null" }),
+      brandId: int2("brandId").references(() => brands.id, { onDelete: "set null" }),
+      description: text2("description"),
+      active: boolean2("active").default(true).notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("checklists_company_idx").on(table.companyId)
+    }));
+    checklistQuestions = mysqlTable2("checklist_questions", {
+      id: int2("id").autoincrement().primaryKey(),
+      checklistId: int2("checklistId").notNull().references(() => checklists.id, { onDelete: "cascade" }),
+      order: int2("order").notNull().default(0),
+      questionText: text2("questionText").notNull(),
+      questionType: mysqlEnum2("questionType", ["text", "yes_no", "select", "number", "photo", "observation"]).notNull(),
+      required: boolean2("required").default(false).notNull(),
+      options: text2("options"),
+      // JSON for select options
+      createdAt: timestamp2("createdAt").defaultNow().notNull()
+    }, (table) => ({
+      checklistIdx: index2("checklist_questions_checklist_idx").on(table.checklistId)
+    }));
+    checklistResponses = mysqlTable2("checklist_responses", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      visitId: int2("visitId").notNull().references(() => visits.id, { onDelete: "cascade" }),
+      checklistId: int2("checklistId").notNull().references(() => checklists.id, { onDelete: "restrict" }),
+      promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
+      responses: text2("responses").notNull(),
+      // JSON
+      completedAt: timestamp2("completedAt").defaultNow().notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull()
+    }, (table) => ({
+      visitIdx: index2("checklist_responses_visit_idx").on(table.visitId),
+      companyIdx: index2("checklist_responses_company_idx").on(table.companyId)
+    }));
+    evidences = mysqlTable2("evidences", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      visitId: int2("visitId").references(() => visits.id, { onDelete: "cascade" }),
+      checklistResponseId: int2("checklistResponseId").references(() => checklistResponses.id, { onDelete: "cascade" }),
+      promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
+      fileUrl: text2("fileUrl").notNull(),
+      fileName: varchar2("fileName", { length: 255 }),
+      mimeType: varchar2("mimeType", { length: 100 }),
+      sizeBytes: int2("sizeBytes"),
+      caption: text2("caption"),
+      latitude: double("latitude"),
+      longitude: double("longitude"),
+      createdAt: timestamp2("createdAt").defaultNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("evidences_company_idx").on(table.companyId),
+      visitIdx: index2("evidences_visit_idx").on(table.visitId)
+    }));
+    auditLogs2 = mysqlTable2("audit_logs", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").references(() => companies2.id, { onDelete: "cascade" }),
+      userId: int2("userId"),
+      userName: varchar2("userName", { length: 255 }),
+      userEmail: varchar2("userEmail", { length: 320 }),
+      action: varchar2("action", { length: 64 }).notNull(),
+      module: varchar2("module", { length: 64 }).notNull(),
+      entityType: varchar2("entityType", { length: 64 }).notNull(),
+      entityId: int2("entityId"),
+      entityLabel: varchar2("entityLabel", { length: 255 }),
+      description: text2("description").notNull(),
+      oldData: text2("oldData"),
+      newData: text2("newData"),
+      ipAddress: varchar2("ipAddress", { length: 64 }),
+      userAgent: varchar2("userAgent", { length: 512 }),
+      createdAt: timestamp2("createdAt").defaultNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("audit_logs_company_idx").on(table.companyId),
+      companyCreatedIdx: index2("audit_logs_company_created_idx").on(table.companyId, table.createdAt),
+      userIdx: index2("audit_logs_user_idx").on(table.userId),
+      entityIdx: index2("audit_logs_entity_idx").on(table.entityType, table.entityId),
+      actionIdx: index2("audit_logs_action_idx").on(table.action),
+      moduleIdx: index2("audit_logs_module_idx").on(table.module),
+      createdIdx: index2("audit_logs_created_idx").on(table.createdAt)
+    }));
+    subscriptionPlans2 = mysqlTable2("subscription_plans", {
+      id: int2("id").autoincrement().primaryKey(),
+      name: varchar2("name", { length: 120 }).notNull(),
+      description: text2("description"),
+      price: decimal2("price", { precision: 12, scale: 2 }).notNull().default("0.00"),
+      billingCycle: mysqlEnum2("billingCycle", ["monthly", "yearly"]).notNull().default("monthly"),
+      maxUsers: int2("maxUsers"),
+      maxPromoters: int2("maxPromoters"),
+      maxStores: int2("maxStores"),
+      maxClients: int2("maxClients"),
+      featureDashboard: boolean2("featureDashboard").notNull().default(true),
+      featureTimeTracking: boolean2("featureTimeTracking").notNull().default(true),
+      featureRoutes: boolean2("featureRoutes").notNull().default(true),
+      featureChecklists: boolean2("featureChecklists").notNull().default(true),
+      featureReports: boolean2("featureReports").notNull().default(true),
+      featureOffline: boolean2("featureOffline").notNull().default(true),
+      availableForNew: boolean2("availableForNew").notNull().default(true),
+      active: boolean2("active").notNull().default(true),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      nameIdx: index2("subscription_plans_name_idx").on(table.name),
+      availableIdx: index2("subscription_plans_available_idx").on(table.availableForNew, table.active)
+    }));
+    companySubscriptions2 = mysqlTable2("company_subscriptions", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "cascade" }),
+      planId: int2("planId").notNull().references(() => subscriptionPlans2.id, { onDelete: "restrict" }),
+      status: mysqlEnum2("status", ["trial", "active", "pending", "overdue", "suspended", "canceled", "expired"]).notNull(),
+      startedAt: timestamp2("startedAt").defaultNow().notNull(),
+      expiresAt: timestamp2("expiresAt"),
+      asaasSubscriptionId: varchar2("asaasSubscriptionId", { length: 64 }),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyIdx: index2("company_subscriptions_company_idx").on(table.companyId)
+    }));
+    systemSettings2 = mysqlTable2("system_settings", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "cascade" }),
+      settingKey: varchar2("settingKey", { length: 100 }).notNull(),
+      settingValue: text2("settingValue").notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      accountKeyUnique: uniqueIndex2("system_settings_company_key_unique").on(table.companyId, table.settingKey),
+      companyIdx: index2("system_settings_company_idx").on(table.companyId)
+    }));
+  }
+});
+
 // server/db.ts
 var db_exports = {};
 __export(db_exports, {
@@ -344,6 +754,8 @@ __export(db_exports, {
   createCompany: () => createCompany,
   createCompanySubscription: () => createCompanySubscription,
   createExtinguisher: () => createExtinguisher,
+  createOperationalRoute: () => createOperationalRoute,
+  createOperationalStore: () => createOperationalStore,
   createPaymentRecord: () => createPaymentRecord,
   createServiceOrder: () => createServiceOrder,
   createSubscriptionPlan: () => createSubscriptionPlan,
@@ -389,6 +801,9 @@ __export(db_exports, {
   listAvailablePlansForCompanies: () => listAvailablePlansForCompanies,
   listCompanies: () => listCompanies,
   listCompanySubscriptions: () => listCompanySubscriptions,
+  listOperationalRoutes: () => listOperationalRoutes,
+  listOperationalStores: () => listOperationalStores,
+  listOperationalVisits: () => listOperationalVisits,
   listPaymentsForCompany: () => listPaymentsForCompany,
   listSubscriptionPlans: () => listSubscriptionPlans,
   listTrash: () => listTrash,
@@ -402,6 +817,7 @@ __export(db_exports, {
   updateCompanySubscription: () => updateCompanySubscription,
   updateCompanySubscriptionFields: () => updateCompanySubscriptionFields,
   updateExtinguisher: () => updateExtinguisher,
+  updateOperationalVisit: () => updateOperationalVisit,
   updateServiceOrder: () => updateServiceOrder,
   updateSubscriptionPlan: () => updateSubscriptionPlan,
   upsertUser: () => upsertUser
@@ -1594,12 +2010,59 @@ async function ensureSeedPlans() {
     }
   }
 }
+async function listOperationalStores(companyId, search) {
+  const database = await getDb();
+  if (!database) return [];
+  const conditions = [eq(stores.companyId, requireAccountId(companyId)), eq(stores.active, true)];
+  if (search?.trim()) conditions.push(like(stores.name, `%${search.trim()}%`));
+  return database.select().from(stores).where(and(...conditions)).orderBy(stores.name);
+}
+async function createOperationalStore(input) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const result = await database.insert(stores).values(input);
+  const rows = await database.select().from(stores).where(eq(stores.id, Number(result[0]?.insertId))).limit(1);
+  return rows[0];
+}
+async function listOperationalRoutes(companyId, options = {}) {
+  const database = await getDb();
+  if (!database) return [];
+  const conditions = [eq(routes.companyId, requireAccountId(companyId))];
+  if (options.date) conditions.push(eq(routes.date, options.date));
+  if (options.promoterId) conditions.push(eq(routes.promoterId, options.promoterId));
+  return database.select().from(routes).where(and(...conditions)).orderBy(desc(routes.date), desc(routes.id));
+}
+async function createOperationalRoute(input) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const result = await database.insert(routes).values(input);
+  const rows = await database.select().from(routes).where(eq(routes.id, Number(result[0]?.insertId))).limit(1);
+  return rows[0];
+}
+async function listOperationalVisits(companyId, options = {}) {
+  const database = await getDb();
+  if (!database) return [];
+  const conditions = [eq(visits.companyId, requireAccountId(companyId))];
+  if (options.promoterId) conditions.push(eq(visits.promoterId, options.promoterId));
+  if (options.routeId) conditions.push(eq(visits.routeId, options.routeId));
+  if (options.date) conditions.push(eq(routes.date, options.date));
+  const rows = await database.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq(visits.storeId, stores.id)).innerJoin(routes, eq(visits.routeId, routes.id)).where(and(...conditions)).orderBy(visits.plannedStart, visits.id);
+  return rows;
+}
+async function updateOperationalVisit(companyId, id, data) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  await database.update(visits).set(data).where(and(eq(visits.id, id), eq(visits.companyId, requireAccountId(companyId))));
+  const rows = await database.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq(visits.storeId, stores.id)).where(and(eq(visits.id, id), eq(visits.companyId, companyId))).limit(1);
+  return rows[0];
+}
 var _db, _dbUrl, _pool, ownerScopeReady;
 var init_db = __esm({
   "server/db.ts"() {
     "use strict";
     init_schema_original();
     init_env();
+    init_schema();
     _db = null;
     _dbUrl = null;
     _pool = null;
@@ -1685,416 +2148,6 @@ var init_subscriptionAccess = __esm({
   "server/subscriptionAccess.ts"() {
     "use strict";
     init_db();
-  }
-});
-
-// drizzle/schema.ts
-var schema_exports = {};
-__export(schema_exports, {
-  auditLogs: () => auditLogs2,
-  brands: () => brands,
-  checklistQuestions: () => checklistQuestions,
-  checklistResponses: () => checklistResponses,
-  checklists: () => checklists,
-  clients: () => clients2,
-  companies: () => companies2,
-  companySubscriptions: () => companySubscriptions2,
-  evidences: () => evidences,
-  memberAccounts: () => memberAccounts2,
-  memberSessions: () => memberSessions2,
-  platformAdmins: () => platformAdmins2,
-  platformSessions: () => platformSessions2,
-  retailChains: () => retailChains,
-  routes: () => routes,
-  stores: () => stores,
-  subscriptionPlans: () => subscriptionPlans2,
-  systemSettings: () => systemSettings2,
-  teams: () => teams,
-  timeCorrectionRequests: () => timeCorrectionRequests,
-  timeEvents: () => timeEvents,
-  users: () => users2,
-  visits: () => visits
-});
-import { boolean as boolean2, date as date2, decimal as decimal2, index as index2, int as int2, mysqlEnum as mysqlEnum2, mysqlTable as mysqlTable2, text as text2, timestamp as timestamp2, uniqueIndex as uniqueIndex2, varchar as varchar2, double } from "drizzle-orm/mysql-core";
-var users2, companies2, platformAdmins2, memberAccounts2, memberSessions2, platformSessions2, clients2, brands, retailChains, stores, teams, routes, visits, timeEvents, timeCorrectionRequests, checklists, checklistQuestions, checklistResponses, evidences, auditLogs2, subscriptionPlans2, companySubscriptions2, systemSettings2;
-var init_schema = __esm({
-  "drizzle/schema.ts"() {
-    "use strict";
-    users2 = mysqlTable2("users", {
-      id: int2("id").autoincrement().primaryKey(),
-      openId: varchar2("openId", { length: 64 }).notNull().unique(),
-      name: text2("name"),
-      email: varchar2("email", { length: 320 }),
-      loginMethod: varchar2("loginMethod", { length: 64 }),
-      role: mysqlEnum2("role", ["oauth_user", "platform_admin"]).default("oauth_user").notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull(),
-      lastSignedIn: timestamp2("lastSignedIn").defaultNow().notNull()
-    });
-    companies2 = mysqlTable2("companies", {
-      id: int2("id").autoincrement().primaryKey(),
-      name: varchar2("name", { length: 255 }).notNull(),
-      active: boolean2("active").default(true).notNull(),
-      planId: int2("planId"),
-      subscriptionStatus: mysqlEnum2("subscriptionStatus", ["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]),
-      asaasCustomerId: varchar2("asaasCustomerId", { length: 64 }),
-      asaasSubscriptionId: varchar2("asaasSubscriptionId", { length: 64 }),
-      subscriptionStartedAt: timestamp2("subscriptionStartedAt"),
-      subscriptionExpiresAt: timestamp2("subscriptionExpiresAt"),
-      trialEndsAt: timestamp2("trialEndsAt"),
-      gracePeriodEndsAt: timestamp2("gracePeriodEndsAt"),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      activeIdx: index2("companies_active_idx").on(table.active),
-      nameIdx: index2("companies_name_idx").on(table.name),
-      planIdx: index2("companies_plan_idx").on(table.planId),
-      subscriptionStatusIdx: index2("companies_subscription_status_idx").on(table.subscriptionStatus)
-    }));
-    platformAdmins2 = mysqlTable2("platform_admins", {
-      id: int2("id").autoincrement().primaryKey(),
-      userName: varchar2("userName", { length: 255 }).notNull(),
-      email: varchar2("email", { length: 320 }).notNull().unique(),
-      passwordHash: varchar2("passwordHash", { length: 255 }).notNull(),
-      recoveryCodeHash: varchar2("recoveryCodeHash", { length: 255 }),
-      active: boolean2("active").default(true).notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    });
-    memberAccounts2 = mysqlTable2("member_accounts", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      userName: varchar2("userName", { length: 255 }).notNull(),
-      email: varchar2("email", { length: 320 }).notNull().unique(),
-      passwordHash: varchar2("passwordHash", { length: 255 }).notNull(),
-      recoveryCodeHash: varchar2("recoveryCodeHash", { length: 255 }),
-      role: mysqlEnum2("role", ["company_admin", "supervisor", "promoter"]).default("promoter").notNull(),
-      active: boolean2("active").default(true).notNull(),
-      employeeCode: varchar2("employeeCode", { length: 50 }),
-      phone: varchar2("phone", { length: 50 }),
-      supervisorId: int2("supervisorId"),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("member_accounts_company_idx").on(table.companyId),
-      companyRoleIdx: index2("member_accounts_company_role_idx").on(table.companyId, table.role),
-      employeeCodeIdx: index2("member_accounts_employee_code_idx").on(table.companyId, table.employeeCode)
-    }));
-    memberSessions2 = mysqlTable2("member_sessions", {
-      id: int2("id").autoincrement().primaryKey(),
-      memberAccountId: int2("memberAccountId").notNull().references(() => memberAccounts2.id, { onDelete: "cascade" }),
-      tokenHash: varchar2("tokenHash", { length: 128 }).notNull().unique(),
-      expiresAt: timestamp2("expiresAt").notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      accountExpiryIdx: index2("member_sessions_account_expiry_idx").on(table.memberAccountId, table.expiresAt)
-    }));
-    platformSessions2 = mysqlTable2("platform_sessions", {
-      id: int2("id").autoincrement().primaryKey(),
-      platformAdminId: int2("platformAdminId").notNull().references(() => platformAdmins2.id, { onDelete: "cascade" }),
-      tokenHash: varchar2("tokenHash", { length: 128 }).notNull().unique(),
-      expiresAt: timestamp2("expiresAt").notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      adminExpiryIdx: index2("platform_sessions_admin_expiry_idx").on(table.platformAdminId, table.expiresAt)
-    }));
-    clients2 = mysqlTable2("clients", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      name: varchar2("name", { length: 255 }).notNull(),
-      cnpj: varchar2("cnpj", { length: 30 }),
-      contactName: varchar2("contactName", { length: 255 }),
-      phone: varchar2("phone", { length: 50 }),
-      email: varchar2("email", { length: 320 }),
-      notes: text2("notes"),
-      active: boolean2("active").default(true).notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("clients_company_idx").on(table.companyId),
-      nameIdx: index2("clients_company_name_idx").on(table.companyId, table.name)
-    }));
-    brands = mysqlTable2("brands", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      clientId: int2("clientId").references(() => clients2.id, { onDelete: "set null" }),
-      name: varchar2("name", { length: 255 }).notNull(),
-      notes: text2("notes"),
-      active: boolean2("active").default(true).notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("brands_company_idx").on(table.companyId),
-      clientIdx: index2("brands_client_idx").on(table.clientId)
-    }));
-    retailChains = mysqlTable2("retail_chains", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      name: varchar2("name", { length: 255 }).notNull(),
-      notes: text2("notes"),
-      active: boolean2("active").default(true).notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("retail_chains_company_idx").on(table.companyId)
-    }));
-    stores = mysqlTable2("stores", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      clientId: int2("clientId").references(() => clients2.id, { onDelete: "set null" }),
-      brandId: int2("brandId").references(() => brands.id, { onDelete: "set null" }),
-      retailChainId: int2("retailChainId").references(() => retailChains.id, { onDelete: "set null" }),
-      name: varchar2("name", { length: 255 }).notNull(),
-      code: varchar2("code", { length: 50 }),
-      address: text2("address"),
-      city: varchar2("city", { length: 120 }).notNull(),
-      state: varchar2("state", { length: 2 }),
-      cep: varchar2("cep", { length: 20 }),
-      latitude: double("latitude"),
-      longitude: double("longitude"),
-      contactName: varchar2("contactName", { length: 255 }),
-      phone: varchar2("phone", { length: 50 }),
-      expectedVisitFrequency: varchar2("expectedVisitFrequency", { length: 50 }),
-      notes: text2("notes"),
-      active: boolean2("active").default(true).notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("stores_company_idx").on(table.companyId),
-      clientIdx: index2("stores_client_idx").on(table.clientId),
-      cityIdx: index2("stores_company_city_idx").on(table.companyId, table.city),
-      geoIdx: index2("stores_geo_idx").on(table.latitude, table.longitude)
-    }));
-    teams = mysqlTable2("teams", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      name: varchar2("name", { length: 255 }).notNull(),
-      supervisorId: int2("supervisorId"),
-      notes: text2("notes"),
-      active: boolean2("active").default(true).notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("teams_company_idx").on(table.companyId)
-    }));
-    routes = mysqlTable2("routes", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      name: varchar2("name", { length: 255 }).notNull(),
-      date: date2("date").notNull(),
-      promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
-      teamId: int2("teamId").references(() => teams.id, { onDelete: "set null" }),
-      status: mysqlEnum2("status", ["draft", "assigned", "in_progress", "completed", "cancelled"]).default("assigned").notNull(),
-      notes: text2("notes"),
-      createdByUserId: int2("createdByUserId"),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("routes_company_idx").on(table.companyId),
-      promoterDateIdx: index2("routes_promoter_date_idx").on(table.promoterId, table.date),
-      dateIdx: index2("routes_company_date_idx").on(table.companyId, table.date)
-    }));
-    visits = mysqlTable2("visits", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      routeId: int2("routeId").references(() => routes.id, { onDelete: "cascade" }),
-      storeId: int2("storeId").notNull().references(() => stores.id, { onDelete: "restrict" }),
-      promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
-      plannedStart: timestamp2("plannedStart"),
-      plannedEnd: timestamp2("plannedEnd"),
-      actualStart: timestamp2("actualStart"),
-      actualEnd: timestamp2("actualEnd"),
-      status: mysqlEnum2("status", ["pending", "in_progress", "completed", "not_done", "cancelled"]).default("pending").notNull(),
-      startLatitude: double("startLatitude"),
-      startLongitude: double("startLongitude"),
-      startAccuracy: double("startAccuracy"),
-      endLatitude: double("endLatitude"),
-      endLongitude: double("endLongitude"),
-      endAccuracy: double("endAccuracy"),
-      distanceMeters: double("distanceMeters"),
-      justification: text2("justification"),
-      notes: text2("notes"),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("visits_company_idx").on(table.companyId),
-      routeIdx: index2("visits_route_idx").on(table.routeId),
-      storeIdx: index2("visits_store_idx").on(table.storeId),
-      promoterIdx: index2("visits_promoter_idx").on(table.promoterId),
-      statusIdx: index2("visits_status_idx").on(table.companyId, table.status)
-    }));
-    timeEvents = mysqlTable2("time_events", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      memberAccountId: int2("memberAccountId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
-      eventType: mysqlEnum2("eventType", ["clock_in", "break_start", "break_end", "clock_out"]).notNull(),
-      serverTime: timestamp2("serverTime").defaultNow().notNull(),
-      deviceTime: timestamp2("deviceTime"),
-      latitude: double("latitude"),
-      longitude: double("longitude"),
-      accuracy: double("accuracy"),
-      locationStatus: mysqlEnum2("locationStatus", ["success", "permission_denied", "unavailable", "timeout", "error"]).default("success"),
-      locationError: text2("locationError"),
-      deviceInfo: text2("deviceInfo"),
-      idempotencyKey: varchar2("idempotencyKey", { length: 64 }),
-      synced: boolean2("synced").default(true).notNull(),
-      notes: text2("notes"),
-      createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("time_events_company_idx").on(table.companyId),
-      memberIdx: index2("time_events_member_idx").on(table.memberAccountId),
-      memberTimeIdx: index2("time_events_member_time_idx").on(table.memberAccountId, table.serverTime),
-      idempotencyIdx: uniqueIndex2("time_events_idempotency_unique").on(table.idempotencyKey)
-    }));
-    timeCorrectionRequests = mysqlTable2("time_correction_requests", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      memberAccountId: int2("memberAccountId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
-      timeEventId: int2("timeEventId").references(() => timeEvents.id, { onDelete: "set null" }),
-      requestedType: mysqlEnum2("requestedType", ["clock_in", "break_start", "break_end", "clock_out"]).notNull(),
-      requestedTime: timestamp2("requestedTime").notNull(),
-      justification: text2("justification").notNull(),
-      status: mysqlEnum2("status", ["pending", "approved", "rejected"]).default("pending").notNull(),
-      reviewedByUserId: int2("reviewedByUserId"),
-      reviewNotes: text2("reviewNotes"),
-      reviewedAt: timestamp2("reviewedAt"),
-      createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("time_corrections_company_idx").on(table.companyId),
-      memberIdx: index2("time_corrections_member_idx").on(table.memberAccountId),
-      statusIdx: index2("time_corrections_status_idx").on(table.companyId, table.status)
-    }));
-    checklists = mysqlTable2("checklists", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      name: varchar2("name", { length: 255 }).notNull(),
-      clientId: int2("clientId").references(() => clients2.id, { onDelete: "set null" }),
-      brandId: int2("brandId").references(() => brands.id, { onDelete: "set null" }),
-      description: text2("description"),
-      active: boolean2("active").default(true).notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("checklists_company_idx").on(table.companyId)
-    }));
-    checklistQuestions = mysqlTable2("checklist_questions", {
-      id: int2("id").autoincrement().primaryKey(),
-      checklistId: int2("checklistId").notNull().references(() => checklists.id, { onDelete: "cascade" }),
-      order: int2("order").notNull().default(0),
-      questionText: text2("questionText").notNull(),
-      questionType: mysqlEnum2("questionType", ["text", "yes_no", "select", "number", "photo", "observation"]).notNull(),
-      required: boolean2("required").default(false).notNull(),
-      options: text2("options"),
-      // JSON for select options
-      createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      checklistIdx: index2("checklist_questions_checklist_idx").on(table.checklistId)
-    }));
-    checklistResponses = mysqlTable2("checklist_responses", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      visitId: int2("visitId").notNull().references(() => visits.id, { onDelete: "cascade" }),
-      checklistId: int2("checklistId").notNull().references(() => checklists.id, { onDelete: "restrict" }),
-      promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
-      responses: text2("responses").notNull(),
-      // JSON
-      completedAt: timestamp2("completedAt").defaultNow().notNull(),
-      createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      visitIdx: index2("checklist_responses_visit_idx").on(table.visitId),
-      companyIdx: index2("checklist_responses_company_idx").on(table.companyId)
-    }));
-    evidences = mysqlTable2("evidences", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
-      visitId: int2("visitId").references(() => visits.id, { onDelete: "cascade" }),
-      checklistResponseId: int2("checklistResponseId").references(() => checklistResponses.id, { onDelete: "cascade" }),
-      promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
-      fileUrl: text2("fileUrl").notNull(),
-      fileName: varchar2("fileName", { length: 255 }),
-      mimeType: varchar2("mimeType", { length: 100 }),
-      sizeBytes: int2("sizeBytes"),
-      caption: text2("caption"),
-      latitude: double("latitude"),
-      longitude: double("longitude"),
-      createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("evidences_company_idx").on(table.companyId),
-      visitIdx: index2("evidences_visit_idx").on(table.visitId)
-    }));
-    auditLogs2 = mysqlTable2("audit_logs", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").references(() => companies2.id, { onDelete: "cascade" }),
-      userId: int2("userId"),
-      userName: varchar2("userName", { length: 255 }),
-      userEmail: varchar2("userEmail", { length: 320 }),
-      action: varchar2("action", { length: 64 }).notNull(),
-      module: varchar2("module", { length: 64 }).notNull(),
-      entityType: varchar2("entityType", { length: 64 }).notNull(),
-      entityId: int2("entityId"),
-      entityLabel: varchar2("entityLabel", { length: 255 }),
-      description: text2("description").notNull(),
-      oldData: text2("oldData"),
-      newData: text2("newData"),
-      ipAddress: varchar2("ipAddress", { length: 64 }),
-      userAgent: varchar2("userAgent", { length: 512 }),
-      createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("audit_logs_company_idx").on(table.companyId),
-      companyCreatedIdx: index2("audit_logs_company_created_idx").on(table.companyId, table.createdAt),
-      userIdx: index2("audit_logs_user_idx").on(table.userId),
-      entityIdx: index2("audit_logs_entity_idx").on(table.entityType, table.entityId),
-      actionIdx: index2("audit_logs_action_idx").on(table.action),
-      moduleIdx: index2("audit_logs_module_idx").on(table.module),
-      createdIdx: index2("audit_logs_created_idx").on(table.createdAt)
-    }));
-    subscriptionPlans2 = mysqlTable2("subscription_plans", {
-      id: int2("id").autoincrement().primaryKey(),
-      name: varchar2("name", { length: 120 }).notNull(),
-      description: text2("description"),
-      price: decimal2("price", { precision: 12, scale: 2 }).notNull().default("0.00"),
-      billingCycle: mysqlEnum2("billingCycle", ["monthly", "yearly"]).notNull().default("monthly"),
-      maxUsers: int2("maxUsers"),
-      maxPromoters: int2("maxPromoters"),
-      maxStores: int2("maxStores"),
-      maxClients: int2("maxClients"),
-      featureDashboard: boolean2("featureDashboard").notNull().default(true),
-      featureTimeTracking: boolean2("featureTimeTracking").notNull().default(true),
-      featureRoutes: boolean2("featureRoutes").notNull().default(true),
-      featureChecklists: boolean2("featureChecklists").notNull().default(true),
-      featureReports: boolean2("featureReports").notNull().default(true),
-      featureOffline: boolean2("featureOffline").notNull().default(true),
-      availableForNew: boolean2("availableForNew").notNull().default(true),
-      active: boolean2("active").notNull().default(true),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      nameIdx: index2("subscription_plans_name_idx").on(table.name),
-      availableIdx: index2("subscription_plans_available_idx").on(table.availableForNew, table.active)
-    }));
-    companySubscriptions2 = mysqlTable2("company_subscriptions", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "cascade" }),
-      planId: int2("planId").notNull().references(() => subscriptionPlans2.id, { onDelete: "restrict" }),
-      status: mysqlEnum2("status", ["trial", "active", "pending", "overdue", "suspended", "canceled", "expired"]).notNull(),
-      startedAt: timestamp2("startedAt").defaultNow().notNull(),
-      expiresAt: timestamp2("expiresAt"),
-      asaasSubscriptionId: varchar2("asaasSubscriptionId", { length: 64 }),
-      createdAt: timestamp2("createdAt").defaultNow().notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("company_subscriptions_company_idx").on(table.companyId)
-    }));
-    systemSettings2 = mysqlTable2("system_settings", {
-      id: int2("id").autoincrement().primaryKey(),
-      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "cascade" }),
-      settingKey: varchar2("settingKey", { length: 100 }).notNull(),
-      settingValue: text2("settingValue").notNull(),
-      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      accountKeyUnique: uniqueIndex2("system_settings_company_key_unique").on(table.companyId, table.settingKey),
-      companyIdx: index2("system_settings_company_idx").on(table.companyId)
-    }));
   }
 });
 
@@ -2457,7 +2510,7 @@ var adminProcedure = platformProcedure;
 // server/modules/timeTracking.ts
 init_db();
 init_schema();
-import { eq as eq2, and as and2, desc as desc2 } from "drizzle-orm";
+import { eq as eq2, and as and2, desc as desc2, gte, lt } from "drizzle-orm";
 
 // server/audit.ts
 init_db();
@@ -2631,6 +2684,7 @@ async function listAuditLogs(filters = {}) {
   if (!pool) return { items: [], total: 0, page, pageSize };
   const where = [];
   const params = [];
+  where.push("`module` NOT IN ('clients', 'orders', 'extinguishers', 'trash')");
   if (filters.companyId != null) {
     where.push("`companyId` = ?");
     params.push(Number(filters.companyId));
@@ -2803,10 +2857,10 @@ var timeTrackingRouter = router({
   registerEvent: commercialProcedure.input(z.object({
     eventType: timeEventType,
     deviceTime: z.string().datetime().optional(),
-    latitude: z.number().optional(),
-    longitude: z.number().optional(),
-    accuracy: z.number().optional(),
-    locationStatus: z.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    accuracy: z.number().finite().nonnegative().max(1e4),
+    locationStatus: z.literal("success"),
     locationError: z.string().optional(),
     deviceInfo: z.string().optional(),
     idempotencyKey: z.string().min(1).optional(),
@@ -2815,6 +2869,9 @@ var timeTrackingRouter = router({
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) throw new TRPCError2({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
+    if (!Number.isFinite(input.latitude) || !Number.isFinite(input.longitude) || !Number.isFinite(input.accuracy) || input.locationStatus !== "success") {
+      throw new TRPCError2({ code: "BAD_REQUEST", message: "O ponto s\xF3 pode ser registrado ap\xF3s obter uma localiza\xE7\xE3o GPS v\xE1lida." });
+    }
     const database = await getDb();
     if (!database) throw new TRPCError2({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     if (input.idempotencyKey) {
@@ -2853,16 +2910,30 @@ var timeTrackingRouter = router({
     });
     return inserted;
   }),
-  myHistory: commercialProcedure.input(z.object({ limit: z.number().min(1).max(100).default(50) }).optional()).query(async ({ ctx, input }) => {
+  myHistory: commercialProcedure.input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional()).query(async ({ ctx, input }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) return [];
     const database = await getDb();
     if (!database) return [];
-    return database.select().from(timeEvents).where(and2(eq2(timeEvents.memberAccountId, memberId), eq2(timeEvents.companyId, companyId))).orderBy(desc2(timeEvents.serverTime)).limit(input?.limit || 50);
+    const conditions = [eq2(timeEvents.memberAccountId, memberId), eq2(timeEvents.companyId, companyId)];
+    if (input?.date) {
+      const start = /* @__PURE__ */ new Date(`${input.date}T00:00:00.000Z`);
+      const end = new Date(start.getTime() + 864e5);
+      conditions.push(gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end));
+    }
+    return database.select().from(timeEvents).where(and2(...conditions)).orderBy(desc2(timeEvents.serverTime)).limit(input?.limit || 100);
+  }),
+  myCorrections: commercialProcedure.query(async ({ ctx }) => {
+    const companyId = ctx.accountId;
+    const memberId = ctx.memberAccountId;
+    if (!companyId || !memberId) return [];
+    const database = await getDb();
+    if (!database) return [];
+    return database.select({ request: timeCorrectionRequests, event: timeEvents }).from(timeCorrectionRequests).leftJoin(timeEvents, eq2(timeCorrectionRequests.timeEventId, timeEvents.id)).where(and2(eq2(timeCorrectionRequests.companyId, companyId), eq2(timeCorrectionRequests.memberAccountId, memberId))).orderBy(desc2(timeCorrectionRequests.createdAt));
   }),
   requestCorrection: commercialProcedure.input(z.object({
-    timeEventId: z.number().optional(),
+    timeEventId: z.number().int().positive(),
     requestedType: timeEventType,
     requestedTime: z.string().datetime(),
     justification: z.string().min(10)
@@ -2872,6 +2943,8 @@ var timeTrackingRouter = router({
     if (!companyId || !memberId) throw new TRPCError2({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
     const database = await getDb();
     if (!database) throw new TRPCError2({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+    const event = await database.select().from(timeEvents).where(and2(eq2(timeEvents.id, input.timeEventId), eq2(timeEvents.companyId, companyId), eq2(timeEvents.memberAccountId, memberId))).limit(1);
+    if (!event[0]) throw new TRPCError2({ code: "NOT_FOUND", message: "Marca\xE7\xE3o n\xE3o encontrada para este funcion\xE1rio." });
     const result = await database.insert(timeCorrectionRequests).values({
       companyId,
       memberAccountId: memberId,
@@ -2892,6 +2965,32 @@ var timeTrackingRouter = router({
       description: "Solicita\xE7\xE3o de corre\xE7\xE3o de ponto"
     });
     return inserted;
+  }),
+  correctionRequests: router({
+    pending: companyAdminProcedure.query(async ({ ctx }) => {
+      const database = await getDb();
+      if (!database) return [];
+      return database.select({ request: timeCorrectionRequests, event: timeEvents, employee: memberAccounts2 }).from(timeCorrectionRequests).innerJoin(memberAccounts2, eq2(timeCorrectionRequests.memberAccountId, memberAccounts2.id)).leftJoin(timeEvents, eq2(timeCorrectionRequests.timeEventId, timeEvents.id)).where(and2(eq2(timeCorrectionRequests.companyId, ctx.accountId), eq2(timeCorrectionRequests.status, "pending"))).orderBy(desc2(timeCorrectionRequests.createdAt));
+    }),
+    review: companyAdminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["approved", "rejected"]), reviewNotes: z.string().max(1e3).optional() })).mutation(async ({ ctx, input }) => {
+      const database = await getDb();
+      if (!database) throw new TRPCError2({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+      const rows = await database.select().from(timeCorrectionRequests).where(and2(eq2(timeCorrectionRequests.id, input.id), eq2(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
+      const request = rows[0];
+      if (!request) throw new TRPCError2({ code: "NOT_FOUND", message: "Solicita\xE7\xE3o de corre\xE7\xE3o n\xE3o encontrada." });
+      if (request.status !== "pending") throw new TRPCError2({ code: "BAD_REQUEST", message: "Esta solicita\xE7\xE3o j\xE1 foi analisada." });
+      if (input.status === "approved") {
+        const event = request.timeEventId ? (await database.select().from(timeEvents).where(and2(eq2(timeEvents.id, request.timeEventId), eq2(timeEvents.companyId, ctx.accountId))).limit(1))[0] : null;
+        if (!event) throw new TRPCError2({ code: "NOT_FOUND", message: "A marca\xE7\xE3o original n\xE3o foi encontrada." });
+        const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
+        const note = `Ajuste aprovado em ${(/* @__PURE__ */ new Date()).toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcion\xE1rio: ${request.justification}`;
+        await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}
+` : ""}${note}` }).where(eq2(timeEvents.id, event.id));
+      }
+      await database.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: /* @__PURE__ */ new Date(), reviewNotes: input.reviewNotes || null }).where(eq2(timeCorrectionRequests.id, request.id));
+      await auditFromCtx(ctx, { action: input.status === "approved" ? "update" : "security", module: "time_tracking", entityType: "correction_request", entityId: request.id, description: `Solicita\xE7\xE3o de corre\xE7\xE3o ${input.status === "approved" ? "aprovada" : "rejeitada"}`, newData: { status: input.status, reviewNotes: input.reviewNotes || null } });
+      return { success: true };
+    })
   })
 });
 
@@ -3402,11 +3501,7 @@ async function assertExtinguisherLimit(companyId) {
   return plan;
 }
 async function assertUserLimit(companyId) {
-  const plan = await requirePlanFeature(
-    companyId,
-    "featureUsers",
-    "Gest\xE3o de usu\xE1rios da equipe n\xE3o est\xE1 dispon\xEDvel no seu plano. Fa\xE7a upgrade para o Profissional ou Empresarial."
-  );
+  const plan = await getEffectivePlan(companyId);
   if (plan.maxUsers == null) return plan;
   const current = await countUsers(companyId);
   if (current >= plan.maxUsers) {
@@ -3702,7 +3797,22 @@ var appRouter = router({
       })
     }),
     dashboard: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), city: z3.string().optional(), from: z3.string().optional(), to: z3.string().optional() })).query(({ input }) => getPlatformDashboardStats(input.companyId, input)),
-    users: platformProcedure.query(() => listMemberAccounts()),
+    users: router({
+      list: platformProcedure.query(() => listMemberAccounts()),
+      create: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), userName: z3.string().min(2), email: z3.string().email(), password: z3.string().min(8), role: companyUserRole })).mutation(async ({ input, ctx }) => {
+        const company = await getCompanyById(input.companyId);
+        if (!company) throw new TRPCError5({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+        if (!company.active) throw new TRPCError5({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
+        try {
+          const created = await createCompanyUser(input);
+          void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usu\xE1rio criado pelo administrador geral: ${input.userName}`, newData: { companyId: input.companyId, email: input.email, role: input.role } });
+          return created;
+        } catch (error) {
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError5({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          throw error;
+        }
+      })
+    }),
     data: router({
       clients: platformProcedure.input(z3.object({ companyId: z3.number().int().positive().optional() }).optional()).query(({ input }) => getPlatformClients(input?.companyId)),
       clientsPage: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), page: z3.number().int().positive().optional(), pageSize: z3.number().int().positive().max(100).optional(), city: z3.string().optional(), search: z3.string().optional() })).query(({ input }) => getClientsPage(input.companyId, input)),
@@ -4169,6 +4279,39 @@ var appRouter = router({
         })();
       }
       return result;
+    })
+  }),
+  operations: router({
+    stores: router({
+      list: commercialProcedure.input(z3.object({ search: z3.string().optional() }).optional()).query(({ ctx, input }) => listOperationalStores(ctx.accountId, input?.search)),
+      create: commercialProcedure.input(z3.object({ name: z3.string().min(2), city: z3.string().min(2), address: z3.string().optional(), state: z3.string().length(2).optional(), cep: z3.string().optional(), code: z3.string().optional(), latitude: z3.number().optional(), longitude: z3.number().optional(), notes: z3.string().optional() })).mutation(async ({ ctx, input }) => {
+        if (ctx.user.role === "promoter") throw new TRPCError5({ code: "FORBIDDEN", message: "Promotores n\xE3o podem cadastrar lojas." });
+        return createOperationalStore({ ...input, companyId: ctx.accountId, active: true });
+      })
+    }),
+    routes: router({
+      list: commercialProcedure.input(z3.object({ date: z3.string().optional(), promoterId: z3.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
+      create: commercialProcedure.input(z3.object({ name: z3.string().min(2), date: z3.string().min(8), promoterId: z3.number().int().positive(), teamId: z3.number().int().positive().optional(), notes: z3.string().optional() })).mutation(async ({ ctx, input }) => {
+        if (ctx.user.role === "promoter") throw new TRPCError5({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
+        return createOperationalRoute({ ...input, date: /* @__PURE__ */ new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" });
+      })
+    }),
+    visits: router({
+      today: commercialProcedure.query(({ ctx }) => listOperationalVisits(ctx.accountId, { date: (/* @__PURE__ */ new Date()).toISOString().slice(0, 10), promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : void 0 })),
+      list: commercialProcedure.input(z3.object({ date: z3.string().optional(), routeId: z3.number().int().positive().optional(), promoterId: z3.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
+      start: commercialProcedure.input(z3.object({ id: z3.number().int().positive(), latitude: z3.number().optional(), longitude: z3.number().optional(), accuracy: z3.number().optional() })).mutation(async ({ ctx, input }) => {
+        const visit = await listOperationalVisits(ctx.accountId, { promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : void 0 });
+        const owned = visit.find((row2) => row2.visit.id === input.id);
+        if (!owned) throw new TRPCError5({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        if (ctx.user.role === "promoter" && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError5({ code: "FORBIDDEN", message: "Visita n\xE3o pertence ao promotor autenticado." });
+        return updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: /* @__PURE__ */ new Date(), startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
+      }),
+      complete: commercialProcedure.input(z3.object({ id: z3.number().int().positive(), latitude: z3.number().optional(), longitude: z3.number().optional(), accuracy: z3.number().optional(), notes: z3.string().optional() })).mutation(async ({ ctx, input }) => {
+        const visit = await listOperationalVisits(ctx.accountId, { promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : void 0 });
+        const owned = visit.find((row2) => row2.visit.id === input.id);
+        if (!owned) throw new TRPCError5({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        return updateOperationalVisit(ctx.accountId, input.id, { status: "completed", actualEnd: /* @__PURE__ */ new Date(), endLatitude: input.latitude, endLongitude: input.longitude, endAccuracy: input.accuracy, notes: input.notes });
+      })
     })
   }),
   audit: router({

@@ -114,7 +114,7 @@ export default function UpgradePlanPage() {
             <div>
               <p className="text-xs uppercase tracking-wide text-slate-400">Limites</p>
               <p>
-                Usuários: {plan?.maxUsers ?? "∞"} · Clientes: {plan?.maxClients ?? "∞"} · Extintores:{" "}
+                Usuários: {plan?.maxUsers ?? "∞"} · Clientes: {plan?.maxClients ?? "∞"} · Pontos de venda:{" "}
                 {plan?.maxExtinguishers ?? "∞"}
               </p>
             </div>
@@ -155,7 +155,7 @@ export default function UpgradePlanPage() {
                     <ul className="space-y-1 text-sm text-slate-300">
                       <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Usuários: {p.maxUsers ?? "Ilimitado"}</li>
                       <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Clientes: {p.maxClients ?? "Ilimitado"}</li>
-                      <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Extintores: {p.maxExtinguishers ?? "Ilimitado"}</li>
+                      <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Pontos de venda: {p.maxExtinguishers ?? "Ilimitado"}</li>
                     </ul>
                     <Button
                       className="w-full"

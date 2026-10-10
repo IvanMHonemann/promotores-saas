@@ -260,11 +260,15 @@ export async function createCompanyWithAdmin(input: {
 export async function createCompanyUser(input: { companyId: number; userName: string; email: string; password: string; role: "company_admin" | "supervisor" | "promoter" }) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
+  const userName = input.userName.trim();
+  const email = input.email.trim().toLowerCase();
+  if (userName.length < 2) throw new Error("Informe o nome completo do usuário.");
+  if (email.length < 3) throw new Error("Informe um e-mail válido.");
   const recoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
   const result = await db.insert(memberAccounts).values({
     companyId: input.companyId,
-    userName: input.userName.trim(),
-    email: input.email.trim().toLowerCase(),
+    userName,
+    email,
     passwordHash: hashPassword(input.password),
     recoveryCodeHash: hashPassword(recoveryCode),
     role: input.role,

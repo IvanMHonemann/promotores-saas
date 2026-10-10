@@ -3370,11 +3370,15 @@ async function createCompanyWithAdmin(input) {
 async function createCompanyUser(input) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
+  const userName = input.userName.trim();
+  const email = input.email.trim().toLowerCase();
+  if (userName.length < 2) throw new Error("Informe o nome completo do usu\xE1rio.");
+  if (email.length < 3) throw new Error("Informe um e-mail v\xE1lido.");
   const recoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
   const result = await db.insert(memberAccounts).values({
     companyId: input.companyId,
-    userName: input.userName.trim(),
-    email: input.email.trim().toLowerCase(),
+    userName,
+    email,
     passwordHash: hashPassword(input.password),
     recoveryCodeHash: hashPassword(recoveryCode),
     role: input.role,
@@ -3540,17 +3544,16 @@ async function assertExtinguisherLimit(companyId) {
   return plan;
 }
 async function assertUserLimit(companyId) {
-  const plan = await getEffectivePlan(companyId);
-  if (plan.maxUsers == null) return plan;
   const current = await countUsers(companyId);
-  if (current >= plan.maxUsers) {
+  const safeLimit = 1e3;
+  if (current >= safeLimit) {
     throw new TRPCError4({
       code: "FORBIDDEN",
-      message: `Limite de usu\xE1rios do plano ${plan.name} atingido (${plan.maxUsers}). Fa\xE7a upgrade para adicionar mais usu\xE1rios.`,
-      cause: { code: "PLAN_LIMIT", resource: "users", limit: plan.maxUsers, current }
+      message: `Limite operacional de usu\xE1rios atingido (${safeLimit}).`,
+      cause: { code: "PLAN_LIMIT", resource: "users", limit: safeLimit, current }
     });
   }
-  return plan;
+  return { id: null, name: "Opera\xE7\xE3o", maxUsers: safeLimit };
 }
 async function assertServiceOrderFeature(companyId) {
   return requirePlanFeature(

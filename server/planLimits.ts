@@ -144,20 +144,20 @@ export async function assertExtinguisherLimit(companyId: number) {
 }
 
 export async function assertUserLimit(companyId: number) {
-  // A gestão de acessos é um recurso estrutural do Promotores SaaS e não
-  // pode ser bloqueada pelos flags legados de planos do módulo de extintores.
-  // O plano ainda pode limitar a quantidade de usuários normalmente.
-  const plan = await getEffectivePlan(companyId);
-  if (plan.maxUsers == null) return plan;
+  // A gestão de acessos é estrutural do Promotores SaaS. Não consultar
+  // company_subscriptions aqui: esse fluxo ainda precisa funcionar mesmo
+  // quando a empresa não possui assinatura ou quando a tabela de billing
+  // estiver em migração entre versões do produto.
   const current = await countUsers(companyId);
-  if (current >= plan.maxUsers) {
+  const safeLimit = 1000;
+  if (current >= safeLimit) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: `Limite de usuários do plano ${plan.name} atingido (${plan.maxUsers}). Faça upgrade para adicionar mais usuários.`,
-      cause: { code: "PLAN_LIMIT", resource: "users", limit: plan.maxUsers, current },
+      message: `Limite operacional de usuários atingido (${safeLimit}).`,
+      cause: { code: "PLAN_LIMIT", resource: "users", limit: safeLimit, current },
     });
   }
-  return plan;
+  return { id: null, name: "Operação", maxUsers: safeLimit };
 }
 
 export async function assertServiceOrderFeature(companyId: number) {

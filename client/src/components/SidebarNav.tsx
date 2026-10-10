@@ -38,7 +38,7 @@ export function SidebarNav() {
         ];
   const close = () => setOpen(false);
   return <>
-    <div className="flex h-14 items-center gap-3 px-4 lg:hidden"><button type="button" className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-slate-200 hover:bg-white/10 hover:text-white" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button><span className="text-sm font-semibold text-slate-300">Menu da operação</span></div>
+    <div className="flex h-14 items-center gap-3 border-b border-white/10 bg-[#07111f] px-4 lg:hidden"><button type="button" className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-slate-200 hover:bg-white/10 hover:text-white" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button><span className="text-sm font-semibold text-slate-300">Menu da operação</span></div>
     {open && <button type="button" className="fixed inset-0 z-40 bg-slate-950/75 lg:hidden" onClick={close} aria-label="Fechar menu" />}
     <aside className={`${open ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-white/10 bg-[#091525] p-5 shadow-2xl transition-transform lg:translate-x-0 lg:shadow-none`}>
       <div className="flex items-center justify-between"><BrandLogo height={40} /><button type="button" className="rounded-lg p-2 text-slate-300 hover:bg-white/10 lg:hidden" onClick={close} aria-label="Fechar menu"><X className="h-5 w-5" /></button></div>

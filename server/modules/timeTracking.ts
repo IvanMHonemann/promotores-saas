@@ -9,6 +9,16 @@ import { auditFromCtx } from "../audit";
 const timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 type TimeEventType = z.infer<typeof timeEventType>;
 
+function localDay(date: Date, timeZone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
 function isValidTransition(last: TimeEventType | undefined, next: TimeEventType) {
   if (!last) return next === "clock_in";
   const transitions: Record<TimeEventType, TimeEventType[]> = {
@@ -21,6 +31,23 @@ function isValidTransition(last: TimeEventType | undefined, next: TimeEventType)
 }
 
 export const timeTrackingRouter = router({
+  shiftStatus: commercialProcedure
+    .input(z.object({ timeZone: z.string().min(1).default("UTC") }).optional())
+    .query(async ({ ctx, input }) => {
+      const companyId = ctx.accountId;
+      const memberId = ctx.memberAccountId;
+      const timeZone = input?.timeZone || "UTC";
+      if (!companyId || !memberId) return { status: "clock_in_required" as const, active: false, timeZone, localDate: localDay(new Date(), timeZone) };
+      const database = await db.getDb();
+      if (!database) return { status: "clock_in_required" as const, active: false, timeZone, localDate: localDay(new Date(), timeZone) };
+      const today = localDay(new Date(), timeZone);
+      const events = await database.select().from(timeEvents).where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId))).orderBy(desc(timeEvents.serverTime)).limit(100);
+      const todayEvents = events.filter((event) => localDay(event.deviceTime || event.serverTime, timeZone) === today);
+      const last = todayEvents[0];
+      const active = Boolean(last && last.eventType !== "clock_out");
+      return { status: active ? "active" as const : last?.eventType === "clock_out" ? "closed" as const : "clock_in_required" as const, active, timeZone, localDate: today, lastEvent: last?.eventType || null };
+    }),
+
   registerEvent: commercialProcedure
     .input(z.object({
       eventType: timeEventType,
@@ -32,6 +59,7 @@ export const timeTrackingRouter = router({
       locationError: z.string().optional(),
       deviceInfo: z.string().optional(),
       idempotencyKey: z.string().min(1).optional(),
+      timeZone: z.string().min(1),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -54,6 +82,11 @@ export const timeTrackingRouter = router({
         .where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId)))
         .orderBy(desc(timeEvents.serverTime)).limit(1);
       const lastType = lastEvents[0]?.eventType as TimeEventType | undefined;
+      const today = localDay(new Date(), input.timeZone);
+      const todayEvents = lastEvents.length ? (await database.select().from(timeEvents).where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId))).orderBy(desc(timeEvents.serverTime)).limit(100)).filter((event) => localDay(event.deviceTime || event.serverTime, input.timeZone) === today) : [];
+      const lastToday = todayEvents[0]?.eventType as TimeEventType | undefined;
+      if (input.eventType === "clock_in" && lastToday === "clock_out") throw new TRPCError({ code: "BAD_REQUEST", message: "A jornada de hoje já foi encerrada. O próximo acesso será liberado no próximo dia." });
+      if (input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) throw new TRPCError({ code: "BAD_REQUEST", message: "Bata a entrada antes de registrar este evento." });
       if (!isValidTransition(lastType, input.eventType)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Sequência de marcação inválida. Confira o último evento do ponto." });
       }

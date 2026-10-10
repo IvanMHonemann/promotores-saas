@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "pnpm run build",
+  "buildCommand": "node scripts/guarded-time-tracking-migrate.mjs && pnpm run build",
   "installCommand": "corepack enable && pnpm install",
   "outputDirectory": "dist/public",
   "framework": null,

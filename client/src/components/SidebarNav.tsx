@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarDays, ClipboardList, Clock3, CreditCard, LayoutDashboard, LogOut, Menu, UserRound, UsersRound, X } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,11 @@ const roleLabels: Record<string, string> = {
 export function SidebarNav() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const openMenu = () => setOpen(true);
+    window.addEventListener("promotores:open-sidebar", openMenu);
+    return () => window.removeEventListener("promotores:open-sidebar", openMenu);
+  }, []);
   const role = user?.role;
   const links = role === "platform_admin"
     ? [
@@ -38,7 +43,6 @@ export function SidebarNav() {
         ];
   const close = () => setOpen(false);
   return <>
-    <div className="flex h-14 items-center gap-3 border-b border-white/10 bg-[#07111f] px-4 lg:hidden"><button type="button" className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-slate-200 hover:bg-white/10 hover:text-white" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button><span className="text-sm font-semibold text-slate-300">Menu da operação</span></div>
     {open && <button type="button" className="fixed inset-0 z-40 bg-slate-950/75 lg:hidden" onClick={close} aria-label="Fechar menu" />}
     <aside className={`${open ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-white/10 bg-[#091525] p-5 shadow-2xl transition-transform lg:translate-x-0 lg:shadow-none`}>
       <div className="flex items-center justify-between"><BrandLogo height={40} /><button type="button" className="rounded-lg p-2 text-slate-300 hover:bg-white/10 lg:hidden" onClick={close} aria-label="Fechar menu"><X className="h-5 w-5" /></button></div>
@@ -47,4 +51,8 @@ export function SidebarNav() {
       <div className="mt-auto border-t border-white/10 pt-4"><Button variant="ghost" className="w-full justify-start text-slate-300 hover:bg-white/5 hover:text-white" onClick={() => void logout()}><LogOut className="mr-2 h-4 w-4" />Sair</Button></div>
     </aside>
   </>;
+}
+
+export function SidebarMenuButton() {
+  return <button type="button" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-slate-200 hover:bg-white/10 hover:text-white lg:hidden" onClick={() => window.dispatchEvent(new Event("promotores:open-sidebar"))} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button>;
 }

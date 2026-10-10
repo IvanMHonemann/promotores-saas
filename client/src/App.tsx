@@ -20,6 +20,7 @@ import BackupPage from "./pages/BackupPage";
 import SyncStatusPage from "./pages/SyncStatusPage";
 import AuditPage from "./pages/AuditPage";
 import PromoterDashboard from "./pages/promoter/PromoterDashboard";
+import OperationsDashboard from "./pages/operations/OperationsDashboard";
 import { PwaStatusBar } from "./components/PwaStatusBar";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
@@ -54,7 +55,9 @@ function RootRoute() {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <LandingPage />;
-  return user.role === "promoter" ? <PromoterDashboard /> : <Home />;
+  if (user.role === "promoter") return <PromoterDashboard />;
+  if (user.companyId && ["company_admin", "supervisor"].includes(user.role)) return <OperationsDashboard />;
+  return <Home />;
 }
 
 function Router() {
@@ -66,7 +69,7 @@ function Router() {
       <Route path="/planos" component={PublicPlansPage} />
       {/* QR operacional da empresa (dados de gestão — distinto do selo Inmetro) */}
       <Route path="/e/:token" component={PublicExtinguisherPage} />
-      {/* Raiz: visitante → landing estática; autenticado → painel modular (pages/home) */}
+      {/* Raiz: visitante → landing; autenticado → operação de campo ou compatibilidade legada */}
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/usuarios"><AdminProtected><AdminUsersPage /></AdminProtected></Route>
       <Route path="/admin/assinaturas"><AdminProtected><AdminAssinaturasPage /></AdminProtected></Route>

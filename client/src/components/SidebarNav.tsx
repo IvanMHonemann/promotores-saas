@@ -17,8 +17,8 @@ export function SidebarNav() {
   const isAdmin = user?.role === "company_admin";
   const links = isPromoter
     ? [
-        { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
         { href: "/#ponto", label: "Ponto eletrônico", icon: Clock3 },
+        { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
         { href: "/#historico", label: "Histórico e GPS", icon: CalendarDays },
         { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
         { href: "/#correcoes", label: "Correções de ponto", icon: ClipboardList },
@@ -32,7 +32,7 @@ export function SidebarNav() {
       ];
   const close = () => setOpen(false);
   return <>
-    <button type="button" className="fixed left-4 top-4 z-40 grid h-11 w-11 place-items-center rounded-xl border border-white/15 bg-slate-950/90 text-white shadow-xl backdrop-blur lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button>
+    <div className="flex h-14 items-center px-4 lg:hidden"><button type="button" className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-slate-200 hover:bg-white/10 hover:text-white" onClick={() => setOpen(true)} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button><span className="ml-3 text-sm font-semibold text-slate-300">Menu da operação</span></div>
     {open && <button type="button" className="fixed inset-0 z-40 bg-slate-950/75 lg:hidden" onClick={close} aria-label="Fechar menu" />}
     <aside className={`${open ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-white/10 bg-[#091525] p-5 shadow-2xl transition-transform lg:translate-x-0`}>
       <div className="flex items-center justify-between"><div><p className="text-sm font-black tracking-wide text-teal-200">PROMOTORES</p><p className="text-xs font-semibold tracking-[.25em] text-slate-400">SaaS</p></div><button type="button" className="rounded-lg p-2 text-slate-300 hover:bg-white/10 lg:hidden" onClick={close} aria-label="Fechar menu"><X className="h-5 w-5" /></button></div>

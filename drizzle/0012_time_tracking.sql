@@ -1,0 +1,48 @@
+-- Cria as tabelas necessárias para consultar a jornada e registrar marcações de ponto.
+CREATE TABLE IF NOT EXISTS `time_events` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `companyId` int NOT NULL,
+  `memberAccountId` int NOT NULL,
+  `eventType` enum('clock_in','break_start','break_end','clock_out') NOT NULL,
+  `serverTime` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `deviceTime` timestamp NULL,
+  `latitude` double NULL,
+  `longitude` double NULL,
+  `accuracy` double NULL,
+  `locationStatus` enum('success','permission_denied','unavailable','timeout','error') NOT NULL DEFAULT 'success',
+  `locationError` text NULL,
+  `deviceInfo` text NULL,
+  `idempotencyKey` varchar(64) NULL,
+  `synced` boolean NOT NULL DEFAULT true,
+  `notes` text NULL,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT `time_events_id` PRIMARY KEY (`id`),
+  CONSTRAINT `time_events_companyId_companies_id_fk` FOREIGN KEY (`companyId`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT `time_events_memberAccountId_member_accounts_id_fk` FOREIGN KEY (`memberAccountId`) REFERENCES `member_accounts` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  UNIQUE KEY `time_events_idempotency_unique` (`idempotencyKey`),
+  KEY `time_events_company_idx` (`companyId`),
+  KEY `time_events_member_idx` (`memberAccountId`),
+  KEY `time_events_member_time_idx` (`memberAccountId`, `serverTime`)
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `time_correction_requests` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `companyId` int NOT NULL,
+  `memberAccountId` int NOT NULL,
+  `timeEventId` int NULL,
+  `requestedType` enum('clock_in','break_start','break_end','clock_out') NOT NULL,
+  `requestedTime` timestamp NOT NULL,
+  `justification` text NOT NULL,
+  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `reviewedByUserId` int NULL,
+  `reviewNotes` text NULL,
+  `reviewedAt` timestamp NULL,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT `time_correction_requests_id` PRIMARY KEY (`id`),
+  CONSTRAINT `time_corrections_companyId_companies_id_fk` FOREIGN KEY (`companyId`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT `time_corrections_memberAccountId_member_accounts_id_fk` FOREIGN KEY (`memberAccountId`) REFERENCES `member_accounts` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT `time_corrections_timeEventId_time_events_id_fk` FOREIGN KEY (`timeEventId`) REFERENCES `time_events` (`id`) ON DELETE SET NULL ON UPDATE NO ACTION,
+  KEY `time_corrections_company_idx` (`companyId`),
+  KEY `time_corrections_member_idx` (`memberAccountId`),
+  KEY `time_corrections_status_idx` (`companyId`, `status`)
+);

@@ -25,10 +25,10 @@ export const timeTrackingRouter = router({
     .input(z.object({
       eventType: timeEventType,
       deviceTime: z.string().datetime().optional(),
-      latitude: z.number().optional(),
-      longitude: z.number().optional(),
-      accuracy: z.number().optional(),
-      locationStatus: z.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+      accuracy: z.number().finite().nonnegative().max(10000),
+      locationStatus: z.literal("success"),
       locationError: z.string().optional(),
       deviceInfo: z.string().optional(),
       idempotencyKey: z.string().min(1).optional(),
@@ -38,6 +38,9 @@ export const timeTrackingRouter = router({
       const companyId = ctx.accountId;
       const memberId = ctx.memberAccountId;
       if (!companyId || !memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário de empresa não identificado." });
+      if (!Number.isFinite(input.latitude) || !Number.isFinite(input.longitude) || !Number.isFinite(input.accuracy) || input.locationStatus !== "success") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "O ponto só pode ser registrado após obter uma localização GPS válida." });
+      }
       const database = await db.getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
 

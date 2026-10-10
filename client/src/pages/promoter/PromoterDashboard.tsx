@@ -6,12 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 function currentPosition() {
-  return new Promise<{ latitude?: number; longitude?: number; accuracy?: number }>((resolve) => {
-    if (!navigator.geolocation) return resolve({});
+  return new Promise<{ latitude: number; longitude: number; accuracy: number }>((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("Este navegador não oferece GPS."));
     navigator.geolocation.getCurrentPosition(
       (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy }),
-      () => resolve({}),
-      { enableHighAccuracy: true, timeout: 10000 },
+      () => reject(new Error("Autorize o GPS para registrar o ponto.")),
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
     );
   });
 }
@@ -42,11 +42,12 @@ export default function PromoterDashboard() {
         eventType,
         deviceTime: new Date().toISOString(),
         ...position,
-        locationStatus: position.latitude === undefined ? "unavailable" : "success",
+        locationStatus: "success",
         deviceInfo: navigator.userAgent,
         idempotencyKey: `${eventType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       });
-    } finally { setLoading(false); }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Autorize o GPS para registrar o ponto."); }
+    finally { setLoading(false); }
   };
 
   const actOnVisit = async (id: number, action: "start" | "complete") => {

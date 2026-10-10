@@ -1,6 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import PublicExtinguisherPage from "./pages/PublicExtinguisherPage";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -65,13 +64,11 @@ function RootRoute() {
 function Router() {
   return (
     <Switch>
-      {/* Rotas públicas de conversão (React). A landing marketing é HTML estático em /landing-site.html */}
+      {/* Rotas públicas do Promotores SaaS */}
       <Route path="/login"><RedirectHome /></Route>
       <Route path="/cadastro" component={SignupPage} />
       <Route path="/planos" component={PublicPlansPage} />
-      {/* QR operacional da empresa (dados de gestão — distinto do selo Inmetro) */}
-      <Route path="/e/:token" component={PublicExtinguisherPage} />
-      {/* Raiz: visitante → landing; autenticado → operação de campo ou compatibilidade legada */}
+      {/* Raiz: visitante → landing; autenticado → painel conforme o perfil */}
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/usuarios"><AdminProtected><AdminUsersPage /></AdminProtected></Route>
       <Route path="/admin/assinaturas"><AdminProtected><AdminAssinaturasPage /></AdminProtected></Route>

@@ -1,5 +1,5 @@
-const CACHE_NAME = "extinfy-shell-v7";
-const APP_SHELL = ["/", "/manifest.json", "/icon-192.png", "/icon-512.png", "/favicon.png"];
+const CACHE_NAME = "promotores-saas-shell-v1";
+const APP_SHELL = ["/", "/manifest.json", "/promotores-icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

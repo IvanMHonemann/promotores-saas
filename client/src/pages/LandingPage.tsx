@@ -1,22 +1,21 @@
-import { useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { CalendarCheck, CheckCircle2, ClipboardList, MapPinned, Users, Zap } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/BrandLogo";
 
-/**
- * Marketing entry: documento HTML estático independente (sem iframe).
- * O SPA React só carrega de verdade no painel autenticado e rotas /planos, /cadastro etc.
- */
+const features = [
+  { icon: Users, title: "Equipes organizadas", text: "Cadastre promotores, supervisores e empresas em uma operação multiempresa." },
+  { icon: MapPinned, title: "Roteiros de campo", text: "Distribua lojas, acompanhe visitas e registre a execução em tempo real." },
+  { icon: CalendarCheck, title: "Ponto eletrônico", text: "Entrada, intervalos, saída, localização e histórico com trilha de auditoria." },
+  { icon: ClipboardList, title: "Execução padronizada", text: "Checklists, evidências e indicadores para melhorar cada visita." },
+];
+
 export default function LandingPage() {
-  useEffect(() => {
-    const qs = typeof window !== "undefined" ? window.location.search : "";
-    const extra = qs && qs !== "?" ? "&" + qs.slice(1) : "";
-    const target = `/landing-site.html?v=landing-auditoria-20261007${extra}`;
-    window.location.replace(target);
-  }, []);
-
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#060918] text-white">
-      <Loader2 className="h-7 w-7 animate-spin text-red-500" />
-      <p className="text-sm text-slate-400">Carregando Extinfy…</p>
-    </div>
-  );
+  return <main className="min-h-screen overflow-hidden bg-[#07111f] text-white">
+    <section className="relative border-b border-white/10"><div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_10%,rgba(20,184,166,.25),transparent_32%),radial-gradient(circle_at_15%_70%,rgba(59,130,246,.2),transparent_35%)]" /><div className="relative mx-auto max-w-6xl px-5 py-6 sm:px-8">
+      <nav className="flex items-center justify-between"><BrandLogo variant="dark" height={42} /><Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10" onClick={() => window.location.href = "/login"}>Entrar</Button></nav>
+      <div className="grid gap-12 pb-20 pt-20 lg:grid-cols-[1.1fr_.9fr] lg:items-center"><div><span className="inline-flex items-center gap-2 rounded-full border border-teal-300/30 bg-teal-300/10 px-3 py-1 text-sm font-semibold text-teal-200"><Zap className="h-4 w-4" /> Operação de campo em um só lugar</span><h1 className="mt-6 max-w-3xl text-5xl font-black leading-[1.02] tracking-tight sm:text-7xl">Mais presença no campo. <span className="text-teal-300">Mais controle</span> na gestão.</h1><p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">O Promotores SaaS conecta agências, supervisores e promotores para transformar roteiros em execução mensurável.</p><div className="mt-8 flex flex-wrap gap-3"><Button className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={() => window.location.href = "/cadastro"}>Criar ambiente</Button><Button variant="outline" className="border-white/20 bg-white/5 px-6 text-white hover:bg-white/10" onClick={() => document.getElementById("recursos")?.scrollIntoView({ behavior: "smooth" })}>Conhecer recursos</Button></div></div><div className="rounded-[2rem] border border-white/10 bg-white/[.06] p-5 shadow-2xl shadow-teal-950/40"><div className="rounded-3xl bg-slate-950/80 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-slate-400">Operação de hoje</p><p className="mt-1 text-3xl font-black">82% concluída</p></div><CheckCircle2 className="h-10 w-10 text-teal-300" /></div><div className="mt-6 h-3 rounded-full bg-slate-800"><div className="h-full w-[82%] rounded-full bg-teal-300" /></div><div className="mt-6 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-white/5 p-4"><p className="text-sm text-slate-400">Visitas</p><p className="mt-1 text-2xl font-bold">128</p></div><div className="rounded-2xl bg-white/5 p-4"><p className="text-sm text-slate-400">Promotores ativos</p><p className="mt-1 text-2xl font-bold">24</p></div></div><div className="mt-3 rounded-2xl border border-teal-300/20 bg-teal-300/10 p-4"><p className="text-sm font-semibold text-teal-200">Ponto eletrônico</p><p className="mt-1 text-sm text-slate-300">Registros com horário, localização e auditoria.</p></div></div></div></div>
+    </div></section>
+    <section id="recursos" className="mx-auto max-w-6xl px-5 py-20 sm:px-8"><p className="text-sm font-bold uppercase tracking-[.2em] text-teal-300">Feito para a rotina real</p><h2 className="mt-3 max-w-2xl text-4xl font-black tracking-tight sm:text-5xl">Da escala à evidência, sem perder o controle.</h2><div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{features.map(({ icon: Icon, title, text }) => <article key={title} className="rounded-3xl border border-white/10 bg-white/[.05] p-6"><Icon className="h-8 w-8 text-teal-300" /><h3 className="mt-5 text-xl font-bold">{title}</h3><p className="mt-3 text-sm leading-6 text-slate-400">{text}</p></article>)}</div></section>
+    <footer className="border-t border-white/10 px-5 py-8 text-center text-sm text-slate-500">Promotores SaaS · Gestão inteligente de equipes de campo</footer>
+  </main>;
 }

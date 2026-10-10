@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-const LOCAL_SESSION_KEY = "gestao-extintores-auth-user";
+const LOCAL_SESSION_KEY = "promotores-saas-auth-user";
 
 type UseAuthOptions = {
   redirectOnUnauthenticated?: boolean;
@@ -41,11 +41,11 @@ export function useAuth(options?: UseAuthOptions) {
     const handleAuthLogout = () => setCachedUser(null);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-    window.addEventListener("gestao-extintores:logout", handleAuthLogout);
+    window.addEventListener("promotores-saas:logout", handleAuthLogout);
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
-      window.removeEventListener("gestao-extintores:logout", handleAuthLogout);
+      window.removeEventListener("promotores-saas:logout", handleAuthLogout);
     };
   }, []);
 
@@ -84,11 +84,11 @@ export function useAuth(options?: UseAuthOptions) {
       localStorage.removeItem(LOCAL_SESSION_KEY);
       setCachedUser(null);
       utils.auth.me.setData(undefined, null);
-      window.dispatchEvent(new Event("gestao-extintores:logout"));
+      window.dispatchEvent(new Event("promotores-saas:logout"));
       if (!isOffline) await utils.auth.me.invalidate();
       // Volta para a landing (login no modal da página inicial)
       if (typeof window !== "undefined") {
-        window.location.replace("/landing-site.html");
+        window.location.replace("/");
       }
     }
   }, [isOffline, logoutMutation, utils]);

@@ -88,7 +88,7 @@ export default function PublicPlansPage() {
               </p>
             </div>
           </div>
-          <Button variant="outline" className="border-slate-600 text-slate-100" onClick={() => navigate("/?login=1")}>
+          <Button variant="outline" className="border-slate-600 text-slate-100" onClick={() => navigate("/login")}>
             <LogIn className="mr-2 h-4 w-4" /> Já tenho conta
           </Button>
         </header>

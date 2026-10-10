@@ -12,6 +12,7 @@ import AdminAssinaturasPage from "./pages/AdminAssinaturasPage";
 import PlansPage from "./pages/PlansPage";
 import PublicPlansPage from "./pages/PublicPlansPage";
 import SignupPage from "./pages/SignupPage";
+import LoginPage from "./pages/LoginPage";
 import UpgradePlanPage from "./pages/UpgradePlanPage";
 import MySubscriptionPage from "./pages/MySubscriptionPage";
 import PaymentHistoryPage from "./pages/PaymentHistoryPage";
@@ -65,7 +66,7 @@ function Router() {
   return (
     <Switch>
       {/* Rotas públicas do Promotores SaaS */}
-      <Route path="/login"><RedirectHome /></Route>
+      <Route path="/login" component={LoginPage} />
       <Route path="/cadastro" component={SignupPage} />
       <Route path="/planos" component={PublicPlansPage} />
       {/* Raiz: visitante → landing; autenticado → painel conforme o perfil */}

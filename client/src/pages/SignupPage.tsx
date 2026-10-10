@@ -155,7 +155,7 @@ export default function SignupPage() {
             <Button variant="outline" className="border-slate-600" onClick={() => navigate("/planos")}>
               Trocar plano
             </Button>
-            <Button variant="ghost" onClick={() => navigate("/?login=1")}>
+            <Button variant="ghost" onClick={() => navigate("/login")}>
               Já tenho conta
             </Button>
           </div>

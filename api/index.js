@@ -2924,6 +2924,45 @@ var timeTrackingRouter = router({
     }
     return database.select().from(timeEvents).where(and2(...conditions)).orderBy(desc2(timeEvents.serverTime)).limit(input?.limit || 100);
   }),
+  myTimeSummary: commercialProcedure.query(async ({ ctx }) => {
+    const companyId = ctx.accountId;
+    const memberId = ctx.memberAccountId;
+    if (!companyId || !memberId) return { periodLabel: "M\xEAs atual", daysTracked: 0, workedMinutes: 0, expectedMinutes: 0, balanceMinutes: 0, openShift: false };
+    const database = await getDb();
+    if (!database) return { periodLabel: "M\xEAs atual", daysTracked: 0, workedMinutes: 0, expectedMinutes: 0, balanceMinutes: 0, openShift: false };
+    const now = /* @__PURE__ */ new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const events = await database.select().from(timeEvents).where(and2(eq2(timeEvents.memberAccountId, memberId), eq2(timeEvents.companyId, companyId), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end))).orderBy(timeEvents.serverTime);
+    const byDay = /* @__PURE__ */ new Map();
+    for (const event of events) {
+      const timestamp3 = event.deviceTime || event.serverTime;
+      const day = timestamp3.toISOString().slice(0, 10);
+      const list = byDay.get(day) || [];
+      list.push(event);
+      byDay.set(day, list);
+    }
+    let workedMinutes = 0;
+    let openShift = false;
+    for (const dayEvents of byDay.values()) {
+      let sessionStart = null;
+      for (const event of dayEvents) {
+        const timestamp3 = event.deviceTime || event.serverTime;
+        if (event.eventType === "clock_in" || event.eventType === "break_end") sessionStart = timestamp3;
+        if ((event.eventType === "break_start" || event.eventType === "clock_out") && sessionStart) {
+          workedMinutes += Math.max(0, Math.round((timestamp3.getTime() - sessionStart.getTime()) / 6e4));
+          sessionStart = null;
+        }
+      }
+      if (sessionStart) {
+        workedMinutes += Math.max(0, Math.round((Math.min(Date.now(), sessionStart.getTime() + 24 * 60 * 6e4) - sessionStart.getTime()) / 6e4));
+        openShift = true;
+      }
+    }
+    const expectedMinutes = byDay.size * 8 * 60;
+    const periodLabel = now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    return { periodLabel: periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1), daysTracked: byDay.size, workedMinutes, expectedMinutes, balanceMinutes: workedMinutes - expectedMinutes, openShift };
+  }),
   myCorrections: commercialProcedure.query(async ({ ctx }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;

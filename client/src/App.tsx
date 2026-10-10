@@ -17,6 +17,7 @@ import PaymentHistoryPage from "./pages/PaymentHistoryPage";
 import MyAccountPage from "./pages/MyAccountPage";
 import AuditPage from "./pages/AuditPage";
 import PromoterDashboard from "./pages/promoter/PromoterDashboard";
+import PromoterClockPage from "./pages/promoter/PromoterClockPage";
 import OperationsDashboard from "./pages/operations/OperationsDashboard";
 import PlatformDashboard from "./pages/platform/PlatformDashboard";
 import { PwaStatusBar } from "./components/PwaStatusBar";
@@ -49,6 +50,13 @@ function CompanyAdminProtected({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PromoterProtected({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user || user.role !== "promoter") return <RedirectHome />;
+  return <>{children}</>;
+}
+
 function RootRoute() {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
@@ -66,6 +74,7 @@ function Router() {
       <Route path="/login" component={LoginPage} />
       <Route path="/cadastro" component={SignupPage} />
       <Route path="/planos" component={PublicPlansPage} />
+      <Route path="/ponto"><PromoterProtected><PromoterClockPage /></PromoterProtected></Route>
       {/* Raiz: visitante → landing; autenticado → painel conforme o perfil */}
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/usuarios"><AdminProtected><AdminUsersPage /></AdminProtected></Route>

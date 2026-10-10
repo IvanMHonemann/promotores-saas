@@ -48,6 +48,69 @@ export const timeTrackingRouter = router({
       return { status: active ? "active" as const : last?.eventType === "clock_out" ? "closed" as const : "clock_in_required" as const, active, timeZone, localDate: today, lastEvent: last?.eventType || null };
     }),
 
+  companyToday: companyAdminProcedure
+    .input(z.object({ timeZone: z.string().min(1).max(128).default("UTC") }).optional())
+    .query(async ({ ctx, input }) => {
+      const database = await db.getDb();
+      if (!database) return [];
+      const timeZone = input?.timeZone || "UTC";
+      const today = localDay(new Date(), timeZone);
+      const since = new Date(Date.now() - 36 * 60 * 60 * 1000);
+      const rows = await database.select({
+        promoterId: memberAccounts.id,
+        promoterName: memberAccounts.userName,
+        employeeCode: memberAccounts.employeeCode,
+        eventType: timeEvents.eventType,
+        serverTime: timeEvents.serverTime,
+        deviceTime: timeEvents.deviceTime,
+        latitude: timeEvents.latitude,
+        longitude: timeEvents.longitude,
+        accuracy: timeEvents.accuracy,
+      })
+        .from(timeEvents)
+        .innerJoin(memberAccounts, and(
+          eq(timeEvents.memberAccountId, memberAccounts.id),
+          eq(memberAccounts.companyId, ctx.accountId),
+        ))
+        .where(and(
+          eq(timeEvents.companyId, ctx.accountId),
+          eq(memberAccounts.role, "promoter"),
+          gte(timeEvents.serverTime, since),
+        ))
+        .orderBy(desc(timeEvents.serverTime))
+        .limit(5000);
+
+      const eventsByPromoter = new Map<number, typeof rows>();
+      for (const row of rows) {
+        if (localDay(row.deviceTime || row.serverTime, timeZone) !== today) continue;
+        const promoterEvents = eventsByPromoter.get(row.promoterId) || [];
+        promoterEvents.push(row);
+        eventsByPromoter.set(row.promoterId, promoterEvents);
+      }
+
+      const presence = [];
+      for (const [promoterId, promoterEvents] of eventsByPromoter) {
+        const chronological = [...promoterEvents].sort((a, b) => a.serverTime.getTime() - b.serverTime.getTime());
+        const entry = chronological.find((event) => event.eventType === "clock_in");
+        const last = chronological[chronological.length - 1];
+        if (!entry || !last) continue;
+        presence.push({
+          promoterId,
+          promoterName: entry.promoterName,
+          employeeCode: entry.employeeCode,
+          clockInTime: entry.deviceTime || entry.serverTime,
+          lastEventType: last.eventType,
+          lastEventTime: last.deviceTime || last.serverTime,
+          active: last.eventType !== "clock_out",
+          latitude: entry.latitude,
+          longitude: entry.longitude,
+          accuracy: entry.accuracy,
+        });
+      }
+
+      return presence.sort((a, b) => b.clockInTime.getTime() - a.clockInTime.getTime());
+    }),
+
   registerEvent: commercialProcedure
     .input(z.object({
       eventType: timeEventType,

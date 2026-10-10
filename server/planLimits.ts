@@ -144,11 +144,10 @@ export async function assertExtinguisherLimit(companyId: number) {
 }
 
 export async function assertUserLimit(companyId: number) {
-  const plan = await requirePlanFeature(
-    companyId,
-    "featureUsers",
-    "Gestão de usuários da equipe não está disponível no seu plano. Faça upgrade para o Profissional ou Empresarial.",
-  );
+  // A gestão de acessos é um recurso estrutural do Promotores SaaS e não
+  // pode ser bloqueada pelos flags legados de planos do módulo de extintores.
+  // O plano ainda pode limitar a quantidade de usuários normalmente.
+  const plan = await getEffectivePlan(companyId);
   if (plan.maxUsers == null) return plan;
   const current = await countUsers(companyId);
   if (current >= plan.maxUsers) {

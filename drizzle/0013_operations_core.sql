@@ -1,0 +1,131 @@
+-- Completa o núcleo operacional ausente no histórico de migrações.
+-- Todas as tabelas são aditivas e IF NOT EXISTS evita sobrescrever dados existentes.
+CREATE TABLE IF NOT EXISTS `brands` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `companyId` int NOT NULL,
+  `clientId` int NULL,
+  `name` varchar(255) NOT NULL,
+  `notes` text NULL,
+  `active` boolean NOT NULL DEFAULT true,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `brands_id` PRIMARY KEY (`id`),
+  CONSTRAINT `brands_companyId_companies_id_fk` FOREIGN KEY (`companyId`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT `brands_clientId_clients_id_fk` FOREIGN KEY (`clientId`) REFERENCES `clients` (`id`) ON DELETE SET NULL ON UPDATE NO ACTION,
+  KEY `brands_company_idx` (`companyId`),
+  KEY `brands_client_idx` (`clientId`)
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `retail_chains` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `companyId` int NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `notes` text NULL,
+  `active` boolean NOT NULL DEFAULT true,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `retail_chains_id` PRIMARY KEY (`id`),
+  CONSTRAINT `retail_chains_companyId_companies_id_fk` FOREIGN KEY (`companyId`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  KEY `retail_chains_company_idx` (`companyId`)
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `teams` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `companyId` int NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `supervisorId` int NULL,
+  `notes` text NULL,
+  `active` boolean NOT NULL DEFAULT true,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `teams_id` PRIMARY KEY (`id`),
+  CONSTRAINT `teams_companyId_companies_id_fk` FOREIGN KEY (`companyId`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  KEY `teams_company_idx` (`companyId`)
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `stores` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `companyId` int NOT NULL,
+  `clientId` int NULL,
+  `brandId` int NULL,
+  `retailChainId` int NULL,
+  `name` varchar(255) NOT NULL,
+  `code` varchar(50) NULL,
+  `address` text NULL,
+  `city` varchar(120) NOT NULL,
+  `state` varchar(2) NULL,
+  `cep` varchar(20) NULL,
+  `latitude` double NULL,
+  `longitude` double NULL,
+  `contactName` varchar(255) NULL,
+  `phone` varchar(50) NULL,
+  `expectedVisitFrequency` varchar(50) NULL,
+  `notes` text NULL,
+  `active` boolean NOT NULL DEFAULT true,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `stores_id` PRIMARY KEY (`id`),
+  CONSTRAINT `stores_companyId_companies_id_fk` FOREIGN KEY (`companyId`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT `stores_clientId_clients_id_fk` FOREIGN KEY (`clientId`) REFERENCES `clients` (`id`) ON DELETE SET NULL ON UPDATE NO ACTION,
+  CONSTRAINT `stores_brandId_brands_id_fk` FOREIGN KEY (`brandId`) REFERENCES `brands` (`id`) ON DELETE SET NULL ON UPDATE NO ACTION,
+  CONSTRAINT `stores_retailChainId_retail_chains_id_fk` FOREIGN KEY (`retailChainId`) REFERENCES `retail_chains` (`id`) ON DELETE SET NULL ON UPDATE NO ACTION,
+  KEY `stores_company_idx` (`companyId`),
+  KEY `stores_client_idx` (`clientId`),
+  KEY `stores_company_city_idx` (`companyId`, `city`),
+  KEY `stores_geo_idx` (`latitude`, `longitude`)
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `routes` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `companyId` int NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `date` date NOT NULL,
+  `promoterId` int NOT NULL,
+  `teamId` int NULL,
+  `status` enum('draft','assigned','in_progress','completed','cancelled') NOT NULL DEFAULT 'assigned',
+  `notes` text NULL,
+  `createdByUserId` int NULL,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `routes_id` PRIMARY KEY (`id`),
+  CONSTRAINT `routes_companyId_companies_id_fk` FOREIGN KEY (`companyId`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT `routes_promoterId_member_accounts_id_fk` FOREIGN KEY (`promoterId`) REFERENCES `member_accounts` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT `routes_teamId_teams_id_fk` FOREIGN KEY (`teamId`) REFERENCES `teams` (`id`) ON DELETE SET NULL ON UPDATE NO ACTION,
+  KEY `routes_company_idx` (`companyId`),
+  KEY `routes_promoter_date_idx` (`promoterId`, `date`),
+  KEY `routes_company_date_idx` (`companyId`, `date`)
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `visits` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `companyId` int NOT NULL,
+  `routeId` int NULL,
+  `storeId` int NOT NULL,
+  `promoterId` int NOT NULL,
+  `plannedStart` timestamp NULL,
+  `plannedEnd` timestamp NULL,
+  `actualStart` timestamp NULL,
+  `actualEnd` timestamp NULL,
+  `status` enum('pending','in_progress','completed','not_done','cancelled') NOT NULL DEFAULT 'pending',
+  `startLatitude` double NULL,
+  `startLongitude` double NULL,
+  `startAccuracy` double NULL,
+  `endLatitude` double NULL,
+  `endLongitude` double NULL,
+  `endAccuracy` double NULL,
+  `distanceMeters` double NULL,
+  `justification` text NULL,
+  `notes` text NULL,
+  `createdAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `visits_id` PRIMARY KEY (`id`),
+  CONSTRAINT `visits_companyId_companies_id_fk` FOREIGN KEY (`companyId`) REFERENCES `companies` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT `visits_routeId_routes_id_fk` FOREIGN KEY (`routeId`) REFERENCES `routes` (`id`) ON DELETE CASCADE ON UPDATE NO ACTION,
+  CONSTRAINT `visits_storeId_stores_id_fk` FOREIGN KEY (`storeId`) REFERENCES `stores` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT `visits_promoterId_member_accounts_id_fk` FOREIGN KEY (`promoterId`) REFERENCES `member_accounts` (`id`) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  KEY `visits_company_idx` (`companyId`),
+  KEY `visits_route_idx` (`routeId`),
+  KEY `visits_store_idx` (`storeId`),
+  KEY `visits_promoter_idx` (`promoterId`),
+  KEY `visits_status_idx` (`companyId`, `status`)
+);

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Check, MapPin, X } from "lucide-react";
+import { Bell, Check, CheckCircle2, Clock3, ClipboardList, MapPin, Users, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,11 +12,31 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 
 type Section = "overview" | "routes" | "visits";
-const eventLabels: Record<string, string> = { clock_in: "Entrada", break_start: "Início do intervalo", break_end: "Fim do intervalo", clock_out: "Saída" };
+type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
+type CompanyPresenceEntry = {
+  promoterId: number;
+  promoterName: string;
+  employeeCode: string | null;
+  clockInTime: Date;
+  lastEventType: EventType;
+  lastEventTime: Date;
+  active: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+};
+
+const eventLabels: Record<string, string> = {
+  clock_in: "Entrada",
+  break_start: "Início do intervalo",
+  break_end: "Fim do intervalo",
+  clock_out: "Saída",
+};
 const sectionFromHash = (): Section => window.location.hash === "#roteiros" ? "routes" : window.location.hash === "#visitas" ? "visits" : "overview";
 
 export default function OperationsDashboard() {
   const today = new Date().toISOString().slice(0, 10);
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const [section, setSection] = useState<Section>(() => typeof window === "undefined" ? "overview" : sectionFromHash());
   const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
   const { user } = useAuth();
@@ -25,6 +46,7 @@ export default function OperationsDashboard() {
   const companyUsers = trpc.companyUsers.list.useQuery(undefined, { enabled: isCompanyAdmin });
   const routes = trpc.operations.routes.list.useQuery({ date: today });
   const visits = trpc.operations.visits.list.useQuery({ date: today });
+  const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin });
   const utils = trpc.useUtils();
   const [routeName, setRouteName] = useState("");
@@ -34,29 +56,345 @@ export default function OperationsDashboard() {
   const [storeName, setStoreName] = useState("");
   const [storeCity, setStoreCity] = useState("");
   const [storeAddress, setStoreAddress] = useState("");
-  const review = trpc.timeTracking.correctionRequests.review.useMutation({ onSuccess: (_, variables) => { toast.success(variables.status === "approved" ? "Correção aprovada e aplicada ao ponto." : "Pedido de correção recusado."); utils.timeTracking.correctionRequests.pending.invalidate(); }, onError: (error) => toast.error(error.message) });
-  const createRoute = trpc.operations.routes.create.useMutation({ onSuccess: () => { toast.success("Roteiro criado e visitas geradas para o promotor."); setRouteName(""); setRouteStores([]); utils.operations.routes.list.invalidate(); utils.operations.visits.list.invalidate(); }, onError: (error) => toast.error(error.message) });
-  const createStore = trpc.operations.stores.create.useMutation({ onSuccess: () => { toast.success("Loja cadastrada."); setStoreName(""); setStoreCity(""); setStoreAddress(""); utils.operations.stores.list.invalidate(); }, onError: (error) => toast.error(error.message) });
-  const metrics = useMemo(() => { const rows = visits.data || []; return { total: rows.length, completed: rows.filter((row) => row.visit.status === "completed").length, inProgress: rows.filter((row) => row.visit.status === "in_progress").length }; }, [visits.data]);
 
-  useEffect(() => { const onHash = () => setSection(sectionFromHash()); window.addEventListener("hashchange", onHash); return () => window.removeEventListener("hashchange", onHash); }, []);
+  const review = trpc.timeTracking.correctionRequests.review.useMutation({
+    onSuccess: (_, variables) => {
+      toast.success(variables.status === "approved" ? "Correção aprovada e aplicada ao ponto." : "Pedido de correção recusado.");
+      void utils.timeTracking.correctionRequests.pending.invalidate();
+    },
+    onError: () => toast.error("Não foi possível analisar o pedido de correção."),
+  });
+  const createRoute = trpc.operations.routes.create.useMutation({
+    onSuccess: () => {
+      toast.success("Roteiro criado e visitas geradas para o promotor.");
+      setRouteName("");
+      setRouteStores([]);
+      void utils.operations.routes.list.invalidate();
+      void utils.operations.visits.list.invalidate();
+      void utils.operations.visits.today.invalidate();
+    },
+    onError: () => toast.error("Não foi possível criar o roteiro. Confira os dados e tente novamente."),
+  });
+  const createStore = trpc.operations.stores.create.useMutation({
+    onSuccess: () => {
+      toast.success("Loja cadastrada.");
+      setStoreName("");
+      setStoreCity("");
+      setStoreAddress("");
+      void utils.operations.stores.list.invalidate();
+    },
+    onError: () => toast.error("Não foi possível cadastrar a loja. Confira os dados e tente novamente."),
+  });
+  const metrics = useMemo(() => {
+    const rows = visits.data || [];
+    return {
+      total: rows.length,
+      completed: rows.filter((row) => row.visit.status === "completed").length,
+      inProgress: rows.filter((row) => row.visit.status === "in_progress").length,
+    };
+  }, [visits.data]);
+
+  useEffect(() => {
+    const onHash = () => setSection(sectionFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   const approve = (id: number, status: "approved" | "rejected") => review.mutate({ id, status, reviewNotes: reviewNotes[id]?.trim() || undefined });
   const title = section === "routes" ? "Roteiros" : section === "visits" ? "Visitas" : isCompanyAdmin ? "Central da empresa" : isSupervisor ? "Painel do supervisor" : "Operação de campo";
-  const description = section === "routes" ? "Crie e distribua roteiros para os promotores da sua empresa." : section === "visits" ? "Acompanhe a execução das visitas planejadas." : isCompanyAdmin ? "Resumo da operação e pendências da sua empresa." : "Resumo da operação de campo e desempenho da equipe.";
+  const description = section === "routes"
+    ? "Crie e distribua roteiros para os promotores da sua empresa."
+    : section === "visits"
+      ? "Acompanhe a execução das visitas planejadas."
+      : isCompanyAdmin
+        ? "Resumo da operação, presença da equipe e pendências da sua empresa."
+        : "Resumo da operação de campo e desempenho da equipe.";
 
-  return <DashboardLayout title={title} description={description} onRefresh={() => window.location.reload()}>
-    {section === "overview" && <Overview metrics={metrics} corrections={corrections.data} isCompanyAdmin={isCompanyAdmin} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} reviewPending={review.isPending} />}
-    {section === "routes" && <RoutesModule isCompanyAdmin={isCompanyAdmin} stores={stores.data} storesLoading={stores.isLoading} storesError={stores.error?.message} companyUsers={companyUsers.data} usersLoading={companyUsers.isLoading} usersError={companyUsers.error?.message} routeName={routeName} setRouteName={setRouteName} routeDate={routeDate} setRouteDate={setRouteDate} routePromoter={routePromoter} setRoutePromoter={setRoutePromoter} routeStores={routeStores} setRouteStores={setRouteStores} createRoute={createRoute} storeName={storeName} setStoreName={setStoreName} storeCity={storeCity} setStoreCity={setStoreCity} storeAddress={storeAddress} setStoreAddress={setStoreAddress} createStore={createStore} routes={routes.data} />}
-    {section === "visits" && <VisitsModule visits={visits.data} metrics={metrics} />}
-  </DashboardLayout>;
+  return (
+    <DashboardLayout title={title} description={description} onRefresh={() => window.location.reload()}>
+      {section === "overview" && (
+        <Overview
+          metrics={metrics}
+          visitsFailed={visits.isError}
+          presence={presence.data || []}
+          presenceLoading={presence.isLoading}
+          presenceFailed={presence.isError}
+          timeZone={timeZone}
+          corrections={corrections.data}
+          isCompanyAdmin={isCompanyAdmin}
+          reviewNotes={reviewNotes}
+          setReviewNotes={setReviewNotes}
+          approve={approve}
+          reviewPending={review.isPending}
+        />
+      )}
+      {section === "routes" && (
+        <RoutesModule
+          isCompanyAdmin={isCompanyAdmin}
+          stores={stores.data || []}
+          storesLoading={stores.isLoading}
+          storesFailed={stores.isError}
+          companyUsers={companyUsers.data || []}
+          usersLoading={companyUsers.isLoading}
+          usersFailed={companyUsers.isError}
+          routeName={routeName}
+          setRouteName={setRouteName}
+          routeDate={routeDate}
+          setRouteDate={setRouteDate}
+          routePromoter={routePromoter}
+          setRoutePromoter={setRoutePromoter}
+          routeStores={routeStores}
+          setRouteStores={setRouteStores}
+          createRoute={createRoute}
+          storeName={storeName}
+          setStoreName={setStoreName}
+          storeCity={storeCity}
+          setStoreCity={setStoreCity}
+          storeAddress={storeAddress}
+          setStoreAddress={setStoreAddress}
+          createStore={createStore}
+          routes={routes.data || []}
+          routesLoading={routes.isLoading}
+          routesFailed={routes.isError}
+        />
+      )}
+      {section === "visits" && <VisitsModule visits={visits.data || []} metrics={metrics} loading={visits.isLoading} failed={visits.isError} />}
+    </DashboardLayout>
+  );
 }
 
-function Overview({ metrics, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, reviewPending }: any) {
-  return <div className="space-y-6"><div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7"><p className="text-xs font-bold uppercase tracking-[.18em] text-teal-300">Visão geral</p><h2 className="mt-2 text-2xl font-black sm:text-4xl">Operação de campo</h2><p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Use os módulos abaixo para organizar roteiros, acompanhar visitas e administrar sua equipe.</p></div><div className="grid gap-4 sm:grid-cols-3"><Metric label="Visitas de hoje" value={metrics.total} /><Metric label="Concluídas" value={metrics.completed} tone="text-emerald-300" /><Metric label="Em andamento" value={metrics.inProgress} tone="text-amber-300" /></div><div className="grid gap-3 sm:grid-cols-2"><a href="#roteiros" className="rounded-2xl border border-teal-300/20 bg-teal-300/10 p-5 transition hover:bg-teal-300/15"><p className="font-bold text-white">Roteiros</p><p className="mt-1 text-sm text-slate-300">Criar roteiro, escolher promotor e selecionar lojas.</p></a><a href="#visitas" className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 transition hover:border-teal-300/30"><p className="font-bold text-white">Visitas</p><p className="mt-1 text-sm text-slate-300">Acompanhar status das visitas planejadas.</p></a></div>{isCompanyAdmin && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} reviewPending={reviewPending} />}</div>;
+function Overview({ metrics, visitsFailed, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, reviewPending }: any) {
+  const activePromoters = presence.filter((entry: CompanyPresenceEntry) => entry.active).length;
+  return (
+    <div className="space-y-6">
+      <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7">
+        <p className="text-xs font-bold uppercase tracking-[.18em] text-teal-300">Visão geral</p>
+        <h2 className="mt-2 text-2xl font-black sm:text-4xl">Operação de campo</h2>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar.</p>
+      </div>
+
+      <div className={`grid gap-3 sm:grid-cols-2 ${isCompanyAdmin ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
+        {isCompanyAdmin && <Metric label="Promotores em jornada" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Entrada registrada hoje" />}
+        <Metric label="Visitas planejadas" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Roteiro de hoje" />
+        <Metric label="Concluídas" value={metrics.completed} icon={CheckCircle2} tone="text-emerald-300" hint="Finalizadas hoje" />
+        <Metric label="Em andamento" value={metrics.inProgress} icon={Clock3} tone="text-amber-300" hint="Em execução" />
+      </div>
+      {visitsFailed && <p role="alert" className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">Não foi possível carregar os indicadores de visitas. Atualize o painel e tente novamente.</p>}
+
+      {isCompanyAdmin && <PresenceCard entries={presence} loading={presenceLoading} failed={presenceFailed} timeZone={timeZone} />}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <a href="#roteiros" className="rounded-2xl border border-teal-300/20 bg-teal-300/10 p-5 transition hover:bg-teal-300/15">
+          <p className="font-bold text-white">Roteiros</p>
+          <p className="mt-1 text-sm text-slate-300">Criar roteiro, escolher promotor e selecionar lojas.</p>
+        </a>
+        <a href="#visitas" className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 transition hover:border-teal-300/30">
+          <p className="font-bold text-white">Visitas</p>
+          <p className="mt-1 text-sm text-slate-300">Acompanhar status das visitas planejadas.</p>
+        </a>
+      </div>
+
+      {isCompanyAdmin && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} reviewPending={reviewPending} />}
+    </div>
+  );
 }
-function Metric({ label, value, tone = "text-teal-300" }: { label: string; value: number; tone?: string }) { return <Card><CardContent className="p-5"><p className="text-xs font-bold uppercase tracking-wider text-slate-300">{label}</p><p className={`mt-2 text-4xl font-black ${tone}`}>{value}</p></CardContent></Card>; }
-function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve, reviewPending }: any) { return <Card className="border-amber-300/30 bg-amber-300/10"><CardHeader><CardTitle className="flex items-center gap-2 text-white"><Bell className="text-amber-300" /> Notificações de correção <Badge className="bg-amber-500 text-slate-950">{corrections.length}</Badge></CardTitle></CardHeader><CardContent className="space-y-3">{!corrections.length && <p className="text-sm text-slate-300">Nenhum pedido de correção pendente.</p>}{corrections.map(({ request, event, employee }: any) => <div key={request.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4"><p className="font-bold text-white">{employee.userName} · {eventLabels[request.requestedType]}</p><p className="mt-1 text-sm text-slate-300">{request.justification}</p><textarea value={reviewNotes[request.id] || ""} onChange={(e) => setReviewNotes((old: any) => ({ ...old, [request.id]: e.target.value }))} placeholder="Observação (opcional)" className="mt-3 min-h-16 w-full rounded-lg border border-white/15 bg-slate-950/60 p-2 text-sm text-white" /><div className="mt-2 flex gap-2"><Button onClick={() => approve(request.id, "approved")} disabled={reviewPending} className="bg-emerald-500 text-slate-950"><Check className="mr-1 h-4 w-4" />Aprovar</Button><Button onClick={() => approve(request.id, "rejected")} disabled={reviewPending} variant="outline" className="border-red-300/50 text-red-200"><X className="mr-1 h-4 w-4" />Recusar</Button></div>{event?.latitude != null && <p className="mt-2 flex items-center gap-1 text-xs text-slate-300"><MapPin className="h-3.5 w-3.5" />GPS registrado</p>}</div>)}</CardContent></Card>; }
 
-function RoutesModule({ isCompanyAdmin, stores = [], storesLoading, storesError, companyUsers = [], usersLoading, usersError, routeName, setRouteName, routeDate, setRouteDate, routePromoter, setRoutePromoter, routeStores, setRouteStores, createRoute, storeName, setStoreName, storeCity, setStoreCity, storeAddress, setStoreAddress, createStore, routes = [] }: any) { const promoters = companyUsers.filter((member: any) => member.role === "promoter" && member.active); return <div className="space-y-6"><div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-teal-950/30 p-5 sm:p-7"><h2 className="text-2xl font-black">Gestão de roteiros</h2><p className="mt-2 text-sm text-slate-300">Monte a agenda e ela será transformada automaticamente em visitas para o promotor.</p></div>{isCompanyAdmin && <><Card><CardHeader><CardTitle>Criar roteiro para promotor</CardTitle></CardHeader><CardContent className="grid gap-4 lg:grid-cols-[1fr_180px_220px] lg:items-end"><div><Label>Nome do roteiro</Label><Input value={routeName} onChange={(e) => setRouteName(e.target.value)} placeholder="Ex.: Roteiro Zona Sul" className="mt-1" /></div><div><Label>Data</Label><Input type="date" value={routeDate} onChange={(e) => setRouteDate(e.target.value)} className="mt-1" /></div><div><Label>Promotor</Label><select value={routePromoter} onChange={(e) => setRoutePromoter(e.target.value)} className="mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white"><option value="">{usersLoading ? "Carregando promotores..." : "Selecione um promotor"}</option>{promoters.map((member: any) => <option key={member.id} value={member.id}>{member.userName} — {member.email}</option>)}</select>{usersError && <p className="mt-2 text-sm font-semibold text-rose-300">Falha ao carregar promotores: {usersError}</p>}{!usersLoading && !usersError && !promoters.length && <p className="mt-2 text-sm font-semibold text-amber-300">Nenhum promotor ativo cadastrado. Crie um usuário com perfil Promotor em Equipe e usuários.</p>}</div><div className="lg:col-span-3"><Label>Lojas do roteiro</Label><div className="mt-2 grid max-h-40 gap-2 overflow-y-auto rounded-xl border border-white/10 bg-slate-950/30 p-3 sm:grid-cols-2 lg:grid-cols-3">{storesLoading && <p className="text-sm text-slate-300">Carregando lojas...</p>}{storesError && <p className="text-sm font-semibold text-rose-300">Falha ao carregar lojas: {storesError}</p>}{stores.map((store: any) => <label key={store.id} className="flex items-center gap-2 rounded-lg p-2 text-sm text-slate-200 hover:bg-white/[.06]"><input type="checkbox" checked={routeStores.includes(store.id)} onChange={(e) => setRouteStores((current: number[]) => e.target.checked ? [...current, store.id] : current.filter((id) => id !== store.id))} />{store.name}<span className="text-xs text-slate-400">({store.city})</span></label>)}{!storesLoading && !storesError && !stores.length && <p className="text-sm text-slate-300">Cadastre lojas abaixo antes de criar um roteiro.</p>}</div></div><Button disabled={createRoute.isPending || !routeName.trim() || !routePromoter || !routeStores.length} onClick={() => createRoute.mutate({ name: routeName.trim(), date: routeDate, promoterId: Number(routePromoter), storeIds: routeStores })} className="bg-teal-300 text-slate-950 hover:bg-teal-200 lg:col-span-3 lg:justify-self-end">{createRoute.isPending ? "Criando..." : "Criar roteiro e gerar visitas"}</Button></CardContent></Card><Card><CardHeader><CardTitle>Cadastrar loja</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-3 sm:items-end"><div><Label>Nome</Label><Input value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="Mercado Central" className="mt-1" /></div><div><Label>Cidade</Label><Input value={storeCity} onChange={(e) => setStoreCity(e.target.value)} placeholder="Cidade" className="mt-1" /></div><div><Label>Endereço</Label><Input value={storeAddress} onChange={(e) => setStoreAddress(e.target.value)} placeholder="Rua e número" className="mt-1" /></div><Button disabled={createStore.isPending || !storeName.trim() || !storeCity.trim()} onClick={() => createStore.mutate({ name: storeName.trim(), city: storeCity.trim(), address: storeAddress.trim() || undefined })} className="bg-teal-300 text-slate-950 sm:col-span-3 sm:justify-self-end">{createStore.isPending ? "Salvando..." : "Cadastrar loja"}</Button>{createStore.error && <p className="text-sm font-semibold text-rose-300 sm:col-span-3">Falha ao cadastrar loja: {createStore.error.message}</p>}</CardContent></Card></>}{!isCompanyAdmin && <p className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-slate-300">Somente o administrador da empresa pode criar roteiros. Aqui você pode consultar a agenda distribuída.</p>}<Card><CardHeader><CardTitle>Roteiros de hoje</CardTitle></CardHeader><CardContent className="space-y-2">{!routes.length && <p className="text-sm text-slate-300">Nenhum roteiro para hoje.</p>}{routes.map((route: any) => <div key={route.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[.03] p-4"><div><p className="font-bold">{route.name}</p><p className="text-sm text-slate-300">Promotor #{route.promoterId}</p></div><Badge variant="outline">{route.status}</Badge></div>)}</CardContent></Card></div>; }
+function Metric({ label, value, icon: Icon, tone, hint }: { label: string; value: number; icon: LucideIcon; tone: string; hint: string }) {
+  return (
+    <Card className="overflow-hidden border-white/10 bg-gradient-to-br from-slate-900 to-slate-950">
+      <CardContent className="flex min-h-[128px] items-center justify-between gap-3 p-4 sm:p-5">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[.14em] text-slate-300">{label}</p>
+          <p className={`mt-2 text-4xl font-black leading-none ${tone}`}>{value}</p>
+          <p className="mt-2 text-xs text-slate-400">{hint}</p>
+        </div>
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.04]">
+          <Icon className={`h-5 w-5 ${tone}`} />
+        </span>
+      </CardContent>
+    </Card>
+  );
+}
 
-function VisitsModule({ visits = [], metrics }: any) { return <div className="space-y-6"><div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-teal-950/30 p-5 sm:p-7"><h2 className="text-2xl font-black">Acompanhamento de visitas</h2><p className="mt-2 text-sm text-slate-300">Veja o andamento das visitas planejadas para hoje.</p></div><div className="grid gap-4 sm:grid-cols-3"><Metric label="Total" value={metrics.total} /><Metric label="Concluídas" value={metrics.completed} tone="text-emerald-300" /><Metric label="Em andamento" value={metrics.inProgress} tone="text-amber-300" /></div><Card><CardHeader><CardTitle>Visitas de hoje</CardTitle></CardHeader><CardContent className="space-y-3">{!visits.length && <p className="text-sm text-slate-300">Nenhuma visita encontrada.</p>}{visits.map(({ visit, store }: any) => <div key={visit.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[.03] p-4"><div><p className="font-bold">{store.name}</p><p className="text-sm text-slate-300">{store.city} · Promotor #{visit.promoterId}</p></div><Badge variant="outline">{visit.status === "in_progress" ? "Em andamento" : visit.status === "completed" ? "Concluída" : "Pendente"}</Badge></div>)}</CardContent></Card></div>; }
+function PresenceCard({ entries, loading, failed, timeZone }: { entries: CompanyPresenceEntry[]; loading: boolean; failed: boolean; timeZone: string }) {
+  const formatTime = (value: Date) => new Date(value).toLocaleTimeString("pt-BR", { timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-white"><Users className="h-5 w-5 text-teal-300" /> Promotores com entrada hoje</CardTitle>
+          {!loading && !failed && <Badge variant="outline" className="border-teal-300/30 text-teal-200">{entries.length} no total</Badge>}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading && <p className="text-sm text-slate-300">Carregando registros de entrada...</p>}
+        {failed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar a presença. Atualize o painel e tente novamente.</p>}
+        {!loading && !failed && entries.length === 0 && <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-slate-300">Nenhum promotor registrou entrada hoje.</p>}
+        {entries.map((entry) => (
+          <div key={entry.promoterId} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-bold text-slate-100">{entry.promoterName}</p>
+                <p className="mt-1 text-xs text-slate-400">{entry.employeeCode ? `Matrícula ${entry.employeeCode}` : `Promotor #${entry.promoterId}`}</p>
+              </div>
+              <Badge variant="outline" className={entry.active ? "border-emerald-300/40 bg-emerald-300/10 text-emerald-200" : "border-slate-400/30 text-slate-300"}>
+                {entry.active ? "Em jornada" : "Jornada encerrada"}
+              </Badge>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-white/5 bg-white/[.03] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Entrada</p>
+                <p className="mt-1 text-base font-bold text-slate-100">{formatTime(entry.clockInTime)}</p>
+              </div>
+              <div className="rounded-lg border border-white/5 bg-white/[.03] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Última marcação</p>
+                <p className="mt-1 text-sm font-semibold text-slate-200">{eventLabels[entry.lastEventType]} · {formatTime(entry.lastEventTime)}</p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-300">
+              <MapPin className="h-4 w-4 shrink-0 text-teal-300" />
+              {entry.latitude != null && entry.longitude != null ? (
+                <>
+                  <span>{entry.latitude.toFixed(5)}, {entry.longitude.toFixed(5)}{entry.accuracy != null ? ` · precisão ±${Math.round(entry.accuracy)} m` : ""}</span>
+                  <a className="font-semibold text-teal-200 underline-offset-4 hover:underline" href={`https://www.google.com/maps?q=${entry.latitude},${entry.longitude}`} target="_blank" rel="noreferrer">Abrir mapa</a>
+                </>
+              ) : <span>Localização não disponível para esta entrada</span>}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve, reviewPending }: any) {
+  return (
+    <Card className="border-amber-300/30 bg-amber-300/10">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-white">
+          <Bell className="text-amber-300" /> Notificações de correção <Badge className="bg-amber-500 text-slate-950">{corrections.length}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!corrections.length && <p className="text-sm text-slate-300">Nenhum pedido de correção pendente.</p>}
+        {corrections.map(({ request, event, employee }: any) => (
+          <div key={request.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
+            <p className="font-bold text-white">{employee.userName} · {eventLabels[request.requestedType]}</p>
+            <p className="mt-1 text-sm text-slate-300">{request.justification}</p>
+            <textarea value={reviewNotes[request.id] || ""} onChange={(event) => setReviewNotes((old: any) => ({ ...old, [request.id]: event.target.value }))} placeholder="Observação (opcional)" className="mt-3 min-h-16 w-full rounded-lg border border-white/15 bg-slate-950/60 p-2 text-sm text-white" />
+            <div className="mt-2 flex gap-2">
+              <Button onClick={() => approve(request.id, "approved")} disabled={reviewPending} className="bg-emerald-500 text-slate-950"><Check className="mr-1 h-4 w-4" />Aprovar</Button>
+              <Button onClick={() => approve(request.id, "rejected")} disabled={reviewPending} variant="outline" className="border-red-300/50 text-red-200"><X className="mr-1 h-4 w-4" />Recusar</Button>
+            </div>
+            {event?.latitude != null && <p className="mt-2 flex items-center gap-1 text-xs text-slate-300"><MapPin className="h-3.5 w-3.5" />GPS registrado</p>}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RoutesModule(props: any) {
+  const {
+    isCompanyAdmin, stores = [], storesLoading, storesFailed, companyUsers = [], usersLoading, usersFailed,
+    routeName, setRouteName, routeDate, setRouteDate, routePromoter, setRoutePromoter, routeStores, setRouteStores,
+    createRoute, storeName, setStoreName, storeCity, setStoreCity, storeAddress, setStoreAddress, createStore,
+    routes = [], routesLoading, routesFailed,
+  } = props;
+  const promoters = companyUsers.filter((member: any) => member.role === "promoter" && member.active);
+  return (
+    <div className="space-y-6">
+      <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-teal-950/30 p-5 sm:p-7">
+        <h2 className="text-2xl font-black">Gestão de roteiros</h2>
+        <p className="mt-2 text-sm text-slate-300">Monte a agenda e ela será transformada automaticamente em visitas para o promotor.</p>
+      </div>
+      {isCompanyAdmin && <>
+        <Card>
+          <CardHeader><CardTitle className="text-white">Criar roteiro para promotor</CardTitle></CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-[1fr_180px_220px] lg:items-end">
+            <div><Label>Nome do roteiro</Label><Input value={routeName} onChange={(event) => setRouteName(event.target.value)} placeholder="Ex.: Roteiro Zona Sul" className="mt-1" /></div>
+            <div><Label>Data</Label><Input type="date" value={routeDate} onChange={(event) => setRouteDate(event.target.value)} className="mt-1" /></div>
+            <div>
+              <Label>Promotor</Label>
+              <select value={routePromoter} onChange={(event) => setRoutePromoter(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white">
+                <option value="">{usersLoading ? "Carregando promotores..." : "Selecione um promotor"}</option>
+                {promoters.map((member: any) => <option key={member.id} value={member.id}>{member.userName} — {member.email}</option>)}
+              </select>
+              {usersFailed && <p role="alert" className="mt-2 text-sm font-semibold text-rose-200">Não foi possível carregar os promotores. Atualize a página e tente novamente.</p>}
+              {!usersLoading && !usersFailed && !promoters.length && <p className="mt-2 text-sm font-semibold text-amber-200">Nenhum promotor ativo cadastrado. Confira a seção Equipe e usuários.</p>}
+            </div>
+            <div className="lg:col-span-3">
+              <Label>Lojas do roteiro</Label>
+              <div className="mt-2 grid max-h-48 gap-2 overflow-y-auto rounded-xl border border-white/10 bg-slate-950/30 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                {storesLoading && <p className="text-sm text-slate-300">Carregando lojas...</p>}
+                {storesFailed && <p role="alert" className="text-sm font-semibold text-rose-200">Não foi possível carregar as lojas. Atualize o painel; se o problema continuar, contate o suporte da empresa.</p>}
+                {stores.map((store: any) => (
+                  <label key={store.id} className="flex items-center gap-2 rounded-lg p-2 text-sm text-slate-200 hover:bg-white/[.06]">
+                    <input type="checkbox" checked={routeStores.includes(store.id)} onChange={(event) => setRouteStores((current: number[]) => event.target.checked ? [...current, store.id] : current.filter((id) => id !== store.id))} />
+                    {store.name}<span className="text-xs text-slate-400">({store.city})</span>
+                  </label>
+                ))}
+                {!storesLoading && !storesFailed && !stores.length && <p className="text-sm text-slate-300">Cadastre lojas abaixo antes de criar um roteiro.</p>}
+              </div>
+            </div>
+            <Button disabled={createRoute.isPending || !routeName.trim() || !routePromoter || !routeStores.length || storesFailed} onClick={() => createRoute.mutate({ name: routeName.trim(), date: routeDate, promoterId: Number(routePromoter), storeIds: routeStores })} className="bg-teal-300 text-slate-950 hover:bg-teal-200 lg:col-span-3 lg:justify-self-end">
+              {createRoute.isPending ? "Criando..." : "Criar roteiro e gerar visitas"}
+            </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-white">Cadastrar loja</CardTitle></CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3 sm:items-end">
+            <div><Label>Nome</Label><Input value={storeName} onChange={(event) => setStoreName(event.target.value)} placeholder="Mercado Central" className="mt-1" /></div>
+            <div><Label>Cidade</Label><Input value={storeCity} onChange={(event) => setStoreCity(event.target.value)} placeholder="Cidade" className="mt-1" /></div>
+            <div><Label>Endereço</Label><Input value={storeAddress} onChange={(event) => setStoreAddress(event.target.value)} placeholder="Rua e número" className="mt-1" /></div>
+            <Button disabled={createStore.isPending || !storeName.trim() || !storeCity.trim()} onClick={() => createStore.mutate({ name: storeName.trim(), city: storeCity.trim(), address: storeAddress.trim() || undefined })} className="bg-teal-300 text-slate-950 hover:bg-teal-200 sm:col-span-3 sm:justify-self-end">
+              {createStore.isPending ? "Salvando..." : "Cadastrar loja"}
+            </Button>
+            {createStore.error && <p role="alert" className="text-sm font-semibold text-rose-200 sm:col-span-3">Não foi possível cadastrar a loja. Confira a conexão e tente novamente.</p>}
+          </CardContent>
+        </Card>
+      </>}
+      {!isCompanyAdmin && <p className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-slate-300">Somente o administrador da empresa pode criar roteiros. Aqui você pode consultar a agenda distribuída.</p>}
+      <Card>
+        <CardHeader><CardTitle className="text-white">Roteiros de hoje</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          {routesLoading && <p className="text-sm text-slate-300">Carregando roteiros...</p>}
+          {routesFailed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar os roteiros. Atualize o painel e tente novamente.</p>}
+          {!routesLoading && !routesFailed && !routes.length && <p className="text-sm text-slate-300">Nenhum roteiro para hoje.</p>}
+          {routes.map((route: any) => <div key={route.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/40 p-4"><div><p className="font-bold text-slate-100">{route.name}</p><p className="text-sm text-slate-300">Promotor #{route.promoterId}</p></div><Badge variant="outline">{route.status}</Badge></div>)}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function VisitsModule({ visits = [], metrics, loading, failed }: any) {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-teal-950/30 p-5 sm:p-7">
+        <h2 className="text-2xl font-black">Acompanhamento de visitas</h2>
+        <p className="mt-2 text-sm text-slate-300">Veja o andamento das visitas planejadas para hoje.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Metric label="Total" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Planejadas para hoje" />
+        <Metric label="Concluídas" value={metrics.completed} icon={CheckCircle2} tone="text-emerald-300" hint="Finalizadas" />
+        <Metric label="Em andamento" value={metrics.inProgress} icon={Clock3} tone="text-amber-300" hint="Em execução" />
+      </div>
+      <Card>
+        <CardHeader><CardTitle className="text-white">Visitas de hoje</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {loading && <p className="text-sm text-slate-300">Carregando visitas...</p>}
+          {failed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar as visitas. Atualize o painel e tente novamente.</p>}
+          {!loading && !failed && !visits.length && <p className="text-sm text-slate-300">Nenhuma visita encontrada.</p>}
+          {visits.map(({ visit, store }: any) => (
+            <div key={visit.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-4">
+              <div><p className="font-bold text-slate-100">{store.name}</p><p className="text-sm text-slate-300">{store.city} · Promotor #{visit.promoterId}</p></div>
+              <Badge variant="outline">{visit.status === "in_progress" ? "Em andamento" : visit.status === "completed" ? "Concluída" : "Pendente"}</Badge>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

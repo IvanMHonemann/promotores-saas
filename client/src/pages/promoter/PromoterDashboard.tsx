@@ -1,4 +1,5 @@
-import { ClipboardList, Clock3, MapPin } from "lucide-react";
+import { CheckCircle2, ClipboardList, Clock3, MapPin } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -99,9 +100,9 @@ export default function PromoterDashboard() {
         {shift.error && <div className="rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-sm text-rose-100">Não foi possível consultar o estado da jornada. Tente atualizar o painel.</div>}
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <Metric label="Visitas de hoje" value={rows.length} />
-          <Metric label="Em andamento" value={inProgress} />
-          <Metric label="Concluídas" value={completed} />
+          <Metric label="Visitas previstas" detail="No roteiro de hoje" value={rows.length} icon={ClipboardList} tone="text-teal-300" />
+          <Metric label="Em andamento" detail="Visitas iniciadas" value={inProgress} icon={Clock3} tone="text-amber-300" />
+          <Metric label="Concluídas" detail="Finalizadas hoje" value={completed} icon={CheckCircle2} tone="text-emerald-300" />
         </div>
 
         <section id="roteiro" className="scroll-mt-6">
@@ -147,12 +148,30 @@ export default function PromoterDashboard() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({
+  label,
+  detail,
+  value,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  detail: string;
+  value: number;
+  icon: LucideIcon;
+  tone: string;
+}) {
   return (
-    <Card>
-      <CardContent className="py-5">
-        <p className="text-xs font-bold uppercase tracking-wider text-slate-300">{label}</p>
-        <p className="mt-2 text-4xl font-black text-teal-300">{value}</p>
+    <Card className="overflow-hidden border-white/10 bg-gradient-to-br from-slate-900 to-slate-950">
+      <CardContent className="flex min-h-[126px] items-center justify-between gap-3 p-4 sm:p-5">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[.14em] text-slate-300">{label}</p>
+          <p className={`mt-2 text-4xl font-black leading-none ${tone}`}>{value}</p>
+          <p className="mt-2 text-xs text-slate-400">{detail}</p>
+        </div>
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.04]">
+          <Icon className={`h-5 w-5 ${tone}`} />
+        </span>
       </CardContent>
     </Card>
   );

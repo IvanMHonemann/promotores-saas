@@ -16,10 +16,9 @@ function readCachedUser() {
     if (!raw || raw === "null") return null;
     const user = JSON.parse(raw);
     if (!user || typeof user.id !== "number" || typeof user.role !== "string") return null;
-    if (!["platform_admin", "company_admin", "supervisor", "promoter"].includes(user.role)) {
-      localStorage.removeItem(LOCAL_SESSION_KEY);
-      return null;
-    }
+    if (user.role === "admin") user.role = "company_admin";
+    if (["user", "operator", "technician"].includes(user.role)) user.role = "promoter";
+    if (!["platform_admin", "company_admin", "supervisor", "promoter"].includes(user.role)) { localStorage.removeItem(LOCAL_SESSION_KEY); return null; }
     return user;
   } catch {
     return null;

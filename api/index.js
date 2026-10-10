@@ -3240,6 +3240,11 @@ function verifyPassword(password, encoded) {
 function hashToken(token) {
   return createHash("sha256").update(token).digest("hex");
 }
+function normalizeMemberRole(role) {
+  if (role === "admin" || role === "company_admin") return "company_admin";
+  if (role === "supervisor") return "supervisor";
+  return "promoter";
+}
 async function authenticateMember(email, password) {
   const normalizedEmail = email.trim().toLowerCase();
   const key = `login:${normalizedEmail}`;
@@ -3436,7 +3441,8 @@ async function listMemberAccounts(companyId) {
   const db = await getDb();
   if (!db) return [];
   const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt }).from(memberAccounts);
-  return companyId ? await query.where(eq3(memberAccounts.companyId, companyId)) : await query;
+  const rows = companyId ? await query.where(eq3(memberAccounts.companyId, companyId)) : await query;
+  return rows.map((row2) => ({ ...row2, role: normalizeMemberRole(String(row2.role)) }));
 }
 async function updateCompanyUser(accountId, companyId, data) {
   const db = await getDb();
@@ -4530,7 +4536,7 @@ async function createContext(opts) {
           name: memberAccount.userName,
           email: memberAccount.email,
           loginMethod: "password",
-          role: memberAccount.role,
+          role: normalizeMemberRole(String(memberAccount.role)),
           companyId: memberAccount.companyId,
           createdAt: memberAccount.createdAt,
           updatedAt: memberAccount.updatedAt,

@@ -2,7 +2,7 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 import { parse as parseCookie } from "cookie";
 import { MEMBER_COOKIE_NAME } from "@shared/const";
 import type { AuthenticatedUser } from "@shared/auth";
-import { getMemberBySessionToken, getPlatformAdminBySessionToken } from "../memberAuth";
+import { getMemberBySessionToken, getPlatformAdminBySessionToken, normalizeMemberRole } from "../memberAuth";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -57,7 +57,7 @@ export async function createContext(opts: CreateExpressContextOptions): Promise<
           name: memberAccount.userName,
           email: memberAccount.email,
           loginMethod: "password",
-          role: memberAccount.role,
+          role: normalizeMemberRole(String(memberAccount.role)),
           companyId: memberAccount.companyId,
           createdAt: memberAccount.createdAt,
           updatedAt: memberAccount.updatedAt,

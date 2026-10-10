@@ -56,6 +56,12 @@ export type LoginPrincipal =
   | { kind: "platform"; account: typeof platformAdmins.$inferSelect }
   | { kind: "company"; account: typeof memberAccounts.$inferSelect };
 
+export function normalizeMemberRole(role: string): "company_admin" | "supervisor" | "promoter" {
+  if (role === "admin" || role === "company_admin") return "company_admin";
+  if (role === "supervisor") return "supervisor";
+  return "promoter";
+}
+
 export async function authenticateMember(email: string, password: string): Promise<LoginPrincipal | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const key = `login:${normalizedEmail}`;
@@ -281,7 +287,8 @@ export async function listMemberAccounts(companyId?: number) {
   const db = await getDb();
   if (!db) return [];
   const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt }).from(memberAccounts);
-  return companyId ? await query.where(eq(memberAccounts.companyId, companyId)) : await query;
+  const rows = companyId ? await query.where(eq(memberAccounts.companyId, companyId)) : await query;
+  return rows.map((row) => ({ ...row, role: normalizeMemberRole(String(row.role)) }));
 }
 
 export async function updateCompanyUser(accountId: number, companyId: number, data: { userName?: string; email?: string; role?: "company_admin" | "supervisor" | "promoter" }) {

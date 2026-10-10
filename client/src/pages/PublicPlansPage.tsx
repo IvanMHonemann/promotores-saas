@@ -15,9 +15,10 @@ function planHighlights(plan: {
   name: string;
   maxUsers: number | null;
   maxClients: number | null;
-  maxExtinguishers: number | null;
-  featureOfflinePwa?: boolean | null;
-  featureBackup?: boolean | null;
+  maxStores?: number | null;
+  featureTimeTracking?: boolean | null;
+  featureRoutes?: boolean | null;
+  featureChecklists?: boolean | null;
   featureReports?: boolean | null;
   featureUsers?: boolean | null;
 }) {
@@ -26,24 +27,25 @@ function planHighlights(plan: {
 
   items.push(plan.maxUsers == null ? "Usuários ilimitados" : `${plan.maxUsers} usuário${plan.maxUsers > 1 ? "s" : ""}`);
   items.push(fmtLimit(plan.maxClients, "cliente", "clientes"));
-  items.push(fmtLimit(plan.maxExtinguishers, "extintor", "extintores"));
+  items.push(fmtLimit(plan.maxStores, "loja", "lojas"));
 
   if (name.includes("start") || name.includes("essenc") || name.includes("básico") || name.includes("basico")) {
-    items.push("Clientes, extintores, alertas e OS");
-    if (plan.featureOfflinePwa) items.push("App no celular com uso offline");
-    if (plan.featureBackup) items.push("Backup dos dados");
+    items.push("Painel de operação e lojas");
+    if (plan.featureTimeTracking) items.push("Ponto eletrônico com GPS");
+    if (plan.featureRoutes) items.push("Roteiros e visitas");
   } else if (name.includes("prof")) {
     items.push("Tudo do Start");
     items.push("Histórico e auditoria");
-    items.push("Lixeira com recuperação");
-    items.push("Sincronização entre dispositivos");
+    items.push("Checklists e evidências de campo");
+    items.push("Relatórios e auditoria");
   } else if (name.includes("empres")) {
     items.push("Tudo do Profissional");
     items.push("Suporte prioritário");
     items.push("Acesso antecipado a recursos premium");
   } else {
-    if (plan.featureOfflinePwa) items.push("Operação offline / PWA");
-    if (plan.featureBackup) items.push("Backup");
+    if (plan.featureTimeTracking) items.push("Ponto eletrônico com GPS");
+    if (plan.featureRoutes) items.push("Roteiros e visitas");
+    if (plan.featureChecklists) items.push("Checklists de campo");
     if (plan.featureReports) items.push("Relatórios e histórico");
     if (plan.featureUsers) items.push("Gestão de usuários");
   }
@@ -84,7 +86,7 @@ export default function PublicPlansPage() {
             <div>
               <h1 className="text-3xl font-black tracking-tight md:text-4xl">Escolha o plano ideal</h1>
               <p className="mt-2 max-w-xl text-slate-400">
-                Planos pensados para empresas de extintores. Compare limites de usuários, clientes e equipamentos.
+                Planos pensados para equipes de campo. Compare limites de usuários, promotores e lojas.
               </p>
             </div>
           </div>

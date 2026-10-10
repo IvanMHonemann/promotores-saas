@@ -43,14 +43,15 @@ const ACTION_LABEL: Record<string, string> = {
 };
 
 const MODULE_LABEL: Record<string, string> = {
-  clients: "Clientes",
-  extinguishers: "Extintores",
-  orders: "Ordens de serviço",
   users: "Usuários",
   settings: "Configurações",
   auth: "Autenticação",
-  trash: "Lixeira",
   billing: "Assinatura",
+  operations: "Operação",
+  routes: "Roteiros",
+  visits: "Visitas",
+  time_tracking: "Ponto eletrônico",
+  corrections: "Correções de ponto",
   system: "Sistema",
 };
 

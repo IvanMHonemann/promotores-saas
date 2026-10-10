@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download, Loader2, Share, Wifi, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useInstallPrompt, useOnlineStatus } from "@/offline/hooks";
+import { useInstallPrompt, useOnlineStatus } from "@/pwa/hooks";
 
 const IOS_HINT_KEY = "promotores_saas_ios_install_hint_dismissed";
 

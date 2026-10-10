@@ -285,6 +285,10 @@ export async function listAuditLogs(filters: AuditListFilters = {}) {
   const where: string[] = [];
   const params: any[] = [];
 
+  // Nunca reexibir módulos removidos do produto antigo, mesmo em chamadas
+  // antigas ou filtros salvos no navegador.
+  where.push("`module` NOT IN ('clients', 'orders', 'extinguishers', 'trash')");
+
   if (filters.companyId != null) {
     where.push("`companyId` = ?");
     params.push(Number(filters.companyId));

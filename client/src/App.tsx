@@ -4,8 +4,6 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-import PrintOrderPage from "./pages/PrintOrderPage";
 import LandingPage from "./pages/LandingPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminAssinaturasPage from "./pages/AdminAssinaturasPage";
@@ -16,8 +14,6 @@ import LoginPage from "./pages/LoginPage";
 import UpgradePlanPage from "./pages/UpgradePlanPage";
 import MySubscriptionPage from "./pages/MySubscriptionPage";
 import PaymentHistoryPage from "./pages/PaymentHistoryPage";
-import BackupPage from "./pages/BackupPage";
-import SyncStatusPage from "./pages/SyncStatusPage";
 import AuditPage from "./pages/AuditPage";
 import PromoterDashboard from "./pages/promoter/PromoterDashboard";
 import OperationsDashboard from "./pages/operations/OperationsDashboard";
@@ -77,10 +73,7 @@ function Router() {
       <Route path="/upgrade"><CompanyAdminProtected><UpgradePlanPage /></CompanyAdminProtected></Route>
       <Route path="/minha-assinatura"><CompanyAdminProtected><MySubscriptionPage /></CompanyAdminProtected></Route>
       <Route path="/pagamentos"><CompanyAdminProtected><PaymentHistoryPage /></CompanyAdminProtected></Route>
-      <Route path="/backup"><CommercialProtected><BackupPage /></CommercialProtected></Route>
       <Route path="/auditoria"><CompanyAdminProtected><AuditPage /></CompanyAdminProtected></Route>
-      <Route path="/sync-status"><CommercialProtected><SyncStatusPage /></CommercialProtected></Route>
-      <Route path="/os/:id"><CommercialProtected><PrintOrderPage /></CommercialProtected></Route>
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

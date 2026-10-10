@@ -150,9 +150,17 @@
   .saas-page .text-slate-600,
   .saas-page .text-slate-500 { color: #a8b6c9; }
   .saas-page .text-slate-400 { color: #94a3b8; }
+  .saas-page label { color: #e2e8f0; }
+  .saas-page [data-slot="card-title"],
+  .saas-page [data-slot="card-header"] label,
+  .saas-page h1,
+  .saas-page h2,
+  .saas-page h3,
+  .saas-page h4 { color: #f8fafc; }
   .saas-page input,
   .saas-page textarea,
   .saas-page select { border-color: rgb(255 255 255 / 0.16); background: rgb(2 8 23 / 0.55); color: #f8fafc; }
+  .saas-page select option { background: #0f1d31; color: #f8fafc; }
   .saas-page input::placeholder,
   .saas-page textarea::placeholder { color: #94a3b8; }
   .saas-page .border-slate-200,

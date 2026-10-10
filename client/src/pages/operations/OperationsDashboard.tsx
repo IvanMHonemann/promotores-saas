@@ -5,16 +5,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 const eventLabels: Record<string, string> = { clock_in: "Entrada", break_start: "Início do intervalo", break_end: "Fim do intervalo", clock_out: "Saída" };
 
 export default function OperationsDashboard() {
   const today = new Date().toISOString().slice(0, 10);
   const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
+  const { user } = useAuth();
   const stores = trpc.operations.stores.list.useQuery();
   const routes = trpc.operations.routes.list.useQuery({ date: today });
   const visits = trpc.operations.visits.list.useQuery({ date: today });
-  const corrections = trpc.timeTracking.correctionRequests.pending.useQuery();
+  const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: user?.role === "company_admin" });
   const utils = trpc.useUtils();
   const review = trpc.timeTracking.correctionRequests.review.useMutation({ onSuccess: (_, variables) => { toast.success(variables.status === "approved" ? "Correção aprovada e aplicada ao ponto." : "Pedido de correção recusado."); utils.timeTracking.correctionRequests.pending.invalidate(); }, onError: (error) => toast.error(error.message) });
   const metrics = useMemo(() => { const rows = visits.data || []; return { total: rows.length, completed: rows.filter((row) => row.visit.status === "completed").length, inProgress: rows.filter((row) => row.visit.status === "in_progress").length }; }, [visits.data]);

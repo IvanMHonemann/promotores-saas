@@ -107,6 +107,49 @@ export const timeTrackingRouter = router({
         .limit(input?.limit || 100);
     }),
 
+  myTimeSummary: commercialProcedure
+    .query(async ({ ctx }) => {
+      const companyId = ctx.accountId;
+      const memberId = ctx.memberAccountId;
+      if (!companyId || !memberId) return { periodLabel: "Mês atual", daysTracked: 0, workedMinutes: 0, expectedMinutes: 0, balanceMinutes: 0, openShift: false };
+      const database = await db.getDb();
+      if (!database) return { periodLabel: "Mês atual", daysTracked: 0, workedMinutes: 0, expectedMinutes: 0, balanceMinutes: 0, openShift: false };
+      const now = new Date();
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+      const events = await database.select().from(timeEvents)
+        .where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end)))
+        .orderBy(timeEvents.serverTime);
+      const byDay = new Map<string, typeof events>();
+      for (const event of events) {
+        const timestamp = event.deviceTime || event.serverTime;
+        const day = timestamp.toISOString().slice(0, 10);
+        const list = byDay.get(day) || [];
+        list.push(event);
+        byDay.set(day, list);
+      }
+      let workedMinutes = 0;
+      let openShift = false;
+      for (const dayEvents of byDay.values()) {
+        let sessionStart: Date | null = null;
+        for (const event of dayEvents) {
+          const timestamp = event.deviceTime || event.serverTime;
+          if (event.eventType === "clock_in" || event.eventType === "break_end") sessionStart = timestamp;
+          if ((event.eventType === "break_start" || event.eventType === "clock_out") && sessionStart) {
+            workedMinutes += Math.max(0, Math.round((timestamp.getTime() - sessionStart.getTime()) / 60000));
+            sessionStart = null;
+          }
+        }
+        if (sessionStart) {
+          workedMinutes += Math.max(0, Math.round((Math.min(Date.now(), sessionStart.getTime() + 24 * 60 * 60000) - sessionStart.getTime()) / 60000));
+          openShift = true;
+        }
+      }
+      const expectedMinutes = byDay.size * 8 * 60;
+      const periodLabel = now.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+      return { periodLabel: periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1), daysTracked: byDay.size, workedMinutes, expectedMinutes, balanceMinutes: workedMinutes - expectedMinutes, openShift };
+    }),
+
   myCorrections: commercialProcedure
     .query(async ({ ctx }) => {
       const companyId = ctx.accountId;

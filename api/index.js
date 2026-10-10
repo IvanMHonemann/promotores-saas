@@ -3509,10 +3509,6 @@ async function countExtinguishers(companyId) {
   const rows = await database.select({ total: sql2`count(*)` }).from(extinguishers).where(eq4(extinguishers.accountId, companyId));
   return Number(rows[0]?.total || 0);
 }
-async function countUsers(companyId) {
-  const list = await listMemberAccounts(companyId);
-  return Array.isArray(list) ? list.length : 0;
-}
 async function assertClientLimit(companyId) {
   const plan = await requirePlanFeature(companyId, "featureClients", "Cadastro de clientes n\xE3o est\xE1 dispon\xEDvel no seu plano.");
   if (plan.maxClients == null) return plan;
@@ -3544,16 +3540,8 @@ async function assertExtinguisherLimit(companyId) {
   return plan;
 }
 async function assertUserLimit(companyId) {
-  const current = await countUsers(companyId);
-  const safeLimit = 1e3;
-  if (current >= safeLimit) {
-    throw new TRPCError4({
-      code: "FORBIDDEN",
-      message: `Limite operacional de usu\xE1rios atingido (${safeLimit}).`,
-      cause: { code: "PLAN_LIMIT", resource: "users", limit: safeLimit, current }
-    });
-  }
-  return { id: null, name: "Opera\xE7\xE3o", maxUsers: safeLimit };
+  void companyId;
+  return { id: null, name: "Opera\xE7\xE3o", maxUsers: null };
 }
 async function assertServiceOrderFeature(companyId) {
   return requirePlanFeature(
@@ -3985,7 +3973,10 @@ var appRouter = router({
         return created;
       } catch (error) {
         if (error?.code === "ER_DUP_ENTRY") throw new TRPCError5({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
-        throw error;
+        console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message });
+        if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError5({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
+        if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados est\xE1 com a estrutura de usu\xE1rios desatualizada. A implanta\xE7\xE3o precisa concluir a migra\xE7\xE3o." });
+        throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar o usu\xE1rio. Verifique os dados e tente novamente." });
       }
     }),
     update: companyAdminProcedure.input(z3.object({ id: z3.number().int().positive(), userName: z3.string().min(2).optional(), email: z3.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {

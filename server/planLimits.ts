@@ -144,20 +144,11 @@ export async function assertExtinguisherLimit(companyId: number) {
 }
 
 export async function assertUserLimit(companyId: number) {
-  // A gestão de acessos é estrutural do Promotores SaaS. Não consultar
-  // company_subscriptions aqui: esse fluxo ainda precisa funcionar mesmo
-  // quando a empresa não possui assinatura ou quando a tabela de billing
-  // estiver em migração entre versões do produto.
-  const current = await countUsers(companyId);
-  const safeLimit = 1000;
-  if (current >= safeLimit) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: `Limite operacional de usuários atingido (${safeLimit}).`,
-      cause: { code: "PLAN_LIMIT", resource: "users", limit: safeLimit, current },
-    });
-  }
-  return { id: null, name: "Operação", maxUsers: safeLimit };
+  // O cadastro deve ser independente das tabelas legadas de billing. A
+  // quantidade de usuários pode ser limitada posteriormente por uma regra
+  // própria do novo produto, sem bloquear a criação por uma query de plano.
+  void companyId;
+  return { id: null, name: "Operação", maxUsers: null };
 }
 
 export async function assertServiceOrderFeature(companyId: number) {

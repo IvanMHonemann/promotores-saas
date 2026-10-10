@@ -28,11 +28,11 @@ export function SidebarNav() {
       ]
     : role === "promoter"
       ? [
-          { href: "#ponto", label: "Ponto eletrônico", icon: Clock3 },
-          { href: "#inicio", label: "Visão geral", icon: LayoutDashboard },
-          { href: "#historico", label: "Histórico e GPS", icon: CalendarDays },
-          { href: "#roteiro", label: "Meu roteiro", icon: ClipboardList },
-          { href: "#correcoes", label: "Correções de ponto", icon: ClipboardList },
+          { href: "/", label: "Painel inicial", icon: LayoutDashboard },
+          { href: "/ponto", label: "Bater ponto", icon: Clock3 },
+          { href: "/ponto#historico", label: "Histórico e GPS", icon: CalendarDays },
+          { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
+          { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
         ]
       : [
           { href: "#inicio", label: "Visão geral", icon: LayoutDashboard },

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
+import { toast } from "sonner";
 import TimeTrackingDemo from "./TimeTrackingDemo";
 
 type Section = "overview" | "companies" | "time";
@@ -25,20 +26,20 @@ export default function PlatformDashboard() {
   const title = section === "time" ? "Ponto eletrônico" : section === "companies" ? "Empresas" : "Visão geral";
 
   useEffect(() => {
-    if (!navigator.geolocation) { setGpsStatus("unavailable"); return; }
+    if (!navigator.geolocation || !window.isSecureContext) { setGpsStatus("unavailable"); return; }
     navigator.geolocation.getCurrentPosition(
       () => setGpsStatus("granted"),
-      () => setGpsStatus("denied"),
+      (error) => { setGpsStatus("denied"); if (error.code === 1) toast.error("O navegador bloqueou o GPS. Libere a localização nas permissões do site."); },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   }, []);
 
   const requestGps = () => {
-    if (!navigator.geolocation) { setGpsStatus("unavailable"); return; }
+    if (!navigator.geolocation || !window.isSecureContext) { setGpsStatus("unavailable"); toast.error("O GPS só funciona em uma conexão HTTPS e em navegador compatível."); return; }
     setGpsStatus("checking");
     navigator.geolocation.getCurrentPosition(
-      () => setGpsStatus("granted"),
-      () => setGpsStatus("denied"),
+      () => { setGpsStatus("granted"); toast.success("GPS autorizado. Agora você pode registrar o ponto."); },
+      (error) => { setGpsStatus("denied"); toast.error(error.code === 1 ? "Permissão bloqueada. Toque no cadeado ao lado do endereço, abra Permissões do site e permita Localização. Depois recarregue a página." : "O GPS não respondeu. Tente novamente em um local aberto."); },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
     );
   };
@@ -66,9 +67,9 @@ function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total:
 }
 
 function GpsPermission({ status, onRequest, onOpenTime }: { status: "checking" | "granted" | "denied" | "unavailable"; onRequest: () => void; onOpenTime: () => void }) {
-  if (status === "granted") return <div className="flex items-center gap-3 rounded-2xl border border-teal-300/20 bg-teal-300/10 px-4 py-3 text-sm text-teal-100"><LocateFixed className="h-5 w-5 text-teal-300" /><span><strong>GPS autorizado.</strong> A localização está pronta para o ponto eletrônico.</span></div>;
+  if (status === "granted") return <div role="status" className="flex items-center gap-3 rounded-2xl border border-teal-300/20 bg-teal-300/10 px-4 py-3 text-sm text-teal-100"><LocateFixed className="h-5 w-5 text-teal-300" /><span><strong>GPS autorizado.</strong> A localização está pronta para o ponto eletrônico.</span></div>;
   const unavailable = status === "unavailable";
-  return <div className="flex flex-col gap-4 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><LocateFixed className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" /><div><p className="font-bold text-amber-100">{status === "checking" ? "Solicitando acesso ao GPS..." : unavailable ? "GPS não disponível neste navegador" : "Permita o GPS para registrar o ponto"}</p><p className="mt-1 text-sm text-amber-100/80">{unavailable ? "Use um navegador com suporte à localização." : "O aplicativo precisa da localização do celular para validar cada marcação."}</p></div></div>{!unavailable && <div className="flex shrink-0 gap-2"><Button onClick={onRequest} disabled={status === "checking"} className="bg-amber-300 text-slate-950 hover:bg-amber-200">{status === "checking" ? "Aguardando..." : "Permitir GPS"}</Button><Button variant="outline" onClick={onOpenTime} className="border-amber-200/30 bg-transparent text-amber-100 hover:bg-amber-200/10">Abrir ponto</Button></div>}</div>;
+  return <div role="alert" className="flex flex-col gap-4 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><LocateFixed className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" /><div><p className="font-bold text-amber-100">{status === "checking" ? "Solicitando acesso ao GPS..." : unavailable ? "GPS não disponível neste navegador" : "Permita o GPS para registrar o ponto"}</p><p className="mt-1 text-sm text-amber-100/80">{unavailable ? "Use um navegador com suporte à localização e abra o site em HTTPS." : status === "denied" ? "Toque no cadeado ao lado do endereço → Permissões do site → Localização → Permitir. Depois recarregue a página." : "O aplicativo precisa da localização do celular para validar cada marcação."}</p></div></div>{!unavailable && <div className="flex shrink-0 gap-2"><Button onClick={onRequest} disabled={status === "checking"} className="bg-amber-300 text-slate-950 hover:bg-amber-200">{status === "checking" ? "Aguardando..." : status === "denied" ? "Tentar novamente" : "Permitir GPS"}</Button><Button variant="outline" onClick={onOpenTime} className="border-amber-200/30 bg-transparent text-amber-100 hover:bg-amber-200/10">Abrir ponto</Button></div>}</div>;
 }
 
 function QuickAction({ icon: Icon, title, text, highlight, onClick }: { icon: typeof Building2; title: string; text: string; highlight?: boolean; onClick: () => void }) { return <button onClick={onClick} className={`group flex items-center gap-4 rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 ${highlight ? "border-teal-300/25 bg-teal-300/10 hover:bg-teal-300/15" : "border-white/10 bg-slate-900/70 hover:border-white/20 hover:bg-white/[.06]"}`}><div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${highlight ? "bg-teal-300 text-slate-950" : "bg-white/10 text-slate-300"}`}><Icon className="h-5 w-5" /></div><div className="min-w-0 flex-1"><p className="font-bold">{title}</p><p className="mt-1 text-sm text-slate-300">{text}</p></div><ArrowUpRight className="h-5 w-5 text-slate-300 transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-teal-300" /></button>; }

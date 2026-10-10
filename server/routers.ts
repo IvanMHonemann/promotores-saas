@@ -314,7 +314,22 @@ export const appRouter = router({
       update: platformProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().min(2).optional(), active: z.boolean().optional() })).mutation(async ({ input }) => { await db.updateCompany(input.id, { name: input.name, active: input.active }); return { success: true } as const; }),
     }),
     dashboard: platformProcedure.input(z.object({ companyId: z.number().int().positive(), city: z.string().optional(), from: z.string().optional(), to: z.string().optional() })).query(({ input }) => db.getPlatformDashboardStats(input.companyId, input)),
-    users: platformProcedure.query(() => memberAuth.listMemberAccounts()),
+    users: router({
+      list: platformProcedure.query(() => memberAuth.listMemberAccounts()),
+      create: platformProcedure.input(z.object({ companyId: z.number().int().positive(), userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole })).mutation(async ({ input, ctx }) => {
+        const company = await db.getCompanyById(input.companyId);
+        if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+        if (!company.active) throw new TRPCError({ code: "BAD_REQUEST", message: "Não é possível criar usuário em uma empresa bloqueada." });
+        try {
+          const created = await memberAuth.createCompanyUser(input);
+          void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usuário criado pelo administrador geral: ${input.userName}`, newData: { companyId: input.companyId, email: input.email, role: input.role } });
+          return created;
+        } catch (error: any) {
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já está cadastrado." });
+          throw error;
+        }
+      }),
+    }),
     data: router({
       clients: platformProcedure.input(z.object({ companyId: z.number().int().positive().optional() }).optional()).query(({ input }) => db.getPlatformClients(input?.companyId)),
       clientsPage: platformProcedure.input(z.object({ companyId: z.number().int().positive(), page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), city: z.string().optional(), search: z.string().optional() })).query(({ input }) => db.getClientsPage(input.companyId, input)),

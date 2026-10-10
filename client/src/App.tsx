@@ -21,6 +21,7 @@ import SyncStatusPage from "./pages/SyncStatusPage";
 import AuditPage from "./pages/AuditPage";
 import PromoterDashboard from "./pages/promoter/PromoterDashboard";
 import OperationsDashboard from "./pages/operations/OperationsDashboard";
+import PlatformDashboard from "./pages/platform/PlatformDashboard";
 import { PwaStatusBar } from "./components/PwaStatusBar";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
@@ -55,6 +56,7 @@ function RootRoute() {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <LandingPage />;
+  if (user.role === "platform_admin") return <PlatformDashboard />;
   if (user.role === "promoter") return <PromoterDashboard />;
   if (user.companyId && ["company_admin", "supervisor"].includes(user.role)) return <OperationsDashboard />;
   return <Home />;

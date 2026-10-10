@@ -1,0 +1,11 @@
+node_modules
+.git
+.gitignore
+.env
+.env.*
+backups
+coverage
+dist
+.manus-logs
+client/public/__manus__
+*.log

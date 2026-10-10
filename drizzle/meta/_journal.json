@@ -1,0 +1,69 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1790182721336,
+      "tag": "0000_wandering_sasquatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1790182757628,
+      "tag": "0001_sour_leopardon",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1790184460364,
+      "tag": "0002_chemical_misty_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1790185442027,
+      "tag": "0003_known_lethal_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1790186284749,
+      "tag": "0004_remarkable_crusher_hogan",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1790246956430,
+      "tag": "0005_funny_shinko_yamashiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1790251984532,
+      "tag": "0006_uneven_wilson_fisk",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1791120000000,
+      "tag": "0009_audit_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1791168000000,
+      "tag": "0010_extinguisher_public_token",
+      "breakpoints": true
+    }
+  ]
+}

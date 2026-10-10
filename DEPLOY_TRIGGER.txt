@@ -1,0 +1,3 @@
+Deploy trigger: offline module restored + sync counters fix
+Commit: 1f1b1a87fdf10c3e8bfd763644c1d2162fae02b6
+Timestamp: 2026-10-07T18:10:00Z

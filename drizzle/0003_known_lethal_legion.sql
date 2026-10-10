@@ -1,0 +1,1 @@
+ALTER TABLE `member_accounts` ADD `role` enum('user','admin') DEFAULT 'user' NOT NULL;

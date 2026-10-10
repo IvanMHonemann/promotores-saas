@@ -258,6 +258,6 @@
   .saas-page .text-red-800 { color: #5eead4; }
   .saas-page .bg-red-600,
   .saas-page .bg-red-700 { background-color: #14b8a6; }
-  .saas-page .hover\\:bg-red-700:hover { background-color: #2dd4bf; }
+  .saas-page button.bg-red-700:hover,
   .saas-page .border-red-300 { border-color: rgb(94 234 212 / 0.45); }
 }

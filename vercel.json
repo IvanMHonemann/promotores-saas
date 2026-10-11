@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "node scripts/guarded-entitlements-migrate.mjs && pnpm run build",
+  "buildCommand": "pnpm run build",
   "installCommand": "corepack enable && pnpm install",
   "outputDirectory": "dist/public",
   "framework": null,

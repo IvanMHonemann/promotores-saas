@@ -17,7 +17,7 @@ const dateLabel = (d: string | Date) => new Intl.DateTimeFormat("pt-BR", { timeZ
 const money = (v: string | number) => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 function shareProducts(products: Product[]) {
   if (!products.length) return;
-  const text = ["*Produtos e controle de validade*", ...products.map((p, i) => `${i + 1}. *${p.description}*\nCódigo: ${p.productCode}\nQuantidade: ${p.quantity}\nValidade: ${dateLabel(p.expirationDate)}\nPreço: ${money(p.price)}`)].join("\n\n");
+  const text = ["*Produtos e controle de validade*", ...products.map(p => `*${p.description}*\n*Código:* ${p.productCode}\n*Quantidade:* ${p.quantity}\n*Validade:* ${dateLabel(p.expirationDate)}\n*Preço:* ${money(p.price)}`)].join("\n\n");
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
 }
 const csvCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;

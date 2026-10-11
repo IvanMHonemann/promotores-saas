@@ -4,6 +4,7 @@
  * Não registra senhas, tokens ou credenciais.
  */
 import { and, count, desc, eq, gte, like, lte, or, sql, type SQL } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { auditLogs, type InsertAuditLog } from "../drizzle/schema";
 import { getDb, getPool } from "./db";
 import type { TrpcContext } from "./_core/context";
@@ -476,8 +477,8 @@ export type PromoterActivityFilters = {
 };
 
 /**
- * Timeline unificada baseada nos registros atuais de operação, ponto, checklists,
- * evidências, correções de ponto e audit_logs. Todo braço da união filtra a empresa
+ * Timeline unificada baseada nos registros atuais de operação, ponto,
+ * correções de ponto, produtos e audit_logs. Todo braço da união filtra a empresa
  * na origem; os eventos históricos são reconstruídos apenas a partir de dados persistidos.
  */
 export async function listPromoterActivities(filters: PromoterActivityFilters) {
@@ -509,27 +510,6 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
       LEFT JOIN routes r ON r.id = v.routeId AND r.companyId = v.companyId
     WHERE v.companyId = ? AND ma.role = 'promoter'
     UNION ALL
-    SELECT CONCAT('checklist-', cr.id) AS activityId, cr.companyId, ma.id AS promoterId,
-      ma.userName, ma.email AS userEmail, cr.completedAt AS occurredAt,
-      'checklists' AS module, 'submitted' AS action, 'checklist_response' AS entityType,
-      COALESCE(c.name, CONCAT('Checklist #', cr.checklistId)) AS entityLabel,
-      CONCAT('Checklist preenchido · ', COALESCE(c.name, CONCAT('Checklist #', cr.checklistId))) AS description,
-      JSON_OBJECT('checklist', c.name, 'loja', s.name, 'visita', cr.visitId, 'respostas', cr.responses, 'concluído em', cr.completedAt) AS details
-    FROM checklist_responses cr INNER JOIN member_accounts ma ON ma.id = cr.promoterId AND ma.companyId = cr.companyId
-      LEFT JOIN checklists c ON c.id = cr.checklistId AND c.companyId = cr.companyId
-      LEFT JOIN visits v ON v.id = cr.visitId AND v.companyId = cr.companyId
-      LEFT JOIN stores s ON s.id = v.storeId AND s.companyId = cr.companyId
-    WHERE cr.companyId = ? AND ma.role = 'promoter'
-    UNION ALL
-    SELECT CONCAT('evidence-', e.id) AS activityId, e.companyId, ma.id AS promoterId,
-      ma.userName, ma.email AS userEmail, e.createdAt AS occurredAt,
-      'evidences' AS module, 'upload' AS action, 'evidence' AS entityType,
-      COALESCE(e.fileName, CONCAT('Evidência #', e.id)) AS entityLabel,
-      CONCAT('Evidência enviada', CASE WHEN e.caption IS NULL OR e.caption = '' THEN '' ELSE CONCAT(' · ', e.caption) END) AS description,
-      JSON_OBJECT('arquivo', e.fileName, 'tipo de arquivo', e.mimeType, 'tamanho (bytes)', e.sizeBytes, 'legenda', e.caption, 'visita', e.visitId, 'resposta de checklist', e.checklistResponseId, 'latitude', e.latitude, 'longitude', e.longitude, 'arquivoUrl', e.fileUrl, 'enviado em', e.createdAt) AS details
-    FROM evidences e INNER JOIN member_accounts ma ON ma.id = e.promoterId AND ma.companyId = e.companyId
-    WHERE e.companyId = ? AND ma.role = 'promoter'
-    UNION ALL
     SELECT CONCAT('correction-', tc.id) AS activityId, tc.companyId, ma.id AS promoterId,
       ma.userName, ma.email AS userEmail, COALESCE(tc.reviewedAt, tc.createdAt) AS occurredAt,
       'corrections' AS module, tc.status AS action, 'time_correction' AS entityType,
@@ -558,12 +538,12 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
     WHERE al.companyId = ? AND ma.role = 'promoter'
   `;
   const where: string[] = [];
-  const params: any[] = [filters.companyId, filters.companyId, filters.companyId, filters.companyId, filters.companyId, filters.companyId, filters.companyId];
+  const params: any[] = [filters.companyId, filters.companyId, filters.companyId, filters.companyId, filters.companyId];
   if (filters.from) { where.push("activity.occurredAt >= ?"); params.push(toMysqlDateTime(filters.from)); }
   if (filters.to) { where.push("activity.occurredAt <= ?"); params.push(toMysqlDateTime(filters.to, true)); }
   if (filters.promoterId != null) { where.push("activity.promoterId = ?"); params.push(filters.promoterId); }
   if (filters.category === "other") {
-    where.push("activity.module NOT IN ('visits', 'time_tracking', 'checklists', 'evidences', 'corrections', 'products')");
+    where.push("activity.module NOT IN ('visits', 'time_tracking', 'corrections', 'products')");
   } else if (filters.category) { where.push("activity.module = ?"); params.push(filters.category); }
   if (filters.search?.trim()) {
     const q = `%${filters.search.trim().slice(0, 100)}%`;
@@ -579,6 +559,6 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
     return { items: (rows as any[]) || [], total, page, pageSize };
   } catch (err) {
     console.warn("[audit] promoter activity query failed", err);
-    return { items: [], total: 0, page, pageSize };
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível carregar as atividades dos promotores. Tente novamente em instantes." });
   }
 }

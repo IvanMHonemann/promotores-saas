@@ -7,13 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Activity, CalendarClock, ChevronLeft, ChevronRight, ClipboardCheck, Download, FileImage, Loader2, MapPin, ShieldCheck, Timer, UserRound } from "lucide-react";
+import { Activity, CalendarClock, ChevronLeft, ChevronRight, Download, Loader2, MapPin, ShieldCheck, Timer, UserRound } from "lucide-react";
 
 const CATEGORY_LABEL: Record<string, string> = {
   visits: "Visitas e tarefas",
   time_tracking: "Ponto eletrônico",
-  checklists: "Checklists",
-  evidences: "Fotos e evidências",
   corrections: "Correções de ponto",
   products: "Produtos e validades",
   other: "Outras atividades",
@@ -63,8 +61,6 @@ function displayValue(value: unknown) {
 }
 function moduleIcon(module: string) {
   if (module === "time_tracking") return Timer;
-  if (module === "checklists") return ClipboardCheck;
-  if (module === "evidences") return FileImage;
   if (module === "visits") return MapPin;
   if (module === "corrections") return ShieldCheck;
   return Activity;
@@ -106,7 +102,7 @@ export default function AuditPage() {
   return <DashboardLayout title="Auditoria de atividades" description="Acompanhe visitas, ponto, checklists, evidências e outras ações registradas dos promotores." refreshing={listQuery.isFetching} onRefresh={() => { void utils.audit.promoterActivity.invalidate(); }}>
     <div className="min-w-0 space-y-5">
       <div className="flex flex-col gap-3 rounded-2xl border border-teal-300/15 bg-gradient-to-br from-teal-300/[.10] to-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-        <div className="flex min-w-0 items-start gap-3"><div className="rounded-xl bg-teal-300/10 p-2.5 text-teal-200"><Activity className="h-5 w-5"/></div><div className="min-w-0"><h2 className="font-bold text-white">Histórico de campo</h2><p className="mt-1 text-sm leading-relaxed text-slate-300">Os registros são reunidos das tarefas, marcações de ponto, checklists, fotos e correções enviados pelo aplicativo.</p></div></div>
+        <div className="flex min-w-0 items-start gap-3"><div className="rounded-xl bg-teal-300/10 p-2.5 text-teal-200"><Activity className="h-5 w-5"/></div><div className="min-w-0"><h2 className="font-bold text-white">Histórico de campo</h2><p className="mt-1 text-sm leading-relaxed text-slate-300">Reúne tarefas e visitas, marcações de ponto, correções, produtos e outros eventos registrados no sistema.</p></div></div>
         <Button onClick={() => exportMutation.mutate({ from: from || undefined, to: to || undefined, promoterId: promoterId === "all" ? undefined : Number(promoterId), category: category === "all" ? undefined : category, search: search.trim() || undefined })} disabled={exportMutation.isPending} className="w-full shrink-0 bg-teal-300 font-semibold text-slate-950 hover:bg-teal-200 sm:w-auto"><span className="flex items-center justify-center gap-2">{exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin"/> : <Download className="h-4 w-4"/>}Exportar CSV</span></Button>
       </div>
 
@@ -116,7 +112,7 @@ export default function AuditPage() {
           <label className="min-w-0 text-xs font-medium text-slate-300">De<Input type="date" value={from} onChange={e => onFilterChange(() => setFrom(e.target.value))} className="mt-1 min-w-0 border-white/15 bg-slate-950/70 text-white [color-scheme:dark]"/></label>
           <label className="min-w-0 text-xs font-medium text-slate-300">Até<Input type="date" value={to} onChange={e => onFilterChange(() => setTo(e.target.value))} className="mt-1 min-w-0 border-white/15 bg-slate-950/70 text-white [color-scheme:dark]"/></label>
           <div className="min-w-0"><label className="text-xs font-medium text-slate-300">Promotor</label><Select value={promoterId} onValueChange={v => onFilterChange(() => setPromoterId(v))}><SelectTrigger className="mt-1 min-w-0 border-white/15 bg-slate-950/70 text-white"><SelectValue/></SelectTrigger><SelectContent className="border-white/10 bg-slate-900 text-white"><SelectItem value="all">Todos os promotores</SelectItem>{promoters.map((user: any) => <SelectItem key={user.id} value={String(user.id)}>{user.userName || user.name || user.email}</SelectItem>)}</SelectContent></Select></div>
-          <div className="min-w-0"><label className="text-xs font-medium text-slate-300">Tipo de atividade</label><Select value={category} onValueChange={v => onFilterChange(() => setCategory(v))}><SelectTrigger className="mt-1 min-w-0 border-white/15 bg-slate-950/70 text-white"><SelectValue/></SelectTrigger><SelectContent className="border-white/10 bg-slate-900 text-white"><SelectItem value="all">Todas as atividades</SelectItem><SelectItem value="visits">Visitas e tarefas</SelectItem><SelectItem value="time_tracking">Ponto eletrônico</SelectItem><SelectItem value="checklists">Checklists</SelectItem><SelectItem value="evidences">Fotos e evidências</SelectItem><SelectItem value="corrections">Correções de ponto</SelectItem><SelectItem value="products">Produtos e validades</SelectItem><SelectItem value="other">Outras atividades</SelectItem></SelectContent></Select></div>
+          <div className="min-w-0"><label className="text-xs font-medium text-slate-300">Tipo de atividade</label><Select value={category} onValueChange={v => onFilterChange(() => setCategory(v))}><SelectTrigger className="mt-1 min-w-0 border-white/15 bg-slate-950/70 text-white"><SelectValue/></SelectTrigger><SelectContent className="border-white/10 bg-slate-900 text-white"><SelectItem value="all">Todas as atividades</SelectItem><SelectItem value="visits">Visitas e tarefas</SelectItem><SelectItem value="time_tracking">Ponto eletrônico</SelectItem><SelectItem value="corrections">Correções de ponto</SelectItem><SelectItem value="products">Produtos e validades</SelectItem><SelectItem value="other">Outras atividades</SelectItem></SelectContent></Select></div>
           <label className="min-w-0 text-xs font-medium text-slate-300 sm:col-span-2 xl:col-span-1">Buscar<Input value={search} onChange={e => onFilterChange(() => setSearch(e.target.value))} placeholder="Nome, loja ou atividade" className="mt-1 min-w-0 border-white/15 bg-slate-950/70 text-white placeholder:text-slate-500"/></label>
         </CardContent>
       </Card>

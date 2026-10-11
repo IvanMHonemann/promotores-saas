@@ -81,6 +81,22 @@ export async function runExpirationEmailAlerts(daysAhead = 30) {
 
   let emails = 0;
   for (const company of companies) {
+    const productAlerts = await dbmod.getExpiringInventoryProducts(company.id, 30);
+    const productAdmins = await database
+      .select({ email: schema.memberAccounts.email, userName: schema.memberAccounts.userName })
+      .from(schema.memberAccounts)
+      .where(and(eq(schema.memberAccounts.companyId, company.id), eq(schema.memberAccounts.active, true), eq(schema.memberAccounts.role, "company_admin")));
+    if (productAlerts.length && productAdmins.length) {
+      const productItems = productAlerts.map((product: any) => ({
+        productCode: product.productCode, description: product.description, quantity: product.quantity,
+        expirationDate: new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${product.expirationDate instanceof Date ? product.expirationDate.toISOString().slice(0, 10) : String(product.expirationDate).slice(0, 10)}T00:00:00Z`)), price: product.price,
+      }));
+      for (const admin of productAdmins) {
+        if (!admin.email) continue;
+        const result = await emailService.emailProductExpirationAlerts({ to: admin.email, companyName: company.name, userName: admin.userName || admin.email, items: productItems });
+        if (result.ok) emails += 1;
+      }
+    }
     const alerts = await dbmod.getExpiringExtinguishers(daysAhead, company.id);
     const actionable = alerts.filter((a: any) => a.alertStatus === "expired" || a.alertStatus === "urgent" || a.alertStatus === "warning");
     if (!actionable.length) continue;

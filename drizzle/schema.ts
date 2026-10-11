@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar, double } from "drizzle-orm/mysql-core";
+import { boolean, date, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar, double } from "drizzle-orm/mysql-core";
 
 /** Identidades OAuth do provedor; somente a identidade do proprietário pode ser platform_admin. */
 export const users = mysqlTable("users", {
@@ -223,17 +223,55 @@ export const routes = mysqlTable("routes", {
   status: mysqlEnum("status", ["draft", "assigned", "in_progress", "completed", "cancelled"]).default("assigned").notNull(),
   notes: text("notes"),
   createdByUserId: int("createdByUserId"),
+  weeklyScheduleId: int("weeklyScheduleId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
   companyIdx: index("routes_company_idx").on(table.companyId),
   promoterDateIdx: index("routes_promoter_date_idx").on(table.promoterId, table.date),
   dateIdx: index("routes_company_date_idx").on(table.companyId, table.date),
+  weeklyOccurrenceUnique: uniqueIndex("routes_weekly_occurrence_unique").on(table.weeklyScheduleId, table.date),
 }));
 
 export type Route = typeof routes.$inferSelect;
 export type InsertRoute = typeof routes.$inferInsert;
+/** Modelos semanais recorrentes; storeIds conserva a ordem definida pela gestão. */
+export const weeklyRouteSchedules = mysqlTable("weekly_route_schedules", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
+  promoterId: int("promoterId").notNull().references(() => memberAccounts.id, { onDelete: "restrict" }),
+  weekday: int("weekday").notNull(), // 0 = domingo, 6 = sábado
+  name: varchar("name", { length: 255 }).notNull(),
+  storeIds: json("storeIds").$type<number[]>().notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdx: index("weekly_route_schedules_company_idx").on(table.companyId),
+  promoterDayUnique: uniqueIndex("weekly_route_schedules_promoter_day_unique").on(table.companyId, table.promoterId, table.weekday),
+}));
+export type WeeklyRouteSchedule = typeof weeklyRouteSchedules.$inferSelect;
+export type InsertWeeklyRouteSchedule = typeof weeklyRouteSchedules.$inferInsert;
 
+/** Catálogo de produtos com controle de quantidade e validade por empresa. */
+export const inventoryProducts = mysqlTable("inventory_products", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
+  productCode: varchar("productCode", { length: 64 }).notNull(),
+  description: varchar("description", { length: 500 }).notNull(),
+  quantity: int("quantity").notNull().default(0),
+  expirationDate: date("expirationDate").notNull(),
+  price: decimal("price", { precision: 12, scale: 2 }).notNull().default("0.00"),
+  createdByMemberId: int("createdByMemberId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdx: index("inventory_products_company_idx").on(table.companyId),
+  codeIdx: index("inventory_products_company_code_idx").on(table.companyId, table.productCode),
+  expiryIdx: index("inventory_products_expiration_idx").on(table.companyId, table.expirationDate),
+}));
+export type InventoryProduct = typeof inventoryProducts.$inferSelect;
+export type InsertInventoryProduct = typeof inventoryProducts.$inferInsert;
 /** Visitas previstas / executadas. */
 export const visits = mysqlTable("visits", {
   id: int("id").autoincrement().primaryKey(),

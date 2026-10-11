@@ -819,6 +819,13 @@ export const appRouter = router({
   }),
 
 
+  products: router({
+    list: companyBillingProcedure.input(z.object({ search: z.string().optional(), expiry: z.enum(["all", "expired", "near"]).optional() }).optional()).query(({ ctx, input }) => db.listInventoryProducts(ctx.accountId, input?.search, input?.expiry)),
+    create: companyBillingProcedure.input(z.object({ productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(({ ctx, input }) => db.createInventoryProduct({ ...input, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate as any, price: input.price })),
+    update: companyBillingProcedure.input(z.object({ id: z.number().int().positive(), productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(({ ctx, input }) => { const { id, ...data } = input; return db.updateInventoryProduct(ctx.accountId, id, { ...data, expirationDate: data.expirationDate as any }); }),
+    delete: companyBillingProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => db.deleteInventoryProduct(ctx.accountId, input.id)),
+    deleteMany: companyBillingProcedure.input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) })).mutation(({ ctx, input }) => db.deleteInventoryProducts(ctx.accountId, input.ids)),
+  }),
   operations: router({
     promoters: router({
       list: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
@@ -836,7 +843,18 @@ export const appRouter = router({
       }),
     }),
     routes: router({
-      list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
+      list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
+        const date = input?.date || new Date().toISOString().slice(0, 10);
+        if (ctx.user.role === "promoter") await db.materializeWeeklyRoutes(ctx.accountId, ctx.memberAccountId!, date);
+        return db.listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId });
+      }),
+      weekly: commercialFeatureProcedure("fieldOperations").query(({ ctx }) => db.listWeeklyRouteSchedules(ctx.accountId)),
+      saveWeekly: companyAdminProcedure.input(z.object({ name: z.string().min(2).max(255), weekday: z.number().int().min(0).max(6), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1) })).mutation(async ({ ctx, input }) => {
+        const members = await memberAuth.listMemberAccounts(ctx.accountId);
+        const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
+        if (!promoter) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        return db.saveWeeklyRouteSchedule({ ...input, companyId: ctx.accountId });
+      }),
       create: commercialFeatureProcedure("fieldOperations").input(z.object({ name: z.string().min(2), date: z.string().min(8), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1), teamId: z.number().int().positive().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Promotores não podem criar roteiros." });
         const members = await memberAuth.listMemberAccounts(ctx.accountId);

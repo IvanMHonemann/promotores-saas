@@ -31,7 +31,7 @@ import {
 } from "../drizzle/schema";
 import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { ENV } from "./_core/env";
-import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits } from "../drizzle/schema";
+import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits, weeklyRouteSchedules, inventoryProducts } from "../drizzle/schema";
 
 /** Token público opaco (URL-safe). 21 chars ≈ 126 bits de entropia. */
 export function generateExtinguisherPublicToken(): string {
@@ -825,6 +825,10 @@ export async function restoreTrashItem(id: number, accountId: number) {
       const client = await tx.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.accountId, tenant))).limit(1);
       if (!client[0]) throw new Error("O cliente vinculado ao extintor não existe mais; restaure o cliente antes.");
       await tx.insert(extinguishers).values({ ...restoreDateFields(snapshot), id: item.originalId, accountId: tenant } as any);
+    } else if (item.itemType === "product") {
+      const existing = await tx.select({ id: inventoryProducts.id }).from(inventoryProducts).where(and(eq(inventoryProducts.id, item.originalId), eq(inventoryProducts.companyId, tenant))).limit(1);
+      if (existing[0]) throw new Error("Já existe um produto com esse identificador. Não foi possível restaurar.");
+      await tx.insert(inventoryProducts).values({ ...restoreDateFields(snapshot), id: item.originalId, companyId: tenant } as any);
     } else {
       throw new Error("Tipo de item da lixeira não reconhecido.");
     }
@@ -1496,6 +1500,65 @@ export async function listOperationalRoutes(companyId: number, options: { date?:
   return database.select().from(operationalRoutes).where(and(...conditions)).orderBy(desc(operationalRoutes.date), desc(operationalRoutes.id));
 }
 
+export async function listWeeklyRouteSchedules(companyId: number) {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(weeklyRouteSchedules)
+    .where(eq(weeklyRouteSchedules.companyId, requireAccountId(companyId)))
+    .orderBy(weeklyRouteSchedules.weekday, weeklyRouteSchedules.promoterId);
+}
+export async function saveWeeklyRouteSchedule(input: { companyId: number; promoterId: number; weekday: number; name: string; storeIds: number[] }) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const companyId = requireAccountId(input.companyId);
+  const storeIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
+  if (!storeIds.length) throw new Error("Selecione ao menos uma loja.");
+  return database.transaction(async (tx) => {
+    const stores = await tx.select({ id: operationalStores.id }).from(operationalStores)
+      .where(and(inArray(operationalStores.id, storeIds), eq(operationalStores.companyId, companyId), eq(operationalStores.active, true)));
+    if (stores.length !== storeIds.length) throw new Error("Uma ou mais lojas não pertencem a esta empresa.");
+    await tx.insert(weeklyRouteSchedules).values({ ...input, companyId, storeIds, active: true })
+      .onDuplicateKeyUpdate({ set: { name: input.name, storeIds, active: true } });
+    return (await tx.select().from(weeklyRouteSchedules).where(and(
+      eq(weeklyRouteSchedules.companyId, companyId), eq(weeklyRouteSchedules.promoterId, input.promoterId), eq(weeklyRouteSchedules.weekday, input.weekday),
+    )).limit(1))[0];
+  });
+}
+export async function materializeWeeklyRoutes(companyId: number, promoterId: number, dateString: string) {
+  const database = await getDb();
+  if (!database) return [];
+  const company = requireAccountId(companyId);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString) || Number.isNaN(Date.parse(`${dateString}T00:00:00Z`))) return [];
+  const weekday = new Date(`${dateString}T00:00:00Z`).getUTCDay();
+  const schedules = await database.select().from(weeklyRouteSchedules).where(and(
+    eq(weeklyRouteSchedules.companyId, company), eq(weeklyRouteSchedules.promoterId, promoterId), eq(weeklyRouteSchedules.weekday, weekday), eq(weeklyRouteSchedules.active, true),
+  ));
+  for (const schedule of schedules) {
+    try {
+      await database.transaction(async (tx) => {
+        const existing = await tx.select({ id: operationalRoutes.id }).from(operationalRoutes).where(and(
+          eq(operationalRoutes.companyId, company), eq(operationalRoutes.weeklyScheduleId, schedule.id), eq(operationalRoutes.date, dateString as any),
+        )).limit(1);
+        if (existing.length) return;
+        const storeIds = Array.isArray(schedule.storeIds) ? schedule.storeIds : [];
+        if (!storeIds.length) return;
+        const stores = await tx.select({ id: operationalStores.id }).from(operationalStores).where(and(
+          inArray(operationalStores.id, storeIds), eq(operationalStores.companyId, company), eq(operationalStores.active, true),
+        ));
+        if (!stores.length) return;
+        const inserted = await tx.insert(operationalRoutes).values({
+          companyId: company, name: schedule.name, date: dateString as any, promoterId, weeklyScheduleId: schedule.id, status: "assigned",
+        });
+        const routeId = Number((inserted as any)[0]?.insertId);
+        await tx.insert(operationalVisits).values(stores.map((store) => ({ companyId: company, routeId, storeId: store.id, promoterId, status: "pending" as const })));
+      });
+    } catch (error: any) {
+      // Duas requisições simultâneas podem tentar materializar a mesma ocorrência; a chave única torna isso idempotente.
+      if (error?.code !== "ER_DUP_ENTRY") throw error;
+    }
+  }
+  return listOperationalRoutes(company, { date: dateString, promoterId });
+}
 export async function createOperationalRoute(input: typeof operationalRoutes.$inferInsert) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
@@ -1547,4 +1610,59 @@ export async function updateOperationalVisit(companyId: number, id: number, data
     .innerJoin(operationalStores, eq(operationalVisits.storeId, operationalStores.id))
     .where(and(eq(operationalVisits.id, id), eq(operationalVisits.companyId, companyId))).limit(1);
   return rows[0];
+}
+
+/* Inventário e validade de produtos isolados por empresa. */
+export async function listInventoryProducts(companyId: number, search?: string, expiry?: "all" | "expired" | "near") {
+  const database = await getDb();
+  if (!database) return [];
+  const company = requireAccountId(companyId);
+  const conditions = [eq(inventoryProducts.companyId, company)];
+  if (search?.trim()) conditions.push(or(like(inventoryProducts.productCode, `%${search.trim()}%`), like(inventoryProducts.description, `%${search.trim()}%`))!);
+  if (expiry === "expired") conditions.push(sql`${inventoryProducts.expirationDate} < CURRENT_DATE()`);
+  if (expiry === "near") conditions.push(sql`${inventoryProducts.expirationDate} >= CURRENT_DATE() AND ${inventoryProducts.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)`);
+  return database.select().from(inventoryProducts).where(and(...conditions)).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
+}
+export async function createInventoryProduct(input: typeof inventoryProducts.$inferInsert) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const companyId = requireAccountId(input.companyId);
+  const result = await database.insert(inventoryProducts).values({ ...input, companyId });
+  const id = Number((result as any)[0]?.insertId);
+  return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, companyId))).limit(1))[0];
+}
+export async function updateInventoryProduct(companyId: number, id: number, data: Pick<typeof inventoryProducts.$inferInsert, "productCode"|"description"|"quantity"|"expirationDate"|"price">) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const company = requireAccountId(companyId);
+  await database.update(inventoryProducts).set(data).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company)));
+  return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company))).limit(1))[0] || null;
+}
+export async function deleteInventoryProducts(companyId: number, ids: number[]) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const tenant = requireAccountId(companyId);
+  const uniqueIds = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
+  if (!uniqueIds.length) return { deleted: 0 };
+  return database.transaction(async (tx) => {
+    const rows = await tx.select().from(inventoryProducts).where(and(inArray(inventoryProducts.id, uniqueIds), eq(inventoryProducts.companyId, tenant)));
+    if (rows.length !== uniqueIds.length) throw new Error("Um ou mais produtos não existem ou não pertencem à sua empresa.");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await tx.insert(trashItems).values(rows.map((product) => ({ accountId: tenant, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
+    await tx.delete(inventoryProducts).where(and(inArray(inventoryProducts.id, uniqueIds), eq(inventoryProducts.companyId, tenant)));
+    return { deleted: rows.length };
+  });
+}
+export async function deleteInventoryProduct(companyId: number, id: number) {
+  return deleteInventoryProducts(companyId, [id]);
+}
+export async function getExpiringInventoryProducts(companyId: number, daysAhead = 30) {
+  const database = await getDb();
+  if (!database) return [];
+  const company = requireAccountId(companyId);
+  const days = Math.max(0, Math.min(365, Math.trunc(daysAhead)));
+  return database.select().from(inventoryProducts).where(and(
+    eq(inventoryProducts.companyId, company),
+    sql`${inventoryProducts.expirationDate} >= CURRENT_DATE() AND ${inventoryProducts.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${days} DAY)`,
+  )).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
 }

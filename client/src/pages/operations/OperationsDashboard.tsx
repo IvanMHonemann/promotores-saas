@@ -48,6 +48,7 @@ export default function OperationsDashboard() {
   const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
   const companyUsers = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations });
   const routes = trpc.operations.routes.list.useQuery({ date: today }, { enabled: hasFieldOperations });
+  const weeklyRoutes = trpc.operations.routes.weekly.useQuery(undefined, { enabled: isCompanyAdmin && hasFieldOperations });
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { enabled: hasFieldOperations });
   const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin && hasTimeTracking });
@@ -56,6 +57,10 @@ export default function OperationsDashboard() {
   const [routeDate, setRouteDate] = useState(today);
   const [routePromoter, setRoutePromoter] = useState("");
   const [routeStores, setRouteStores] = useState<number[]>([]);
+  const [weeklyName, setWeeklyName] = useState("");
+  const [weeklyDay, setWeeklyDay] = useState("1");
+  const [weeklyPromoter, setWeeklyPromoter] = useState("");
+  const [weeklyStores, setWeeklyStores] = useState<number[]>([]);
   const [storeName, setStoreName] = useState("");
   const [storeCity, setStoreCity] = useState("");
   const [storeAddress, setStoreAddress] = useState("");
@@ -77,6 +82,14 @@ export default function OperationsDashboard() {
       void utils.operations.visits.today.invalidate();
     },
     onError: () => toast.error("Não foi possível criar o roteiro. Confira os dados e tente novamente."),
+  });
+  const saveWeeklyRoute = trpc.operations.routes.saveWeekly.useMutation({
+    onSuccess: () => {
+      toast.success("Programação semanal salva. O roteiro será criado uma vez em cada dia programado.");
+      setWeeklyName(""); setWeeklyStores([]);
+      void utils.operations.routes.weekly.invalidate();
+    },
+    onError: () => toast.error("Não foi possível salvar a programação. Confira promotor e lojas."),
   });
   const createStore = trpc.operations.stores.create.useMutation({
     onSuccess: () => {
@@ -118,6 +131,8 @@ export default function OperationsDashboard() {
     <DashboardLayout title={title} description={description} onRefresh={() => window.location.reload()}>
       {visibleSection === "overview" && (
         <Overview
+          isPromoter={user?.role === "promoter"}
+          todayVisits={visits.data || []}
           metrics={metrics}
           visitsFailed={visits.isError}
           hasFieldOperations={hasFieldOperations}
@@ -160,6 +175,14 @@ export default function OperationsDashboard() {
           setStoreAddress={setStoreAddress}
           createStore={createStore}
           routes={routes.data || []}
+          weeklyRoutes={weeklyRoutes.data || []}
+          weeklyRoutesLoading={weeklyRoutes.isLoading}
+          weeklyRoutesFailed={weeklyRoutes.isError}
+          weeklyName={weeklyName} setWeeklyName={setWeeklyName}
+          weeklyDay={weeklyDay} setWeeklyDay={setWeeklyDay}
+          weeklyPromoter={weeklyPromoter} setWeeklyPromoter={setWeeklyPromoter}
+          weeklyStores={weeklyStores} setWeeklyStores={setWeeklyStores}
+          saveWeeklyRoute={saveWeeklyRoute}
           routesLoading={routes.isLoading}
           routesFailed={routes.isError}
         />
@@ -169,10 +192,11 @@ export default function OperationsDashboard() {
   );
 }
 
-function Overview({ metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, reviewPending }: any) {
+function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, reviewPending }: any) {
   const activePromoters = presence.filter((entry: CompanyPresenceEntry) => entry.active).length;
   return (
     <div className="space-y-6">
+      {isPromoter && hasFieldOperations && <Card id="roteiro" className="border-teal-300/30 bg-teal-300/5"><CardHeader><CardTitle className="flex items-center gap-2 text-white"><ClipboardList className="text-teal-300" />Meu roteiro de hoje</CardTitle></CardHeader><CardContent className="space-y-2">{visitsFailed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar o roteiro de hoje.</p>}{!visitsFailed && !todayVisits.length && <p className="text-sm text-slate-300">Você não tem visitas programadas para hoje.</p>}{todayVisits.map(({ visit, store }: any, index: number) => <div key={visit.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-3"><div><p className="text-xs font-semibold text-teal-300">Parada {index + 1}</p><p className="font-bold text-white">{store.name}</p><p className="text-sm text-slate-300">{store.city}{store.address ? ` · ${store.address}` : ""}</p></div><Badge variant="outline">{visit.status === "in_progress" ? "Em andamento" : visit.status === "completed" ? "Concluída" : "Pendente"}</Badge></div>)}</CardContent></Card>}
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7">
         <p className="text-xs font-bold uppercase tracking-[.18em] text-teal-300">Visão geral</p>
         <h2 className="mt-2 text-2xl font-black sm:text-4xl">Operação de campo</h2>
@@ -306,7 +330,8 @@ function RoutesModule(props: any) {
     isCompanyAdmin, stores = [], storesLoading, storesFailed, companyUsers = [], usersLoading, usersFailed,
     routeName, setRouteName, routeDate, setRouteDate, routePromoter, setRoutePromoter, routeStores, setRouteStores,
     createRoute, storeName, setStoreName, storeCity, setStoreCity, storeAddress, setStoreAddress, createStore,
-    routes = [], routesLoading, routesFailed,
+    routes = [], routesLoading, routesFailed, weeklyRoutes = [], weeklyRoutesLoading, weeklyRoutesFailed,
+    weeklyName, setWeeklyName, weeklyDay, setWeeklyDay, weeklyPromoter, setWeeklyPromoter, weeklyStores, setWeeklyStores, saveWeeklyRoute,
   } = props;
   const promoters = companyUsers.filter((member: any) => member.role === "promoter" && member.active);
   return (
@@ -347,6 +372,20 @@ function RoutesModule(props: any) {
             <Button disabled={createRoute.isPending || !routeName.trim() || !routePromoter || !routeStores.length || storesFailed} onClick={() => createRoute.mutate({ name: routeName.trim(), date: routeDate, promoterId: Number(routePromoter), storeIds: routeStores })} className="bg-teal-300 text-slate-950 hover:bg-teal-200 lg:col-span-3 lg:justify-self-end">
               {createRoute.isPending ? "Criando..." : "Criar roteiro e gerar visitas"}
             </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-white">Programação semanal fixa</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-slate-300">Defina um roteiro por promotor e dia da semana. A ocorrência do dia será criada automaticamente uma única vez, sem sobrescrever visitas anteriores.</p>
+            <div className="grid gap-4 lg:grid-cols-[1fr_180px_1fr]">
+              <div><Label>Nome do roteiro</Label><Input value={weeklyName} onChange={(e) => setWeeklyName(e.target.value)} placeholder="Ex.: Roteiro Zona Sul" className="mt-1" /></div>
+              <div><Label>Dia da semana</Label><select value={weeklyDay} onChange={(e) => setWeeklyDay(e.target.value)} className="mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white">{[[0,"Domingo"],[1,"Segunda-feira"],[2,"Terça-feira"],[3,"Quarta-feira"],[4,"Quinta-feira"],[5,"Sexta-feira"],[6,"Sábado"]].map(([day,label]) => <option key={day} value={day}>{label}</option>)}</select></div>
+              <div><Label>Promotor</Label><select value={weeklyPromoter} onChange={(e) => setWeeklyPromoter(e.target.value)} className="mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white"><option value="">Selecione um promotor</option>{promoters.map((member: any) => <option key={member.id} value={member.id}>{member.userName} — {member.email}</option>)}</select></div>
+              <div className="lg:col-span-3"><Label>Lojas do roteiro</Label><div className="mt-2 grid max-h-48 gap-2 overflow-y-auto rounded-xl border border-white/10 bg-slate-950/30 p-3 sm:grid-cols-2 lg:grid-cols-3">{stores.map((store: any) => <label key={store.id} className="flex items-center gap-2 rounded-lg p-2 text-sm text-slate-200"><input type="checkbox" checked={weeklyStores.includes(store.id)} onChange={(e) => setWeeklyStores((old: number[]) => e.target.checked ? [...old, store.id] : old.filter((id) => id !== store.id))} />{store.name}<span className="text-xs text-slate-400">({store.city})</span></label>)}{!stores.length && !storesLoading && <p className="text-sm text-slate-300">Cadastre lojas antes de montar a programação.</p>}</div></div>
+              <Button disabled={saveWeeklyRoute.isPending || !weeklyName.trim() || !weeklyPromoter || !weeklyStores.length || storesFailed} onClick={() => saveWeeklyRoute.mutate({ name: weeklyName.trim(), weekday: Number(weeklyDay), promoterId: Number(weeklyPromoter), storeIds: weeklyStores })} className="bg-teal-300 text-slate-950 hover:bg-teal-200 lg:col-span-3 lg:justify-self-end">{saveWeeklyRoute.isPending ? "Salvando..." : "Salvar programação semanal"}</Button>
+            </div>
+            <div className="border-t border-white/10 pt-4"><h3 className="mb-3 font-bold text-white">Programações cadastradas</h3>{weeklyRoutesLoading && <p className="text-sm text-slate-300">Carregando programação...</p>}{weeklyRoutesFailed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar as programações semanais.</p>}{!weeklyRoutesLoading && !weeklyRoutesFailed && !weeklyRoutes.length && <p className="text-sm text-slate-300">Nenhuma programação semanal cadastrada.</p>}{weeklyRoutes.map((item: any) => <div key={item.id} className="mb-2 flex flex-wrap justify-between gap-2 rounded-xl border border-white/10 bg-slate-950/40 p-3"><span className="font-semibold text-white">{item.name} · { ["Domingo","Segunda-feira","Terça-feira","Quarta-feira","Quinta-feira","Sexta-feira","Sábado"][item.weekday] }</span><span className="text-sm text-slate-300">Promotor #{item.promoterId} · {(item.storeIds || []).length} lojas · {item.active ? "Ativa" : "Inativa"}</span></div>)}</div>
           </CardContent>
         </Card>
         <Card>

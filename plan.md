@@ -27,6 +27,7 @@ Limites preservados do seed atual: Start — R$ 59,90/mês, 1 usuário, 1.000 cl
 - A assinatura e o plano determinam os módulos liberados para a empresa; uma exceção de empresa (liberar ou bloquear módulo) pode ser gerida apenas pelo administrador da plataforma.
 - A empresa pode definir por usuário `herdar`, `permitir` ou `bloquear` em cada módulo de equipe disponível. `permitir` não ultrapassa o plano/uma restrição da empresa nem o teto do papel do usuário.
 - Papéis continuam definindo autoridade sobre dados e ações: `company_admin` administra a empresa; `supervisor` usa módulos operacionais dentro do tenant; `promoter` fica limitado ao painel, ponto e visitas/roteiro atribuídos. A permissão de módulo não remove filtros de tenant, papel ou titularidade já existentes.
+- O plano Empresarial inclui ponto eletrônico com GPS. Se uma empresa ou membro não tiver acesso a esse módulo, tentar abrir `/ponto` deve redirecionar diretamente ao painel inicial, sem deixar a pessoa presa numa tela de bloqueio.
 - Chamadas diretas à API são protegidas no servidor; esconder links na interface é apenas apresentação, não controle de segurança.
 
 ## Implementação e estrutura

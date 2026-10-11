@@ -190,7 +190,7 @@ export default function AuditPage() {
           const pointAddressKey = hasPointCoordinates ? coordinateKey(Number(details.latitude), Number(details.longitude)) : null;
           const pointAddress = pointAddressKey ? addresses[pointAddressKey] : undefined;
           const pointAddressLabel = pointAddress?.status === "ready" ? pointAddress.address : pointAddress?.status === "not_configured" ? "Endereço ainda não configurado" : pointAddress?.status === "not_found" ? "Endereço não localizado" : pointAddress?.status === "error" ? "Endereço indisponível no momento" : "Consultando endereço…";
-          const detailEntries = Object.entries(details).filter(([key, value]) => value != null && value !== "" && !(row.module === "time_tracking" && ["latitude", "longitude"].includes(key.toLowerCase())));
+          const detailEntries = Object.entries(details).filter(([key, value]) => value != null && value !== "" && !(row.module === "time_tracking" && ["latitude", "longitude", "locationstatus", "location_status"].includes(key.toLowerCase())));
           const actionLabel = ACTION_LABEL[row.action] || row.action.replaceAll("_", " ");
           return <Card key={row.activityId} className="min-w-0 overflow-hidden border-white/10 bg-slate-900/70 text-white">
             <CardContent className="min-w-0 p-4 sm:p-5">

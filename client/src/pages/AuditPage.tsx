@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -39,6 +39,7 @@ type ActivityRow = {
   description?: string | null;
   details?: unknown;
 };
+type AddressState = { status: "loading" | "ready" | "not_found" | "not_configured" | "error"; address?: string };
 function formatDateTime(value: unknown) {
   if (!value) return "—";
   const date = value instanceof Date ? value : new Date(String(value));
@@ -52,6 +53,9 @@ function parseDetails(value: unknown): Record<string, unknown> {
     catch { return { detalhe: value }; }
   }
   return { detalhe: value };
+}
+function coordinateKey(latitude: number, longitude: number) {
+  return `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
 }
 function displayValue(value: unknown) {
   if (value == null || value === "") return "—";
@@ -98,6 +102,66 @@ export default function AuditPage() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const promoters = promotersQuery.data || [];
   const onFilterChange = (change: () => void) => { change(); setPage(1); };
+  const [addresses, setAddresses] = useState<Record<string, AddressState>>({});
+  const addressesRef = useRef<Record<string, AddressState>>({});
+  const reverseGeocode = trpc.audit.reverseGeocodePoint.useMutation();
+
+  useEffect(() => {
+    const points = new Map<string, { latitude: number; longitude: number }>();
+    for (const row of items) {
+      if (row.module !== "time_tracking") continue;
+      const details = parseDetails(row.details);
+      if (details.latitude == null || details.longitude == null) continue;
+      const latitude = Number(details.latitude);
+      const longitude = Number(details.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+      const key = coordinateKey(latitude, longitude);
+      const cached = addressesRef.current[key];
+      if (cached && cached.status !== "loading") {
+        setAddresses((current) => current[key] ? current : { ...current, [key]: cached });
+      } else {
+        points.set(key, { latitude, longitude });
+      }
+    }
+
+    let cancelled = false;
+    const resolveAddresses = async () => {
+      const entries = [...points.entries()];
+      for (let index = 0; index < entries.length; index++) {
+        if (cancelled) return;
+        const [key, point] = entries[index];
+        const cached = addressesRef.current[key];
+        if (cached && cached.status !== "loading") continue;
+
+        const loading: AddressState = { status: "loading" };
+        addressesRef.current = { ...addressesRef.current, [key]: loading };
+        if (!cancelled) setAddresses((current) => ({ ...current, [key]: loading }));
+        try {
+          const result = await reverseGeocode.mutateAsync(point);
+          const resolved: AddressState = result.address
+            ? { status: "ready", address: result.address }
+            : { status: result.configured ? "not_found" : "not_configured" };
+          addressesRef.current = { ...addressesRef.current, [key]: resolved };
+          if (!cancelled) setAddresses((current) => ({ ...current, [key]: resolved }));
+
+          if (!result.configured) {
+            for (const [pendingKey] of entries.slice(index + 1)) {
+              addressesRef.current = { ...addressesRef.current, [pendingKey]: { status: "not_configured" } };
+            }
+            if (!cancelled) setAddresses({ ...addressesRef.current });
+            break;
+          }
+        } catch {
+          const failed: AddressState = { status: "error" };
+          addressesRef.current = { ...addressesRef.current, [key]: failed };
+          if (!cancelled) setAddresses((current) => ({ ...current, [key]: failed }));
+        }
+        if (index < entries.length - 1 && !cancelled) await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    };
+    void resolveAddresses();
+    return () => { cancelled = true; };
+  }, [items]);
 
   return <DashboardLayout title="Auditoria de atividades" description="Acompanhe visitas, ponto, correções, produtos e demais ações registradas pelos promotores." refreshing={listQuery.isFetching} onRefresh={() => { void utils.audit.promoterActivity.invalidate(); }}>
     <div className="min-w-0 space-y-5">
@@ -121,7 +185,12 @@ export default function AuditPage() {
       {listQuery.isLoading ? <div className="flex justify-center rounded-2xl border border-white/10 bg-slate-900/70 py-16"><Loader2 className="h-8 w-8 animate-spin text-teal-300"/></div> : listQuery.isError ? <Card className="border-rose-300/20 bg-rose-300/5 text-rose-100"><CardContent className="p-5"><p className="font-semibold">Não foi possível carregar as atividades.</p><p className="mt-1 text-sm text-rose-100/75">Atualize a página ou ajuste os filtros e tente novamente.</p></CardContent></Card> : items.length === 0 ? <Card className="border-white/10 bg-slate-900/70 text-white"><CardContent className="p-10 text-center"><Activity className="mx-auto mb-3 h-8 w-8 text-slate-500"/><p className="font-semibold">Nenhuma atividade encontrada</p><p className="mt-1 text-sm text-slate-400">Tente ampliar o período ou limpar os filtros.</p></CardContent></Card> : <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-2">
         {items.map((row) => {
           const Icon = moduleIcon(row.module);
-          const detailEntries = Object.entries(parseDetails(row.details)).filter(([, value]) => value != null && value !== "");
+          const details = parseDetails(row.details);
+          const hasPointCoordinates = row.module === "time_tracking" && details.latitude != null && details.longitude != null && Number.isFinite(Number(details.latitude)) && Number.isFinite(Number(details.longitude));
+          const pointAddressKey = hasPointCoordinates ? coordinateKey(Number(details.latitude), Number(details.longitude)) : null;
+          const pointAddress = pointAddressKey ? addresses[pointAddressKey] : undefined;
+          const pointAddressLabel = pointAddress?.status === "ready" ? pointAddress.address : pointAddress?.status === "not_configured" ? "Endereço ainda não configurado" : pointAddress?.status === "not_found" ? "Endereço não localizado" : pointAddress?.status === "error" ? "Endereço indisponível no momento" : "Consultando endereço…";
+          const detailEntries = Object.entries(details).filter(([key, value]) => value != null && value !== "" && !(row.module === "time_tracking" && ["latitude", "longitude"].includes(key.toLowerCase())));
           const actionLabel = ACTION_LABEL[row.action] || row.action.replaceAll("_", " ");
           return <Card key={row.activityId} className="min-w-0 overflow-hidden border-white/10 bg-slate-900/70 text-white">
             <CardContent className="min-w-0 p-4 sm:p-5">
@@ -137,10 +206,13 @@ export default function AuditPage() {
                 <div className="flex min-w-0 items-start gap-2 text-sm"><CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400"/><span className="min-w-0 break-words text-slate-200">{formatDateTime(row.occurredAt)}</span></div>
                 <div className="flex min-w-0 items-start gap-2 text-sm"><UserRound className="mt-0.5 h-4 w-4 shrink-0 text-slate-400"/><span className="min-w-0 break-words"><span className="font-semibold text-white">{row.userName || `Promotor #${row.promoterId}`}</span>{row.userEmail && <span className="block break-all text-xs text-slate-400">{row.userEmail}</span>}</span></div>
               </div>
-              {detailEntries.length > 0 && <dl className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-2 pt-3 sm:grid-cols-2">{detailEntries.map(([key, value]) => {
-                const isFileUrl = key === "arquivoUrl" && typeof value === "string";
-                return <div key={key} className="min-w-0 rounded-lg bg-slate-950/40 px-3 py-2"><dt className="break-words text-[11px] font-semibold uppercase tracking-wide text-slate-400">{key.replaceAll("_", " ")}</dt><dd className="mt-1 min-w-0 break-words text-sm leading-relaxed text-slate-200">{isFileUrl ? <a href={value as string} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 break-all text-teal-200 underline decoration-teal-200/40 underline-offset-2">Abrir arquivo</a> : displayValue(value)}</dd></div>;
-              })}</dl>}
+              {(detailEntries.length > 0 || hasPointCoordinates) && <dl className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-2 pt-3 sm:grid-cols-2">
+                {hasPointCoordinates && <div className="min-w-0 rounded-lg bg-slate-950/40 px-3 py-2"><dt className="break-words text-[11px] font-semibold uppercase tracking-wide text-slate-400">Endereço da batida</dt><dd className="mt-1 min-w-0 break-words text-sm leading-relaxed text-slate-200">{pointAddressLabel}</dd>{pointAddress?.status === "ready" && <dd className="mt-1 text-[10px] text-slate-500">Powered by <a href="https://www.geoapify.com/" target="_blank" rel="noreferrer" className="text-teal-200 underline">Geoapify</a> · dados <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="text-teal-200 underline">© OpenStreetMap contributors</a></dd>}</div>}
+                {detailEntries.map(([key, value]) => {
+                  const isFileUrl = key === "arquivoUrl" && typeof value === "string";
+                  return <div key={key} className="min-w-0 rounded-lg bg-slate-950/40 px-3 py-2"><dt className="break-words text-[11px] font-semibold uppercase tracking-wide text-slate-400">{key.replaceAll("_", " ")}</dt><dd className="mt-1 min-w-0 break-words text-sm leading-relaxed text-slate-200">{isFileUrl ? <a href={value as string} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 break-all text-teal-200 underline decoration-teal-200/40 underline-offset-2">Abrir arquivo</a> : displayValue(value)}</dd></div>;
+                })}
+              </dl>}
             </CardContent>
           </Card>;
         })}

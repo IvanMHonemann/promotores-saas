@@ -13,6 +13,7 @@ import * as db from "./db";
 import * as memberAuth from "./memberAuth";
 import * as emailService from "./email";
 import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory, listPromoterActivities } from "./audit";
+import { reverseGeocodeAddress } from "./geocoding";
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 
@@ -321,6 +322,9 @@ export const appRouter = router({
 
     /** Compatibilidade do painel administrativo: somente platform_admin acessa estas operações globais. */
     identity: platformProcedure.query(({ ctx }) => ({ id: ctx.platformAdminId ?? ctx.user.id, role: "platform_admin" as const, global: true })),
+    reverseGeocodePoint: platformProcedure
+      .input(z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }))
+      .mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
     companies: router({
       list: platformProcedure.query(() => db.listCompanies()),
       create: platformProcedure.input(z.object({ companyName: z.string().min(2), userName: z.string().min(2), email: z.string().email(), password: z.string().min(8) })).mutation(async ({ input }) => {
@@ -908,6 +912,9 @@ export const appRouter = router({
         .filter((member) => member.role === "promoter")
         .map(({ id, userName, email, active }) => ({ id, userName, email, active })),
     ),
+    reverseGeocodePoint: companyAdminFeatureProcedure("reports")
+      .input(z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }))
+      .mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
     promoterActivity: companyAdminFeatureProcedure("reports")
       .input(z.object({
         page: z.number().int().positive().optional(),

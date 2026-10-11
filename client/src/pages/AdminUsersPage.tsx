@@ -9,16 +9,17 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Building2, Check, KeyRound, Loader2, LogOut, ShieldCheck, UserPlus, UserRound, Users } from "lucide-react";
+import { ArrowLeft, Building2, Check, KeyRound, Loader2, ShieldCheck, UserPlus, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
+import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { ENTITLEMENT_CATALOG, ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type EntitlementKey, type PermissionMode } from "@shared/entitlements";
 
 const roleLabels = { company_admin: "Administrador da empresa", supervisor: "Supervisor", promoter: "Promotor" } as const;
 
 export default function AdminUsersPage() {
   const [, navigate] = useLocation();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const isPlatformAdmin = user?.role === "platform_admin";
   const isCompanyAdmin = user?.role === "company_admin";
   const canManage = isPlatformAdmin || isCompanyAdmin;
@@ -91,7 +92,18 @@ export default function AdminUsersPage() {
 
   return (
     <main className="saas-page min-h-screen text-slate-900">
-      <header className="border-b border-slate-800 bg-slate-950 text-white"><div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-600"><Users className="h-5 w-5" /></div><div><p className="font-black tracking-tight">{isPlatformAdmin ? "Administração da plataforma" : "Equipe da empresa"}</p><p className="text-xs text-slate-400">{isPlatformAdmin ? "Empresas, usuários e dados globais" : "Usuários desta empresa"}</p></div></div><Button variant="outline" size="sm" className="border-slate-700 bg-transparent text-slate-200 hover:bg-slate-800" onClick={() => logout()}><LogOut className="mr-2 h-4 w-4" /> Sair</Button></div></header>
+      <header className="border-b border-slate-800 bg-slate-950 text-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-600"><Users className="h-5 w-5" /></div>
+            <div>
+              <p className="font-black tracking-tight">{isPlatformAdmin ? "Administração da plataforma" : "Equipe da empresa"}</p>
+              <p className="text-xs text-slate-400">{isPlatformAdmin ? "Empresas, usuários e dados globais" : "Usuários desta empresa"}</p>
+            </div>
+          </div>
+          <AccountMenuDropdown />
+        </div>
+      </header>
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:py-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><Button variant="ghost" className="mb-2 -ml-3 gap-2" onClick={goBack}><ArrowLeft className="h-4 w-4" /> Voltar</Button><h1 className="text-2xl font-black sm:text-3xl">{isPlatformAdmin ? "Empresas e acessos" : "Usuários da empresa"}</h1><p className="mt-1 text-sm text-slate-500">{isPlatformAdmin ? "O administrador global pode visualizar e administrar qualquer empresa sem pertencer a um tenant." : "Você pode criar usuários e definir permissões somente dentro da sua empresa."}</p></div><Badge className="w-fit bg-emerald-100 text-emerald-800 hover:bg-emerald-100"><Check className="mr-1 h-3.5 w-3.5" /> {isPlatformAdmin ? "Administrador global" : "Administrador da empresa"}</Badge></div>
         <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">

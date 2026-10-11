@@ -16,7 +16,7 @@ type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
 type CompanyPresenceEntry = {
   promoterId: number;
   promoterName: string;
-  employeeCode: string | null;
+  employeeCode?: string | null;
   clockInTime: Date;
   lastEventType: EventType;
   lastEventTime: Date;

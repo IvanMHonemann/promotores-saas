@@ -59,7 +59,6 @@ export const timeTrackingRouter = router({
       const rows = await database.select({
         promoterId: memberAccounts.id,
         promoterName: memberAccounts.userName,
-        employeeCode: memberAccounts.employeeCode,
         eventType: timeEvents.eventType,
         serverTime: timeEvents.serverTime,
         deviceTime: timeEvents.deviceTime,
@@ -97,7 +96,6 @@ export const timeTrackingRouter = router({
         presence.push({
           promoterId,
           promoterName: entry.promoterName,
-          employeeCode: entry.employeeCode,
           clockInTime: entry.deviceTime || entry.serverTime,
           lastEventType: last.eventType,
           lastEventTime: last.deviceTime || last.serverTime,
@@ -318,7 +316,11 @@ export const timeTrackingRouter = router({
     pending: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
       const database = await db.getDb();
       if (!database) return [];
-      return database.select({ request: timeCorrectionRequests, event: timeEvents, employee: memberAccounts })
+      return database.select({
+        request: timeCorrectionRequests,
+        event: timeEvents,
+        employee: { userName: memberAccounts.userName },
+      })
         .from(timeCorrectionRequests)
         .innerJoin(memberAccounts, eq(timeCorrectionRequests.memberAccountId, memberAccounts.id))
         .leftJoin(timeEvents, eq(timeCorrectionRequests.timeEventId, timeEvents.id))

@@ -27,6 +27,7 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
+import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { ENTITLEMENT_CATALOG, ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey } from "@shared/entitlements";
 
@@ -342,21 +343,24 @@ export default function AdminAssinaturasPage() {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant={tab === "companies" ? "default" : "outline"}
-              className={tab === "companies" ? "bg-red-600 hover:bg-red-700" : ""}
-              onClick={() => setTab("companies")}
-            >
-              <Building2 className="mr-1.5 h-4 w-4" /> Empresas
-            </Button>
-            <Button
-              variant={tab === "plans" ? "default" : "outline"}
-              className={tab === "plans" ? "bg-red-600 hover:bg-red-700" : ""}
-              onClick={() => setTab("plans")}
-            >
-              <CreditCard className="mr-1.5 h-4 w-4" /> Planos
-            </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex gap-2">
+              <Button
+                variant={tab === "companies" ? "default" : "outline"}
+                className={tab === "companies" ? "bg-red-600 hover:bg-red-700" : ""}
+                onClick={() => setTab("companies")}
+              >
+                <Building2 className="mr-1.5 h-4 w-4" /> Empresas
+              </Button>
+              <Button
+                variant={tab === "plans" ? "default" : "outline"}
+                className={tab === "plans" ? "bg-red-600 hover:bg-red-700" : ""}
+                onClick={() => setTab("plans")}
+              >
+                <CreditCard className="mr-1.5 h-4 w-4" /> Planos
+              </Button>
+            </div>
+            <AccountMenuDropdown tone="light" />
           </div>
         </div>
 

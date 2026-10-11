@@ -11,7 +11,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
 
-export default function AccountMenuDropdown() {
+type AccountMenuDropdownProps = {
+  tone?: "dark" | "light";
+};
+
+export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdownProps) {
   const { user, logout } = useAuth();
   const isPlatformAdmin = user?.role === "platform_admin";
   const isCompanyAdmin = user?.role === "company_admin";
@@ -26,7 +30,10 @@ export default function AccountMenuDropdown() {
         <Button
           variant="outline"
           aria-label="Abrir menu da conta"
-          className="h-10 gap-2 border-teal-300/30 bg-teal-300/10 px-3 text-teal-100 hover:bg-teal-300/20 hover:text-white"
+          className={`h-10 gap-2 px-3 ${tone === "light"
+            ? "border-teal-800/20 bg-teal-50 text-teal-900 hover:bg-teal-100 hover:text-teal-950"
+            : "border-teal-300/30 bg-teal-300/10 text-teal-100 hover:bg-teal-300/20 hover:text-white"
+          }`}
         >
           <UserRound className="h-4 w-4" />
           <span>Minha conta</span>

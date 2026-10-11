@@ -123,8 +123,8 @@ export default function MyAccountPage() {
           )}
         </section>
 
-        <section id="informacoes-importantes" className="scroll-mt-6 space-y-3">
-          <h2 className="text-lg font-bold text-white">Outras informações importantes</h2>
+        <section className="space-y-3">
+          <h2 className="text-lg font-bold text-white">Dados e segurança da conta</h2>
           <div className="grid gap-5 lg:grid-cols-2">
             <div id="dados-usuario" className="scroll-mt-6">
               <Card className="h-full border-slate-200 bg-white shadow-xl">
@@ -159,6 +159,7 @@ export default function MyAccountPage() {
               </Card>
             </div>
 
+            <div id="seguranca" className="scroll-mt-6">
             <Card className="h-full border-slate-200 bg-white shadow-xl">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-slate-950">
@@ -200,6 +201,7 @@ export default function MyAccountPage() {
                 </form>
               </CardContent>
             </Card>
+            </div>
           </div>
         </section>
       </div>

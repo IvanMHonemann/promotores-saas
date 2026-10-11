@@ -1,4 +1,4 @@
-import { ChevronDown, Clock3, Info, LogOut, UserRound } from "lucide-react";
+import { ChevronDown, Clock3, CreditCard, KeyRound, LogOut, UserRound } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import { trpc } from "@/lib/trpc";
 export default function AccountMenuDropdown() {
   const { user, logout } = useAuth();
   const isPlatformAdmin = user?.role === "platform_admin";
+  const isCompanyAdmin = user?.role === "company_admin";
   const entitlements = trpc.entitlements.mine.useQuery(undefined, {
     enabled: Boolean(user && !isPlatformAdmin),
   });
@@ -53,11 +54,19 @@ export default function AccountMenuDropdown() {
           </DropdownMenuItem>
         )}
         <DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
-          <a href="/minha-conta#informacoes-importantes">
-            <Info className="text-teal-300" />
-            Outras informações importantes
+          <a href="/minha-conta#seguranca">
+            <KeyRound className="text-teal-300" />
+            Segurança e senha
           </a>
         </DropdownMenuItem>
+        {isCompanyAdmin && (
+          <DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
+            <a href="/minha-assinatura">
+              <CreditCard className="text-teal-300" />
+              Minha assinatura
+            </a>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem
           variant="destructive"

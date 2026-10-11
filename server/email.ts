@@ -369,3 +369,15 @@ export async function emailExtinguisherAlerts(input: {
     text: `Alertas de validade (${input.companyName}): ${input.items.length} item(ns). Acesse o painel.`,
   });
 }
+
+/** Alertas de validade do inventário de produtos cadastrados pela empresa. */
+export async function emailProductExpirationAlerts(input: {
+  to: string; companyName: string; userName: string;
+  items: Array<{ productCode: string; description: string; quantity: number; expirationDate: string; price: string | number; }>;
+}) {
+  if (!input.items.length) return { ok: true, id: "empty" };
+  const list = input.items.slice(0, 50).map((item) => `<li style="margin:0 0 12px;color:#c4cae0;"><strong style="color:#fff;">${escapeHtml(item.description)}</strong><br/>Código: ${escapeHtml(item.productCode)} · Quantidade: ${item.quantity} · Preço: R$ ${escapeHtml(String(item.price))}<br/><span style="color:#fbbf24;">Validade: ${escapeHtml(item.expirationDate)}</span></li>`).join("");
+  const more = input.items.length > 50 ? `<p style="color:#8b93ad;font-size:13px;">… e mais ${input.items.length - 50} produto(s).</p>` : "";
+  const html = layout("Produtos próximos do vencimento", `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Olá, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong> (${escapeHtml(input.companyName)}). Estes produtos vencem nos próximos 30 dias:</p><ul style="margin:0;padding-left:18px;">${list}</ul>${more}${cta(getAppPublicUrl() + "/produtos", "Ver produtos e validades")}`);
+  return sendEmail({ to: input.to, subject: `Extinfy — ${input.items.length} produto(s) vencem em até 30 dias (${input.companyName})`, html, text: `Produtos com validade nos próximos 30 dias: ${input.items.map(i => `${i.description} (${i.productCode}), quantidade ${i.quantity}, validade ${i.expirationDate}, preço R$ ${i.price}`).join("; ")}. Acesse /produtos.` });
+}

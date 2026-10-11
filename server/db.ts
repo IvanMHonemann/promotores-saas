@@ -825,6 +825,10 @@ export async function restoreTrashItem(id: number, accountId: number) {
       const client = await tx.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.accountId, tenant))).limit(1);
       if (!client[0]) throw new Error("O cliente vinculado ao extintor não existe mais; restaure o cliente antes.");
       await tx.insert(extinguishers).values({ ...restoreDateFields(snapshot), id: item.originalId, accountId: tenant } as any);
+    } else if (item.itemType === "product") {
+      const existing = await tx.select({ id: inventoryProducts.id }).from(inventoryProducts).where(and(eq(inventoryProducts.id, item.originalId), eq(inventoryProducts.companyId, tenant))).limit(1);
+      if (existing[0]) throw new Error("Já existe um produto com esse identificador. Não foi possível restaurar.");
+      await tx.insert(inventoryProducts).values({ ...restoreDateFields(snapshot), id: item.originalId, companyId: tenant } as any);
     } else {
       throw new Error("Tipo de item da lixeira não reconhecido.");
     }
@@ -1634,9 +1638,31 @@ export async function updateInventoryProduct(companyId: number, id: number, data
   await database.update(inventoryProducts).set(data).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company)));
   return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company))).limit(1))[0] || null;
 }
-export async function deleteInventoryProduct(companyId: number, id: number) {
+export async function deleteInventoryProducts(companyId: number, ids: number[]) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
-  await database.delete(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, requireAccountId(companyId))));
-  return { success: true };
+  const tenant = requireAccountId(companyId);
+  const uniqueIds = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
+  if (!uniqueIds.length) return { deleted: 0 };
+  return database.transaction(async (tx) => {
+    const rows = await tx.select().from(inventoryProducts).where(and(inArray(inventoryProducts.id, uniqueIds), eq(inventoryProducts.companyId, tenant)));
+    if (rows.length !== uniqueIds.length) throw new Error("Um ou mais produtos não existem ou não pertencem à sua empresa.");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await tx.insert(trashItems).values(rows.map((product) => ({ accountId: tenant, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
+    await tx.delete(inventoryProducts).where(and(inArray(inventoryProducts.id, uniqueIds), eq(inventoryProducts.companyId, tenant)));
+    return { deleted: rows.length };
+  });
+}
+export async function deleteInventoryProduct(companyId: number, id: number) {
+  return deleteInventoryProducts(companyId, [id]);
+}
+export async function getExpiringInventoryProducts(companyId: number, daysAhead = 30) {
+  const database = await getDb();
+  if (!database) return [];
+  const company = requireAccountId(companyId);
+  const days = Math.max(0, Math.min(365, Math.trunc(daysAhead)));
+  return database.select().from(inventoryProducts).where(and(
+    eq(inventoryProducts.companyId, company),
+    sql`${inventoryProducts.expirationDate} >= CURRENT_DATE() AND ${inventoryProducts.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${days} DAY)`,
+  )).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
 }

@@ -99,7 +99,7 @@ export default function AuditPage() {
   const promoters = promotersQuery.data || [];
   const onFilterChange = (change: () => void) => { change(); setPage(1); };
 
-  return <DashboardLayout title="Auditoria de atividades" description="Acompanhe visitas, ponto, checklists, evidências e outras ações registradas dos promotores." refreshing={listQuery.isFetching} onRefresh={() => { void utils.audit.promoterActivity.invalidate(); }}>
+  return <DashboardLayout title="Auditoria de atividades" description="Acompanhe visitas, ponto, correções, produtos e demais ações registradas pelos promotores." refreshing={listQuery.isFetching} onRefresh={() => { void utils.audit.promoterActivity.invalidate(); }}>
     <div className="min-w-0 space-y-5">
       <div className="flex flex-col gap-3 rounded-2xl border border-teal-300/15 bg-gradient-to-br from-teal-300/[.10] to-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div className="flex min-w-0 items-start gap-3"><div className="rounded-xl bg-teal-300/10 p-2.5 text-teal-200"><Activity className="h-5 w-5"/></div><div className="min-w-0"><h2 className="font-bold text-white">Histórico de campo</h2><p className="mt-1 text-sm leading-relaxed text-slate-300">Reúne tarefas e visitas, marcações de ponto, correções, produtos e outros eventos registrados no sistema.</p></div></div>

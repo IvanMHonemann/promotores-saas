@@ -478,7 +478,8 @@ export type PromoterActivityFilters = {
 
 /**
  * Timeline unificada baseada nos registros atuais de operação, ponto,
- * correções de ponto, produtos e audit_logs. Todo braço da união filtra a empresa
+ * correções de ponto, produtos e audit_logs. O papel bruto é normalizado como em
+ * memberAuth.normalizeMemberRole; todo braço da união filtra a empresa
  * na origem; os eventos históricos são reconstruídos apenas a partir de dados persistidos.
  */
 export async function listPromoterActivities(filters: PromoterActivityFilters) {
@@ -497,7 +498,7 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
       CONCAT('Registro de ponto: ', CASE te.eventType WHEN 'clock_in' THEN 'entrada' WHEN 'break_start' THEN 'início de intervalo' WHEN 'break_end' THEN 'fim de intervalo' WHEN 'clock_out' THEN 'saída' ELSE te.eventType END) AS description,
       JSON_OBJECT('tipo', te.eventType, 'horário do servidor', te.serverTime, 'horário do dispositivo', te.deviceTime, 'situação da localização', te.locationStatus, 'latitude', te.latitude, 'longitude', te.longitude, 'precisão GPS (m)', te.accuracy, 'observações', te.notes, 'dispositivo', te.deviceInfo) AS details
     FROM time_events te INNER JOIN member_accounts ma ON ma.id = te.memberAccountId AND ma.companyId = te.companyId
-    WHERE te.companyId = ? AND ma.role = 'promoter'
+    WHERE te.companyId = ? AND ma.role NOT IN ('company_admin', 'admin', 'supervisor')
     UNION ALL
     SELECT CONCAT('visit-', v.id) AS activityId, v.companyId, ma.id AS promoterId,
       ma.userName, ma.email AS userEmail, COALESCE(v.actualEnd, v.actualStart, v.plannedStart, v.createdAt) AS occurredAt,
@@ -508,7 +509,7 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
     FROM visits v INNER JOIN member_accounts ma ON ma.id = v.promoterId AND ma.companyId = v.companyId
       LEFT JOIN stores s ON s.id = v.storeId AND s.companyId = v.companyId
       LEFT JOIN routes r ON r.id = v.routeId AND r.companyId = v.companyId
-    WHERE v.companyId = ? AND ma.role = 'promoter'
+    WHERE v.companyId = ? AND ma.role NOT IN ('company_admin', 'admin', 'supervisor')
     UNION ALL
     SELECT CONCAT('correction-', tc.id) AS activityId, tc.companyId, ma.id AS promoterId,
       ma.userName, ma.email AS userEmail, COALESCE(tc.reviewedAt, tc.createdAt) AS occurredAt,
@@ -517,7 +518,7 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
       CONCAT('Solicitação de correção de ponto · ', tc.status) AS description,
       JSON_OBJECT('marcação solicitada', tc.requestedType, 'horário solicitado', tc.requestedTime, 'justificativa', tc.justification, 'situação', tc.status, 'observações da revisão', tc.reviewNotes, 'solicitado em', tc.createdAt, 'revisado em', tc.reviewedAt, 'revisor (ID)', tc.reviewedByUserId) AS details
     FROM time_correction_requests tc INNER JOIN member_accounts ma ON ma.id = tc.memberAccountId AND ma.companyId = tc.companyId
-    WHERE tc.companyId = ? AND ma.role = 'promoter'
+    WHERE tc.companyId = ? AND ma.role NOT IN ('company_admin', 'admin', 'supervisor')
     UNION ALL
     SELECT CONCAT('product-', ip.id) AS activityId, ip.companyId, ma.id AS promoterId,
       ma.userName, ma.email AS userEmail, ip.createdAt AS occurredAt,
@@ -526,7 +527,7 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
       CONCAT('Produto cadastrado · ', ip.description) AS description,
       JSON_OBJECT('código', ip.productCode, 'descrição', ip.description, 'quantidade', ip.quantity, 'validade', ip.expirationDate, 'preço', ip.price, 'cadastrado em', ip.createdAt) AS details
     FROM inventory_products ip INNER JOIN member_accounts ma ON ma.id = ip.createdByMemberId AND ma.companyId = ip.companyId
-    WHERE ip.companyId = ? AND ma.role = 'promoter'
+    WHERE ip.companyId = ? AND ma.role NOT IN ('company_admin', 'admin', 'supervisor')
       AND NOT EXISTS (SELECT 1 FROM audit_logs existing WHERE existing.companyId = ip.companyId AND existing.entityType = 'product' AND existing.entityId = ip.id AND existing.action = 'create')
     UNION ALL
     SELECT CONCAT('audit-', al.id) AS activityId, al.companyId, ma.id AS promoterId,
@@ -535,7 +536,7 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
       COALESCE(al.entityLabel, al.description) AS entityLabel, al.description,
       JSON_OBJECT('registro', al.entityLabel, 'dados anteriores', al.oldData, 'dados novos', al.newData, 'IP', al.ipAddress, 'navegador/dispositivo', al.userAgent) AS details
     FROM audit_logs al INNER JOIN member_accounts ma ON ma.id = al.userId AND ma.companyId = al.companyId
-    WHERE al.companyId = ? AND ma.role = 'promoter'
+    WHERE al.companyId = ? AND ma.role NOT IN ('company_admin', 'admin', 'supervisor')
   `;
   const where: string[] = [];
   const params: any[] = [filters.companyId, filters.companyId, filters.companyId, filters.companyId, filters.companyId];

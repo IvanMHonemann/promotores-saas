@@ -1,4 +1,4 @@
-const CACHE_NAME = "promotores-saas-shell-v2";
+const CACHE_NAME = "promotores-saas-shell-v3";
 const APP_SHELL = ["/", "/manifest.json", "/promotores-icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -24,6 +24,18 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   // APIs sempre usam a rede; nunca reutilizamos respostas antigas da API.
   if (url.pathname.startsWith("/api")) return;
+
+  // Navegações para rotas da SPA sempre vêm do deployment atual. Uma shell
+  // antiga pode referenciar um bundle removido e deixar a página totalmente branca.
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request, { cache: "no-store" }).catch(async () => {
+        const shell = await caches.match("/");
+        return shell || new Response("Offline", { status: 503, statusText: "Offline" });
+      })
+    );
+    return;
+  }
 
   // Network-first para HTML, JS, CSS e demais arquivos: online, sempre revalida
   // o deployment atual; o cache permanece apenas como fallback offline.

@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ENTITLEMENT_CATALOG } from "@shared/entitlements";
 
 const statusLabel: Record<string, string> = {
   trial: "Teste",
@@ -35,18 +36,6 @@ const statusLabel: Record<string, string> = {
   expired: "Expirada",
   none: "Sem plano",
 };
-
-const FEATURE_ROWS: { key: string; label: string }[] = [
-  { key: "featureDashboard", label: "Painel e indicadores" },
-  { key: "featureClients", label: "Cadastro de clientes" },
-  { key: "featureExtinguishers", label: "Cadastro de pontos de venda" },
-  { key: "featureServiceOrders", label: "Ordens de serviço" },
-  { key: "featureAlerts", label: "Alertas de vencimento" },
-  { key: "featureReports", label: "Histórico e auditoria" },
-  { key: "featureUsers", label: "Gestão de usuários da equipe" },
-  { key: "featureBackup", label: "Backup e restauração" },
-  { key: "featureOfflinePwa", label: "Operação offline / PWA" },
-];
 
 function fmtLimit(v: number | null | undefined, unit: string) {
   if (v == null) return "Ilimitado";
@@ -370,14 +359,14 @@ export default function MySubscriptionPage() {
 
         <Card className="border-slate-700 bg-slate-900 text-slate-100">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg text-white">
-              <Shield className="h-5 w-5 text-red-400" /> Funções do seu plano
+              <CardTitle className="flex items-center gap-2 text-lg text-white">
+                <Shield className="h-5 w-5 text-red-400" /> Módulos liberados para a empresa
             </CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="grid gap-2 sm:grid-cols-2">
-              {FEATURE_ROWS.map((row) => {
-                const on = Boolean(plan?.[row.key]);
+              {ENTITLEMENT_CATALOG.map((row) => {
+                const on = Boolean(plan?.features?.[row.key] ?? plan?.featureKeys?.includes(row.key));
                 return (
                   <li key={row.key} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${on ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-100" : "border-slate-700 bg-slate-950/40 text-slate-400"}`}>
                     {on ? <Check className="h-4 w-4 shrink-0 text-emerald-400" /> : <X className="h-4 w-4 shrink-0 text-slate-500" />}

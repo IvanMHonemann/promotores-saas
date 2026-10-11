@@ -28,20 +28,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { ENTITLEMENT_CATALOG, ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey } from "@shared/entitlements";
 
-const FEATURES = [
-  { key: "featureDashboard", label: "Painel e indicadores" },
-  { key: "featureClients", label: "Cadastro de clientes" },
-  { key: "featureExtinguishers", label: "Cadastro de pontos de venda" },
-  { key: "featureServiceOrders", label: "Ordens de serviço" },
-  { key: "featureAlerts", label: "Alertas de vencimento" },
-  { key: "featureReports", label: "Relatórios e histórico" },
-  { key: "featureUsers", label: "Gestão de usuários" },
-  { key: "featureBackup", label: "Backup e restauração" },
-  { key: "featureOfflinePwa", label: "Operação offline / PWA" },
-] as const;
+const FEATURES = ENTITLEMENT_CATALOG;
+type FeatureKey = EntitlementKey;
+type CompanyOverrideMode = "inherit" | "allow" | "deny";
 
-type FeatureKey = (typeof FEATURES)[number]["key"];
+function emptyCompanyOverrides(): Record<FeatureKey, CompanyOverrideMode> {
+  return Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, "inherit"])) as Record<FeatureKey, CompanyOverrideMode>;
+}
 
 const statusLabel: Record<string, string> = {
   trial: "Teste",
@@ -72,7 +67,8 @@ function fmtLimit(n: number | null | undefined) {
 }
 
 function activeFeatures(row: Record<string, unknown>) {
-  return FEATURES.filter((f) => Boolean(row[f.key]));
+  const keys = new Set(Array.isArray(row.featureKeys) ? row.featureKeys as string[] : []);
+  return FEATURES.filter((feature) => keys.has(feature.key));
 }
 
 const emptyPlanForm = {
@@ -89,7 +85,7 @@ const emptyPlanForm = {
   unlimitedExtinguishers: false,
   availableForNew: true,
   active: true,
-  features: Object.fromEntries(FEATURES.map((f) => [f.key, true])) as Record<FeatureKey, boolean>,
+  features: Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, PLAN_FEATURES.start.includes(key)])) as Record<FeatureKey, boolean>,
 };
 
 export default function AdminAssinaturasPage() {
@@ -101,6 +97,8 @@ export default function AdminAssinaturasPage() {
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [companyDialogOpen, setCompanyDialogOpen] = useState(false);
   const [selectedSubId, setSelectedSubId] = useState<number | null>(null);
+  const [companyOverrides, setCompanyOverrides] = useState<Record<FeatureKey, CompanyOverrideMode>>(emptyCompanyOverrides);
+  const [companyFeatureBase, setCompanyFeatureBase] = useState<any | null>(null);
   const [companyEdit, setCompanyEdit] = useState({
     planId: "",
     status: "active" as string,
@@ -162,12 +160,16 @@ export default function AdminAssinaturasPage() {
   });
   const updateSub = trpc.platform.subscriptions.update.useMutation({
     onSuccess: () => {
-      toast.success("Empresa atualizada");
-      setCompanyDialogOpen(false);
-      setSelectedSubId(null);
       utils.platform.subscriptions.list.invalidate();
       utils.platform.subscriptions.stats.invalidate();
       utils.platform.companies.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateCompanyFeatures = trpc.platform.companyFeatures.set.useMutation({
+    onSuccess: () => {
+      utils.platform.companyFeatures.get.invalidate();
+      utils.platform.subscriptions.list.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -231,13 +233,15 @@ export default function AdminAssinaturasPage() {
       unlimitedExtinguishers: plan.maxExtinguishers == null,
       availableForNew: plan.availableForNew !== false,
       active: plan.active !== false,
-      features: Object.fromEntries(FEATURES.map((f) => [f.key, Boolean(plan[f.key])])) as Record<FeatureKey, boolean>,
+      features: Object.fromEntries(FEATURES.map((feature) => [feature.key, Boolean(plan.featureKeys?.includes(feature.key))])) as Record<FeatureKey, boolean>,
     });
     setPlanDialogOpen(true);
   }
 
-  function openCompany(sub: any) {
+  async function openCompany(sub: any) {
     setSelectedSubId(sub.id);
+    setCompanyOverrides(emptyCompanyOverrides());
+    setCompanyFeatureBase(null);
     setCompanyEdit({
       planId: String(sub.planId),
       status: sub.status,
@@ -246,6 +250,16 @@ export default function AdminAssinaturasPage() {
       notes: sub.notes || "",
     });
     setCompanyDialogOpen(true);
+    try {
+      const base = await utils.platform.companyFeatures.get.fetch({ companyId: sub.companyId });
+      setCompanyFeatureBase(base);
+      setCompanyOverrides(Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [
+        key,
+        base.companyOverrides[key] === undefined ? "inherit" : base.companyOverrides[key] ? "allow" : "deny",
+      ])) as Record<FeatureKey, CompanyOverrideMode>);
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível carregar as exceções de módulos desta empresa.");
+    }
   }
 
   function onSavePlan(e: FormEvent) {
@@ -260,7 +274,7 @@ export default function AdminAssinaturasPage() {
       maxExtinguishers: limitValue(planForm.unlimitedExtinguishers, planForm.maxExtinguishers),
       availableForNew: planForm.availableForNew,
       active: planForm.active,
-      ...planForm.features,
+      featureKeys: ENTITLEMENT_KEYS.filter((key) => planForm.features[key]),
     };
     if (planForm.id) {
       updatePlan.mutate({ id: planForm.id, ...payload });
@@ -269,17 +283,30 @@ export default function AdminAssinaturasPage() {
     }
   }
 
-  function onSaveCompany(e: FormEvent) {
+  async function onSaveCompany(e: FormEvent) {
     e.preventDefault();
-    if (!selectedSubId) return;
-    updateSub.mutate({
-      id: selectedSubId,
-      planId: Number(companyEdit.planId),
-      status: companyEdit.status as any,
-      startsAt: companyEdit.startsAt || undefined,
-      endsAt: companyEdit.endsAt || null,
-      notes: companyEdit.notes || null,
-    });
+    if (!selectedSubId || !selectedSub) return;
+    try {
+      await updateSub.mutateAsync({
+        id: selectedSubId,
+        planId: Number(companyEdit.planId),
+        status: companyEdit.status as any,
+        startsAt: companyEdit.startsAt || undefined,
+        endsAt: companyEdit.endsAt || null,
+        notes: companyEdit.notes || null,
+      });
+      await updateCompanyFeatures.mutateAsync({
+        companyId: selectedSub.companyId,
+        overrides: ENTITLEMENT_KEYS.map((featureKey) => ({ featureKey, mode: companyOverrides[featureKey] })),
+        reason: companyEdit.notes || null,
+      });
+      toast.success("Assinatura e permissões da empresa atualizadas.");
+      setCompanyDialogOpen(false);
+      setSelectedSubId(null);
+      setCompanyFeatureBase(null);
+    } catch {
+      // As mutations já exibem a mensagem de erro; mantém o diálogo aberto para correção.
+    }
   }
 
   function onCreateSub(e: FormEvent) {
@@ -424,7 +451,7 @@ export default function AdminAssinaturasPage() {
             ) : (
               <div className="grid gap-4">
                 {subs.map((s: any) => {
-                  const feats = activeFeatures(s);
+                  const feats = activeFeatures(plansById.get(s.planId) || s);
                   return (
                     <Card key={s.id} className="overflow-hidden">
                       <CardContent className="p-4 md:p-5">
@@ -765,7 +792,7 @@ export default function AdminAssinaturasPage() {
                 </p>
                 <div className="grid gap-1.5 sm:grid-cols-2">
                   {FEATURES.map((f) => {
-                    const on = Boolean(previewPlan?.[f.key]);
+                    const on = Boolean(previewPlan?.featureKeys?.includes(f.key));
                     return (
                       <div
                         key={f.key}
@@ -780,12 +807,48 @@ export default function AdminAssinaturasPage() {
                 </div>
               </div>
 
+              <div className="space-y-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Exceções de módulos desta empresa</p>
+                  <p className="text-[11px] leading-relaxed text-slate-500">
+                    “Herdar” segue o plano selecionado. “Liberar” ou “Bloquear” cria uma exceção exclusiva para esta empresa.
+                  </p>
+                </div>
+                {companyFeatureBase === null ? (
+                  <p className="text-xs text-slate-500">Carregando exceções salvas…</p>
+                ) : (
+                  <div className="space-y-2">
+                    {FEATURES.map((feature) => {
+                      const mode = companyOverrides[feature.key];
+                      const planEnabled = Boolean(previewPlan?.featureKeys?.includes(feature.key));
+                      const enabled = mode === "inherit" ? planEnabled : mode === "allow";
+                      return (
+                        <div key={feature.key} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-white bg-white p-2.5">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-slate-800">{feature.label}</p>
+                            <p className="text-[10px] text-slate-500">{enabled ? "Habilitado" : "Bloqueado"} · {mode === "inherit" ? "conforme plano" : "exceção da empresa"}</p>
+                          </div>
+                          <Select value={mode} onValueChange={(value: CompanyOverrideMode) => setCompanyOverrides({ ...companyOverrides, [feature.key]: value })}>
+                            <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="inherit">Herdar do plano</SelectItem>
+                              <SelectItem value="allow">Liberar</SelectItem>
+                              <SelectItem value="deny">Bloquear</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setCompanyDialogOpen(false)}>
                   Fechar
                 </Button>
-                <Button type="submit" className="gap-1.5 bg-red-600 hover:bg-red-700" disabled={updateSub.isPending}>
-                  {updateSub.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                <Button type="submit" className="gap-1.5 bg-red-600 hover:bg-red-700" disabled={updateSub.isPending || updateCompanyFeatures.isPending || companyFeatureBase === null}>
+                  {updateSub.isPending || updateCompanyFeatures.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   Salvar empresa
                 </Button>
               </DialogFooter>

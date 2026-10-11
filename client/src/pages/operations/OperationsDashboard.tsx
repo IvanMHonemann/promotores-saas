@@ -42,12 +42,15 @@ export default function OperationsDashboard() {
   const { user } = useAuth();
   const isCompanyAdmin = user?.role === "company_admin";
   const isSupervisor = user?.role === "supervisor";
-  const stores = trpc.operations.stores.list.useQuery();
-  const companyUsers = trpc.companyUsers.list.useQuery(undefined, { enabled: isCompanyAdmin });
-  const routes = trpc.operations.routes.list.useQuery({ date: today });
-  const visits = trpc.operations.visits.list.useQuery({ date: today });
-  const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin });
-  const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin });
+  const access = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
+  const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
+  const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
+  const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
+  const companyUsers = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations });
+  const routes = trpc.operations.routes.list.useQuery({ date: today }, { enabled: hasFieldOperations });
+  const visits = trpc.operations.visits.list.useQuery({ date: today }, { enabled: hasFieldOperations });
+  const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });
+  const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin && hasTimeTracking });
   const utils = trpc.useUtils();
   const [routeName, setRouteName] = useState("");
   const [routeDate, setRouteDate] = useState(today);
@@ -101,10 +104,11 @@ export default function OperationsDashboard() {
   }, []);
 
   const approve = (id: number, status: "approved" | "rejected") => review.mutate({ id, status, reviewNotes: reviewNotes[id]?.trim() || undefined });
-  const title = section === "routes" ? "Roteiros" : section === "visits" ? "Visitas" : isCompanyAdmin ? "Central da empresa" : isSupervisor ? "Painel do supervisor" : "Operação de campo";
-  const description = section === "routes"
+  const visibleSection = hasFieldOperations ? section : "overview";
+  const title = visibleSection === "routes" ? "Roteiros" : visibleSection === "visits" ? "Visitas" : isCompanyAdmin ? "Central da empresa" : isSupervisor ? "Painel do supervisor" : "Operação de campo";
+  const description = visibleSection === "routes"
     ? "Crie e distribua roteiros para os promotores da sua empresa."
-    : section === "visits"
+    : visibleSection === "visits"
       ? "Acompanhe a execução das visitas planejadas."
       : isCompanyAdmin
         ? "Resumo da operação, presença da equipe e pendências da sua empresa."
@@ -112,10 +116,12 @@ export default function OperationsDashboard() {
 
   return (
     <DashboardLayout title={title} description={description} onRefresh={() => window.location.reload()}>
-      {section === "overview" && (
+      {visibleSection === "overview" && (
         <Overview
           metrics={metrics}
           visitsFailed={visits.isError}
+          hasFieldOperations={hasFieldOperations}
+          hasTimeTracking={hasTimeTracking}
           presence={presence.data || []}
           presenceLoading={presence.isLoading}
           presenceFailed={presence.isError}
@@ -128,7 +134,7 @@ export default function OperationsDashboard() {
           reviewPending={review.isPending}
         />
       )}
-      {section === "routes" && (
+      {visibleSection === "routes" && (
         <RoutesModule
           isCompanyAdmin={isCompanyAdmin}
           stores={stores.data || []}
@@ -158,12 +164,12 @@ export default function OperationsDashboard() {
           routesFailed={routes.isError}
         />
       )}
-      {section === "visits" && <VisitsModule visits={visits.data || []} metrics={metrics} loading={visits.isLoading} failed={visits.isError} />}
+      {visibleSection === "visits" && <VisitsModule visits={visits.data || []} metrics={metrics} loading={visits.isLoading} failed={visits.isError} />}
     </DashboardLayout>
   );
 }
 
-function Overview({ metrics, visitsFailed, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, reviewPending }: any) {
+function Overview({ metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, reviewPending }: any) {
   const activePromoters = presence.filter((entry: CompanyPresenceEntry) => entry.active).length;
   return (
     <div className="space-y-6">
@@ -173,17 +179,18 @@ function Overview({ metrics, visitsFailed, presence = [], presenceLoading, prese
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar.</p>
       </div>
 
-      <div className={`grid gap-3 sm:grid-cols-2 ${isCompanyAdmin ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
-        {isCompanyAdmin && <Metric label="Promotores em jornada" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Entrada registrada hoje" />}
+      {hasFieldOperations && <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
+        {isCompanyAdmin && hasTimeTracking && <Metric label="Promotores em jornada" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Entrada registrada hoje" />}
         <Metric label="Visitas planejadas" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Roteiro de hoje" />
         <Metric label="Concluídas" value={metrics.completed} icon={CheckCircle2} tone="text-emerald-300" hint="Finalizadas hoje" />
-        <Metric label="Em andamento" value={metrics.inProgress} icon={Clock3} tone="text-amber-300" hint="Em execução" />
-      </div>
-      {visitsFailed && <p role="alert" className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">Não foi possível carregar os indicadores de visitas. Atualize o painel e tente novamente.</p>}
+        <Metric className={isCompanyAdmin && hasTimeTracking ? "" : "col-span-2"} label="Em andamento" value={metrics.inProgress} icon={Clock3} tone="text-amber-300" hint="Em execução" />
+      </div>}
+      {!hasFieldOperations && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">Roteiros, lojas e visitas não estão liberados para esta empresa. O módulo de operação de campo está disponível nos planos Profissional e Empresarial.</div>}
+      {hasFieldOperations && visitsFailed && <p role="alert" className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">Não foi possível carregar os indicadores de visitas. Atualize o painel e tente novamente.</p>}
 
-      {isCompanyAdmin && <PresenceCard entries={presence} loading={presenceLoading} failed={presenceFailed} timeZone={timeZone} />}
+      {isCompanyAdmin && hasTimeTracking && <PresenceCard entries={presence} loading={presenceLoading} failed={presenceFailed} timeZone={timeZone} />}
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      {hasFieldOperations && <div className="grid gap-3 sm:grid-cols-2">
         <a href="#roteiros" className="rounded-2xl border border-teal-300/20 bg-teal-300/10 p-5 transition hover:bg-teal-300/15">
           <p className="font-bold text-white">Roteiros</p>
           <p className="mt-1 text-sm text-slate-300">Criar roteiro, escolher promotor e selecionar lojas.</p>
@@ -192,27 +199,27 @@ function Overview({ metrics, visitsFailed, presence = [], presenceLoading, prese
           <p className="font-bold text-white">Visitas</p>
           <p className="mt-1 text-sm text-slate-300">Acompanhar status das visitas planejadas.</p>
         </a>
-      </div>
+      </div>}
 
-      {isCompanyAdmin && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} reviewPending={reviewPending} />}
+      {isCompanyAdmin && hasTimeTracking && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} reviewPending={reviewPending} />}
     </div>
   );
 }
 
-function Metric({ label, value, icon: Icon, tone, hint }: { label: string; value: number; icon: LucideIcon; tone: string; hint: string }) {
+function Metric({ label, value, icon: Icon, tone, hint, className = "" }: { label: string; value: number; icon: LucideIcon; tone: string; hint: string; className?: string }) {
   return (
-    <Card className="overflow-hidden border-white/10 bg-gradient-to-br from-slate-900 to-slate-950">
-      <CardContent className="flex min-h-[128px] items-center justify-between gap-3 p-4 sm:p-5">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[.14em] text-slate-300">{label}</p>
+    <div className={`min-h-[142px] bg-[#0b1021] p-4 sm:min-h-[160px] sm:p-6 ${className}`}>
+      <div className="flex h-full items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col self-stretch">
+          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300 sm:text-xs sm:tracking-[.14em]">{label}</p>
           <p className={`mt-2 text-4xl font-black leading-none ${tone}`}>{value}</p>
-          <p className="mt-2 text-xs text-slate-400">{hint}</p>
+          <p className="mt-auto pt-2 text-xs text-slate-400 sm:text-sm">{hint} <span aria-hidden="true">→</span></p>
         </div>
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.04]">
-          <Icon className={`h-5 w-5 ${tone}`} />
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[.04] sm:h-10 sm:w-10">
+          <Icon className={`h-4 w-4 ${tone} sm:h-5 sm:w-5`} />
         </span>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

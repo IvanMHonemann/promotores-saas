@@ -66,7 +66,46 @@ export default function PlatformDashboard() {
 
 function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total: number; active: number; onNavigate: (section: Section) => void; gpsStatus: "checking" | "granted" | "denied" | "unavailable"; requestGps: () => void }) {
   const stats = [{ label: "Empresas cadastradas", value: total, detail: "Ambientes na plataforma", icon: Building2, color: "text-sky-300", bg: "bg-sky-300/10" }, { label: "Empresas ativas", value: active, detail: "Operação em andamento", icon: Activity, color: "text-teal-300", bg: "bg-teal-300/10" }, { label: "Módulos ativos", value: "04", detail: "Recursos disponíveis", icon: CheckCircle2, color: "text-violet-300", bg: "bg-violet-300/10" }];
-  return <div className="space-y-6"><div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7"><div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><Badge className="border border-teal-300/25 bg-teal-300/10 text-teal-200">Visão central</Badge><h2 className="mt-3 max-w-xl text-2xl font-black leading-tight sm:text-4xl">Sua operação começa aqui.</h2><p className="mt-2 max-w-lg text-sm leading-6 text-slate-300">Gerencie empresas, equipes e acompanhe a execução das atividades de campo.</p></div><div className="flex items-center gap-2 text-sm text-slate-300"><span className="h-2.5 w-2.5 rounded-full bg-teal-300" /> Dados atualizados agora</div></div></div><GpsPermission status={gpsStatus} onRequest={requestGps} onOpenTime={() => onNavigate("time")} /><div className="grid gap-3 sm:grid-cols-3">{stats.map(({ label, value, detail, icon: Icon, color, bg }) => <Card key={label} className="border-white/10 bg-slate-900/80 shadow-xl shadow-slate-950/20"><CardContent className="flex items-center gap-4 p-4 sm:block sm:p-5"><div className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${bg} ${color}`}><Icon className="h-5 w-5" /></div><div className="min-w-0 sm:mt-4"><p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-300">{label}</p><div className="mt-1 flex items-baseline gap-2"><p className={`text-3xl font-black tracking-tight ${color}`}>{value}</p><p className="hidden text-xs text-slate-300 sm:block">{detail}</p></div></div></CardContent></Card>)}</div><div><div className="mb-3 flex items-end justify-between"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-300">Acesso rápido</p><h2 className="mt-1 text-xl font-bold">Comece por um módulo</h2></div></div><div className="grid gap-3 sm:grid-cols-2"><QuickAction icon={Building2} title="Empresas" text="Consulte os ambientes cadastrados." onClick={() => onNavigate("companies")} /><QuickAction icon={ClipboardCheck} title="Testar ponto eletrônico" text="Simule uma jornada completa." highlight onClick={() => onNavigate("time")} /><QuickLink href="/admin/usuarios" icon={UserRound} title="Empresas e usuários" text="Crie empresas, acessos e defina permissões." /><QuickLink href="/admin/assinaturas" icon={CreditCard} title="Planos e assinaturas" text="Configure planos, limites e status." /></div></div></div>;
+  return (
+    <div className="space-y-6">
+      <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7">
+        <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+          <div>
+            <Badge className="border border-teal-300/25 bg-teal-300/10 text-teal-200">Visão central</Badge>
+            <h2 className="mt-3 max-w-xl text-2xl font-black leading-tight sm:text-4xl">Sua operação começa aqui.</h2>
+            <p className="mt-2 max-w-lg text-sm leading-6 text-slate-300">Gerencie empresas, equipes e acompanhe a execução das atividades de campo.</p>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-slate-300"><span className="h-2.5 w-2.5 rounded-full bg-teal-300" /> Dados atualizados agora</div>
+        </div>
+      </div>
+      <GpsPermission status={gpsStatus} onRequest={requestGps} onOpenTime={() => onNavigate("time")} />
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
+        {stats.map(({ label, value, detail, icon: Icon, color, bg }, index) => (
+          <Card key={label} className={`rounded-none border-0 bg-[#0b1021] shadow-none ${stats.length % 2 === 1 && index === stats.length - 1 ? "col-span-2" : ""}`}>
+            <CardContent className="flex min-h-[142px] items-start justify-between gap-3 p-4 sm:min-h-[160px] sm:p-6">
+              <div className="flex min-w-0 flex-col self-stretch">
+                <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300 sm:text-xs sm:tracking-[.14em]">{label}</p>
+                <p className={`mt-2 text-4xl font-black leading-none ${color}`}>{value}</p>
+                <p className="mt-auto pt-2 text-xs text-slate-300 sm:text-sm">{detail} <span aria-hidden="true">→</span></p>
+              </div>
+              <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${bg} ${color} sm:h-10 sm:w-10`}><Icon className="h-4 w-4 sm:h-5 sm:w-5" /></div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div>
+        <div className="mb-3 flex items-end justify-between">
+          <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-300">Acesso rápido</p><h2 className="mt-1 text-xl font-bold">Comece por um módulo</h2></div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <QuickAction icon={Building2} title="Empresas" text="Consulte os ambientes cadastrados." onClick={() => onNavigate("companies")} />
+          <QuickAction icon={ClipboardCheck} title="Testar ponto eletrônico" text="Simule uma jornada completa." highlight onClick={() => onNavigate("time")} />
+          <QuickLink href="/admin/usuarios" icon={UserRound} title="Empresas e usuários" text="Crie empresas, acessos e defina permissões." />
+          <QuickLink href="/admin/assinaturas" icon={CreditCard} title="Planos e assinaturas" text="Configure planos, limites e status." />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function GpsPermission({ status, onRequest, onOpenTime }: { status: "checking" | "granted" | "denied" | "unavailable"; onRequest: () => void; onOpenTime: () => void }) {

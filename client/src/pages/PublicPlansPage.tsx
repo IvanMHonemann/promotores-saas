@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Check, Loader2, LogIn } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
+import { ENTITLEMENT_CATALOG, type EntitlementKey } from "@shared/entitlements";
 
 function fmtLimit(n: number | null | undefined, singular: string, plural: string) {
   if (n == null) return `${plural} ilimitados`;
@@ -15,42 +16,16 @@ function planHighlights(plan: {
   name: string;
   maxUsers: number | null;
   maxClients: number | null;
-  maxStores?: number | null;
-  featureTimeTracking?: boolean | null;
-  featureRoutes?: boolean | null;
-  featureChecklists?: boolean | null;
-  featureReports?: boolean | null;
-  featureUsers?: boolean | null;
+  maxExtinguishers: number | null;
+  featureKeys?: EntitlementKey[];
 }) {
-  const name = plan.name.toLowerCase();
-  const items: string[] = [];
-
-  items.push(plan.maxUsers == null ? "Usuários ilimitados" : `${plan.maxUsers} usuário${plan.maxUsers > 1 ? "s" : ""}`);
-  items.push(fmtLimit(plan.maxClients, "cliente", "clientes"));
-  items.push(fmtLimit(plan.maxStores, "loja", "lojas"));
-
-  if (name.includes("start") || name.includes("essenc") || name.includes("básico") || name.includes("basico")) {
-    items.push("Painel de operação e lojas");
-    if (plan.featureTimeTracking) items.push("Ponto eletrônico com GPS");
-    if (plan.featureRoutes) items.push("Roteiros e visitas");
-  } else if (name.includes("prof")) {
-    items.push("Tudo do Start");
-    items.push("Histórico e auditoria");
-    items.push("Checklists e evidências de campo");
-    items.push("Relatórios e auditoria");
-  } else if (name.includes("empres")) {
-    items.push("Tudo do Profissional");
-    items.push("Suporte prioritário");
-    items.push("Acesso antecipado a recursos premium");
-  } else {
-    if (plan.featureTimeTracking) items.push("Ponto eletrônico com GPS");
-    if (plan.featureRoutes) items.push("Roteiros e visitas");
-    if (plan.featureChecklists) items.push("Checklists de campo");
-    if (plan.featureReports) items.push("Relatórios e histórico");
-    if (plan.featureUsers) items.push("Gestão de usuários");
-  }
-
-  return items;
+  const items = [
+    plan.maxUsers == null ? "Usuários ilimitados" : `${plan.maxUsers} usuário${plan.maxUsers > 1 ? "s" : ""}`,
+    fmtLimit(plan.maxClients, "cliente", "clientes"),
+    fmtLimit(plan.maxExtinguishers, "ponto de venda", "pontos de venda"),
+  ];
+  const enabled = new Set(plan.featureKeys ?? []);
+  return [...items, ...ENTITLEMENT_CATALOG.filter((feature) => enabled.has(feature.key)).map((feature) => feature.label)];
 }
 
 export default function PublicPlansPage() {

@@ -1,5 +1,6 @@
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "@shared/const";
 import type { AccessLevel } from "@shared/auth";
+import type { CompanyRole, EntitlementKey } from "@shared/entitlements";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
@@ -62,8 +63,29 @@ const requireCompanyMemberNoBillingGate = t.middleware(async opts => {
   return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
 });
 
-export const commercialProcedure = t.procedure.use(requireCompanyUser);
 export const companyBillingProcedure = t.procedure.use(requireCompanyMemberNoBillingGate);
+
+const requireEntitlement = (featureKey: EntitlementKey) => t.middleware(async (opts) => {
+  const user = opts.ctx.user;
+  const companyId = opts.ctx.accountId;
+  if (!user || !companyId || user.role === "platform_admin") {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Não foi possível determinar a empresa e o perfil para validar este módulo." });
+  }
+  const { assertMemberFeatureAccess } = await import("../entitlements");
+  await assertMemberFeatureAccess({
+    companyId,
+    memberAccountId: opts.ctx.memberAccountId ?? null,
+    role: user.role as CompanyRole,
+    featureKey,
+  });
+  return opts.next({ ctx: { ...opts.ctx, user, accountId: companyId } });
+});
+
+export const commercialFeatureProcedure = (featureKey: EntitlementKey) =>
+  t.procedure.use(requireCompanyUser).use(requireEntitlement(featureKey));
+
+export const companyAdminFeatureProcedure = (featureKey: EntitlementKey) =>
+  t.procedure.use(requireCompanyAdmin).use(requireCompanyUser).use(requireEntitlement(featureKey));
 
 export const companyAdminProcedure = t.procedure.use(requireCompanyAdmin);
 export const adminCommercialProcedure = companyAdminProcedure;

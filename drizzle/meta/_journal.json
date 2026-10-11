@@ -78,6 +78,13 @@
       "when": 1791671852464,
       "tag": "0013_operations_core",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791673954484,
+      "tag": "0014_entitlements",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ENTITLEMENT_CATALOG } from "@shared/entitlements";
 
 export default function PlansPage() {
   const [, navigate] = useLocation();
@@ -48,9 +49,9 @@ export default function PlansPage() {
                     <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> {plan.maxUsers == null ? "Usuários ilimitados" : `${plan.maxUsers} usuário${plan.maxUsers > 1 ? "s" : ""}`}</li>
                     <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> {plan.maxClients == null ? "Clientes ilimitados" : `Até ${Number(plan.maxClients).toLocaleString("pt-BR")} clientes`}</li>
                     <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> {plan.maxExtinguishers == null ? "Pontos de venda ilimitados" : `Até ${Number(plan.maxExtinguishers).toLocaleString("pt-BR")} pontos de venda`}</li>
-                    {plan.featureOfflinePwa ? <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Offline / PWA</li> : null}
-                    {plan.featureBackup ? <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Backup</li> : null}
-                    {plan.featureReports ? <li className="flex gap-2"><Check className="h-4 w-4 text-emerald-400" /> Histórico e relatórios</li> : null}
+                    {ENTITLEMENT_CATALOG.filter((feature) => plan.featureKeys.includes(feature.key)).map((feature) => (
+                      <li key={feature.key} className="flex gap-2"><Check className="h-4 w-4 shrink-0 text-emerald-400" /> {feature.label}</li>
+                    ))}
                   </ul>
                   <div className="grid grid-cols-2 gap-2">
                     <Button variant="outline" className="border-slate-600" onClick={() => { setSelected(plan.id); checkout.mutate({ planId: plan.id, outcome: "approved" }); }} disabled={checkout.isPending}>

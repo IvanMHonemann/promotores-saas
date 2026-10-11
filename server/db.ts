@@ -31,7 +31,7 @@ import {
 } from "../drizzle/schema";
 import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { ENV } from "./_core/env";
-import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits, weeklyRouteSchedules } from "../drizzle/schema";
+import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits, weeklyRouteSchedules, inventoryProducts } from "../drizzle/schema";
 
 /** Token público opaco (URL-safe). 21 chars ≈ 126 bits de entropia. */
 export function generateExtinguisherPublicToken(): string {
@@ -1606,4 +1606,37 @@ export async function updateOperationalVisit(companyId: number, id: number, data
     .innerJoin(operationalStores, eq(operationalVisits.storeId, operationalStores.id))
     .where(and(eq(operationalVisits.id, id), eq(operationalVisits.companyId, companyId))).limit(1);
   return rows[0];
+}
+
+/* Inventário e validade de produtos isolados por empresa. */
+export async function listInventoryProducts(companyId: number, search?: string, expiry?: "all" | "expired" | "near") {
+  const database = await getDb();
+  if (!database) return [];
+  const company = requireAccountId(companyId);
+  const conditions = [eq(inventoryProducts.companyId, company)];
+  if (search?.trim()) conditions.push(or(like(inventoryProducts.productCode, `%${search.trim()}%`), like(inventoryProducts.description, `%${search.trim()}%`))!);
+  if (expiry === "expired") conditions.push(sql`${inventoryProducts.expirationDate} < CURRENT_DATE()`);
+  if (expiry === "near") conditions.push(sql`${inventoryProducts.expirationDate} >= CURRENT_DATE() AND ${inventoryProducts.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)`);
+  return database.select().from(inventoryProducts).where(and(...conditions)).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
+}
+export async function createInventoryProduct(input: typeof inventoryProducts.$inferInsert) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const companyId = requireAccountId(input.companyId);
+  const result = await database.insert(inventoryProducts).values({ ...input, companyId });
+  const id = Number((result as any)[0]?.insertId);
+  return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, companyId))).limit(1))[0];
+}
+export async function updateInventoryProduct(companyId: number, id: number, data: Pick<typeof inventoryProducts.$inferInsert, "productCode"|"description"|"quantity"|"expirationDate"|"price">) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const company = requireAccountId(companyId);
+  await database.update(inventoryProducts).set(data).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company)));
+  return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company))).limit(1))[0] || null;
+}
+export async function deleteInventoryProduct(companyId: number, id: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  await database.delete(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, requireAccountId(companyId))));
+  return { success: true };
 }

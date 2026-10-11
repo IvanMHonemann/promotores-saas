@@ -819,6 +819,12 @@ export const appRouter = router({
   }),
 
 
+  products: router({
+    list: companyBillingProcedure.input(z.object({ search: z.string().optional(), expiry: z.enum(["all", "expired", "near"]).optional() }).optional()).query(({ ctx, input }) => db.listInventoryProducts(ctx.accountId, input?.search, input?.expiry)),
+    create: companyBillingProcedure.input(z.object({ productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(({ ctx, input }) => db.createInventoryProduct({ ...input, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate as any, price: input.price })),
+    update: companyBillingProcedure.input(z.object({ id: z.number().int().positive(), productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(({ ctx, input }) => { const { id, ...data } = input; return db.updateInventoryProduct(ctx.accountId, id, { ...data, expirationDate: data.expirationDate as any }); }),
+    delete: companyBillingProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => db.deleteInventoryProduct(ctx.accountId, input.id)),
+  }),
   operations: router({
     promoters: router({
       list: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {

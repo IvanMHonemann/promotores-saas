@@ -253,6 +253,25 @@ export const weeklyRouteSchedules = mysqlTable("weekly_route_schedules", {
 export type WeeklyRouteSchedule = typeof weeklyRouteSchedules.$inferSelect;
 export type InsertWeeklyRouteSchedule = typeof weeklyRouteSchedules.$inferInsert;
 
+/** Catálogo de produtos com controle de quantidade e validade por empresa. */
+export const inventoryProducts = mysqlTable("inventory_products", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
+  productCode: varchar("productCode", { length: 64 }).notNull(),
+  description: varchar("description", { length: 500 }).notNull(),
+  quantity: int("quantity").notNull().default(0),
+  expirationDate: date("expirationDate").notNull(),
+  price: decimal("price", { precision: 12, scale: 2 }).notNull().default("0.00"),
+  createdByMemberId: int("createdByMemberId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdx: index("inventory_products_company_idx").on(table.companyId),
+  codeIdx: index("inventory_products_company_code_idx").on(table.companyId, table.productCode),
+  expiryIdx: index("inventory_products_expiration_idx").on(table.companyId, table.expirationDate),
+}));
+export type InventoryProduct = typeof inventoryProducts.$inferSelect;
+export type InsertInventoryProduct = typeof inventoryProducts.$inferInsert;
 /** Visitas previstas / executadas. */
 export const visits = mysqlTable("visits", {
   id: int("id").autoincrement().primaryKey(),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, ClipboardList, Clock3, CreditCard, LayoutDashboard, LogOut, Menu, UserRound, UsersRound, X } from "lucide-react";
+import { CalendarDays, ClipboardList, Clock3, CreditCard, LayoutDashboard, LogOut, Menu, Package, UserRound, UsersRound, X } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -42,6 +42,7 @@ export function SidebarNav() {
         ]
       : [
           { href: "#inicio", label: "Visão geral", icon: LayoutDashboard },
+          ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: Package }] : []),
           ...(hasFeature("fieldOperations") ? [
             { href: "#roteiros", label: "Roteiros", icon: ClipboardList },
             { href: "#visitas", label: "Visitas", icon: CalendarDays },

@@ -92,6 +92,13 @@
       "when": 1791694707074,
       "tag": "0015_weekly_route_schedules",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791720282334,
+      "tag": "0016_inventory_products",
+      "breakpoints": false
     }
   ]
 }

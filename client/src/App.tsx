@@ -19,6 +19,7 @@ import AuditPage from "./pages/AuditPage";
 import PromoterDashboard from "./pages/promoter/PromoterDashboard";
 import PromoterClockPage from "./pages/promoter/PromoterClockPage";
 import OperationsDashboard from "./pages/operations/OperationsDashboard";
+import ProductsPage from "./pages/ProductsPage";
 import PlatformDashboard from "./pages/platform/PlatformDashboard";
 import { PwaStatusBar } from "./components/PwaStatusBar";
 import { useAuth } from "./_core/hooks/useAuth";
@@ -90,6 +91,7 @@ function Router() {
       <Route path="/login" component={LoginPage} />
       <Route path="/cadastro" component={SignupPage} />
       <Route path="/planos" component={PublicPlansPage} />
+      <Route path="/produtos"><CommercialProtected><ProductsPage /></CommercialProtected></Route>
       <Route path="/ponto"><PromoterProtected><FeatureProtected featureKey="timeTracking"><PromoterClockPage /></FeatureProtected></PromoterProtected></Route>
       {/* Raiz: visitante → landing; autenticado → painel conforme o perfil */}
       <Route path="/"><RootRoute /></Route>

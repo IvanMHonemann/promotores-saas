@@ -31,6 +31,12 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+// Android/iOS podem restaurar uma página antiga da memória ao voltar no histórico.
+// Recarregar nessa situação garante que o usuário receba o deployment atual.
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) window.location.reload();
+});
+
 const queryClient = new QueryClient();
 const trpcClient = trpc.createClient({
   links: [

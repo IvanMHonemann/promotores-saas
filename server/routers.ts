@@ -12,7 +12,7 @@ import * as asaas from "./asaas";
 import * as db from "./db";
 import * as memberAuth from "./memberAuth";
 import * as emailService from "./email";
-import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory } from "./audit";
+import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory, listPromoterActivities } from "./audit";
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 
@@ -821,10 +821,29 @@ export const appRouter = router({
 
   products: router({
     list: companyBillingProcedure.input(z.object({ search: z.string().optional(), expiry: z.enum(["all", "expired", "near"]).optional() }).optional()).query(({ ctx, input }) => db.listInventoryProducts(ctx.accountId, input?.search, input?.expiry)),
-    create: companyBillingProcedure.input(z.object({ productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(({ ctx, input }) => db.createInventoryProduct({ ...input, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate as any, price: input.price })),
-    update: companyBillingProcedure.input(z.object({ id: z.number().int().positive(), productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(({ ctx, input }) => { const { id, ...data } = input; return db.updateInventoryProduct(ctx.accountId, id, { ...data, expirationDate: data.expirationDate as any }); }),
-    delete: companyBillingProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ ctx, input }) => db.deleteInventoryProduct(ctx.accountId, input.id)),
-    deleteMany: companyBillingProcedure.input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) })).mutation(({ ctx, input }) => db.deleteInventoryProducts(ctx.accountId, input.ids)),
+    create: companyBillingProcedure.input(z.object({ productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(async ({ ctx, input }) => {
+      const product = await db.createInventoryProduct({ ...input, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate as any, price: input.price });
+      void auditFromCtx(ctx, { action: "create", module: "products", entityType: "product", entityId: product?.id, entityLabel: input.description, description: `Cadastrou produto: ${input.description}`, newData: input });
+      return product;
+    }),
+    update: companyBillingProcedure.input(z.object({ id: z.number().int().positive(), productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      const before = (await db.listInventoryProducts(ctx.accountId)).find((row: any) => row.id === id);
+      const product = await db.updateInventoryProduct(ctx.accountId, id, { ...data, expirationDate: data.expirationDate as any });
+      if (product) void auditFromCtx(ctx, { action: "update", module: "products", entityType: "product", entityId: id, entityLabel: product.description, description: `Alterou produto: ${product.description}`, oldData: before, newData: product });
+      return product;
+    }),
+    delete: companyBillingProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const before = (await db.listInventoryProducts(ctx.accountId)).find((row: any) => row.id === input.id);
+      const result = await db.deleteInventoryProduct(ctx.accountId, input.id);
+      if (before) void auditFromCtx(ctx, { action: "delete", module: "products", entityType: "product", entityId: input.id, entityLabel: before.description, description: `Enviou produto à lixeira: ${before.description}`, oldData: before });
+      return result;
+    }),
+    deleteMany: companyBillingProcedure.input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
+      const result = await db.deleteInventoryProducts(ctx.accountId, input.ids);
+      void auditFromCtx(ctx, { action: "delete", module: "products", entityType: "product_bulk", entityLabel: `${result.deleted} produtos`, description: `Enviou ${result.deleted} produto(s) à lixeira`, newData: { productIds: input.ids, count: result.deleted } });
+      return result;
+    }),
   }),
   operations: router({
     promoters: router({
@@ -884,6 +903,47 @@ export const appRouter = router({
   }),
 
   audit: router({
+    promoters: companyAdminFeatureProcedure("reports").query(async ({ ctx }) =>
+      (await memberAuth.listMemberAccounts(ctx.accountId))
+        .filter((member) => member.role === "promoter")
+        .map(({ id, userName, email, active }) => ({ id, userName, email, active })),
+    ),
+    promoterActivity: companyAdminFeatureProcedure("reports")
+      .input(z.object({
+        page: z.number().int().positive().optional(),
+        pageSize: z.number().int().positive().max(100).optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        promoterId: z.number().int().positive().optional(),
+        category: z.string().optional(),
+        search: z.string().optional(),
+      }).optional())
+      .query(({ ctx, input }) => listPromoterActivities({
+        companyId: ctx.accountId,
+        page: input?.page,
+        pageSize: input?.pageSize,
+        from: input?.from,
+        to: input?.to,
+        promoterId: input?.promoterId,
+        category: input?.category,
+        search: input?.search,
+      })),
+    promoterActivityExportCsv: companyAdminFeatureProcedure("reports")
+      .input(z.object({
+        from: z.string().optional(),
+        to: z.string().optional(),
+        promoterId: z.number().int().positive().optional(),
+        category: z.string().optional(),
+        search: z.string().optional(),
+      }).optional())
+      .mutation(async ({ ctx, input }) => {
+        const result = await listPromoterActivities({ companyId: ctx.accountId, page: 1, pageSize: 10_000, ...input });
+        const headers = ["Data/hora", "Promotor", "E-mail", "Atividade", "Área", "Registro", "Descrição", "Detalhes"];
+        const values = result.items.map((row: any) => [row.occurredAt, row.userName, row.userEmail, row.action, row.module, row.entityLabel, row.description, typeof row.details === "string" ? row.details : JSON.stringify(row.details ?? {})]);
+        const cell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+        const csv = `\uFEFF${[headers, ...values].map((line) => line.map(cell).join(";")).join("\r\n")}`;
+        return { csv, contentType: "text/csv; charset=utf-8", filename: `atividades-promotores-${ctx.accountId}.csv` } as const;
+      }),
     list: companyAdminFeatureProcedure("reports")
       .input(z.object({
         page: z.number().int().positive().optional(),

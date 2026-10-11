@@ -92,6 +92,17 @@ describe("Auditoria — isolamento multi-tenant", () => {
     }
   });
 
+  it("timeline de atividades é delimitada pela empresa autenticada", async () => {
+    const a = caller(1);
+    const b = caller(30001);
+    const listA = await a.audit.promoterActivity({ page: 1, pageSize: 10 });
+    const listB = await b.audit.promoterActivity({ page: 1, pageSize: 10 });
+    expect(listA).toHaveProperty("items");
+    expect(listB).toHaveProperty("items");
+    for (const row of listA.items) expect(row.companyId).toBe(1);
+    for (const row of listB.items) expect(row.companyId).toBe(30001);
+  });
+
   it("byId de outro tenant retorna NOT_FOUND", async () => {
     const a = caller(1);
     const listA = await a.audit.list({ page: 1, pageSize: 5 });

@@ -462,3 +462,123 @@ export async function exportAuditLogsCsv(filters: AuditListFilters): Promise<str
   }
   return lines.join("\n");
 }
+
+
+export type PromoterActivityFilters = {
+  companyId: number;
+  page?: number;
+  pageSize?: number;
+  from?: string;
+  to?: string;
+  promoterId?: number;
+  category?: string;
+  search?: string;
+};
+
+/**
+ * Timeline unificada baseada nos registros atuais de operação, ponto, checklists,
+ * evidências, correções de ponto e audit_logs. Todo braço da união filtra a empresa
+ * na origem; os eventos históricos são reconstruídos apenas a partir de dados persistidos.
+ */
+export async function listPromoterActivities(filters: PromoterActivityFilters) {
+  const page = Math.max(1, filters.page || 1);
+  const pageSize = Math.min(10_000, Math.max(1, filters.pageSize || 50));
+  const offset = (page - 1) * pageSize;
+  await ensureAuditLogsTable();
+  const pool = await getPool();
+  if (!pool) return { items: [], total: 0, page, pageSize };
+
+  const unionSql = `
+    SELECT CONCAT('point-', te.id) AS activityId, te.companyId, ma.id AS promoterId,
+      ma.userName, ma.email AS userEmail, te.serverTime AS occurredAt,
+      'time_tracking' AS module, te.eventType AS action, 'time_event' AS entityType,
+      'Ponto eletrônico' AS entityLabel,
+      CONCAT('Registro de ponto: ', CASE te.eventType WHEN 'clock_in' THEN 'entrada' WHEN 'break_start' THEN 'início de intervalo' WHEN 'break_end' THEN 'fim de intervalo' WHEN 'clock_out' THEN 'saída' ELSE te.eventType END) AS description,
+      JSON_OBJECT('tipo', te.eventType, 'horário do servidor', te.serverTime, 'horário do dispositivo', te.deviceTime, 'situação da localização', te.locationStatus, 'latitude', te.latitude, 'longitude', te.longitude, 'precisão GPS (m)', te.accuracy, 'observações', te.notes, 'dispositivo', te.deviceInfo) AS details
+    FROM time_events te INNER JOIN member_accounts ma ON ma.id = te.memberAccountId AND ma.companyId = te.companyId
+    WHERE te.companyId = ? AND ma.role = 'promoter'
+    UNION ALL
+    SELECT CONCAT('visit-', v.id) AS activityId, v.companyId, ma.id AS promoterId,
+      ma.userName, ma.email AS userEmail, COALESCE(v.actualEnd, v.actualStart, v.plannedStart, v.createdAt) AS occurredAt,
+      'visits' AS module, v.status AS action, 'visit' AS entityType,
+      COALESCE(s.name, CONCAT('Loja #', v.storeId)) AS entityLabel,
+      CONCAT(CASE v.status WHEN 'completed' THEN 'Visita concluída' WHEN 'in_progress' THEN 'Visita iniciada' WHEN 'not_done' THEN 'Visita não realizada' WHEN 'cancelled' THEN 'Visita cancelada' ELSE 'Tarefa atribuída' END, ' · ', COALESCE(s.name, CONCAT('Loja #', v.storeId))) AS description,
+      JSON_OBJECT('loja', s.name, 'endereço', s.address, 'cidade', s.city, 'roteiro', r.name, 'situação', v.status, 'início previsto', v.plannedStart, 'fim previsto', v.plannedEnd, 'início real', v.actualStart, 'fim real', v.actualEnd, 'observações', v.notes, 'justificativa', v.justification, 'latitude inicial', v.startLatitude, 'longitude inicial', v.startLongitude, 'precisão GPS inicial (m)', v.startAccuracy, 'latitude final', v.endLatitude, 'longitude final', v.endLongitude, 'precisão GPS final (m)', v.endAccuracy, 'distância registrada (m)', v.distanceMeters) AS details
+    FROM visits v INNER JOIN member_accounts ma ON ma.id = v.promoterId AND ma.companyId = v.companyId
+      LEFT JOIN stores s ON s.id = v.storeId AND s.companyId = v.companyId
+      LEFT JOIN routes r ON r.id = v.routeId AND r.companyId = v.companyId
+    WHERE v.companyId = ? AND ma.role = 'promoter'
+    UNION ALL
+    SELECT CONCAT('checklist-', cr.id) AS activityId, cr.companyId, ma.id AS promoterId,
+      ma.userName, ma.email AS userEmail, cr.completedAt AS occurredAt,
+      'checklists' AS module, 'submitted' AS action, 'checklist_response' AS entityType,
+      COALESCE(c.name, CONCAT('Checklist #', cr.checklistId)) AS entityLabel,
+      CONCAT('Checklist preenchido · ', COALESCE(c.name, CONCAT('Checklist #', cr.checklistId))) AS description,
+      JSON_OBJECT('checklist', c.name, 'loja', s.name, 'visita', cr.visitId, 'respostas', cr.responses, 'concluído em', cr.completedAt) AS details
+    FROM checklist_responses cr INNER JOIN member_accounts ma ON ma.id = cr.promoterId AND ma.companyId = cr.companyId
+      LEFT JOIN checklists c ON c.id = cr.checklistId AND c.companyId = cr.companyId
+      LEFT JOIN visits v ON v.id = cr.visitId AND v.companyId = cr.companyId
+      LEFT JOIN stores s ON s.id = v.storeId AND s.companyId = cr.companyId
+    WHERE cr.companyId = ? AND ma.role = 'promoter'
+    UNION ALL
+    SELECT CONCAT('evidence-', e.id) AS activityId, e.companyId, ma.id AS promoterId,
+      ma.userName, ma.email AS userEmail, e.createdAt AS occurredAt,
+      'evidences' AS module, 'upload' AS action, 'evidence' AS entityType,
+      COALESCE(e.fileName, CONCAT('Evidência #', e.id)) AS entityLabel,
+      CONCAT('Evidência enviada', CASE WHEN e.caption IS NULL OR e.caption = '' THEN '' ELSE CONCAT(' · ', e.caption) END) AS description,
+      JSON_OBJECT('arquivo', e.fileName, 'tipo de arquivo', e.mimeType, 'tamanho (bytes)', e.sizeBytes, 'legenda', e.caption, 'visita', e.visitId, 'resposta de checklist', e.checklistResponseId, 'latitude', e.latitude, 'longitude', e.longitude, 'arquivoUrl', e.fileUrl, 'enviado em', e.createdAt) AS details
+    FROM evidences e INNER JOIN member_accounts ma ON ma.id = e.promoterId AND ma.companyId = e.companyId
+    WHERE e.companyId = ? AND ma.role = 'promoter'
+    UNION ALL
+    SELECT CONCAT('correction-', tc.id) AS activityId, tc.companyId, ma.id AS promoterId,
+      ma.userName, ma.email AS userEmail, COALESCE(tc.reviewedAt, tc.createdAt) AS occurredAt,
+      'corrections' AS module, tc.status AS action, 'time_correction' AS entityType,
+      CONCAT('Solicitação #', tc.id) AS entityLabel,
+      CONCAT('Solicitação de correção de ponto · ', tc.status) AS description,
+      JSON_OBJECT('marcação solicitada', tc.requestedType, 'horário solicitado', tc.requestedTime, 'justificativa', tc.justification, 'situação', tc.status, 'observações da revisão', tc.reviewNotes, 'solicitado em', tc.createdAt, 'revisado em', tc.reviewedAt, 'revisor (ID)', tc.reviewedByUserId) AS details
+    FROM time_correction_requests tc INNER JOIN member_accounts ma ON ma.id = tc.memberAccountId AND ma.companyId = tc.companyId
+    WHERE tc.companyId = ? AND ma.role = 'promoter'
+    UNION ALL
+    SELECT CONCAT('product-', ip.id) AS activityId, ip.companyId, ma.id AS promoterId,
+      ma.userName, ma.email AS userEmail, ip.createdAt AS occurredAt,
+      'products' AS module, 'create' AS action, 'product' AS entityType,
+      ip.description AS entityLabel,
+      CONCAT('Produto cadastrado · ', ip.description) AS description,
+      JSON_OBJECT('código', ip.productCode, 'descrição', ip.description, 'quantidade', ip.quantity, 'validade', ip.expirationDate, 'preço', ip.price, 'cadastrado em', ip.createdAt) AS details
+    FROM inventory_products ip INNER JOIN member_accounts ma ON ma.id = ip.createdByMemberId AND ma.companyId = ip.companyId
+    WHERE ip.companyId = ? AND ma.role = 'promoter'
+      AND NOT EXISTS (SELECT 1 FROM audit_logs existing WHERE existing.companyId = ip.companyId AND existing.entityType = 'product' AND existing.entityId = ip.id AND existing.action = 'create')
+    UNION ALL
+    SELECT CONCAT('audit-', al.id) AS activityId, al.companyId, ma.id AS promoterId,
+      COALESCE(al.userName, ma.userName) AS userName, COALESCE(al.userEmail, ma.email) AS userEmail,
+      al.createdAt AS occurredAt, al.module, al.action, al.entityType,
+      COALESCE(al.entityLabel, al.description) AS entityLabel, al.description,
+      JSON_OBJECT('registro', al.entityLabel, 'dados anteriores', al.oldData, 'dados novos', al.newData, 'IP', al.ipAddress, 'navegador/dispositivo', al.userAgent) AS details
+    FROM audit_logs al INNER JOIN member_accounts ma ON ma.id = al.userId AND ma.companyId = al.companyId
+    WHERE al.companyId = ? AND ma.role = 'promoter'
+  `;
+  const where: string[] = [];
+  const params: any[] = [filters.companyId, filters.companyId, filters.companyId, filters.companyId, filters.companyId, filters.companyId, filters.companyId];
+  if (filters.from) { where.push("activity.occurredAt >= ?"); params.push(toMysqlDateTime(filters.from)); }
+  if (filters.to) { where.push("activity.occurredAt <= ?"); params.push(toMysqlDateTime(filters.to, true)); }
+  if (filters.promoterId != null) { where.push("activity.promoterId = ?"); params.push(filters.promoterId); }
+  if (filters.category === "other") {
+    where.push("activity.module NOT IN ('visits', 'time_tracking', 'checklists', 'evidences', 'corrections', 'products')");
+  } else if (filters.category) { where.push("activity.module = ?"); params.push(filters.category); }
+  if (filters.search?.trim()) {
+    const q = `%${filters.search.trim().slice(0, 100)}%`;
+    where.push("(activity.userName LIKE ? OR activity.userEmail LIKE ? OR activity.description LIKE ? OR activity.entityLabel LIKE ?)");
+    params.push(q, q, q, q);
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const tableSql = `FROM (${unionSql}) AS activity ${whereSql}`;
+  try {
+    const [countRows] = await pool.query(`SELECT COUNT(*) AS value ${tableSql}`, params);
+    const total = Number((countRows as any[])[0]?.value || 0);
+    const [rows] = await pool.query(`SELECT activity.* ${tableSql} ORDER BY activity.occurredAt DESC, activity.activityId DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
+    return { items: (rows as any[]) || [], total, page, pageSize };
+  } catch (err) {
+    console.warn("[audit] promoter activity query failed", err);
+    return { items: [], total: 0, page, pageSize };
+  }
+}

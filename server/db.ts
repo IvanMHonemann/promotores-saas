@@ -31,7 +31,7 @@ import {
 } from "../drizzle/schema";
 import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { ENV } from "./_core/env";
-import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits } from "../drizzle/schema";
+import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits, weeklyRouteSchedules } from "../drizzle/schema";
 
 /** Token público opaco (URL-safe). 21 chars ≈ 126 bits de entropia. */
 export function generateExtinguisherPublicToken(): string {
@@ -1496,6 +1496,65 @@ export async function listOperationalRoutes(companyId: number, options: { date?:
   return database.select().from(operationalRoutes).where(and(...conditions)).orderBy(desc(operationalRoutes.date), desc(operationalRoutes.id));
 }
 
+export async function listWeeklyRouteSchedules(companyId: number) {
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(weeklyRouteSchedules)
+    .where(eq(weeklyRouteSchedules.companyId, requireAccountId(companyId)))
+    .orderBy(weeklyRouteSchedules.weekday, weeklyRouteSchedules.promoterId);
+}
+export async function saveWeeklyRouteSchedule(input: { companyId: number; promoterId: number; weekday: number; name: string; storeIds: number[] }) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const companyId = requireAccountId(input.companyId);
+  const storeIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
+  if (!storeIds.length) throw new Error("Selecione ao menos uma loja.");
+  return database.transaction(async (tx) => {
+    const stores = await tx.select({ id: operationalStores.id }).from(operationalStores)
+      .where(and(inArray(operationalStores.id, storeIds), eq(operationalStores.companyId, companyId), eq(operationalStores.active, true)));
+    if (stores.length !== storeIds.length) throw new Error("Uma ou mais lojas não pertencem a esta empresa.");
+    await tx.insert(weeklyRouteSchedules).values({ ...input, companyId, storeIds, active: true })
+      .onDuplicateKeyUpdate({ set: { name: input.name, storeIds, active: true } });
+    return (await tx.select().from(weeklyRouteSchedules).where(and(
+      eq(weeklyRouteSchedules.companyId, companyId), eq(weeklyRouteSchedules.promoterId, input.promoterId), eq(weeklyRouteSchedules.weekday, input.weekday),
+    )).limit(1))[0];
+  });
+}
+export async function materializeWeeklyRoutes(companyId: number, promoterId: number, dateString: string) {
+  const database = await getDb();
+  if (!database) return [];
+  const company = requireAccountId(companyId);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString) || Number.isNaN(Date.parse(`${dateString}T00:00:00Z`))) return [];
+  const weekday = new Date(`${dateString}T00:00:00Z`).getUTCDay();
+  const schedules = await database.select().from(weeklyRouteSchedules).where(and(
+    eq(weeklyRouteSchedules.companyId, company), eq(weeklyRouteSchedules.promoterId, promoterId), eq(weeklyRouteSchedules.weekday, weekday), eq(weeklyRouteSchedules.active, true),
+  ));
+  for (const schedule of schedules) {
+    try {
+      await database.transaction(async (tx) => {
+        const existing = await tx.select({ id: operationalRoutes.id }).from(operationalRoutes).where(and(
+          eq(operationalRoutes.companyId, company), eq(operationalRoutes.weeklyScheduleId, schedule.id), eq(operationalRoutes.date, dateString as any),
+        )).limit(1);
+        if (existing.length) return;
+        const storeIds = Array.isArray(schedule.storeIds) ? schedule.storeIds : [];
+        if (!storeIds.length) return;
+        const stores = await tx.select({ id: operationalStores.id }).from(operationalStores).where(and(
+          inArray(operationalStores.id, storeIds), eq(operationalStores.companyId, company), eq(operationalStores.active, true),
+        ));
+        if (!stores.length) return;
+        const inserted = await tx.insert(operationalRoutes).values({
+          companyId: company, name: schedule.name, date: dateString as any, promoterId, weeklyScheduleId: schedule.id, status: "assigned",
+        });
+        const routeId = Number((inserted as any)[0]?.insertId);
+        await tx.insert(operationalVisits).values(stores.map((store) => ({ companyId: company, routeId, storeId: store.id, promoterId, status: "pending" as const })));
+      });
+    } catch (error: any) {
+      // Duas requisições simultâneas podem tentar materializar a mesma ocorrência; a chave única torna isso idempotente.
+      if (error?.code !== "ER_DUP_ENTRY") throw error;
+    }
+  }
+  return listOperationalRoutes(company, { date: dateString, promoterId });
+}
 export async function createOperationalRoute(input: typeof operationalRoutes.$inferInsert) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");

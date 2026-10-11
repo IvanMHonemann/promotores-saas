@@ -3,6 +3,8 @@ import { CalendarDays, ClipboardList, Clock3, CreditCard, LayoutDashboard, LogOu
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
+import { trpc } from "@/lib/trpc";
+import type { EntitlementKey } from "@shared/entitlements";
 
 const roleLabels: Record<string, string> = {
   platform_admin: "Administrador geral",
@@ -14,12 +16,14 @@ const roleLabels: Record<string, string> = {
 export function SidebarNav() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const entitlements = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
   useEffect(() => {
     const openMenu = () => setOpen(true);
     window.addEventListener("promotores:open-sidebar", openMenu);
     return () => window.removeEventListener("promotores:open-sidebar", openMenu);
   }, []);
   const role = user?.role;
+  const hasFeature = (key: EntitlementKey) => Boolean(entitlements.data?.effective[key]);
   const links = role === "platform_admin"
     ? [
         { href: "/", label: "Visão geral", icon: LayoutDashboard },
@@ -29,17 +33,21 @@ export function SidebarNav() {
     : role === "promoter"
       ? [
           { href: "/", label: "Painel inicial", icon: LayoutDashboard },
-          { href: "/ponto", label: "Bater ponto", icon: Clock3 },
-          { href: "/ponto#historico", label: "Histórico e GPS", icon: CalendarDays },
-          { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
-          { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
+          ...(hasFeature("timeTracking") ? [
+            { href: "/ponto", label: "Bater ponto", icon: Clock3 },
+            { href: "/ponto#historico", label: "Histórico e GPS", icon: CalendarDays },
+            { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
+          ] : []),
+          ...(hasFeature("fieldOperations") ? [{ href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList }] : []),
         ]
       : [
           { href: "#inicio", label: "Visão geral", icon: LayoutDashboard },
-          { href: "#roteiros", label: "Roteiros", icon: ClipboardList },
-          { href: "#visitas", label: "Visitas", icon: CalendarDays },
-          ...(role === "company_admin" ? [{ href: "/admin/usuarios", label: "Equipe e usuários", icon: UsersRound }] : []),
-          ...(role === "company_admin" ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList }] : []),
+          ...(hasFeature("fieldOperations") ? [
+            { href: "#roteiros", label: "Roteiros", icon: ClipboardList },
+            { href: "#visitas", label: "Visitas", icon: CalendarDays },
+          ] : []),
+          ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Equipe e usuários", icon: UsersRound }] : []),
+          ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList }] : []),
         ];
   const close = () => setOpen(false);
   return <>

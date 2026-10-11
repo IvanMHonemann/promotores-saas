@@ -1,8 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { diffAuditData, sanitizeAuditData } from "./audit";
 import { appRouter } from "./routers";
+import * as db from "./db";
+import { PLAN_FEATURES } from "../shared/entitlements";
 
 const now = new Date();
+
+beforeEach(() => {
+  vi.spyOn(db, "resolveCompanyPlan").mockResolvedValue({
+    company: null,
+    subscription: null,
+    plan: { id: 2, name: "Profissional", featureKeys: [...PLAN_FEATURES.profissional] },
+  } as any);
+});
+
+afterEach(() => vi.restoreAllMocks());
 
 function companyUser(accountId: number, role: "company_admin" | "operator" = "company_admin") {
   return {

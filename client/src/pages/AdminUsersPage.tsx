@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,12 @@ import { PasswordInput } from "@/components/PasswordInput";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Building2, Check, KeyRound, Loader2, LogOut, ShieldCheck, UserPlus, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { ENTITLEMENT_CATALOG, ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type EntitlementKey, type PermissionMode } from "@shared/entitlements";
 
 const roleLabels = { company_admin: "Administrador da empresa", supervisor: "Supervisor", promoter: "Promotor" } as const;
 
@@ -30,10 +33,15 @@ export default function AdminUsersPage() {
   const [resetPassword, setResetPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newOwnPassword, setNewOwnPassword] = useState("");
+  const [permissionsUserId, setPermissionsUserId] = useState<number | null>(null);
+  const [permissionsDraft, setPermissionsDraft] = useState<Record<EntitlementKey, PermissionMode>>(
+    Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, "inherit"])) as Record<EntitlementKey, PermissionMode>,
+  );
   const utils = trpc.useUtils();
   const companiesQuery = trpc.platform.companies.list.useQuery(undefined, { enabled: isPlatformAdmin });
   const platformUsersQuery = trpc.platform.users.list.useQuery(undefined, { enabled: isPlatformAdmin });
   const companyUsersQuery = trpc.companyUsers.list.useQuery(undefined, { enabled: isCompanyAdmin });
+  const permissionsQuery = trpc.companyUsers.permissions.useQuery({ id: permissionsUserId ?? 0 }, { enabled: isCompanyAdmin && permissionsUserId !== null });
   const createCompanyMutation = trpc.platform.companies.create.useMutation({ onSuccess: (data) => { toast.success(`Empresa criada. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setCompanyName(""); setUserName(""); setEmail(""); setPassword(""); utils.platform.companies.list.invalidate(); utils.platform.users.invalidate(); }, onError: (error) => toast.error(error.message) });
   const createUserMutation = trpc.companyUsers.create.useMutation({ onSuccess: (data) => { toast.success(`Usuário criado. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setUserName(""); setEmail(""); setPassword(""); setRole("promoter"); utils.companyUsers.list.invalidate(); }, onError: (error) => toast.error(error.message) });
   const createPlatformUserMutation = trpc.platform.users.create.useMutation({ onSuccess: (data) => { toast.success(`Usuário criado. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setUserName(""); setEmail(""); setPassword(""); setRole("promoter"); setPlatformCompanyId(""); utils.platform.users.list.invalidate(); }, onError: (error) => toast.error(error.message) });
@@ -41,19 +49,44 @@ export default function AdminUsersPage() {
   const companyStatusMutation = trpc.companyUsers.setActive.useMutation({ onSuccess: () => { toast.success("Status atualizado."); utils.companyUsers.list.invalidate(); }, onError: (error) => toast.error(error.message) });
   const platformResetMutation = trpc.accounts.resetPassword.useMutation({ onSuccess: () => { toast.success("Senha redefinida com segurança."); setResettingId(null); setResetPassword(""); }, onError: (error) => toast.error(error.message) });
   const companyResetMutation = trpc.companyUsers.resetPassword.useMutation({ onSuccess: () => { toast.success("Senha redefinida com segurança."); setResettingId(null); setResetPassword(""); }, onError: (error) => toast.error(error.message) });
+  const savePermissionsMutation = trpc.companyUsers.setPermissions.useMutation({
+    onSuccess: async () => {
+      toast.success("Permissões individuais atualizadas.");
+      if (permissionsUserId !== null) await utils.companyUsers.permissions.invalidate({ id: permissionsUserId });
+      await utils.companyUsers.list.invalidate();
+      await utils.entitlements.mine.invalidate();
+      setPermissionsUserId(null);
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const ownPasswordMutation = trpc.auth.changePassword.useMutation({ onSuccess: () => { toast.success("Sua senha foi alterada."); setCurrentPassword(""); setNewOwnPassword(""); }, onError: (error) => toast.error(error.message) });
+
+  useEffect(() => {
+    const data = permissionsQuery.data;
+    if (!data || data.memberAccountId !== permissionsUserId) return;
+    setPermissionsDraft(Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, data.memberOverrides[key] ?? "inherit"])) as Record<EntitlementKey, PermissionMode>);
+  }, [permissionsQuery.data, permissionsUserId]);
 
   if (!canManage) return <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6"><Card className="max-w-md"><CardContent className="p-6 text-center"><p className="font-bold text-slate-900">Acesso restrito ao administrador da empresa.</p><Button className="mt-4" onClick={() => navigate("/")}>Voltar ao painel</Button></CardContent></Card></div>;
 
   const handleCreate = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (isPlatformAdmin && platformCreateMode === "company") createCompanyMutation.mutate({ companyName, userName, email, password }); else if (isPlatformAdmin) createPlatformUserMutation.mutate({ companyId: Number(platformCompanyId), userName, email, password, role }); else createUserMutation.mutate({ userName, email, password, role }); };
   const handleOwnPassword = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); ownPasswordMutation.mutate({ currentPassword, newPassword: newOwnPassword }); };
   const users = isPlatformAdmin ? platformUsersQuery.data ?? [] : companyUsersQuery.data ?? [];
+  const permissionUser = users.find((account: any) => account.id === permissionsUserId) ?? null;
   const isLoadingUsers = isPlatformAdmin ? platformUsersQuery.isLoading : companyUsersQuery.isLoading;
   const isCreating = createCompanyMutation.isPending || createUserMutation.isPending || createPlatformUserMutation.isPending;
   const isResetting = platformResetMutation.isPending || companyResetMutation.isPending;
   const goBack = () => {
     if (window.history.length > 1) window.history.back();
     else navigate("/");
+  };
+
+  const savePermissions = () => {
+    if (permissionsUserId === null) return;
+    savePermissionsMutation.mutate({
+      id: permissionsUserId,
+      permissions: ENTITLEMENT_KEYS.map((featureKey) => ({ featureKey, mode: permissionsDraft[featureKey] })),
+    });
   };
 
   return (
@@ -68,10 +101,59 @@ export default function AdminUsersPage() {
           </div>
           <div className="space-y-6">
             {isPlatformAdmin && <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Building2 className="h-5 w-5 text-red-600" /> Empresas cadastradas</CardTitle></CardHeader><CardContent>{companiesQuery.isLoading ? <Loading /> : companiesQuery.data?.length ? <div className="space-y-2">{companiesQuery.data.map(company => <div key={company.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3"><div><p className="font-bold">{company.name}</p><p className="text-xs text-slate-500">Empresa #{company.id}</p></div><Badge className={company.active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-slate-100 text-slate-600 hover:bg-slate-100"}>{company.active ? "Ativa" : "Bloqueada"}</Badge></div>)}</div> : <Empty />}</CardContent></Card>}
-            <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Users className="h-5 w-5 text-red-600" /> {isPlatformAdmin ? "Usuários de todas as empresas" : "Usuários cadastrados"}</CardTitle></CardHeader><CardContent>{isLoadingUsers ? <Loading /> : users.length ? <div className="space-y-3">{users.map((account: any) => <div key={account.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100"><UserRound className="h-5 w-5 text-slate-500" /></div><div className="min-w-0"><p className="truncate font-bold text-slate-900">{account.userName}</p><p className="truncate text-xs text-slate-500">Login: {account.email}</p><p className="text-xs text-slate-500">Empresa #{account.companyId} · {roleLabels[account.role as keyof typeof roleLabels]}</p><p className="text-xs text-slate-400">Criado em {new Date(account.createdAt).toLocaleDateString("pt-BR")}</p></div></div><Button size="sm" variant="outline" className={account.active ? "text-red-700" : "text-emerald-700"} disabled={account.id === user?.id || account.id === Math.abs(user?.id ?? 0)} onClick={() => isPlatformAdmin ? platformStatusMutation.mutate({ id: account.id, active: !account.active }) : companyStatusMutation.mutate({ id: account.id, active: !account.active })}>{account.active ? "Bloquear" : "Reativar"}</Button></div><div className="mt-3 border-t border-slate-100 pt-3">{resettingId === account.id ? <div className="flex flex-col gap-2 sm:flex-row"><PasswordInput minLength={8} placeholder="Nova senha temporária" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /><Button size="sm" className="bg-red-600 hover:bg-red-700" disabled={isResetting || resetPassword.length < 8} onClick={() => isPlatformAdmin ? platformResetMutation.mutate({ id: account.id, newPassword: resetPassword }) : companyResetMutation.mutate({ id: account.id, newPassword: resetPassword })}>{isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar nova senha"}</Button><Button size="sm" variant="ghost" onClick={() => { setResettingId(null); setResetPassword(""); }}>Cancelar</Button></div> : <Button size="sm" variant="ghost" className="h-8 gap-2 px-0 text-slate-600 hover:text-red-700" onClick={() => setResettingId(account.id)}><KeyRound className="h-3.5 w-3.5" /> Redefinir senha</Button>}</div></div>)}</div> : <Empty />}</CardContent></Card>
+            <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Users className="h-5 w-5 text-red-600" /> {isPlatformAdmin ? "Usuários de todas as empresas" : "Usuários cadastrados"}</CardTitle></CardHeader><CardContent>{isLoadingUsers ? <Loading /> : users.length ? <div className="space-y-3">{users.map((account: any) => <div key={account.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100"><UserRound className="h-5 w-5 text-slate-500" /></div><div className="min-w-0"><p className="truncate font-bold text-slate-900">{account.userName}</p><p className="truncate text-xs text-slate-500">Login: {account.email}</p><p className="text-xs text-slate-500">Empresa #{account.companyId} · {roleLabels[account.role as keyof typeof roleLabels]}</p><p className="text-xs text-slate-400">Criado em {new Date(account.createdAt).toLocaleDateString("pt-BR")}</p></div></div><Button size="sm" variant="outline" className={account.active ? "text-red-700" : "text-emerald-700"} disabled={account.id === user?.id || account.id === Math.abs(user?.id ?? 0)} onClick={() => isPlatformAdmin ? platformStatusMutation.mutate({ id: account.id, active: !account.active }) : companyStatusMutation.mutate({ id: account.id, active: !account.active })}>{account.active ? "Bloquear" : "Reativar"}</Button></div><div className="mt-3 border-t border-slate-100 pt-3">{isCompanyAdmin && <Button size="sm" variant="outline" className="mb-2 h-8 gap-2" onClick={() => setPermissionsUserId(account.id)}>Permissões de módulos</Button>}{resettingId === account.id ? <div className="flex flex-col gap-2 sm:flex-row"><PasswordInput minLength={8} placeholder="Nova senha temporária" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /><Button size="sm" className="bg-red-600 hover:bg-red-700" disabled={isResetting || resetPassword.length < 8} onClick={() => isPlatformAdmin ? platformResetMutation.mutate({ id: account.id, newPassword: resetPassword }) : companyResetMutation.mutate({ id: account.id, newPassword: resetPassword })}>{isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar nova senha"}</Button><Button size="sm" variant="ghost" onClick={() => { setResettingId(null); setResetPassword(""); }}>Cancelar</Button></div> : <Button size="sm" variant="ghost" className="h-8 gap-2 px-0 text-slate-600 hover:text-red-700" onClick={() => setResettingId(account.id)}><KeyRound className="h-3.5 w-3.5" /> Redefinir senha</Button>}</div></div>)}</div> : <Empty />}</CardContent></Card>
           </div>
         </div>
       </div>
+      <Dialog open={permissionsUserId !== null} onOpenChange={(open) => { if (!open) setPermissionsUserId(null); }}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Permissões de módulos — {permissionUser?.userName || "usuário"}</DialogTitle>
+          </DialogHeader>
+          {permissionsQuery.isLoading ? <Loading /> : permissionsQuery.error ? (
+            <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{permissionsQuery.error.message}</p>
+          ) : permissionsQuery.data ? (
+            <div className="space-y-4">
+              <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+                Plano: <strong>{permissionsQuery.data.planName}</strong> · Papel: <strong>{roleLabels[permissionsQuery.data.role]}</strong>.
+                <span className="block pt-1 text-xs">“Herdar” usa o padrão do papel; permissões adicionais não podem ultrapassar o plano da empresa nem o teto do papel.</span>
+              </div>
+              <div className="space-y-2">
+                {ENTITLEMENT_CATALOG.map((feature) => {
+                  const data = permissionsQuery.data;
+                  const mode = permissionsDraft[feature.key];
+                  const canAllow = data.companyFeatures[feature.key] && ROLE_FEATURE_CEILING[data.role].includes(feature.key);
+                  const canDeny = !(data.role === "company_admin" && feature.key === "teamManagement");
+                  const enabled = data.effective[feature.key];
+                  return (
+                    <div key={feature.key} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-900">{feature.label}</p>
+                        <p className="text-xs text-slate-500">{feature.description}</p>
+                        <p className={`mt-1 text-xs font-semibold ${enabled ? "text-emerald-700" : "text-slate-500"}`}>Acesso efetivo: {enabled ? "liberado" : "bloqueado"}</p>
+                      </div>
+                      <Select value={mode} onValueChange={(value: PermissionMode) => setPermissionsDraft({ ...permissionsDraft, [feature.key]: value })}>
+                        <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="inherit">Herdar do papel</SelectItem>
+                          <SelectItem value="allow" disabled={!canAllow}>Permitir</SelectItem>
+                          <SelectItem value="deny" disabled={!canDeny}>Bloquear</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : <p className="text-sm text-slate-500">Selecione um usuário para editar permissões.</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPermissionsUserId(null)}>Cancelar</Button>
+            <Button onClick={savePermissions} disabled={!permissionsQuery.data || permissionsQuery.isLoading || savePermissionsMutation.isPending} className="bg-red-600 hover:bg-red-700">
+              {savePermissionsMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Salvar permissões
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

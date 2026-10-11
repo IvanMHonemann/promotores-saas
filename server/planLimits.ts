@@ -3,17 +3,8 @@ import * as db from "./db";
 import * as memberAuth from "./memberAuth";
 import { sql, eq } from "drizzle-orm";
 import { clients, extinguishers } from "../drizzle/schema.original";
-
-export type PlanFeatureKey =
-  | "featureDashboard"
-  | "featureClients"
-  | "featureExtinguishers"
-  | "featureServiceOrders"
-  | "featureAlerts"
-  | "featureReports"
-  | "featureUsers"
-  | "featureBackup"
-  | "featureOfflinePwa";
+import { ENTITLEMENT_KEYS, type EntitlementKey } from "../shared/entitlements";
+import { assertCompanyFeatureAccess, getCompanyEntitlementBase } from "./entitlements";
 
 export type EffectivePlan = {
   id: number | null;
@@ -21,69 +12,36 @@ export type EffectivePlan = {
   maxUsers: number | null;
   maxClients: number | null;
   maxExtinguishers: number | null;
-  featureDashboard: boolean;
-  featureClients: boolean;
-  featureExtinguishers: boolean;
-  featureServiceOrders: boolean;
-  featureAlerts: boolean;
-  featureReports: boolean;
-  featureUsers: boolean;
-  featureBackup: boolean;
-  featureOfflinePwa: boolean;
+  featureKeys: EntitlementKey[];
+  features: Record<EntitlementKey, boolean>;
 };
 
-/** Plano efetivo da empresa. Sem plano cadastrado = só recursos básicos (equivalente Start). */
+/** Visão comercial da empresa; os módulos vêm exclusivamente do catálogo normalizado. */
 export async function getEffectivePlan(companyId: number): Promise<EffectivePlan> {
-  const resolved = await db.resolveCompanyPlan(companyId);
-  const plan = resolved.plan as any;
-  if (!plan) {
-    return {
-      id: null,
-      name: "Sem plano",
-      maxUsers: 1,
-      maxClients: 1000,
-      maxExtinguishers: 3000,
-      featureDashboard: true,
-      featureClients: true,
-      featureExtinguishers: true,
-      featureServiceOrders: true,
-      featureAlerts: true,
-      featureReports: false,
-      featureUsers: false,
-      featureBackup: true,
-      featureOfflinePwa: true,
-    };
-  }
+  const base = await getCompanyEntitlementBase(companyId);
+  const plan = base.plan as any;
+  const features = base.companyFeatures;
   return {
-    id: Number(plan.id) || null,
-    name: String(plan.name || "Plano"),
-    maxUsers: plan.maxUsers == null ? null : Number(plan.maxUsers),
-    maxClients: plan.maxClients == null ? null : Number(plan.maxClients),
-    maxExtinguishers: plan.maxExtinguishers == null ? null : Number(plan.maxExtinguishers),
-    featureDashboard: Boolean(plan.featureDashboard),
-    featureClients: Boolean(plan.featureClients),
-    featureExtinguishers: Boolean(plan.featureExtinguishers),
-    featureServiceOrders: Boolean(plan.featureServiceOrders),
-    featureAlerts: Boolean(plan.featureAlerts),
-    featureReports: Boolean(plan.featureReports),
-    featureUsers: Boolean(plan.featureUsers),
-    featureBackup: Boolean(plan.featureBackup),
-    featureOfflinePwa: Boolean(plan.featureOfflinePwa),
+    id: plan?.id == null ? null : Number(plan.id),
+    name: String(plan?.name || "Sem plano"),
+    maxUsers: plan ? (plan.maxUsers == null ? null : Number(plan.maxUsers)) : 1,
+    maxClients: plan ? (plan.maxClients == null ? null : Number(plan.maxClients)) : 1000,
+    maxExtinguishers: plan ? (plan.maxExtinguishers == null ? null : Number(plan.maxExtinguishers)) : 3000,
+    featureKeys: ENTITLEMENT_KEYS.filter((key) => features[key]),
+    features,
   };
 }
 
-export async function requirePlanFeature(companyId: number, feature: PlanFeatureKey, label?: string) {
-  const plan = await getEffectivePlan(companyId);
-  if (!plan[feature]) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message:
-        label ||
-        `Seu plano (${plan.name}) não inclui este recurso. Faça upgrade ou fale com o suporte.`,
-      cause: { code: "PLAN_FEATURE_BLOCKED", feature, planId: plan.id, planName: plan.name },
-    });
+async function requireModuleAccess(companyId: number, featureKey: EntitlementKey, label?: string) {
+  try {
+    await assertCompanyFeatureAccess(companyId, featureKey);
+  } catch (error) {
+    if (error instanceof TRPCError && label) {
+      throw new TRPCError({ code: error.code, message: label, cause: error.cause });
+    }
+    throw error;
   }
-  return plan;
+  return getEffectivePlan(companyId);
 }
 
 async function countClients(companyId: number): Promise<number> {
@@ -112,7 +70,7 @@ async function countUsers(companyId: number): Promise<number> {
 }
 
 export async function assertClientLimit(companyId: number) {
-  const plan = await requirePlanFeature(companyId, "featureClients", "Cadastro de clientes não está disponível no seu plano.");
+  const plan = await requireModuleAccess(companyId, "clients", "Cadastro de clientes não está disponível no seu plano.");
   if (plan.maxClients == null) return plan;
   const current = await countClients(companyId);
   if (current >= plan.maxClients) {
@@ -126,51 +84,45 @@ export async function assertClientLimit(companyId: number) {
 }
 
 export async function assertExtinguisherLimit(companyId: number) {
-  const plan = await requirePlanFeature(
-    companyId,
-    "featureExtinguishers",
-    "Cadastro de extintores não está disponível no seu plano.",
-  );
+  const plan = await requireModuleAccess(companyId, "pointsOfSale", "Cadastro de pontos de venda não está disponível no seu plano.");
   if (plan.maxExtinguishers == null) return plan;
   const current = await countExtinguishers(companyId);
   if (current >= plan.maxExtinguishers) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: `Limite de extintores do plano ${plan.name} atingido (${plan.maxExtinguishers}). Faça upgrade para continuar.`,
-      cause: { code: "PLAN_LIMIT", resource: "extinguishers", limit: plan.maxExtinguishers, current },
+      message: `Limite de pontos de venda do plano ${plan.name} atingido (${plan.maxExtinguishers}). Faça upgrade para continuar.`,
+      cause: { code: "PLAN_LIMIT", resource: "pointsOfSale", limit: plan.maxExtinguishers, current },
     });
   }
   return plan;
 }
 
 export async function assertUserLimit(companyId: number) {
-  // O cadastro deve ser independente das tabelas legadas de billing. A
-  // quantidade de usuários pode ser limitada posteriormente por uma regra
-  // própria do novo produto, sem bloquear a criação por uma query de plano.
-  void companyId;
-  return { id: null, name: "Operação", maxUsers: null };
+  const plan = await getEffectivePlan(companyId);
+  if (plan.maxUsers == null) return plan;
+  const current = await countUsers(companyId);
+  if (current >= plan.maxUsers) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Limite de usuários do plano ${plan.name} atingido (${plan.maxUsers}). Faça upgrade para adicionar outro usuário.`,
+      cause: { code: "PLAN_LIMIT", resource: "users", limit: plan.maxUsers, current },
+    });
+  }
+  return plan;
 }
 
 export async function assertServiceOrderFeature(companyId: number) {
-  return requirePlanFeature(
-    companyId,
-    "featureServiceOrders",
-    "Ordens de serviço não estão disponíveis no seu plano.",
-  );
+  return requireModuleAccess(companyId, "serviceOrders", "Ordens de serviço não estão disponíveis no seu plano.");
 }
 
 export async function assertAlertsFeature(companyId: number) {
-  return requirePlanFeature(companyId, "featureAlerts", "Alertas de vencimento não estão disponíveis no seu plano.");
+  return requireModuleAccess(companyId, "alerts", "Alertas de vencimento não estão disponíveis no seu plano.");
 }
 
 export async function assertReportsFeature(companyId: number) {
-  return requirePlanFeature(
-    companyId,
-    "featureReports",
-    "Histórico e auditoria não estão disponíveis no seu plano. Faça upgrade para o Profissional ou Empresarial.",
-  );
+  return requireModuleAccess(companyId, "reports", "Histórico e auditoria não estão disponíveis no seu plano. Faça upgrade para o Profissional ou Empresarial.");
 }
 
 export async function assertBackupFeature(companyId: number) {
-  return requirePlanFeature(companyId, "featureBackup", "Backup e restauração não estão disponíveis no seu plano.");
+  return requireModuleAccess(companyId, "backup", "Backup e restauração não estão disponíveis no seu plano.");
 }

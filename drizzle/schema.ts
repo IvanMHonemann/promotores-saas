@@ -426,7 +426,7 @@ export const auditLogs = mysqlTable("audit_logs", {
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
 
-/** Planos (adaptados para limites de promotores, lojas, etc.). */
+/** Planos comerciais; os módulos são normalizados em subscription_plan_features. */
 export const subscriptionPlans = mysqlTable("subscription_plans", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 120 }).notNull(),
@@ -434,15 +434,8 @@ export const subscriptionPlans = mysqlTable("subscription_plans", {
   price: decimal("price", { precision: 12, scale: 2 }).notNull().default("0.00"),
   billingCycle: mysqlEnum("billingCycle", ["monthly", "yearly"]).notNull().default("monthly"),
   maxUsers: int("maxUsers"),
-  maxPromoters: int("maxPromoters"),
-  maxStores: int("maxStores"),
   maxClients: int("maxClients"),
-  featureDashboard: boolean("featureDashboard").notNull().default(true),
-  featureTimeTracking: boolean("featureTimeTracking").notNull().default(true),
-  featureRoutes: boolean("featureRoutes").notNull().default(true),
-  featureChecklists: boolean("featureChecklists").notNull().default(true),
-  featureReports: boolean("featureReports").notNull().default(true),
-  featureOffline: boolean("featureOffline").notNull().default(true),
+  maxExtinguishers: int("maxExtinguishers"),
   availableForNew: boolean("availableForNew").notNull().default(true),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -454,6 +447,54 @@ export const subscriptionPlans = mysqlTable("subscription_plans", {
 
 export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
 export type InsertSubscriptionPlan = typeof subscriptionPlans.$inferInsert;
+
+/** Recursos habilitados por plano; mantém o catálogo independente de colunas legadas. */
+export const subscriptionPlanFeatures = mysqlTable("subscription_plan_features", {
+  id: int("id").autoincrement().primaryKey(),
+  planId: int("planId").notNull().references(() => subscriptionPlans.id, { onDelete: "cascade" }),
+  featureKey: varchar("featureKey", { length: 64 }).notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  planFeatureUnique: uniqueIndex("subscription_plan_features_plan_feature_unique").on(table.planId, table.featureKey),
+  planIdx: index("subscription_plan_features_plan_idx").on(table.planId),
+}));
+
+export type SubscriptionPlanFeature = typeof subscriptionPlanFeatures.$inferSelect;
+
+/** Exceções no nível da empresa; só o administrador da plataforma pode alterá-las. */
+export const companyFeatureOverrides = mysqlTable("company_feature_overrides", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  featureKey: varchar("featureKey", { length: 64 }).notNull(),
+  enabled: boolean("enabled").notNull(),
+  reason: text("reason"),
+  updatedByPlatformAdminId: int("updatedByPlatformAdminId").references(() => platformAdmins.id, { onDelete: "set null" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyFeatureUnique: uniqueIndex("company_feature_overrides_company_feature_unique").on(table.companyId, table.featureKey),
+  companyIdx: index("company_feature_overrides_company_idx").on(table.companyId),
+}));
+
+export type CompanyFeatureOverride = typeof companyFeatureOverrides.$inferSelect;
+
+/** Permissões explícitas por membro; ausência de linha significa herdar do papel. */
+export const memberFeaturePermissions = mysqlTable("member_feature_permissions", {
+  id: int("id").autoincrement().primaryKey(),
+  memberAccountId: int("memberAccountId").notNull().references(() => memberAccounts.id, { onDelete: "cascade" }),
+  featureKey: varchar("featureKey", { length: 64 }).notNull(),
+  mode: mysqlEnum("mode", ["allow", "deny"]).notNull(),
+  updatedByMemberAccountId: int("updatedByMemberAccountId").references(() => memberAccounts.id, { onDelete: "set null" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  memberFeatureUnique: uniqueIndex("member_feature_permissions_member_feature_unique").on(table.memberAccountId, table.featureKey),
+  memberIdx: index("member_feature_permissions_member_idx").on(table.memberAccountId),
+}));
+
+export type MemberFeaturePermission = typeof memberFeaturePermissions.$inferSelect;
 
 /** Assinaturas (estrutura preparada, reutilizando Asaas quando configurado). */
 export const companySubscriptions = mysqlTable("company_subscriptions", {

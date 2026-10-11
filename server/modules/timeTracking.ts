@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { commercialProcedure, companyAdminProcedure, router } from "../_core/trpc";
+import { commercialFeatureProcedure, companyAdminFeatureProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { memberAccounts, timeEvents, timeCorrectionRequests } from "../../drizzle/schema";
 import { eq, and, desc, gte, lt } from "drizzle-orm";
@@ -31,7 +31,7 @@ function isValidTransition(last: TimeEventType | undefined, next: TimeEventType)
 }
 
 export const timeTrackingRouter = router({
-  shiftStatus: commercialProcedure
+  shiftStatus: commercialFeatureProcedure("timeTracking")
     .input(z.object({ timeZone: z.string().min(1).default("UTC") }).optional())
     .query(async ({ ctx, input }) => {
       const companyId = ctx.accountId;
@@ -48,7 +48,7 @@ export const timeTrackingRouter = router({
       return { status: active ? "active" as const : last?.eventType === "clock_out" ? "closed" as const : "clock_in_required" as const, active, timeZone, localDate: today, lastEvent: last?.eventType || null };
     }),
 
-  companyToday: companyAdminProcedure
+  companyToday: companyAdminFeatureProcedure("timeTracking")
     .input(z.object({ timeZone: z.string().min(1).max(128).default("UTC") }).optional())
     .query(async ({ ctx, input }) => {
       const database = await db.getDb();
@@ -111,7 +111,7 @@ export const timeTrackingRouter = router({
       return presence.sort((a, b) => b.clockInTime.getTime() - a.clockInTime.getTime());
     }),
 
-  registerEvent: commercialProcedure
+  registerEvent: commercialFeatureProcedure("timeTracking")
     .input(z.object({
       eventType: timeEventType,
       deviceTime: z.string().datetime().optional(),
@@ -121,7 +121,7 @@ export const timeTrackingRouter = router({
       locationStatus: z.literal("success"),
       locationError: z.string().optional(),
       deviceInfo: z.string().optional(),
-      idempotencyKey: z.string().min(1).optional(),
+      idempotencyKey: z.string().min(1).max(64).optional(),
       timeZone: z.string().min(1),
       notes: z.string().optional(),
     }))
@@ -138,7 +138,12 @@ export const timeTrackingRouter = router({
       if (input.idempotencyKey) {
         const existing = await database.select().from(timeEvents)
           .where(eq(timeEvents.idempotencyKey, input.idempotencyKey)).limit(1);
-        if (existing[0]) return existing[0];
+        if (existing[0]) {
+          if (Number(existing[0].companyId) !== companyId || Number(existing[0].memberAccountId) !== memberId) {
+            throw new TRPCError({ code: "CONFLICT", message: "Esta chave de idempotência não pode ser reutilizada nesta sessão." });
+          }
+          return existing[0];
+        }
       }
 
       const lastEvents = await database.select().from(timeEvents)
@@ -154,21 +159,33 @@ export const timeTrackingRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Sequência de marcação inválida. Confira o último evento do ponto." });
       }
 
-      const result = await database.insert(timeEvents).values({
-        companyId,
-        memberAccountId: memberId,
-        eventType: input.eventType,
-        deviceTime: input.deviceTime ? new Date(input.deviceTime) : null,
-        latitude: input.latitude,
-        longitude: input.longitude,
-        accuracy: input.accuracy,
-        locationStatus: input.locationStatus || "success",
-        locationError: input.locationError,
-        deviceInfo: input.deviceInfo,
-        idempotencyKey: input.idempotencyKey,
-        notes: input.notes,
-        synced: true,
-      });
+      let result: any;
+      try {
+        result = await database.insert(timeEvents).values({
+          companyId,
+          memberAccountId: memberId,
+          eventType: input.eventType,
+          deviceTime: input.deviceTime ? new Date(input.deviceTime) : null,
+          latitude: input.latitude,
+          longitude: input.longitude,
+          accuracy: input.accuracy,
+          locationStatus: input.locationStatus || "success",
+          locationError: input.locationError,
+          deviceInfo: input.deviceInfo,
+          idempotencyKey: input.idempotencyKey,
+          notes: input.notes,
+          synced: true,
+        });
+      } catch (error: any) {
+        const duplicate = error?.code === "ER_DUP_ENTRY" || /duplicate entry/i.test(String(error?.message ?? ""));
+        if (!duplicate || !input.idempotencyKey) throw error;
+        const existing = await database.select().from(timeEvents)
+          .where(eq(timeEvents.idempotencyKey, input.idempotencyKey)).limit(1);
+        if (existing[0] && Number(existing[0].companyId) === companyId && Number(existing[0].memberAccountId) === memberId) {
+          return existing[0];
+        }
+        throw new TRPCError({ code: "CONFLICT", message: "Esta chave de idempotência não pode ser reutilizada nesta sessão." });
+      }
       const insertedRows = await database.select().from(timeEvents).where(eq(timeEvents.id, Number((result as any)[0]?.insertId))).limit(1);
       const inserted = insertedRows[0];
       if (!inserted) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível recuperar a marcação criada." });
@@ -183,7 +200,7 @@ export const timeTrackingRouter = router({
       return inserted;
     }),
 
-  myHistory: commercialProcedure
+  myHistory: commercialFeatureProcedure("timeTracking")
     .input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional())
     .query(async ({ ctx, input }) => {
       const companyId = ctx.accountId;
@@ -203,7 +220,7 @@ export const timeTrackingRouter = router({
         .limit(input?.limit || 100);
     }),
 
-  myTimeSummary: commercialProcedure
+  myTimeSummary: commercialFeatureProcedure("timeTracking")
     .query(async ({ ctx }) => {
       const companyId = ctx.accountId;
       const memberId = ctx.memberAccountId;
@@ -246,7 +263,7 @@ export const timeTrackingRouter = router({
       return { periodLabel: periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1), daysTracked: byDay.size, workedMinutes, expectedMinutes, balanceMinutes: workedMinutes - expectedMinutes, openShift };
     }),
 
-  myCorrections: commercialProcedure
+  myCorrections: commercialFeatureProcedure("timeTracking")
     .query(async ({ ctx }) => {
       const companyId = ctx.accountId;
       const memberId = ctx.memberAccountId;
@@ -260,7 +277,7 @@ export const timeTrackingRouter = router({
         .orderBy(desc(timeCorrectionRequests.createdAt));
     }),
 
-  requestCorrection: commercialProcedure
+  requestCorrection: commercialFeatureProcedure("timeTracking")
     .input(z.object({
       timeEventId: z.number().int().positive(),
       requestedType: timeEventType,
@@ -298,7 +315,7 @@ export const timeTrackingRouter = router({
     }),
 
   correctionRequests: router({
-    pending: companyAdminProcedure.query(async ({ ctx }) => {
+    pending: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
       const database = await db.getDb();
       if (!database) return [];
       return database.select({ request: timeCorrectionRequests, event: timeEvents, employee: memberAccounts })
@@ -309,7 +326,7 @@ export const timeTrackingRouter = router({
         .orderBy(desc(timeCorrectionRequests.createdAt));
     }),
 
-    review: companyAdminProcedure
+    review: companyAdminFeatureProcedure("timeTracking")
       .input(z.object({ id: z.number().int().positive(), status: z.enum(["approved", "rejected"]), reviewNotes: z.string().max(1000).optional() }))
       .mutation(async ({ ctx, input }) => {
         const database = await db.getDb();

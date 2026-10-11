@@ -235,7 +235,7 @@ export const systemSettings = mysqlTable("system_settings", {
 }));
 
 
-/** Planos comerciais da plataforma (limites e funções liberadas). */
+/** Planos comerciais da plataforma (preço e limites); módulos ficam no catálogo normalizado. */
 export const subscriptionPlans = mysqlTable("subscription_plans", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 120 }).notNull(),
@@ -245,15 +245,6 @@ export const subscriptionPlans = mysqlTable("subscription_plans", {
   maxUsers: int("maxUsers"),
   maxClients: int("maxClients"),
   maxExtinguishers: int("maxExtinguishers"),
-  featureDashboard: boolean("featureDashboard").notNull().default(false),
-  featureClients: boolean("featureClients").notNull().default(false),
-  featureExtinguishers: boolean("featureExtinguishers").notNull().default(false),
-  featureServiceOrders: boolean("featureServiceOrders").notNull().default(false),
-  featureAlerts: boolean("featureAlerts").notNull().default(false),
-  featureReports: boolean("featureReports").notNull().default(false),
-  featureUsers: boolean("featureUsers").notNull().default(false),
-  featureBackup: boolean("featureBackup").notNull().default(false),
-  featureOfflinePwa: boolean("featureOfflinePwa").notNull().default(false),
   availableForNew: boolean("availableForNew").notNull().default(true),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

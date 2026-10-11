@@ -23,6 +23,13 @@ import {
   type InsertServiceOrderItem,
   type InsertUser,
 } from "../drizzle/schema.original";
+import {
+  companyFeatureOverrides,
+  memberAccounts as entitlementMemberAccounts,
+  memberFeaturePermissions,
+  subscriptionPlanFeatures,
+} from "../drizzle/schema";
+import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { ENV } from "./_core/env";
 import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits } from "../drizzle/schema";
 
@@ -874,11 +881,116 @@ export async function getDashboardStats(accountId: number) {
   };
 }
 
-/* Planos e assinaturas (admin da plataforma) */
+/* Planos e permissões comerciais */
+function isMissingEntitlementsTable(error: any) {
+  const code = error?.code ?? error?.cause?.code;
+  const message = String(error?.sqlMessage ?? error?.message ?? "");
+  return code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_TABLE_ERROR" || /unknown table|does not exist|doesn't exist/i.test(message);
+}
+
+async function replaceSubscriptionPlanFeatures(database: any, planId: number, featureKeys: readonly EntitlementKey[]) {
+  const enabled = new Set(featureKeys);
+  const rows = ENTITLEMENT_KEYS.map((featureKey) => ({ planId, featureKey, enabled: enabled.has(featureKey) }));
+  await database.transaction(async (tx: any) => {
+    await tx.delete(subscriptionPlanFeatures).where(eq(subscriptionPlanFeatures.planId, planId));
+    await tx.insert(subscriptionPlanFeatures).values(rows);
+  });
+}
+
+async function attachPlanFeatureKeys(database: any, plans: any[]) {
+  if (!plans.length) return plans;
+  let featureRows: any[] = [];
+  try {
+    featureRows = await database.select({ planId: subscriptionPlanFeatures.planId, featureKey: subscriptionPlanFeatures.featureKey, enabled: subscriptionPlanFeatures.enabled })
+      .from(subscriptionPlanFeatures)
+      .where(inArray(subscriptionPlanFeatures.planId, plans.map((plan) => Number(plan.id))));
+  } catch (error) {
+    if (!isMissingEntitlementsTable(error)) throw error;
+  }
+  const byPlan = new Map<number, any[]>();
+  for (const row of featureRows ?? []) {
+    const values = byPlan.get(Number(row.planId)) ?? [];
+    values.push(row);
+    byPlan.set(Number(row.planId), values);
+  }
+  return plans.map((plan) => {
+    const stored = byPlan.get(Number(plan.id));
+    const featureKeys = (stored ?? []).filter((row) => Boolean(row.enabled)).map((row) => row.featureKey as EntitlementKey);
+    return { ...plan, featureKeys };
+  });
+}
+
+export async function getCompanyFeatureOverrides(companyId: number): Promise<Partial<Record<EntitlementKey, boolean>>> {
+  const database = await getDb();
+  if (!database) return {};
+  try {
+    const rows = await database.select({ featureKey: companyFeatureOverrides.featureKey, enabled: companyFeatureOverrides.enabled })
+      .from(companyFeatureOverrides).where(eq(companyFeatureOverrides.companyId, companyId));
+    return Object.fromEntries(rows.filter((row) => (ENTITLEMENT_KEYS as readonly string[]).includes(row.featureKey)).map((row) => [row.featureKey, Boolean(row.enabled)])) as Partial<Record<EntitlementKey, boolean>>;
+  } catch (error) {
+    if (isMissingEntitlementsTable(error)) return {};
+    throw error;
+  }
+}
+
+export async function getMemberFeatureModes(memberAccountId: number, companyId: number): Promise<Partial<Record<EntitlementKey, PermissionMode>>> {
+  const database = await getDb();
+  if (!database) return {};
+  const account = await database.select({ id: entitlementMemberAccounts.id }).from(entitlementMemberAccounts)
+    .where(and(eq(entitlementMemberAccounts.id, memberAccountId), eq(entitlementMemberAccounts.companyId, companyId))).limit(1);
+  if (!account[0]) return {};
+  try {
+    const rows = await database.select({ featureKey: memberFeaturePermissions.featureKey, mode: memberFeaturePermissions.mode })
+      .from(memberFeaturePermissions).where(eq(memberFeaturePermissions.memberAccountId, memberAccountId));
+    return Object.fromEntries(rows.filter((row) => (ENTITLEMENT_KEYS as readonly string[]).includes(row.featureKey)).map((row) => [row.featureKey, row.mode])) as Partial<Record<EntitlementKey, PermissionMode>>;
+  } catch (error) {
+    if (isMissingEntitlementsTable(error)) return {};
+    throw error;
+  }
+}
+
+export async function replaceCompanyFeatureOverrides(input: {
+  companyId: number;
+  overrides: Partial<Record<EntitlementKey, boolean | null>>;
+  updatedByPlatformAdminId: number | null;
+  reason?: string | null;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const rows = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+    const enabled = input.overrides[featureKey];
+    return enabled == null ? [] : [{ companyId: input.companyId, featureKey, enabled, reason: input.reason ?? null, updatedByPlatformAdminId: input.updatedByPlatformAdminId }];
+  });
+  await database.transaction(async (tx: any) => {
+    await tx.delete(companyFeatureOverrides).where(eq(companyFeatureOverrides.companyId, input.companyId));
+    if (rows.length) await tx.insert(companyFeatureOverrides).values(rows);
+  });
+  return { success: true as const };
+}
+
+export async function replaceMemberFeatureModes(input: {
+  memberAccountId: number;
+  modes: Partial<Record<EntitlementKey, PermissionMode>>;
+  updatedByMemberAccountId: number | null;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const rows = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+    const mode = input.modes[featureKey];
+    return !mode || mode === "inherit" ? [] : [{ memberAccountId: input.memberAccountId, featureKey, mode, updatedByMemberAccountId: input.updatedByMemberAccountId }];
+  });
+  await database.transaction(async (tx: any) => {
+    await tx.delete(memberFeaturePermissions).where(eq(memberFeaturePermissions.memberAccountId, input.memberAccountId));
+    if (rows.length) await tx.insert(memberFeaturePermissions).values(rows);
+  });
+  return { success: true as const };
+}
+
 export async function listSubscriptionPlans() {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(subscriptionPlans).orderBy(desc(subscriptionPlans.createdAt));
+  const database = await getDb();
+  if (!database) return [];
+  const plans = await database.select().from(subscriptionPlans).orderBy(desc(subscriptionPlans.createdAt));
+  return attachPlanFeatureKeys(database, plans);
 }
 
 export async function createSubscriptionPlan(data: {
@@ -889,40 +1001,24 @@ export async function createSubscriptionPlan(data: {
   maxUsers?: number | null;
   maxClients?: number | null;
   maxExtinguishers?: number | null;
-  featureDashboard?: boolean;
-  featureClients?: boolean;
-  featureExtinguishers?: boolean;
-  featureServiceOrders?: boolean;
-  featureAlerts?: boolean;
-  featureReports?: boolean;
-  featureUsers?: boolean;
-  featureBackup?: boolean;
-  featureOfflinePwa?: boolean;
+  featureKeys: EntitlementKey[];
   availableForNew?: boolean;
 }) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const [result] = await db.insert(subscriptionPlans).values({
-    name: data.name,
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const { featureKeys, ...planFields } = data;
+  const [result] = await database.insert(subscriptionPlans).values({
+    ...planFields,
     description: data.description ?? null,
-    price: data.price,
-    billingCycle: data.billingCycle,
     maxUsers: data.maxUsers ?? null,
     maxClients: data.maxClients ?? null,
     maxExtinguishers: data.maxExtinguishers ?? null,
-    featureDashboard: data.featureDashboard ?? false,
-    featureClients: data.featureClients ?? false,
-    featureExtinguishers: data.featureExtinguishers ?? false,
-    featureServiceOrders: data.featureServiceOrders ?? false,
-    featureAlerts: data.featureAlerts ?? false,
-    featureReports: data.featureReports ?? false,
-    featureUsers: data.featureUsers ?? false,
-    featureBackup: data.featureBackup ?? false,
-    featureOfflinePwa: data.featureOfflinePwa ?? false,
     availableForNew: data.availableForNew ?? true,
     active: true,
   });
-  return { id: Number((result as any).insertId) };
+  const id = Number((result as any).insertId);
+  await replaceSubscriptionPlanFeatures(database, id, featureKeys);
+  return { id };
 }
 
 export async function updateSubscriptionPlan(id: number, data: Partial<{
@@ -933,21 +1029,17 @@ export async function updateSubscriptionPlan(id: number, data: Partial<{
   maxUsers: number | null;
   maxClients: number | null;
   maxExtinguishers: number | null;
-  featureDashboard: boolean;
-  featureClients: boolean;
-  featureExtinguishers: boolean;
-  featureServiceOrders: boolean;
-  featureAlerts: boolean;
-  featureReports: boolean;
-  featureUsers: boolean;
-  featureBackup: boolean;
-  featureOfflinePwa: boolean;
+  featureKeys: EntitlementKey[];
   availableForNew: boolean;
   active: boolean;
 }>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  await db.update(subscriptionPlans).set(data).where(eq(subscriptionPlans.id, id));
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const { featureKeys, ...planFields } = data;
+  if (Object.keys(planFields).length) {
+    await database.update(subscriptionPlans).set(planFields).where(eq(subscriptionPlans.id, id));
+  }
+  if (featureKeys !== undefined) await replaceSubscriptionPlanFeatures(database, id, featureKeys);
   return { success: true as const };
 }
 
@@ -971,15 +1063,6 @@ export async function listCompanySubscriptions() {
       maxUsers: subscriptionPlans.maxUsers,
       maxClients: subscriptionPlans.maxClients,
       maxExtinguishers: subscriptionPlans.maxExtinguishers,
-      featureDashboard: subscriptionPlans.featureDashboard,
-      featureClients: subscriptionPlans.featureClients,
-      featureExtinguishers: subscriptionPlans.featureExtinguishers,
-      featureServiceOrders: subscriptionPlans.featureServiceOrders,
-      featureAlerts: subscriptionPlans.featureAlerts,
-      featureReports: subscriptionPlans.featureReports,
-      featureUsers: subscriptionPlans.featureUsers,
-      featureBackup: subscriptionPlans.featureBackup,
-      featureOfflinePwa: subscriptionPlans.featureOfflinePwa,
     })
     .from(companySubscriptions)
     .innerJoin(companies, eq(companySubscriptions.companyId, companies.id))
@@ -1065,10 +1148,10 @@ export async function updateCompanySubscription(id: number, data: Partial<{
 // --- Billing / Asaas helpers ---
 
 export async function getSubscriptionPlanById(planId: number) {
-  const db = await getDb();
-  if (!db) return null;
-  const rows = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, planId)).limit(1);
-  return rows[0] ?? null;
+  const database = await getDb();
+  if (!database) return null;
+  const rows = await database.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, planId)).limit(1);
+  return (await attachPlanFeatureKeys(database, rows))[0] ?? null;
 }
 
 /** Resolve plano da empresa: assinatura vigente → companies.planId → auto-cura. */
@@ -1230,13 +1313,8 @@ export async function recordPaymentEvent(data: {
 }
 
 export async function listAvailablePlansForCompanies() {
-  const db = await getDb();
-  if (!db) return [];
-  return db
-    .select()
-    .from(subscriptionPlans)
-    .where(and(eq(subscriptionPlans.active, true), eq(subscriptionPlans.availableForNew, true)))
-    .orderBy(subscriptionPlans.price);
+  const plans = await listSubscriptionPlans();
+  return plans.filter((plan: any) => plan.active && plan.availableForNew).sort((a: any, b: any) => Number(a.price) - Number(b.price));
 }
 
 export async function applyMockCheckout(input: {
@@ -1329,8 +1407,8 @@ export async function applyMockCheckout(input: {
 }
 
 export async function ensureSeedPlans() {
-  const db = await getDb();
-  if (!db) return;
+  const database = await getDb();
+  if (!database) return;
 
   const catalog = [
     {
@@ -1341,15 +1419,7 @@ export async function ensureSeedPlans() {
       maxUsers: 1,
       maxClients: 1000,
       maxExtinguishers: 3000,
-      featureDashboard: true,
-      featureClients: true,
-      featureExtinguishers: true,
-      featureServiceOrders: true,
-      featureAlerts: true,
-      featureReports: true,
-      featureUsers: false,
-      featureBackup: true,
-      featureOfflinePwa: true,
+      featureKeys: [...PLAN_FEATURES.start],
       availableForNew: true,
       active: true,
     },
@@ -1361,15 +1431,7 @@ export async function ensureSeedPlans() {
       maxUsers: 5,
       maxClients: null,
       maxExtinguishers: 10000,
-      featureDashboard: true,
-      featureClients: true,
-      featureExtinguishers: true,
-      featureServiceOrders: true,
-      featureAlerts: true,
-      featureReports: true,
-      featureUsers: true,
-      featureBackup: true,
-      featureOfflinePwa: true,
+      featureKeys: [...PLAN_FEATURES.profissional],
       availableForNew: true,
       active: true,
     },
@@ -1381,63 +1443,28 @@ export async function ensureSeedPlans() {
       maxUsers: 10,
       maxClients: null,
       maxExtinguishers: null,
-      featureDashboard: true,
-      featureClients: true,
-      featureExtinguishers: true,
-      featureServiceOrders: true,
-      featureAlerts: true,
-      featureReports: true,
-      featureUsers: true,
-      featureBackup: true,
-      featureOfflinePwa: true,
+      featureKeys: [...PLAN_FEATURES.empresarial],
       availableForNew: true,
       active: true,
     },
   ];
 
-  const existing = await db.select().from(subscriptionPlans);
+  const existing = await database.select().from(subscriptionPlans);
   const byName = new Map(existing.map((p) => [String(p.name).toLowerCase().trim(), p]));
 
   for (const plan of catalog) {
     const key = plan.name.toLowerCase();
     const row = byName.get(key);
-    if (row) {
-      await db
-        .update(subscriptionPlans)
-        .set({
-          description: plan.description,
-          price: plan.price,
-          billingCycle: plan.billingCycle,
-          maxUsers: plan.maxUsers,
-          maxClients: plan.maxClients,
-          maxExtinguishers: plan.maxExtinguishers,
-          featureDashboard: plan.featureDashboard,
-          featureClients: plan.featureClients,
-          featureExtinguishers: plan.featureExtinguishers,
-          featureServiceOrders: plan.featureServiceOrders,
-          featureAlerts: plan.featureAlerts,
-          featureReports: plan.featureReports,
-          featureUsers: plan.featureUsers,
-          featureBackup: plan.featureBackup,
-          featureOfflinePwa: plan.featureOfflinePwa,
-          availableForNew: true,
-          active: true,
-        })
-        .where(eq(subscriptionPlans.id, row.id));
-    } else {
-      await db.insert(subscriptionPlans).values(plan);
-    }
-  }
-
-  // Planos legados de seed/teste deixam de aparecer para novas assinaturas
-  const keep = new Set(catalog.map((p) => p.name.toLowerCase()));
-  for (const row of existing) {
-    const key = String(row.name).toLowerCase().trim();
-    if (!keep.has(key) && row.availableForNew) {
-      await db
-        .update(subscriptionPlans)
-        .set({ availableForNew: false })
-        .where(eq(subscriptionPlans.id, row.id));
+    if (row) continue;
+    const { featureKeys, ...planFields } = plan;
+    const [result] = await database.insert(subscriptionPlans).values(planFields);
+    const id = Number((result as any).insertId);
+    if (id) {
+      try {
+        await replaceSubscriptionPlanFeatures(database, id, featureKeys);
+      } catch (error) {
+        if (!isMissingEntitlementsTable(error)) throw error;
+      }
     }
   }
 }

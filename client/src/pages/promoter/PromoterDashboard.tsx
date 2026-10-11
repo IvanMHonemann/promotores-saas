@@ -18,11 +18,14 @@ const visitStatus: Record<string, string> = {
 export default function PromoterDashboard() {
   const { user } = useAuth();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone });
-  const visits = trpc.operations.visits.today.useQuery();
+  const access = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
+  const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
+  const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
+  const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
+  const visits = trpc.operations.visits.today.useQuery(undefined, { enabled: hasFieldOperations });
   const utils = trpc.useUtils();
-  const rows = visits.data || [];
-  const active = shift.data?.active === true;
+  const rows = hasFieldOperations ? visits.data || [] : [];
+  const active = hasTimeTracking && shift.data?.active === true;
 
   const startVisit = trpc.operations.visits.start.useMutation({
     onSuccess: () => {
@@ -52,8 +55,10 @@ export default function PromoterDashboard() {
   const firstName = user?.name?.trim().split(/\s+/)[0] || "promotor";
   const completed = rows.filter(({ visit }) => visit.status === "completed").length;
   const inProgress = rows.filter(({ visit }) => visit.status === "in_progress").length;
-  const canManageVisits = active && !shift.isLoading && !shift.error && !startVisit.isPending && !completeVisit.isPending;
-  const shiftStatus = shift.isLoading
+  const canManageVisits = hasFieldOperations && active && !shift.isLoading && !shift.error && !startVisit.isPending && !completeVisit.isPending;
+  const shiftStatus = !hasTimeTracking
+    ? "Ponto não liberado para esta empresa"
+    : shift.isLoading
     ? "Verificando jornada..."
     : shift.error
       ? "Não foi possível verificar a jornada"
@@ -77,35 +82,37 @@ export default function PromoterDashboard() {
             Acompanhe sua jornada e o roteiro do dia por aqui. As marcações de entrada, intervalo e saída ficam na seção de ponto.
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            <a href="/ponto" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-teal-300 px-4 py-2.5 text-sm font-bold text-[#07111f] transition hover:bg-teal-200">
+            {hasTimeTracking && <a href="/ponto" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-teal-300 px-4 py-2.5 text-sm font-bold text-[#07111f] transition hover:bg-teal-200">
               <Clock3 className="h-4 w-4" /> Bater ponto
-            </a>
-            <a href="#roteiro" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[.04] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/10">
+            </a>}
+            {hasFieldOperations && <a href="#roteiro" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[.04] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/10">
               <ClipboardList className="h-4 w-4" /> Meu roteiro
-            </a>
-            <span className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 text-xs font-semibold ${active ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200" : shift.data?.status === "closed" ? "border-slate-400/30 bg-slate-400/10 text-slate-200" : "border-amber-300/30 bg-amber-300/10 text-amber-200"}`}>
+            </a>}
+            {hasTimeTracking && <span className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 text-xs font-semibold ${active ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200" : shift.data?.status === "closed" ? "border-slate-400/30 bg-slate-400/10 text-slate-200" : "border-amber-300/30 bg-amber-300/10 text-amber-200"}`}>
               <span className={`h-2 w-2 rounded-full ${active ? "bg-emerald-300" : shift.data?.status === "closed" ? "bg-slate-300" : "bg-amber-300"}`} />
               {shiftStatus}
-            </span>
+            </span>}
           </div>
         </section>
 
-        {!shift.isLoading && !active && !shift.error && (
+        {!hasTimeTracking && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">O ponto eletrônico e o GPS estão disponíveis nos planos Profissional e Empresarial. Peça ao administrador da empresa para revisar o plano.</div>}
+        {hasTimeTracking && !shift.isLoading && !active && !shift.error && (
           <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">
             {shift.data?.status === "closed"
               ? "Sua jornada foi encerrada. O painel continua disponível para consulta."
               : "Registre sua entrada com GPS em Bater ponto antes de iniciar as visitas."}
           </div>
         )}
-        {shift.error && <div className="rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-sm text-rose-100">Não foi possível consultar o estado da jornada. Tente atualizar o painel.</div>}
+        {hasTimeTracking && shift.error && <div className="rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-sm text-rose-100">Não foi possível consultar o estado da jornada. Tente atualizar o painel.</div>}
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        {hasFieldOperations && <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
           <Metric label="Visitas previstas" detail="No roteiro de hoje" value={rows.length} icon={ClipboardList} tone="text-teal-300" />
           <Metric label="Em andamento" detail="Visitas iniciadas" value={inProgress} icon={Clock3} tone="text-amber-300" />
-          <Metric label="Concluídas" detail="Finalizadas hoje" value={completed} icon={CheckCircle2} tone="text-emerald-300" />
-        </div>
+          <Metric className="col-span-2" label="Concluídas" detail="Finalizadas hoje" value={completed} icon={CheckCircle2} tone="text-emerald-300" />
+        </div>}
 
-        <section id="roteiro" className="scroll-mt-6">
+        {!hasFieldOperations && <div className="rounded-2xl border border-slate-400/25 bg-slate-400/10 p-4 text-sm text-slate-200">Roteiros e visitas estão disponíveis nos planos Profissional e Empresarial.</div>}
+        {hasFieldOperations && <section id="roteiro" className="scroll-mt-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-white">
@@ -142,7 +149,7 @@ export default function PromoterDashboard() {
               ))}
             </CardContent>
           </Card>
-        </section>
+        </section>}
       </div>
     </DashboardLayout>
   );
@@ -154,25 +161,27 @@ function Metric({
   value,
   icon: Icon,
   tone,
+  className = "",
 }: {
   label: string;
   detail: string;
   value: number;
   icon: LucideIcon;
   tone: string;
+  className?: string;
 }) {
   return (
-    <Card className="overflow-hidden border-white/10 bg-gradient-to-br from-slate-900 to-slate-950">
-      <CardContent className="flex min-h-[126px] items-center justify-between gap-3 p-4 sm:p-5">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[.14em] text-slate-300">{label}</p>
+    <div className={`min-h-[142px] bg-[#0b1021] p-4 sm:min-h-[160px] sm:p-6 ${className}`}>
+      <div className="flex h-full items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col self-stretch">
+          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300 sm:text-xs sm:tracking-[.14em]">{label}</p>
           <p className={`mt-2 text-4xl font-black leading-none ${tone}`}>{value}</p>
-          <p className="mt-2 text-xs text-slate-400">{detail}</p>
+          <p className="mt-auto pt-2 text-xs text-slate-400 sm:text-sm">{detail} <span aria-hidden="true">→</span></p>
         </div>
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.04]">
-          <Icon className={`h-5 w-5 ${tone}`} />
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[.04] sm:h-10 sm:w-10">
+          <Icon className={`h-4 w-4 ${tone} sm:h-5 sm:w-5`} />
         </span>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

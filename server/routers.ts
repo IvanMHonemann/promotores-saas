@@ -5,7 +5,7 @@ import { parse as parseCookie } from "cookie";
 import { TRPCError } from "@trpc/server";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { adminProcedure, companyAdminProcedure, commercialProcedure, companyBillingProcedure, platformProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, publicProcedure, router } from "./_core/trpc";
 import { checkSubscriptionAccess } from "./subscriptionAccess";
 import * as planLimits from "./planLimits";
 import * as asaas from "./asaas";
@@ -13,9 +13,14 @@ import * as db from "./db";
 import * as memberAuth from "./memberAuth";
 import * as emailService from "./email";
 import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory } from "./audit";
+import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
+import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 
 const emptyToNull = (value?: string) => value?.trim() || null;
 const companyUserRole = z.enum(["company_admin", "supervisor", "promoter"]);
+const entitlementFeatureKey = z.enum(ENTITLEMENT_KEYS);
+const permissionModeSchema = z.enum(["inherit", "allow", "deny"]);
+const featurePermissionListSchema = z.array(z.object({ featureKey: entitlementFeatureKey, mode: permissionModeSchema })).max(ENTITLEMENT_KEYS.length);
 
 const clientInput = z.object({
   companyName: z.string().min(1, "Nome da empresa é obrigatório"),
@@ -27,6 +32,12 @@ const clientInput = z.object({
 export const appRouter = router({
   system: systemRouter,
   timeTracking: timeTrackingRouter,
+  entitlements: router({
+    mine: companyBillingProcedure.query(({ ctx }) => {
+      if (!ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário da empresa não encontrado." });
+      return getMemberEntitlementSnapshot(ctx.accountId, ctx.memberAccountId, ctx.user.role as CompanyRole);
+    }),
+  }),
 
   auth: router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
@@ -228,7 +239,7 @@ export const appRouter = router({
   }),
 
   offline: router({
-    snapshot: commercialProcedure.input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().min(10).max(100).optional() }).optional()).query(({ ctx, input }) => db.getOfflineSnapshot(ctx.accountId, input)),
+    snapshot: commercialFeatureProcedure("offline").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().min(10).max(100).optional() }).optional()).query(({ ctx, input }) => db.getOfflineSnapshot(ctx.accountId, input)),
   }),
 
   platform: router({
@@ -242,15 +253,7 @@ export const appRouter = router({
         maxUsers: z.number().int().positive().optional().nullable(),
         maxClients: z.number().int().positive().optional().nullable(),
         maxExtinguishers: z.number().int().positive().optional().nullable(),
-        featureDashboard: z.boolean().default(false),
-        featureClients: z.boolean().default(false),
-        featureExtinguishers: z.boolean().default(false),
-        featureServiceOrders: z.boolean().default(false),
-        featureAlerts: z.boolean().default(false),
-        featureReports: z.boolean().default(false),
-        featureUsers: z.boolean().default(false),
-        featureBackup: z.boolean().default(false),
-        featureOfflinePwa: z.boolean().default(false),
+        featureKeys: z.array(entitlementFeatureKey).default([]),
         availableForNew: z.boolean().default(true),
       })).mutation(({ input }) => db.createSubscriptionPlan(input)),
       update: platformProcedure.input(z.object({
@@ -262,15 +265,7 @@ export const appRouter = router({
         maxUsers: z.number().int().positive().optional().nullable(),
         maxClients: z.number().int().positive().optional().nullable(),
         maxExtinguishers: z.number().int().positive().optional().nullable(),
-        featureDashboard: z.boolean().optional(),
-        featureClients: z.boolean().optional(),
-        featureExtinguishers: z.boolean().optional(),
-        featureServiceOrders: z.boolean().optional(),
-        featureAlerts: z.boolean().optional(),
-        featureReports: z.boolean().optional(),
-        featureUsers: z.boolean().optional(),
-        featureBackup: z.boolean().optional(),
-        featureOfflinePwa: z.boolean().optional(),
+        featureKeys: z.array(entitlementFeatureKey).optional(),
         availableForNew: z.boolean().optional(),
         active: z.boolean().optional(),
       })).mutation(async ({ input }) => {
@@ -300,6 +295,27 @@ export const appRouter = router({
       })).mutation(async ({ input }) => {
         const { id, ...data } = input;
         return db.updateCompanySubscription(id, data);
+      }),
+    }),
+
+    companyFeatures: router({
+      get: platformProcedure.input(z.object({ companyId: z.number().int().positive() })).query(({ input }) => getCompanyEntitlementBase(input.companyId)),
+      set: platformProcedure.input(z.object({
+        companyId: z.number().int().positive(),
+        overrides: featurePermissionListSchema,
+        reason: z.string().max(500).optional().nullable(),
+      })).mutation(async ({ ctx, input }) => {
+        const overrides = Object.fromEntries(input.overrides.map(({ featureKey, mode }) => [
+          featureKey,
+          mode === "inherit" ? null : mode === "allow",
+        ])) as Partial<Record<EntitlementKey, boolean | null>>;
+        await db.replaceCompanyFeatureOverrides({
+          companyId: input.companyId,
+          overrides,
+          updatedByPlatformAdminId: ctx.platformAdminId ?? null,
+          reason: input.reason ?? null,
+        });
+        return { success: true as const };
       }),
     }),
 
@@ -406,8 +422,40 @@ export const appRouter = router({
   }),
 
   companyUsers: router({
-    list: companyAdminProcedure.query(({ ctx }) => memberAuth.listMemberAccounts(ctx.accountId)),
-    create: companyAdminProcedure.input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole })).mutation(async ({ ctx, input }) => {
+    list: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => memberAuth.listMemberAccounts(ctx.accountId)),
+    permissions: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      const members = await memberAuth.listMemberAccounts(ctx.accountId);
+      const target = members.find((member) => member.id === input.id);
+      if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." });
+      return getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role as "company_admin" | "supervisor" | "promoter");
+    }),
+    setPermissions: companyAdminFeatureProcedure("teamManagement").input(z.object({
+      id: z.number().int().positive(),
+      permissions: featurePermissionListSchema,
+    })).mutation(async ({ ctx, input }) => {
+      const members = await memberAuth.listMemberAccounts(ctx.accountId);
+      const target = members.find((member) => member.id === input.id);
+      if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." });
+      const modes = Object.fromEntries(input.permissions.map(({ featureKey, mode }) => [featureKey, mode])) as Partial<Record<EntitlementKey, PermissionMode>>;
+      if (target.role === "company_admin" && modes.teamManagement === "deny") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "A permissão de gestão da equipe não pode ser bloqueada individualmente para um administrador da empresa." });
+      }
+      const base = await getCompanyEntitlementBase(ctx.accountId);
+      for (const [featureKey, mode] of Object.entries(modes) as [EntitlementKey, PermissionMode][]) {
+        if (mode === "allow" && !base.companyFeatures[featureKey]) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `O módulo ${featureKey} não está liberado para esta empresa.` });
+        }
+        if (mode === "allow" && !ROLE_FEATURE_CEILING[target.role as keyof typeof ROLE_FEATURE_CEILING].includes(featureKey)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `O papel ${target.role} não permite liberar o módulo ${featureKey}.` });
+        }
+      }
+      const before = await getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role as "company_admin" | "supervisor" | "promoter");
+      await db.replaceMemberFeatureModes({ memberAccountId: target.id, modes, updatedByMemberAccountId: ctx.memberAccountId ?? null });
+      const after = await getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role as "company_admin" | "supervisor" | "promoter");
+      void auditFromCtx(ctx, { action: "settings_change", module: "users", entityType: "user_permissions", entityId: target.id, entityLabel: target.userName, description: `Permissões de módulos atualizadas para ${target.userName}`, oldData: before.effective, newData: after.effective });
+      return { success: true as const };
+    }),
+    create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole })).mutation(async ({ ctx, input }) => {
       try {
         await planLimits.assertUserLimit(ctx.accountId);
         const created = await memberAuth.createCompanyUser({ ...input, companyId: ctx.accountId });
@@ -433,7 +481,7 @@ export const appRouter = router({
       }
       catch (error: any) { if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já está cadastrado." }); console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message }); if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError({ code: "BAD_REQUEST", message: "A empresa selecionada não existe mais. Atualize a página e tente novamente." }); if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados está com a estrutura de usuários desatualizada. A implantação precisa concluir a migração." }); throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível criar o usuário. Verifique os dados e tente novamente." }); }
     }),
-    update: companyAdminProcedure.input(z.object({ id: z.number().int().positive(), userName: z.string().min(2).optional(), email: z.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
+    update: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), userName: z.string().min(2).optional(), email: z.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
       if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError({ code: "BAD_REQUEST", message: "O administrador não pode remover o próprio nível administrativo." });
       const usersBefore = await memberAuth.listMemberAccounts(ctx.accountId);
       const beforeUser = usersBefore.find((u) => u.id === input.id) || null;
@@ -444,16 +492,16 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "users", entityType: "user", entityId: input.id, entityLabel: afterUser?.userName || beforeUser?.userName || `#${input.id}`, description: `Usuário atualizado: ${afterUser?.userName || input.id}`, oldData: userDiff.oldData, newData: userDiff.newData });
       return { success: true } as const;
     }),
-    setActive: companyAdminProcedure.input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => {
+    setActive: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => {
       if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError({ code: "BAD_REQUEST", message: "O administrador não pode desativar a própria sessão." });
       await memberAuth.setMemberActive(input.id, input.active, ctx.accountId);
       void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Usuário ${input.active ? "ativado" : "desativado"} #${input.id}`, newData: { active: input.active } });
       return { success: true } as const;
     }),
-    resetPassword: companyAdminProcedure.input(z.object({ id: z.number().int().positive(), newPassword: z.string().min(8) })).mutation(async ({ ctx, input }) => { const users = await memberAuth.listMemberAccounts(ctx.accountId); if (!users.some(account => account.id === input.id)) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." }); await memberAuth.resetMemberPassword(input.id, input.newPassword); return { success: true } as const; }),
+    resetPassword: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), newPassword: z.string().min(8) })).mutation(async ({ ctx, input }) => { const users = await memberAuth.listMemberAccounts(ctx.accountId); if (!users.some(account => account.id === input.id)) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." }); await memberAuth.resetMemberPassword(input.id, input.newPassword); return { success: true } as const; }),
   }),
 
-  dashboard: router({ stats: commercialProcedure.query(async ({ ctx }) => db.getDashboardStats(ctx.accountId)) }),
+  dashboard: router({ stats: commercialFeatureProcedure("dashboard").query(async ({ ctx }) => { if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Este painel não está disponível para promotores." }); return db.getDashboardStats(ctx.accountId); }) }),
 
   companyProfile: router({
     updateName: companyAdminProcedure.input(z.object({ name: z.string().min(2).max(255) })).mutation(async ({ ctx, input }) => {
@@ -472,8 +520,8 @@ export const appRouter = router({
   }),
 
   settings: router({
-    getAlertDays: commercialProcedure.query(async ({ ctx }) => parseInt(await db.getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30),
-    setAlertDays: companyAdminProcedure.input(z.object({ days: z.number().min(1).max(365) })).mutation(async ({ ctx, input }) => {
+    getAlertDays: commercialFeatureProcedure("alerts").query(async ({ ctx }) => parseInt(await db.getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30),
+    setAlertDays: companyAdminFeatureProcedure("alerts").input(z.object({ days: z.number().min(1).max(365) })).mutation(async ({ ctx, input }) => {
       const prev = await db.getSetting("alert_days_ahead", ctx.accountId, "30");
       await db.setSetting("alert_days_ahead", input.days.toString(), ctx.accountId);
       void auditFromCtx(ctx, { action: "settings_change", module: "settings", entityType: "setting", entityLabel: "alert_days_ahead", description: `Antecedência de alertas alterada: ${prev} → ${input.days} dias`, oldData: { alert_days_ahead: prev }, newData: { alert_days_ahead: String(input.days) } });
@@ -482,16 +530,16 @@ export const appRouter = router({
   }),
 
   clients: router({
-    list: commercialProcedure.input(z.object({ city: z.string().optional() }).optional()).query(async ({ ctx, input }) => {
+    list: commercialFeatureProcedure("clients").input(z.object({ city: z.string().optional() }).optional()).query(async ({ ctx, input }) => {
       const ownerUserId = ctx.user?.role === "company_admin" ? null : (ctx.memberAccountId ?? null);
       return db.getClients(input?.city, ctx.accountId, ownerUserId);
     }),
-    page: commercialProcedure.input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), city: z.string().optional(), search: z.string().optional() }).optional()).query(({ ctx, input }) => {
+    page: commercialFeatureProcedure("clients").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), city: z.string().optional(), search: z.string().optional() }).optional()).query(({ ctx, input }) => {
       const ownerUserId = ctx.user?.role === "company_admin" ? null : (ctx.memberAccountId ?? null);
       return db.getClientsPage(ctx.accountId, { ...(input || {}), ownerUserId });
     }),
-    cities: commercialProcedure.query(async ({ ctx }) => db.getDistinctCities(ctx.accountId)),
-    byId: commercialProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+    cities: commercialFeatureProcedure("clients").query(async ({ ctx }) => db.getDistinctCities(ctx.accountId)),
+    byId: commercialFeatureProcedure("clients").input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
       const ownerUserId = ctx.user?.role === "company_admin" ? null : (ctx.memberAccountId ?? null);
       const client = await db.getClientById(input.id, ctx.accountId, ownerUserId);
       if (!client) return { client: null, extinguishers: [], orders: [] };
@@ -501,13 +549,13 @@ export const appRouter = router({
         orders: await db.getServiceOrders(input.id, ctx.accountId, ownerUserId),
       };
     }),
-    create: commercialProcedure.input(clientInput).mutation(async ({ ctx, input }) => {
+    create: commercialFeatureProcedure("clients").input(clientInput).mutation(async ({ ctx, input }) => {
       await planLimits.assertClientLimit(ctx.accountId);
       const id = await db.createClient({ ...input, accountId: ctx.accountId, createdByUserId: ctx.memberAccountId ?? null, cnpj: emptyToNull(input.cnpj), address: emptyToNull(input.address), cep: emptyToNull(input.cep), phone: emptyToNull(input.phone), contactName: emptyToNull(input.contactName), cpf: emptyToNull(input.cpf), birthDate: emptyToNull(input.birthDate), notes: emptyToNull(input.notes) } as any);
       void auditFromCtx(ctx, { action: "create", module: "clients", entityType: "client", entityId: id, entityLabel: input.companyName, description: `Cliente criado: ${input.companyName}`, newData: { ...input, id } });
       return { id };
     }),
-    update: commercialProcedure.input(clientInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    update: commercialFeatureProcedure("clients").input(clientInput.extend({ id: z.number() })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const ownerUserId = ctx.user?.role === "company_admin" ? null : (ctx.memberAccountId ?? null);
       const before = await db.getClientById(id, ctx.accountId, ownerUserId);
@@ -518,7 +566,7 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "clients", entityType: "client", entityId: id, entityLabel: after?.companyName || before?.companyName || `#${id}`, description: `Cliente atualizado: ${after?.companyName || id}`, oldData: diff.oldData, newData: diff.newData });
       return { success: true } as const;
     }),
-    delete: companyAdminProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    delete: companyAdminFeatureProcedure("clients").input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
       const before = await db.getClientById(input.id, ctx.accountId);
       await db.deleteClient(input.id, ctx.accountId);
       void auditFromCtx(ctx, { action: "delete", module: "clients", entityType: "client", entityId: input.id, entityLabel: before?.companyName || `#${input.id}`, description: `Cliente excluído (lixeira): ${before?.companyName || input.id}`, oldData: before });
@@ -527,12 +575,12 @@ export const appRouter = router({
   }),
 
   extinguishers: router({
-    list: commercialProcedure.query(({ ctx }) => db.getExtinguishers(ctx.accountId)),
-    page: commercialProcedure.input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), clientId: z.number().int().positive().optional(), search: z.string().optional(), filter: z.enum(["all", "active", "near", "expired"]).optional() }).optional()).query(({ ctx, input }) => db.getExtinguishersPage(ctx.accountId, input)),
-    listByClient: commercialProcedure.input(z.object({ clientId: z.number() })).query(async ({ ctx, input }) => db.getExtinguishersByClient(input.clientId, ctx.accountId)),
-    alerts: commercialProcedure.input(z.object({ daysAhead: z.number().optional() }).optional()).query(async ({ ctx, input }) => { const days = input?.daysAhead || parseInt(await db.getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30; return db.getExpiringExtinguishers(days, ctx.accountId); }),
-    alertsPage: commercialProcedure.input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), daysAhead: z.number().optional(), filter: z.enum(["all", "near", "expired"]).optional(), search: z.string().optional(), city: z.string().optional() }).optional()).query(async ({ ctx, input }) => { const days = input?.daysAhead || parseInt(await db.getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30; return db.getExpiringExtinguishersPage(days, ctx.accountId, input); }),
-    create: commercialProcedure.input(z.object({ clientId: z.number(), typeModel: z.string().min(1), capacity: z.string().optional(), serialNumber: z.string().optional(), locationInBuilding: z.string().optional(), expirationDate: z.string(), lastInspectionDate: z.string().optional(), notes: z.string().optional(), stockQuantity: z.number().int().min(1).optional() })).mutation(async ({ ctx, input }) => {
+    list: commercialFeatureProcedure("pointsOfSale").query(({ ctx }) => db.getExtinguishers(ctx.accountId)),
+    page: commercialFeatureProcedure("pointsOfSale").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), clientId: z.number().int().positive().optional(), search: z.string().optional(), filter: z.enum(["all", "active", "near", "expired"]).optional() }).optional()).query(({ ctx, input }) => db.getExtinguishersPage(ctx.accountId, input)),
+    listByClient: commercialFeatureProcedure("pointsOfSale").input(z.object({ clientId: z.number() })).query(async ({ ctx, input }) => db.getExtinguishersByClient(input.clientId, ctx.accountId)),
+    alerts: commercialFeatureProcedure("alerts").input(z.object({ daysAhead: z.number().optional() }).optional()).query(async ({ ctx, input }) => { const days = input?.daysAhead || parseInt(await db.getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30; return db.getExpiringExtinguishers(days, ctx.accountId); }),
+    alertsPage: commercialFeatureProcedure("alerts").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), daysAhead: z.number().optional(), filter: z.enum(["all", "near", "expired"]).optional(), search: z.string().optional(), city: z.string().optional() }).optional()).query(async ({ ctx, input }) => { const days = input?.daysAhead || parseInt(await db.getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30; return db.getExpiringExtinguishersPage(days, ctx.accountId, input); }),
+    create: commercialFeatureProcedure("pointsOfSale").input(z.object({ clientId: z.number(), typeModel: z.string().min(1), capacity: z.string().optional(), serialNumber: z.string().optional(), locationInBuilding: z.string().optional(), expirationDate: z.string(), lastInspectionDate: z.string().optional(), notes: z.string().optional(), stockQuantity: z.number().int().min(1).optional() })).mutation(async ({ ctx, input }) => {
       await planLimits.assertExtinguisherLimit(ctx.accountId);
       const id = await db.createExtinguisher({ ...input, accountId: ctx.accountId, expirationDate: input.expirationDate as any, lastInspectionDate: (input.lastInspectionDate || null) as any, capacity: emptyToNull(input.capacity), serialNumber: emptyToNull(input.serialNumber), locationInBuilding: emptyToNull(input.locationInBuilding), notes: emptyToNull(input.notes) }, ctx.accountId);
       const label = input.serialNumber || input.typeModel || `#${id}`;
@@ -546,11 +594,11 @@ export const appRouter = router({
       return { id, publicToken };
     }),
     /** Garante token QR e retorna URL pública (não regenera se já existir). */
-    qrInfo: commercialProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    qrInfo: commercialFeatureProcedure("pointsOfSale").input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const token = await db.ensureExtinguisherPublicToken(input.id, ctx.accountId);
       return { publicToken: token, url: db.buildExtinguisherPublicUrl(token) };
     }),
-    ensurePublicToken: commercialProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    ensurePublicToken: commercialFeatureProcedure("pointsOfSale").input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const token = await db.ensureExtinguisherPublicToken(input.id, ctx.accountId);
       void auditFromCtx(ctx, {
         action: "update",
@@ -563,7 +611,7 @@ export const appRouter = router({
       });
       return { publicToken: token, url: db.buildExtinguisherPublicUrl(token) };
     }),
-    backfillPublicTokens: companyAdminProcedure.mutation(async ({ ctx }) => {
+    backfillPublicTokens: companyAdminFeatureProcedure("pointsOfSale").mutation(async ({ ctx }) => {
       const result = await db.backfillExtinguisherPublicTokens(ctx.accountId);
       void auditFromCtx(ctx, {
         action: "update",
@@ -575,7 +623,7 @@ export const appRouter = router({
       });
       return result;
     }),
-    update: commercialProcedure.input(z.object({ id: z.number(), typeModel: z.string().min(1), capacity: z.string().optional(), serialNumber: z.string().optional(), locationInBuilding: z.string().optional(), expirationDate: z.string(), lastInspectionDate: z.string().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
+    update: commercialFeatureProcedure("pointsOfSale").input(z.object({ id: z.number(), typeModel: z.string().min(1), capacity: z.string().optional(), serialNumber: z.string().optional(), locationInBuilding: z.string().optional(), expirationDate: z.string(), lastInspectionDate: z.string().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const rowsBefore = await db.getExtinguishers(ctx.accountId);
       const before = (rowsBefore as any[]).find((e: any) => e.id === id) || null;
@@ -587,7 +635,7 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "extinguishers", entityType: "extinguisher", entityId: id, entityLabel: label, description: `Extintor atualizado: ${label}`, oldData: diff.oldData, newData: diff.newData });
       return { success: true } as const;
     }),
-    delete: companyAdminProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    delete: companyAdminFeatureProcedure("pointsOfSale").input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
       const rows = await db.getExtinguishers(ctx.accountId);
       const before = (rows as any[]).find((e: any) => e.id === input.id) || null;
       await db.deleteExtinguisher(input.id, ctx.accountId);
@@ -598,12 +646,12 @@ export const appRouter = router({
   }),
 
   orders: router({
-    list: commercialProcedure.input(z.object({ clientId: z.number().optional() }).optional()).query(async ({ ctx, input }) => db.getServiceOrders(input?.clientId, ctx.accountId, ctx.user?.role === "company_admin" ? null : (ctx.memberAccountId ?? null))),
-    page: commercialProcedure.input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), clientId: z.number().int().positive().optional(), search: z.string().optional(), city: z.string().optional(), from: z.string().optional(), to: z.string().optional() }).optional()).query(({ ctx, input }) => db.getServiceOrdersPage(ctx.accountId, { ...(input || {}), ownerUserId: ctx.user?.role === "company_admin" ? null : (ctx.memberAccountId ?? null) })),
-    history: commercialProcedure.input(z.object({ clientId: z.number() })).query(async ({ ctx, input }) => db.getServiceOrderHistory(input.clientId, ctx.accountId)),
-    nextNumber: commercialProcedure.query(async ({ ctx }) => db.getNextOrderNumber(ctx.accountId)),
-    byId: commercialProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => db.getServiceOrderById(input.id, ctx.accountId)),
-    create: commercialProcedure.input(z.object({ orderNumber: z.number().optional(), orderDate: z.string(), clientId: z.number(), replacedAndDelivered: z.string().default("SIM"), leftReserve: z.string().default("NÃO"), reserveDetails: z.string().optional(), extinguisherExpiration: z.string().optional(), licenseExpiration: z.string().optional(), totalAmount: z.string().default("0.00"), paymentMethod: z.string().default("A VISTA"), installmentsCount: z.number().default(1), installmentDates: z.string().optional(), responsibleName: z.string().optional(), responsibleCpf: z.string().optional(), responsibleBirthDate: z.string().optional(), observations: z.string().optional(), items: z.array(z.object({ description: z.string().min(1), quantity: z.number().min(1), unitPrice: z.string(), totalPrice: z.string(), extinguisherId: z.number().optional() })) })).mutation(async ({ ctx, input }) => {
+    list: commercialFeatureProcedure("serviceOrders").input(z.object({ clientId: z.number().optional() }).optional()).query(async ({ ctx, input }) => db.getServiceOrders(input?.clientId, ctx.accountId, ctx.user?.role === "company_admin" ? null : (ctx.memberAccountId ?? null))),
+    page: commercialFeatureProcedure("serviceOrders").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), clientId: z.number().int().positive().optional(), search: z.string().optional(), city: z.string().optional(), from: z.string().optional(), to: z.string().optional() }).optional()).query(({ ctx, input }) => db.getServiceOrdersPage(ctx.accountId, { ...(input || {}), ownerUserId: ctx.user?.role === "company_admin" ? null : (ctx.memberAccountId ?? null) })),
+    history: commercialFeatureProcedure("serviceOrders").input(z.object({ clientId: z.number() })).query(async ({ ctx, input }) => db.getServiceOrderHistory(input.clientId, ctx.accountId)),
+    nextNumber: commercialFeatureProcedure("serviceOrders").query(async ({ ctx }) => db.getNextOrderNumber(ctx.accountId)),
+    byId: commercialFeatureProcedure("serviceOrders").input(z.object({ id: z.number() })).query(async ({ ctx, input }) => db.getServiceOrderById(input.id, ctx.accountId)),
+    create: commercialFeatureProcedure("serviceOrders").input(z.object({ orderNumber: z.number().optional(), orderDate: z.string(), clientId: z.number(), replacedAndDelivered: z.string().default("SIM"), leftReserve: z.string().default("NÃO"), reserveDetails: z.string().optional(), extinguisherExpiration: z.string().optional(), licenseExpiration: z.string().optional(), totalAmount: z.string().default("0.00"), paymentMethod: z.string().default("A VISTA"), installmentsCount: z.number().default(1), installmentDates: z.string().optional(), responsibleName: z.string().optional(), responsibleCpf: z.string().optional(), responsibleBirthDate: z.string().optional(), observations: z.string().optional(), items: z.array(z.object({ description: z.string().min(1), quantity: z.number().min(1), unitPrice: z.string(), totalPrice: z.string(), extinguisherId: z.number().optional() })) })).mutation(async ({ ctx, input }) => {
       await planLimits.assertServiceOrderFeature(ctx.accountId);
       const { items, ...orderData } = input;
       const created = await db.createServiceOrder({ ...orderData, accountId: ctx.accountId, createdByName: ctx.user.name || ctx.user.email || "Usuário não identificado", createdByUserId: ctx.memberAccountId ?? null } as any, items as any, ctx.accountId);
@@ -611,7 +659,7 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "create", module: "orders", entityType: "order", entityId: orderId || null, entityLabel: "OS", description: "Ordem de serviço criada", newData: { ...orderData, items } });
       return created;
     }),
-    update: commercialProcedure.input(z.object({ id: z.number(), orderDate: z.string(), clientId: z.number(), replacedAndDelivered: z.string(), leftReserve: z.string(), reserveDetails: z.string().optional(), extinguisherExpiration: z.string().optional(), licenseExpiration: z.string().optional(), totalAmount: z.string(), paymentMethod: z.string(), installmentsCount: z.number(), installmentDates: z.string().optional(), responsibleName: z.string().optional(), responsibleCpf: z.string().optional(), responsibleBirthDate: z.string().optional(), observations: z.string().optional(), items: z.array(z.object({ description: z.string().min(1), quantity: z.number().min(1), unitPrice: z.string(), totalPrice: z.string(), extinguisherId: z.number().optional() })) })).mutation(async ({ ctx, input }) => {
+    update: commercialFeatureProcedure("serviceOrders").input(z.object({ id: z.number(), orderDate: z.string(), clientId: z.number(), replacedAndDelivered: z.string(), leftReserve: z.string(), reserveDetails: z.string().optional(), extinguisherExpiration: z.string().optional(), licenseExpiration: z.string().optional(), totalAmount: z.string(), paymentMethod: z.string(), installmentsCount: z.number(), installmentDates: z.string().optional(), responsibleName: z.string().optional(), responsibleCpf: z.string().optional(), responsibleBirthDate: z.string().optional(), observations: z.string().optional(), items: z.array(z.object({ description: z.string().min(1), quantity: z.number().min(1), unitPrice: z.string(), totalPrice: z.string(), extinguisherId: z.number().optional() })) })).mutation(async ({ ctx, input }) => {
       const { id, items, ...orderData } = input;
       const before = await db.getServiceOrderById(id, ctx.accountId);
       if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "Ordem não encontrada." });
@@ -624,7 +672,7 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "orders", entityType: "order", entityId: id, entityLabel: `OS #${(after as any)?.orderNumber || (before as any)?.orderNumber || id}`, description: `Ordem de serviço atualizada #${(after as any)?.orderNumber || id}`, oldData: diff.oldData, newData: diff.newData });
       return { success: true } as const;
     }),
-    delete: commercialProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    delete: commercialFeatureProcedure("serviceOrders").input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
       const before = await db.getServiceOrderById(input.id, ctx.accountId);
       await db.deleteServiceOrder(input.id, ctx.accountId);
       void auditFromCtx(ctx, { action: "delete", module: "orders", entityType: "order", entityId: input.id, entityLabel: `OS #${(before as any)?.orderNumber || input.id}`, description: `Ordem de serviço excluída (lixeira) #${(before as any)?.orderNumber || input.id}`, oldData: before });
@@ -680,7 +728,7 @@ export const appRouter = router({
     mySubscription: companyBillingProcedure.query(async ({ ctx }) => {
       const resolved = await db.resolveCompanyPlan(ctx.accountId);
       const effective = await planLimits.getEffectivePlan(ctx.accountId);
-      // Garante flags/limites efetivos (inclui fallback quando não há planId)
+      // Garante módulos/limites efetivos (inclui fallback quando não há planId)
       const plan = resolved.plan
         ? { ...resolved.plan, ...effective, id: effective.id ?? (resolved.plan as any).id, name: effective.name }
         : effective;
@@ -772,16 +820,24 @@ export const appRouter = router({
 
 
   operations: router({
+    promoters: router({
+      list: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
+        if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Promotores não podem consultar a lista da equipe." });
+        return (await memberAuth.listMemberAccounts(ctx.accountId))
+          .filter((member) => member.role === "promoter" && member.active)
+          .map(({ id, userName, role, active }) => ({ id, userName, role, active }));
+      }),
+    }),
     stores: router({
-      list: commercialProcedure.input(z.object({ search: z.string().optional() }).optional()).query(({ ctx, input }) => db.listOperationalStores(ctx.accountId, input?.search)),
-      create: commercialProcedure.input(z.object({ name: z.string().min(2), city: z.string().min(2), address: z.string().optional(), state: z.string().length(2).optional(), cep: z.string().optional(), code: z.string().optional(), latitude: z.number().optional(), longitude: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
+      list: commercialFeatureProcedure("fieldOperations").input(z.object({ search: z.string().optional() }).optional()).query(({ ctx, input }) => db.listOperationalStores(ctx.accountId, input?.search)),
+      create: commercialFeatureProcedure("fieldOperations").input(z.object({ name: z.string().min(2), city: z.string().min(2), address: z.string().optional(), state: z.string().length(2).optional(), cep: z.string().optional(), code: z.string().optional(), latitude: z.number().optional(), longitude: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Promotores não podem cadastrar lojas." });
         return db.createOperationalStore({ ...input, companyId: ctx.accountId, active: true });
       }),
     }),
     routes: router({
-      list: commercialProcedure.input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
-      create: commercialProcedure.input(z.object({ name: z.string().min(2), date: z.string().min(8), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1), teamId: z.number().int().positive().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
+      list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
+      create: commercialFeatureProcedure("fieldOperations").input(z.object({ name: z.string().min(2), date: z.string().min(8), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1), teamId: z.number().int().positive().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Promotores não podem criar roteiros." });
         const members = await memberAuth.listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
@@ -791,16 +847,16 @@ export const appRouter = router({
       }),
     }),
     visits: router({
-      today: commercialProcedure.query(({ ctx }) => db.listOperationalVisits(ctx.accountId, { date: new Date().toISOString().slice(0, 10), promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : undefined })),
-      list: commercialProcedure.input(z.object({ date: z.string().optional(), routeId: z.number().int().positive().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
-      start: commercialProcedure.input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional() })).mutation(async ({ ctx, input }) => {
+      today: commercialFeatureProcedure("fieldOperations").query(({ ctx }) => db.listOperationalVisits(ctx.accountId, { date: new Date().toISOString().slice(0, 10), promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : undefined })),
+      list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), routeId: z.number().int().positive().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
+      start: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional() })).mutation(async ({ ctx, input }) => {
         const visit = await db.listOperationalVisits(ctx.accountId, { promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : undefined });
         const owned = visit.find((row) => row.visit.id === input.id);
         if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "Visita não encontrada para esta empresa." });
         if (ctx.user.role === "promoter" && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Visita não pertence ao promotor autenticado." });
         return db.updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: new Date(), startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
       }),
-      complete: commercialProcedure.input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
+      complete: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
         const visit = await db.listOperationalVisits(ctx.accountId, { promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : undefined });
         const owned = visit.find((row) => row.visit.id === input.id);
         if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "Visita não encontrada para esta empresa." });
@@ -810,7 +866,7 @@ export const appRouter = router({
   }),
 
   audit: router({
-    list: companyAdminProcedure
+    list: companyAdminFeatureProcedure("reports")
       .input(z.object({
         page: z.number().int().positive().optional(),
         pageSize: z.number().int().positive().max(100).optional(),
@@ -839,14 +895,14 @@ export const appRouter = router({
           search: input?.search,
         });
       }),
-    byId: companyAdminProcedure
+    byId: companyAdminFeatureProcedure("reports")
       .input(z.object({ id: z.number().int().positive() }))
       .query(async ({ ctx, input }) => {
         const row = await getAuditLogById(input.id, ctx.accountId);
         if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Registro de auditoria não encontrado." });
         return row;
       }),
-    entityHistory: commercialProcedure
+    entityHistory: commercialFeatureProcedure("reports")
       .input(z.object({
         entityType: z.string().min(1),
         entityId: z.number().int().positive(),
@@ -857,7 +913,7 @@ export const appRouter = router({
         companyId: ctx.accountId, entityType: input.entityType, entityId: input.entityId,
         page: input.page, pageSize: input.pageSize,
       })),
-    exportCsv: companyAdminProcedure
+    exportCsv: companyAdminFeatureProcedure("reports")
       .input(z.object({
         from: z.string().optional(), to: z.string().optional(),
         userId: z.number().int().positive().optional(),

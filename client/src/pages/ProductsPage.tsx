@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Barcode, Camera, CameraOff, Check, Loader2, MessageCircle, Package, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, Barcode, Camera, CameraOff, Check, Loader2, MessageCircle, Package, Pencil, Plus, Printer, Search, Share2, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,15 @@ function shareProducts(products: Product[]) {
   const text = ["*Produtos e controle de validade*", ...products.map((p, i) => `${i + 1}. *${p.description}*\nCódigo: ${p.productCode}\nQuantidade: ${p.quantity}\nValidade: ${dateLabel(p.expirationDate)}\nPreço: ${money(p.price)}`)].join("\n\n");
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
 }
+const csvCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
+function expiryReportCsv(products: Product[], today: string) {
+  const rows = [["Código", "Descrição", "Quantidade", "Validade", "Situação", "Preço"], ...products.map(p => {
+    const date = dateValue(p.expirationDate);
+    return [p.productCode, p.description, p.quantity, dateLabel(date), date < today ? "Vencido" : "Vence em até 30 dias", money(p.price)];
+  })];
+  return new Blob(["\uFEFF", rows.map(row => row.map(csvCell).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+}
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 
 export default function ProductsPage() {
   const [search, setSearch] = useState("");
@@ -36,6 +45,7 @@ export default function ProductsPage() {
   const utils = trpc.useUtils();
   const products = trpc.products.list.useQuery({ search: search.trim() || undefined, expiry }, { staleTime: 15000 });
   const expiringProducts = trpc.products.list.useQuery({ expiry: "near" }, { staleTime: 60000 });
+  const expiredProducts = trpc.products.list.useQuery({ expiry: "expired" }, { staleTime: 60000 });
   const create = trpc.products.create.useMutation({ onSuccess: () => { toast.success("Produto cadastrado."); resetForm(); void utils.products.list.invalidate(); }, onError: e => toast.error(e.message || "Falha ao cadastrar produto.") });
   const update = trpc.products.update.useMutation({ onSuccess: () => { toast.success("Produto atualizado."); resetForm(); void utils.products.list.invalidate(); }, onError: e => toast.error(e.message || "Falha ao atualizar produto.") });
   const remove = trpc.products.deleteMany.useMutation({ onSuccess: (result) => { toast.success(`${result.deleted} produto(s) enviado(s) à lixeira por 24 horas.`); setSelectedIds([]); if (editing !== null) resetForm(); void utils.products.list.invalidate(); void utils.trash.list.invalidate(); }, onError: e => toast.error(e.message || "Não foi possível enviar os produtos à lixeira.") });
@@ -88,12 +98,37 @@ export default function ProductsPage() {
   const editProduct = (p: Product) => { setEditing(p.id); setForm({ productCode: p.productCode, description: p.description, quantity: String(p.quantity), expirationDate: dateValue(p.expirationDate), price: Number(p.price).toFixed(2) }); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const today = dateValue(new Date());
   const rows = (products.data || []) as Product[];
+  const expiryReportProducts = [...((expiredProducts.data || []) as Product[]), ...((expiringProducts.data || []) as Product[])].sort((a, b) => dateValue(a.expirationDate).localeCompare(dateValue(b.expirationDate)));
+  const expiryReportLoading = expiringProducts.isLoading || expiredProducts.isLoading;
+  const printExpiryReport = () => {
+    if (!expiryReportProducts.length) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) { toast.error("Permita pop-ups para imprimir o relatório."); return; }
+    const body = expiryReportProducts.map(p => `<tr><td>${escapeHtml(p.productCode)}</td><td>${escapeHtml(p.description)}</td><td>${p.quantity}</td><td>${dateLabel(p.expirationDate)}</td><td>${dateValue(p.expirationDate) < today ? "Vencido" : "Vence em até 30 dias"}</td><td>${escapeHtml(money(p.price))}</td></tr>`).join("");
+    printWindow.document.open();
+    printWindow.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Produtos vencidos e a vencer</title><style>body{font:14px Arial,sans-serif;color:#111;padding:24px}h1{font-size:20px;margin:0 0 6px}p{color:#444;margin:0 0 18px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #aaa;padding:8px;text-align:left;vertical-align:top}th{background:#e8eef2}tr{break-inside:avoid}@media print{body{padding:0}@page{size:A4 portrait;margin:12mm}}</style></head><body><h1>Produtos vencidos e com validade em até 30 dias</h1><p>Emitido em ${dateLabel(today)} · ${expiryReportProducts.length} produto(s)</p><table><thead><tr><th>Código</th><th>Descrição</th><th>Quantidade</th><th>Validade</th><th>Situação</th><th>Preço</th></tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+    printWindow.document.close();
+  };
+  const shareExpiryReportFile = async () => {
+    if (!expiryReportProducts.length) return;
+    const file = new File([expiryReportCsv(expiryReportProducts, today)], `produtos-validade-30-dias-${today}.csv`, { type: "text/csv;charset=utf-8" });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: "Produtos vencidos e a vencer", text: "Relatório de produtos vencidos e com validade em até 30 dias." }); }
+      catch (error) { if ((error as DOMException).name !== "AbortError") toast.error("Não foi possível abrir o compartilhamento do arquivo."); }
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    const link = document.createElement("a"); link.href = url; link.download = file.name; link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast.info("Arquivo CSV baixado. Anexe-o como documento na conversa do WhatsApp.");
+    window.open(`https://wa.me/?text=${encodeURIComponent("Estou enviando o relatório de produtos vencidos e com validade em até 30 dias. Anexe o arquivo CSV baixado nesta conversa.")}`, "_blank", "noopener,noreferrer");
+  };
   const selectedProducts = rows.filter(p => selectedIds.includes(p.id));
   const allSelected = rows.length > 0 && rows.every(p => selectedIds.includes(p.id));
   const toggleAll = () => setSelectedIds(current => allSelected ? current.filter(id => !rows.some(p => p.id === id)) : [...new Set([...current, ...rows.map(p => p.id)])]);
   return <DashboardLayout title="Produtos e validades" description="Cadastre produtos, acompanhe quantidades e receba alertas de validade.">
     <div className="space-y-6">
-      <Card className="border-amber-300/25 bg-amber-300/10 text-white"><CardContent className="flex flex-col justify-between gap-3 p-4 sm:flex-row sm:items-center"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300"/><div><p className="font-bold">Alerta de validade — próximos 30 dias</p><p className="text-sm text-slate-200">{expiringProducts.isLoading ? "Verificando produtos..." : `${expiringProducts.data?.length || 0} produto(s) vencem nos próximos 30 dias.`}</p></div></div>{Boolean(expiringProducts.data?.length) && <Button onClick={()=>shareProducts(expiringProducts.data as Product[])} className="bg-emerald-600 text-white hover:bg-emerald-500"><MessageCircle className="mr-2 h-4 w-4"/>Compartilhar alertas no WhatsApp</Button>}</CardContent></Card>
+      <Card className="border-amber-300/25 bg-amber-300/10 text-white"><CardContent className="flex flex-col justify-between gap-3 p-4 lg:flex-row lg:items-center"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300"/><div><p className="font-bold">Alerta de validade — próximos 30 dias</p><p className="text-sm text-slate-200">{expiryReportLoading ? "Verificando produtos..." : `${expiredProducts.data?.length || 0} vencido(s) · ${expiringProducts.data?.length || 0} vencem nos próximos 30 dias.`}</p></div></div><div className="flex flex-wrap gap-2">{Boolean(expiringProducts.data?.length) && <Button onClick={()=>shareProducts(expiringProducts.data as Product[])} className="bg-emerald-600 text-white hover:bg-emerald-500"><MessageCircle className="mr-2 h-4 w-4"/>Compartilhar alertas no WhatsApp</Button>}<Button disabled={expiryReportLoading||!expiryReportProducts.length} onClick={printExpiryReport} variant="outline" className="border-white/25 text-white"><Printer className="mr-2 h-4 w-4"/>Imprimir relatório</Button><Button disabled={expiryReportLoading||!expiryReportProducts.length} onClick={()=>void shareExpiryReportFile()} className="bg-teal-300 text-slate-950 hover:bg-teal-200"><Share2 className="mr-2 h-4 w-4"/>Compartilhar arquivo</Button></div></CardContent></Card>
     <div className="grid gap-6 xl:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
       <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2">{editing ? <Pencil className="h-5 w-5 text-teal-300"/> : <Plus className="h-5 w-5 text-teal-300"/>}{editing ? "Editar produto" : "Cadastrar produto"}</CardTitle></CardHeader><CardContent className="space-y-4">
         <div><Label htmlFor="product-code">Código do produto / código de barras</Label><div className="mt-1 flex gap-2"><Input id="product-code" value={form.productCode} onChange={e=>setForm({...form,productCode:e.target.value})} placeholder="Ex.: 7891234567890" className="border-white/15 bg-slate-950/60 text-white"/><Button type="button" variant="outline" onClick={()=>void startCamera()} disabled={cameraOpen||lookupLoading} className="shrink-0 border-teal-300/40 text-teal-200"><Camera className="mr-2 h-4 w-4"/>Ler código</Button></div></div>

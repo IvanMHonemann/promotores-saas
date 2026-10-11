@@ -89,7 +89,7 @@ export async function runExpirationEmailAlerts(daysAhead = 30) {
     if (productAlerts.length && productAdmins.length) {
       const productItems = productAlerts.map((product: any) => ({
         productCode: product.productCode, description: product.description, quantity: product.quantity,
-        expirationDate: String(product.expirationDate).slice(0, 10), price: product.price,
+        expirationDate: new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${product.expirationDate instanceof Date ? product.expirationDate.toISOString().slice(0, 10) : String(product.expirationDate).slice(0, 10)}T00:00:00Z`)), price: product.price,
       }));
       for (const admin of productAdmins) {
         if (!admin.email) continue;

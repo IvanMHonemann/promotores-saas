@@ -9,10 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Building2, CalendarDays, Check, Clock3, KeyRound, Loader2, Pencil, ShieldCheck, Trash2, UserPlus, UserRound, Users } from "lucide-react";
+import { Building2, CalendarDays, Check, Clock3, KeyRound, Loader2, Pencil, ShieldCheck, Trash2, UserPlus, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
-import AccountMenuDropdown from "@/components/AccountMenuDropdown";
+import DashboardLayout from "@/components/DashboardLayout";
 import { ENTITLEMENT_CATALOG, ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type EntitlementKey, type PermissionMode } from "@shared/entitlements";
 
 const roleLabels = { company_admin: "Administrador da empresa", supervisor: "Supervisor", promoter: "Promotor" } as const;
@@ -154,11 +154,6 @@ export default function AdminUsersPage() {
   const isLoadingUsers = isPlatformAdmin ? platformUsersQuery.isLoading : companyUsersQuery.isLoading;
   const isCreating = createCompanyMutation.isPending || createUserMutation.isPending || createPlatformUserMutation.isPending;
   const isResetting = platformResetMutation.isPending || companyResetMutation.isPending;
-  const goBack = () => {
-    if (window.history.length > 1) window.history.back();
-    else navigate("/");
-  };
-
   const savePermissions = () => {
     if (permissionsUserId === null) return;
     savePermissionsMutation.mutate({
@@ -168,21 +163,20 @@ export default function AdminUsersPage() {
   };
 
   return (
-    <main className="saas-page min-h-screen text-slate-900">
-      <header className="border-b border-slate-800 bg-slate-950 text-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-600"><Users className="h-5 w-5" /></div>
-            <div>
-              <p className="font-black tracking-tight">{isPlatformAdmin ? "Administração da plataforma" : "Equipe da empresa"}</p>
-              <p className="text-xs text-slate-400">{isPlatformAdmin ? "Empresas, usuários e dados globais" : "Usuários desta empresa"}</p>
-            </div>
-          </div>
-          <AccountMenuDropdown />
-        </div>
-      </header>
-      <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:py-8">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><Button variant="ghost" className="mb-2 -ml-3 gap-2" onClick={goBack}><ArrowLeft className="h-4 w-4" /> Voltar</Button><h1 className="text-2xl font-black sm:text-3xl">{isPlatformAdmin ? "Empresas e acessos" : "Usuários da empresa"}</h1><p className="mt-1 text-sm text-slate-500">{isPlatformAdmin ? "O administrador global pode visualizar e administrar qualquer empresa sem pertencer a um tenant." : "Você pode criar usuários e definir permissões somente dentro da sua empresa."}</p></div><Badge className="w-fit bg-emerald-100 text-emerald-800 hover:bg-emerald-100"><Check className="mr-1 h-3.5 w-3.5" /> {isPlatformAdmin ? "Administrador global" : "Administrador da empresa"}</Badge></div>
+    <DashboardLayout
+      title={isPlatformAdmin ? "Empresas e acessos" : "Promotores e equipe"}
+      description={isPlatformAdmin ? "Empresas, usuários e dados globais da plataforma." : "Gerencie promotores, acessos, jornadas e roteiros da sua empresa."}
+      onRefresh={() => {
+        if (isPlatformAdmin) {
+          void utils.platform.companies.invalidate();
+          void utils.platform.users.invalidate();
+        } else {
+          void utils.companyUsers.list.invalidate();
+          void utils.entitlements.mine.invalidate();
+        }
+      }}
+    >
+      <div className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
           {isCompanyAdmin && <div className="lg:col-span-2"><PromoterManagementSection users={users} loading={isLoadingUsers} onEdit={openPromoterEditor} onDelete={deletePromoter} onReactivate={(account: any) => companyStatusMutation.mutate({ id: account.id, active: true })} statusPending={companyStatusMutation.isPending} /></div>}
           <div className="space-y-6">
@@ -214,7 +208,7 @@ export default function AdminUsersPage() {
         onOpenChange={(open: boolean) => { if (!open) setEditingPromoterId(null); }}
       />
       <Dialog open={permissionsUserId !== null} onOpenChange={(open) => { if (!open) setPermissionsUserId(null); }}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto border-white/10 bg-[#0b1728] text-slate-100 [&_.bg-slate-50]:bg-white/5 [&_.border-slate-200]:border-white/10 [&_.text-slate-500]:text-slate-400 [&_.text-slate-700]:text-slate-300 [&_.text-slate-900]:text-white">
           <DialogHeader>
             <DialogTitle>Permissões de módulos — {permissionUser?.userName || "usuário"}</DialogTitle>
           </DialogHeader>
@@ -262,7 +256,7 @@ export default function AdminUsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </DashboardLayout>
   );
 }
 
@@ -276,7 +270,7 @@ function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactiv
     <Card className="border-teal-200 shadow-sm">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg"><Users className="h-5 w-5 text-teal-600" /> Promotores cadastrados</CardTitle>
-        <p className="text-sm text-slate-500">Edite matrícula, jornada e roteiro semanal diretamente no cadastro de cada promotor.</p>
+        <p className="text-sm text-slate-500">Edite dados de acesso, matrícula, jornada e roteiro semanal diretamente no cadastro do promotor.</p>
       </CardHeader>
       <CardContent className="space-y-3">
         {loading ? <Loading /> : promoters.length ? promoters.map((account: any) => (
@@ -288,10 +282,10 @@ function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactiv
               <Badge className={`mt-2 ${account.active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-slate-100 text-slate-600 hover:bg-slate-100"}`}>{account.active ? "Ativo" : "Inativo"}</Badge>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
-              <Button size="sm" variant="outline" className="gap-2 border-teal-300 text-teal-800 hover:bg-teal-50" onClick={() => onEdit(account)}><Pencil className="h-4 w-4" />Editar promotor</Button>
+              <Button size="sm" variant="outline" className="gap-2 border-teal-300/50 text-teal-200 hover:bg-teal-300/10" onClick={() => onEdit(account)}><Pencil className="h-4 w-4" />Editar promotor</Button>
               {account.active
-                ? <Button size="sm" variant="outline" className="gap-2 border-rose-200 text-rose-700 hover:bg-rose-50" disabled={statusPending} onClick={() => onDelete(account)}><Trash2 className="h-4 w-4" />Excluir</Button>
-                : <Button size="sm" variant="outline" className="border-emerald-200 text-emerald-700" disabled={statusPending} onClick={() => onReactivate(account)}>Reativar</Button>}
+                ? <Button size="sm" variant="outline" className="gap-2 border-rose-300/40 text-rose-200 hover:bg-rose-300/10" disabled={statusPending} onClick={() => onDelete(account)}><Trash2 className="h-4 w-4" />Excluir</Button>
+                : <Button size="sm" variant="outline" className="border-emerald-300/40 text-emerald-200 hover:bg-emerald-300/10" disabled={statusPending} onClick={() => onReactivate(account)}>Reativar</Button>}
             </div>
           </div>
         )) : <Empty />}
@@ -305,7 +299,7 @@ function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactiv
 function PromoterEditDialog({ open, onOpenChange, account, promoterName, setPromoterName, promoterEmail, setPromoterEmail, employeeCode, setEmployeeCode, workStart, setWorkStart, workEnd, setWorkEnd, weeklyDraft, toggleWeeklyStore, hasFieldOperations, stores, storesLoading, storesError, saving, onGenerateCode, onSave }: any) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
+      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto border-white/10 bg-[#0b1728] text-slate-100 [&_.bg-slate-50]:bg-white/5 [&_.border-slate-200]:border-white/10 [&_.text-slate-500]:text-slate-400 [&_.text-slate-700]:text-slate-300 [&_.text-slate-900]:text-white">
         <DialogHeader>
           <DialogTitle>Editar promotor — {account?.userName || "carregando"}</DialogTitle>
         </DialogHeader>

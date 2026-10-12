@@ -16,7 +16,12 @@ const roleLabels: Record<string, string> = {
 export function SidebarNav() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  const entitlements = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
+  const entitlements = trpc.entitlements.mine.useQuery(undefined, {
+    enabled: Boolean(user && user.role !== "platform_admin"),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
+  });
   useEffect(() => {
     const openMenu = () => setOpen(true);
     window.addEventListener("promotores:open-sidebar", openMenu);
@@ -39,15 +44,13 @@ export function SidebarNav() {
             { href: "/ponto#historico", label: "Histórico e GPS", icon: CalendarDays },
             { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
           ] : []),
-          ...(hasFeature("fieldOperations") ? [{ href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList }] : []),
+          { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
         ]
       : [
-          { href: "#inicio", label: "Visão geral", icon: LayoutDashboard },
+          { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
           ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: Package }] : []),
-          ...(hasFeature("fieldOperations") ? [
-            ...(role === "company_admin" ? [{ href: "#roteiros", label: "Lojas", icon: MapPin }] : [{ href: "#roteiros", label: "Roteiros", icon: ClipboardList }]),
-            { href: "#visitas", label: "Visitas", icon: CalendarDays },
-          ] : []),
+          ...(role === "company_admin" ? [{ href: "/#roteiros", label: "Lojas", icon: MapPin }] : [{ href: "/#roteiros", label: "Roteiros", icon: ClipboardList }]),
+          { href: "/#visitas", label: "Visitas", icon: CalendarDays },
           ...(role === "company_admin" ? [{ href: "/lixeira", label: "Lixeira", icon: Trash2 }] : []),
           ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: UsersRound }] : []),
           ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList }] : []),

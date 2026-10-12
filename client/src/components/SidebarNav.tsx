@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, ClipboardList, Clock3, CreditCard, LayoutDashboard, LogOut, Menu, Package, Trash2, UserRound, UsersRound, X } from "lucide-react";
+import { CalendarDays, ClipboardList, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -45,11 +45,11 @@ export function SidebarNav() {
           { href: "#inicio", label: "Visão geral", icon: LayoutDashboard },
           ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: Package }] : []),
           ...(hasFeature("fieldOperations") ? [
-            { href: "#roteiros", label: "Roteiros", icon: ClipboardList },
+            ...(role === "company_admin" ? [{ href: "#roteiros", label: "Lojas", icon: MapPin }] : [{ href: "#roteiros", label: "Roteiros", icon: ClipboardList }]),
             { href: "#visitas", label: "Visitas", icon: CalendarDays },
           ] : []),
           ...(role === "company_admin" ? [{ href: "/lixeira", label: "Lixeira", icon: Trash2 }] : []),
-          ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Equipe e usuários", icon: UsersRound }] : []),
+          ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: UsersRound }] : []),
           ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList }] : []),
         ];
   const close = () => setOpen(false);

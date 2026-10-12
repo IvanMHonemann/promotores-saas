@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { and, eq, gt, lte } from "drizzle-orm";
 import { companies, companySubscriptions, memberAccounts, memberSessions, platformAdmins, platformSessions, subscriptionPlans } from "../drizzle/schema.original";
+import { promoterProfiles } from "../drizzle/schema";
 import { getDb } from "./db";
 
 const SESSION_DAYS = 30;
@@ -286,7 +287,7 @@ export async function createCompanyUser(input: { companyId: number; userName: st
 export async function listMemberAccounts(companyId?: number) {
   const db = await getDb();
   if (!db) return [];
-  const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt }).from(memberAccounts);
+  const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt, employeeCode: promoterProfiles.employeeCode, workStartTime: promoterProfiles.workStartTime, workEndTime: promoterProfiles.workEndTime }).from(memberAccounts).leftJoin(promoterProfiles, and(eq(promoterProfiles.memberAccountId, memberAccounts.id), eq(promoterProfiles.companyId, memberAccounts.companyId)));
   const rows = companyId ? await query.where(eq(memberAccounts.companyId, companyId)) : await query;
   return rows.map((row) => ({ ...row, role: normalizeMemberRole(String(row.role)) }));
 }

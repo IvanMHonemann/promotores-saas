@@ -66,7 +66,6 @@ export const memberAccounts = mysqlTable("member_accounts", {
   recoveryCodeHash: varchar("recoveryCodeHash", { length: 255 }),
   role: mysqlEnum("role", ["company_admin", "supervisor", "promoter"]).default("promoter").notNull(),
   active: boolean("active").default(true).notNull(),
-  employeeCode: varchar("employeeCode", { length: 50 }),
   phone: varchar("phone", { length: 50 }),
   supervisorId: int("supervisorId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -74,11 +73,27 @@ export const memberAccounts = mysqlTable("member_accounts", {
 }, (table) => ({
   companyIdx: index("member_accounts_company_idx").on(table.companyId),
   companyRoleIdx: index("member_accounts_company_role_idx").on(table.companyId, table.role),
-  employeeCodeIdx: index("member_accounts_employee_code_idx").on(table.companyId, table.employeeCode),
 }));
 
 export type MemberAccount = typeof memberAccounts.$inferSelect;
 export type InsertMemberAccount = typeof memberAccounts.$inferInsert;
+
+/** Dados operacionais opcionais do promotor, separados da conta para manter a migração aditiva. */
+export const promoterProfiles = mysqlTable("promoter_profiles", {
+  memberAccountId: int("memberAccountId").primaryKey().references(() => memberAccounts.id, { onDelete: "cascade" }),
+  companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
+  employeeCode: varchar("employeeCode", { length: 50 }),
+  workStartTime: varchar("workStartTime", { length: 5 }),
+  workEndTime: varchar("workEndTime", { length: 5 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyIdx: index("promoter_profiles_company_idx").on(table.companyId),
+  companyEmployeeCodeUnique: uniqueIndex("promoter_profiles_company_employee_code_unique").on(table.companyId, table.employeeCode),
+}));
+
+export type PromoterProfile = typeof promoterProfiles.$inferSelect;
+export type InsertPromoterProfile = typeof promoterProfiles.$inferInsert;
 
 /** Sessões de usuários de empresas. */
 export const memberSessions = mysqlTable("member_sessions", {

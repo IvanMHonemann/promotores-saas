@@ -99,6 +99,13 @@
       "when": 1791720282334,
       "tag": "0016_inventory_products",
       "breakpoints": false
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791776181847,
+      "tag": "0017_promoter_profiles",
+      "breakpoints": false
     }
   ]
 }

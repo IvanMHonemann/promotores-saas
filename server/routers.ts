@@ -496,6 +496,44 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "users", entityType: "user", entityId: input.id, entityLabel: afterUser?.userName || beforeUser?.userName || `#${input.id}`, description: `Usuário atualizado: ${afterUser?.userName || input.id}`, oldData: userDiff.oldData, newData: userDiff.newData });
       return { success: true } as const;
     }),
+    updatePromoterManagement: companyAdminFeatureProcedure("teamManagement").input(z.object({
+      id: z.number().int().positive(),
+      userName: z.string().trim().min(2).max(255),
+      email: z.string().trim().email().max(320),
+      employeeCode: z.string().trim().max(50).nullable(),
+      workStartTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+      workEndTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+      weeklyRoutes: z.array(z.object({ weekday: z.number().int().min(0).max(6), storeIds: z.array(z.number().int().positive()).min(1) })).max(7).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      if (input.workStartTime && input.workEndTime && input.workEndTime <= input.workStartTime) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao início." });
+      }
+      const usersBefore = await memberAuth.listMemberAccounts(ctx.accountId);
+      const before = usersBefore.find((member) => member.id === input.id);
+      if (!before || before.role !== "promoter") throw new TRPCError({ code: "NOT_FOUND", message: "Promotor não encontrado nesta empresa." });
+      try {
+        await db.updatePromoterManagement({
+          companyId: ctx.accountId,
+          promoterId: input.id,
+          userName: input.userName,
+          email: input.email,
+          employeeCode: input.employeeCode,
+          workStartTime: input.workStartTime,
+          workEndTime: input.workEndTime,
+          weeklyRoutes: input.weeklyRoutes,
+        });
+      } catch (error: any) {
+        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail ou matrícula já está em uso." });
+        if (error?.message?.includes("não pertence") || error?.message?.includes("inativas") || error?.message?.includes("programação") || error?.message?.includes("dia programado")) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
+        throw error;
+      }
+      const usersAfter = await memberAuth.listMemberAccounts(ctx.accountId);
+      const after = usersAfter.find((member) => member.id === input.id);
+      void auditFromCtx(ctx, { action: "update", module: "users", entityType: "promoter_profile", entityId: input.id, entityLabel: after?.userName || before.userName, description: `Cadastro e roteiro de ${after?.userName || before.userName} atualizados`, oldData: before, newData: after });
+      return { success: true as const };
+    }),
     setActive: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => {
       if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError({ code: "BAD_REQUEST", message: "O administrador não pode desativar a própria sessão." });
       await memberAuth.setMemberActive(input.id, input.active, ctx.accountId);
@@ -888,7 +926,12 @@ export const appRouter = router({
       }),
     }),
     visits: router({
-      today: commercialFeatureProcedure("fieldOperations").query(({ ctx }) => db.listOperationalVisits(ctx.accountId, { date: new Date().toISOString().slice(0, 10), promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : undefined })),
+      today: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional()).query(async ({ ctx, input }) => {
+        const date = input?.date || new Date().toISOString().slice(0, 10);
+        const promoterId = ctx.user.role === "promoter" ? ctx.memberAccountId : undefined;
+        if (promoterId) await db.materializeWeeklyRoutes(ctx.accountId, promoterId, date);
+        return db.listOperationalVisits(ctx.accountId, { date, promoterId: promoterId ?? undefined });
+      }),
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), routeId: z.number().int().positive().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
       start: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional() })).mutation(async ({ ctx, input }) => {
         const visit = await db.listOperationalVisits(ctx.accountId, { promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : undefined });

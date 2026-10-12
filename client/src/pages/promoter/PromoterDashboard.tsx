@@ -18,11 +18,13 @@ const visitStatus: Record<string, string> = {
 export default function PromoterDashboard() {
   const { user } = useAuth();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const todayParts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const today = `${todayParts.find((part) => part.type === "year")?.value}-${todayParts.find((part) => part.type === "month")?.value}-${todayParts.find((part) => part.type === "day")?.value}`;
   const access = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
   const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
   const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
-  const visits = trpc.operations.visits.today.useQuery(undefined, { enabled: hasFieldOperations });
+  const visits = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations });
   const utils = trpc.useUtils();
   const rows = hasFieldOperations ? visits.data || [] : [];
   const active = hasTimeTracking && shift.data?.active === true;

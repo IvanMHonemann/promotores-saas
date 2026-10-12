@@ -9,13 +9,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Building2, Check, KeyRound, Loader2, ShieldCheck, UserPlus, UserRound, Users } from "lucide-react";
+import { ArrowLeft, Building2, CalendarDays, Check, Clock3, KeyRound, Loader2, Pencil, ShieldCheck, Trash2, UserPlus, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { ENTITLEMENT_CATALOG, ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type EntitlementKey, type PermissionMode } from "@shared/entitlements";
 
 const roleLabels = { company_admin: "Administrador da empresa", supervisor: "Supervisor", promoter: "Promotor" } as const;
+const weekdays = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
 
 export default function AdminUsersPage() {
   const [, navigate] = useLocation();
@@ -35,6 +36,13 @@ export default function AdminUsersPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newOwnPassword, setNewOwnPassword] = useState("");
   const [permissionsUserId, setPermissionsUserId] = useState<number | null>(null);
+  const [editingPromoterId, setEditingPromoterId] = useState<number | null>(null);
+  const [promoterNameDraft, setPromoterNameDraft] = useState("");
+  const [promoterEmailDraft, setPromoterEmailDraft] = useState("");
+  const [employeeCodeDraft, setEmployeeCodeDraft] = useState("");
+  const [workStartDraft, setWorkStartDraft] = useState("");
+  const [workEndDraft, setWorkEndDraft] = useState("");
+  const [weeklyDraft, setWeeklyDraft] = useState<Record<number, number[]>>({});
   const [permissionsDraft, setPermissionsDraft] = useState<Record<EntitlementKey, PermissionMode>>(
     Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, "inherit"])) as Record<EntitlementKey, PermissionMode>,
   );
@@ -42,6 +50,10 @@ export default function AdminUsersPage() {
   const companiesQuery = trpc.platform.companies.list.useQuery(undefined, { enabled: isPlatformAdmin });
   const platformUsersQuery = trpc.platform.users.list.useQuery(undefined, { enabled: isPlatformAdmin });
   const companyUsersQuery = trpc.companyUsers.list.useQuery(undefined, { enabled: isCompanyAdmin });
+  const entitlementsQuery = trpc.entitlements.mine.useQuery(undefined, { enabled: isCompanyAdmin });
+  const hasFieldOperations = Boolean(entitlementsQuery.data?.effective.fieldOperations);
+  const promoterStoresQuery = trpc.operations.stores.list.useQuery(undefined, { enabled: isCompanyAdmin && editingPromoterId !== null && hasFieldOperations });
+  const promoterWeeklyRoutesQuery = trpc.operations.routes.weekly.useQuery(undefined, { enabled: isCompanyAdmin && editingPromoterId !== null && hasFieldOperations });
   const permissionsQuery = trpc.companyUsers.permissions.useQuery({ id: permissionsUserId ?? 0 }, { enabled: isCompanyAdmin && permissionsUserId !== null });
   const createCompanyMutation = trpc.platform.companies.create.useMutation({ onSuccess: (data) => { toast.success(`Empresa criada. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setCompanyName(""); setUserName(""); setEmail(""); setPassword(""); utils.platform.companies.list.invalidate(); utils.platform.users.invalidate(); }, onError: (error) => toast.error(error.message) });
   const createUserMutation = trpc.companyUsers.create.useMutation({ onSuccess: (data) => { toast.success(`Usuário criado. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setUserName(""); setEmail(""); setPassword(""); setRole("promoter"); utils.companyUsers.list.invalidate(); }, onError: (error) => toast.error(error.message) });
@@ -61,6 +73,8 @@ export default function AdminUsersPage() {
     onError: (error) => toast.error(error.message),
   });
   const ownPasswordMutation = trpc.auth.changePassword.useMutation({ onSuccess: () => { toast.success("Sua senha foi alterada."); setCurrentPassword(""); setNewOwnPassword(""); }, onError: (error) => toast.error(error.message) });
+  const savePromoterManagement = trpc.companyUsers.updatePromoterManagement.useMutation({ onSuccess: async () => { toast.success("Cadastro, jornada e roteiro semanal atualizados."); await utils.companyUsers.list.invalidate(); await utils.operations.routes.weekly.invalidate(); setEditingPromoterId(null); }, onError: e => toast.error(e.message || "Não foi possível atualizar o promotor.") });
+  const users = isPlatformAdmin ? platformUsersQuery.data ?? [] : companyUsersQuery.data ?? [];
 
   useEffect(() => {
     const data = permissionsQuery.data;
@@ -68,11 +82,74 @@ export default function AdminUsersPage() {
     setPermissionsDraft(Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, data.memberOverrides[key] ?? "inherit"])) as Record<EntitlementKey, PermissionMode>);
   }, [permissionsQuery.data, permissionsUserId]);
 
+  useEffect(() => {
+    if (editingPromoterId === null) return;
+    if (promoterWeeklyRoutesQuery.data) {
+      const routes = promoterWeeklyRoutesQuery.data.filter((item: any) => item.promoterId === editingPromoterId && item.active);
+      setWeeklyDraft(Object.fromEntries(routes.map((item: any) => [item.weekday, item.storeIds || []])));
+    }
+  }, [editingPromoterId, promoterWeeklyRoutesQuery.data]);
+
   if (!canManage) return <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6"><Card className="max-w-md"><CardContent className="p-6 text-center"><p className="font-bold text-slate-900">Acesso restrito ao administrador da empresa.</p><Button className="mt-4" onClick={() => navigate("/")}>Voltar ao painel</Button></CardContent></Card></div>;
 
   const handleCreate = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (isPlatformAdmin && platformCreateMode === "company") createCompanyMutation.mutate({ companyName, userName, email, password }); else if (isPlatformAdmin) createPlatformUserMutation.mutate({ companyId: Number(platformCompanyId), userName, email, password, role }); else createUserMutation.mutate({ userName, email, password, role }); };
   const handleOwnPassword = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); ownPasswordMutation.mutate({ currentPassword, newPassword: newOwnPassword }); };
-  const users = isPlatformAdmin ? platformUsersQuery.data ?? [] : companyUsersQuery.data ?? [];
+  const openPromoterEditor = (account: any) => {
+    setPromoterNameDraft(account.userName || "");
+    setPromoterEmailDraft(account.email || "");
+    setEmployeeCodeDraft(account.employeeCode || "");
+    setWorkStartDraft(account.workStartTime || "");
+    setWorkEndDraft(account.workEndTime || "");
+    setWeeklyDraft({});
+    setEditingPromoterId(account.id);
+  };
+  const generateEmployeeCode = () => {
+    const code = globalThis.crypto?.randomUUID?.().replace(/-/g, "").slice(0, 8).toUpperCase()
+      || Math.random().toString(36).slice(2, 10).toUpperCase();
+    setEmployeeCodeDraft(`PROM-${code}`);
+  };
+  const toggleWeeklyStore = (weekday: number, storeId: number, checked: boolean) => {
+    setWeeklyDraft((current) => {
+      const next = new Set(current[weekday] || []);
+      if (checked) next.add(storeId); else next.delete(storeId);
+      return { ...current, [weekday]: [...next] };
+    });
+  };
+  const savePromoterProfile = () => {
+    if (editingPromoterId === null) return;
+    if (promoterNameDraft.trim().length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(promoterEmailDraft.trim())) {
+      toast.error("Informe um nome válido e um e-mail correto para o promotor.");
+      return;
+    }
+    if (workStartDraft && workEndDraft && workEndDraft <= workStartDraft) {
+      toast.error("O fim da jornada precisa ser posterior ao início.");
+      return;
+    }
+    if (hasFieldOperations && (promoterWeeklyRoutesQuery.isLoading || promoterStoresQuery.isLoading)) {
+      toast.info("Aguarde o carregamento das lojas e da programação semanal.");
+      return;
+    }
+    if (hasFieldOperations && (promoterWeeklyRoutesQuery.isError || promoterStoresQuery.isError)) {
+      toast.error("Não foi possível carregar lojas ou roteiros. Atualize a página antes de salvar.");
+      return;
+    }
+    const weeklyRoutes = hasFieldOperations
+      ? weekdays.flatMap((_, weekday) => (weeklyDraft[weekday] || []).length ? [{ weekday, storeIds: weeklyDraft[weekday] }] : [])
+      : undefined;
+    savePromoterManagement.mutate({
+      id: editingPromoterId,
+      userName: promoterNameDraft.trim(),
+      email: promoterEmailDraft.trim(),
+      employeeCode: employeeCodeDraft.trim() || null,
+      workStartTime: workStartDraft || null,
+      workEndTime: workEndDraft || null,
+      weeklyRoutes,
+    });
+  };
+  const deletePromoter = (account: any) => {
+    if (!window.confirm(`Excluir ${account.userName}? O acesso será desativado e o histórico de ponto, visitas e auditoria será preservado.`)) return;
+    companyStatusMutation.mutate({ id: account.id, active: false });
+  };
   const permissionUser = users.find((account: any) => account.id === permissionsUserId) ?? null;
   const isLoadingUsers = isPlatformAdmin ? platformUsersQuery.isLoading : companyUsersQuery.isLoading;
   const isCreating = createCompanyMutation.isPending || createUserMutation.isPending || createPlatformUserMutation.isPending;
@@ -107,6 +184,7 @@ export default function AdminUsersPage() {
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:py-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><Button variant="ghost" className="mb-2 -ml-3 gap-2" onClick={goBack}><ArrowLeft className="h-4 w-4" /> Voltar</Button><h1 className="text-2xl font-black sm:text-3xl">{isPlatformAdmin ? "Empresas e acessos" : "Usuários da empresa"}</h1><p className="mt-1 text-sm text-slate-500">{isPlatformAdmin ? "O administrador global pode visualizar e administrar qualquer empresa sem pertencer a um tenant." : "Você pode criar usuários e definir permissões somente dentro da sua empresa."}</p></div><Badge className="w-fit bg-emerald-100 text-emerald-800 hover:bg-emerald-100"><Check className="mr-1 h-3.5 w-3.5" /> {isPlatformAdmin ? "Administrador global" : "Administrador da empresa"}</Badge></div>
         <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+          {isCompanyAdmin && <div className="lg:col-span-2"><PromoterManagementSection users={users} loading={isLoadingUsers} onEdit={openPromoterEditor} onDelete={deletePromoter} onReactivate={(account: any) => companyStatusMutation.mutate({ id: account.id, active: true })} statusPending={companyStatusMutation.isPending} /></div>}
           <div className="space-y-6">
             <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><UserPlus className="h-5 w-5 text-red-600" /> {isPlatformAdmin ? (platformCreateMode === "company" ? "Criar nova empresa" : "Criar usuário em uma empresa") : "Adicionar usuário"}</CardTitle></CardHeader><CardContent>{isPlatformAdmin && <div className="mb-4 grid grid-cols-2 gap-2"><Button type="button" variant={platformCreateMode === "company" ? "default" : "outline"} onClick={() => setPlatformCreateMode("company")}>Nova empresa</Button><Button type="button" variant={platformCreateMode === "user" ? "default" : "outline"} onClick={() => setPlatformCreateMode("user")}>Novo usuário</Button></div>}<form onSubmit={handleCreate} className="space-y-4">{isPlatformAdmin && platformCreateMode === "company" && <div className="space-y-2"><Label htmlFor="account-company">Nome da empresa</Label><Input id="account-company" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Ex.: Empresa ABC" required /></div>}{isPlatformAdmin && platformCreateMode === "user" && <div className="space-y-2"><Label htmlFor="account-company-select">Empresa do usuário</Label><select id="account-company-select" className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={platformCompanyId} onChange={(e) => setPlatformCompanyId(e.target.value)} required><option value="">Selecione uma empresa ativa</option>{companiesQuery.data?.filter((company) => company.active).map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>}<div className="space-y-2"><Label htmlFor="account-user">Nome do usuário</Label><Input id="account-user" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Nome do responsável" required /></div><div className="space-y-2"><Label htmlFor="account-email">E-mail de acesso</Label><Input id="account-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@empresa.com" required /></div>{(isCompanyAdmin || (isPlatformAdmin && platformCreateMode === "user")) && <div className="space-y-2"><Label htmlFor="account-role">Permissão</Label><select id="account-role" className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={role} onChange={(e) => setRole(e.target.value as typeof role)}><option value="promoter">Promotor — operação em campo</option><option value="supervisor">Supervisor — equipes e roteiros</option><option value="company_admin">Administrador — usuários e configurações</option></select></div>}<div className="space-y-2"><Label htmlFor="account-password">Senha inicial</Label><PasswordInput id="account-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo de 8 caracteres" required /><p className="text-xs text-slate-500">A senha é armazenada protegida e não poderá ser visualizada depois.</p></div><Button type="submit" className="w-full bg-red-600 font-bold hover:bg-red-700" disabled={isCreating}>{isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />} {isPlatformAdmin && platformCreateMode === "company" ? "Criar empresa" : "Criar usuário"}</Button></form></CardContent></Card>
             <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><ShieldCheck className="h-5 w-5 text-emerald-600" /> Minha senha</CardTitle></CardHeader><CardContent><form onSubmit={handleOwnPassword} className="space-y-3"><PasswordInput placeholder="Senha atual" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required /><PasswordInput minLength={8} placeholder="Nova senha (mínimo de 8 caracteres)" value={newOwnPassword} onChange={(e) => setNewOwnPassword(e.target.value)} required /><Button type="submit" variant="outline" className="w-full" disabled={ownPasswordMutation.isPending}>{ownPasswordMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />} Alterar minha senha</Button></form><p className="mt-3 text-xs leading-relaxed text-slate-500">As senhas existentes nunca são exibidas.</p></CardContent></Card>
@@ -117,6 +195,24 @@ export default function AdminUsersPage() {
           </div>
         </div>
       </div>
+      <PromoterEditDialog
+        open={editingPromoterId !== null}
+        account={users.find((account: any) => account.id === editingPromoterId)}
+        promoterName={promoterNameDraft} setPromoterName={setPromoterNameDraft}
+        promoterEmail={promoterEmailDraft} setPromoterEmail={setPromoterEmailDraft}
+        employeeCode={employeeCodeDraft} setEmployeeCode={setEmployeeCodeDraft}
+        workStart={workStartDraft} setWorkStart={setWorkStartDraft}
+        workEnd={workEndDraft} setWorkEnd={setWorkEndDraft}
+        weeklyDraft={weeklyDraft} toggleWeeklyStore={toggleWeeklyStore}
+        hasFieldOperations={hasFieldOperations}
+        stores={promoterStoresQuery.data || []}
+        storesLoading={promoterStoresQuery.isLoading || promoterWeeklyRoutesQuery.isLoading}
+        storesError={promoterStoresQuery.isError || promoterWeeklyRoutesQuery.isError}
+        saving={savePromoterManagement.isPending}
+        onGenerateCode={generateEmployeeCode}
+        onSave={savePromoterProfile}
+        onOpenChange={(open: boolean) => { if (!open) setEditingPromoterId(null); }}
+      />
       <Dialog open={permissionsUserId !== null} onOpenChange={(open) => { if (!open) setPermissionsUserId(null); }}>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
@@ -172,3 +268,105 @@ export default function AdminUsersPage() {
 
 function Loading() { return <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>; }
 function Empty() { return <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>; }
+
+
+function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactivate, statusPending }: any) {
+  const promoters = users.filter((account: any) => account.role === "promoter");
+  return (
+    <Card className="border-teal-200 shadow-sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg"><Users className="h-5 w-5 text-teal-600" /> Promotores cadastrados</CardTitle>
+        <p className="text-sm text-slate-500">Edite matrícula, jornada e roteiro semanal diretamente no cadastro de cada promotor.</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading ? <Loading /> : promoters.length ? promoters.map((account: any) => (
+          <div key={account.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate font-bold text-slate-900">{account.userName}</p>
+              <p className="truncate text-xs text-slate-500">{account.email}</p>
+              <p className="mt-1 text-xs text-slate-500">{account.employeeCode ? `Matrícula ${account.employeeCode}` : "Sem matrícula"}{account.workStartTime && account.workEndTime ? ` · ${account.workStartTime}–${account.workEndTime}` : ""}</p>
+              <Badge className={`mt-2 ${account.active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-slate-100 text-slate-600 hover:bg-slate-100"}`}>{account.active ? "Ativo" : "Inativo"}</Badge>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button size="sm" variant="outline" className="gap-2 border-teal-300 text-teal-800 hover:bg-teal-50" onClick={() => onEdit(account)}><Pencil className="h-4 w-4" />Editar promotor</Button>
+              {account.active
+                ? <Button size="sm" variant="outline" className="gap-2 border-rose-200 text-rose-700 hover:bg-rose-50" disabled={statusPending} onClick={() => onDelete(account)}><Trash2 className="h-4 w-4" />Excluir</Button>
+                : <Button size="sm" variant="outline" className="border-emerald-200 text-emerald-700" disabled={statusPending} onClick={() => onReactivate(account)}>Reativar</Button>}
+            </div>
+          </div>
+        )) : <Empty />}
+        <p className="text-xs text-slate-500">Excluir desativa o acesso do promotor, mas preserva registros históricos de ponto, visitas e auditoria.</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+
+function PromoterEditDialog({ open, onOpenChange, account, promoterName, setPromoterName, promoterEmail, setPromoterEmail, employeeCode, setEmployeeCode, workStart, setWorkStart, workEnd, setWorkEnd, weeklyDraft, toggleWeeklyStore, hasFieldOperations, stores, storesLoading, storesError, saving, onGenerateCode, onSave }: any) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Editar promotor — {account?.userName || "carregando"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-6">
+          <section className="space-y-4 rounded-xl border border-slate-200 p-4">
+            <h3 className="flex items-center gap-2 font-bold text-slate-900"><Pencil className="h-4 w-4 text-teal-600" />Dados operacionais</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div><Label htmlFor="promoter-name">Nome</Label><Input id="promoter-name" className="mt-1" maxLength={255} value={promoterName} onChange={(event) => setPromoterName(event.target.value)} required /></div>
+              <div><Label htmlFor="promoter-email">E-mail de acesso</Label><Input id="promoter-email" className="mt-1" type="email" maxLength={320} value={promoterEmail} onChange={(event) => setPromoterEmail(event.target.value)} required /></div>
+            </div>
+            <div>
+              <Label htmlFor="promoter-employee-code">Matrícula</Label>
+              <div className="mt-1 flex gap-2">
+                <Input id="promoter-employee-code" maxLength={50} value={employeeCode} onChange={(event) => setEmployeeCode(event.target.value)} placeholder="Informe uma matrícula ou gere uma aleatória" />
+                <Button type="button" variant="outline" className="shrink-0 border-teal-300 text-teal-800" onClick={onGenerateCode}>Gerar aleatória</Button>
+              </div>
+            </div>
+            <div>
+              <Label className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-teal-600" />Horário de trabalho</Label>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div><Label htmlFor="promoter-work-start" className="text-xs text-slate-500">Início</Label><Input id="promoter-work-start" type="time" value={workStart} onChange={(event) => setWorkStart(event.target.value)} /></div>
+                <div><Label htmlFor="promoter-work-end" className="text-xs text-slate-500">Fim</Label><Input id="promoter-work-end" type="time" value={workEnd} onChange={(event) => setWorkEnd(event.target.value)} /></div>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">Os horários são informativos e podem ser deixados em branco.</p>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <div>
+              <h3 className="flex items-center gap-2 font-bold text-slate-900"><CalendarDays className="h-4 w-4 text-teal-600" />Roteiro semanal fixo</h3>
+              <p className="mt-1 text-sm text-slate-500">Escolha as lojas de cada dia. O roteiro do dia será exibido automaticamente no painel inicial do promotor.</p>
+            </div>
+            {!hasFieldOperations ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">A programação de visitas exige que o módulo de operações de campo esteja liberado no plano da empresa.</p> : storesLoading ? <Loading /> : storesError ? <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">Não foi possível carregar lojas ou roteiros. Atualize a página e tente novamente.</p> : !stores.length ? <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">Cadastre lojas no módulo de operações antes de montar o roteiro semanal.</p> : (
+              <div className="space-y-2">
+                {weekdays.map((day, weekday) => {
+                  const selected = weeklyDraft[weekday] || [];
+                  return (
+                    <details key={weekday} open={weekday === 1} className="rounded-xl border border-slate-200 bg-slate-50">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-3 font-semibold text-slate-800">
+                        <span>{day}</span><Badge className="bg-teal-100 text-teal-800 hover:bg-teal-100">{selected.length} loja(s)</Badge>
+                      </summary>
+                      <div className="grid max-h-52 gap-1 overflow-y-auto border-t border-slate-200 p-2 sm:grid-cols-2">
+                        {stores.map((store: any) => <label key={store.id} className="flex cursor-pointer items-start gap-2 rounded-lg p-2 text-sm text-slate-700 hover:bg-white">
+                          <input type="checkbox" className="mt-1 accent-teal-600" checked={selected.includes(store.id)} onChange={(event) => toggleWeeklyStore(weekday, store.id, event.target.checked)} />
+                          <span className="min-w-0"><span className="block font-medium">{store.name}</span><span className="text-xs text-slate-500">{store.city}{store.state ? ` — ${store.state}` : ""}</span></span>
+                        </label>)}
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button type="button" className="bg-teal-600 text-white hover:bg-teal-700" onClick={onSave} disabled={saving || (hasFieldOperations && (storesLoading || storesError))}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Salvar cadastro e roteiro
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

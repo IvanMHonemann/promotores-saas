@@ -6,6 +6,7 @@ import {
   clients,
   companies,
   extinguishers,
+  memberAccounts,
   memberSessions,
   platformSessions,
   serviceOrders,
@@ -27,6 +28,7 @@ import {
   companyFeatureOverrides,
   memberAccounts as entitlementMemberAccounts,
   memberFeaturePermissions,
+  promoterProfiles,
   subscriptionPlanFeatures,
 } from "../drizzle/schema";
 import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
@@ -1524,6 +1526,89 @@ export async function saveWeeklyRouteSchedule(input: { companyId: number; promot
     )).limit(1))[0];
   });
 }
+
+export async function updatePromoterManagement(input: {
+  companyId: number;
+  promoterId: number;
+  userName: string;
+  email: string;
+  employeeCode: string | null;
+  workStartTime: string | null;
+  workEndTime: string | null;
+  weeklyRoutes?: Array<{ weekday: number; storeIds: number[] }>;
+}) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const companyId = requireAccountId(input.companyId);
+  const promoter = await database.select({ id: entitlementMemberAccounts.id })
+    .from(entitlementMemberAccounts)
+    .where(and(
+      eq(entitlementMemberAccounts.id, input.promoterId),
+      eq(entitlementMemberAccounts.companyId, companyId),
+      eq(entitlementMemberAccounts.role, "promoter"),
+    )).limit(1);
+  if (!promoter.length) throw new Error("Promotor não pertence a esta empresa.");
+
+  const employeeCode = input.employeeCode?.trim() || null;
+  const weeklyRoutes = input.weeklyRoutes;
+  if (weeklyRoutes !== undefined) {
+    const days = weeklyRoutes.map((route) => route.weekday);
+    if (new Set(days).size !== days.length || days.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
+      throw new Error("A programação semanal contém dias inválidos ou repetidos.");
+    }
+    const storeIds = [...new Set(weeklyRoutes.flatMap((route) => route.storeIds))];
+    if (storeIds.length) {
+      const stores = await database.select({ id: operationalStores.id }).from(operationalStores).where(and(
+        inArray(operationalStores.id, storeIds),
+        eq(operationalStores.companyId, companyId),
+        eq(operationalStores.active, true),
+      ));
+      if (stores.length !== storeIds.length) throw new Error("Uma ou mais lojas não pertencem a esta empresa ou estão inativas.");
+    }
+    if (weeklyRoutes.some((route) => !route.storeIds.length)) throw new Error("Cada dia programado precisa ter ao menos uma loja.");
+  }
+
+  await database.transaction(async (tx) => {
+    await tx.update(memberAccounts).set({ userName: input.userName.trim(), email: input.email.trim().toLowerCase() }).where(and(
+      eq(memberAccounts.id, input.promoterId),
+      eq(memberAccounts.companyId, companyId),
+      eq(memberAccounts.role, "promoter"),
+    ));
+    await tx.insert(promoterProfiles).values({
+      memberAccountId: input.promoterId,
+      companyId,
+      employeeCode,
+      workStartTime: input.workStartTime,
+      workEndTime: input.workEndTime,
+    }).onDuplicateKeyUpdate({ set: { companyId, employeeCode, workStartTime: input.workStartTime, workEndTime: input.workEndTime } });
+
+    if (weeklyRoutes === undefined) return;
+    const weekdayLabels = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+    for (let weekday = 0; weekday <= 6; weekday++) {
+      const schedule = weeklyRoutes.find((route) => route.weekday === weekday);
+      const conditions = and(
+        eq(weeklyRouteSchedules.companyId, companyId),
+        eq(weeklyRouteSchedules.promoterId, input.promoterId),
+        eq(weeklyRouteSchedules.weekday, weekday),
+      );
+      if (!schedule) {
+        await tx.delete(weeklyRouteSchedules).where(conditions);
+        continue;
+      }
+      const storeIds = [...new Set(schedule.storeIds)];
+      await tx.insert(weeklyRouteSchedules).values({
+        companyId,
+        promoterId: input.promoterId,
+        weekday,
+        name: `Roteiro de ${weekdayLabels[weekday]}`,
+        storeIds,
+        active: true,
+      }).onDuplicateKeyUpdate({ set: { name: `Roteiro de ${weekdayLabels[weekday]}`, storeIds, active: true } });
+    }
+  });
+  return { success: true as const };
+}
+
 export async function materializeWeeklyRoutes(companyId: number, promoterId: number, dateString: string) {
   const database = await getDb();
   if (!database) return [];

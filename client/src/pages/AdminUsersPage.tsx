@@ -184,7 +184,7 @@ export default function AdminUsersPage() {
             <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><ShieldCheck className="h-5 w-5 text-emerald-600" /> Minha senha</CardTitle></CardHeader><CardContent><form onSubmit={handleOwnPassword} className="space-y-3"><PasswordInput placeholder="Senha atual" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required /><PasswordInput minLength={8} placeholder="Nova senha (mínimo de 8 caracteres)" value={newOwnPassword} onChange={(e) => setNewOwnPassword(e.target.value)} required /><Button type="submit" variant="outline" className="w-full" disabled={ownPasswordMutation.isPending}>{ownPasswordMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />} Alterar minha senha</Button></form><p className="mt-3 text-xs leading-relaxed text-slate-500">As senhas existentes nunca são exibidas.</p></CardContent></Card>
           </div>
           <div className="space-y-6">
-            {isPlatformAdmin && <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Building2 className="h-5 w-5 text-red-600" /> Empresas cadastradas</CardTitle></CardHeader><CardContent>{companiesQuery.isLoading ? <Loading /> : companiesQuery.data?.length ? <div className="space-y-2">{companiesQuery.data.map(company => <div key={company.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3"><div><p className="font-bold">{company.name}</p><p className="text-xs text-slate-500">Empresa #{company.id}</p></div><Badge className={company.active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-slate-100 text-slate-600 hover:bg-slate-100"}>{company.active ? "Ativa" : "Bloqueada"}</Badge></div>)}</div> : <Empty />}</CardContent></Card>}
+            {isPlatformAdmin && <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Building2 className="h-5 w-5 text-red-600" /> Empresas cadastradas</CardTitle></CardHeader><CardContent>{companiesQuery.isLoading ? <Loading /> : companiesQuery.data?.length ? <div className="space-y-2">{companiesQuery.data.map(company => <div key={company.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3"><div><p className="font-bold">{company.name}</p><p className="text-xs text-slate-500">Empresa #{company.id}</p></div><Badge className={company.active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "border border-white/10 bg-slate-700/60 text-slate-200 hover:bg-slate-700/60"}>{company.active ? "Ativa" : "Bloqueada"}</Badge></div>)}</div> : <Empty />}</CardContent></Card>}
             <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Users className="h-5 w-5 text-red-600" /> {isPlatformAdmin ? "Usuários de todas as empresas" : "Usuários cadastrados"}</CardTitle></CardHeader><CardContent>{isLoadingUsers ? <Loading /> : users.length ? <div className="space-y-3">{users.map((account: any) => <div key={account.id} className="rounded-xl border border-slate-200 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100"><UserRound className="h-5 w-5 text-slate-500" /></div><div className="min-w-0"><p className="truncate font-bold text-slate-900">{account.userName}</p><p className="truncate text-xs text-slate-500">Login: {account.email}</p><p className="text-xs text-slate-500">Empresa #{account.companyId} · {roleLabels[account.role as keyof typeof roleLabels]}</p><p className="text-xs text-slate-400">Criado em {new Date(account.createdAt).toLocaleDateString("pt-BR")}</p></div></div><Button size="sm" variant="outline" className={account.active ? "text-red-700" : "text-emerald-700"} disabled={account.id === user?.id || account.id === Math.abs(user?.id ?? 0)} onClick={() => isPlatformAdmin ? platformStatusMutation.mutate({ id: account.id, active: !account.active }) : companyStatusMutation.mutate({ id: account.id, active: !account.active })}>{account.active ? "Bloquear" : "Reativar"}</Button></div><div className="mt-3 border-t border-slate-100 pt-3">{isCompanyAdmin && <Button size="sm" variant="outline" className="mb-2 h-8 gap-2" onClick={() => setPermissionsUserId(account.id)}>Permissões de módulos</Button>}{resettingId === account.id ? <div className="flex flex-col gap-2 sm:flex-row"><PasswordInput minLength={8} placeholder="Nova senha temporária" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /><Button size="sm" className="bg-red-600 hover:bg-red-700" disabled={isResetting || resetPassword.length < 8} onClick={() => isPlatformAdmin ? platformResetMutation.mutate({ id: account.id, newPassword: resetPassword }) : companyResetMutation.mutate({ id: account.id, newPassword: resetPassword })}>{isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar nova senha"}</Button><Button size="sm" variant="ghost" onClick={() => { setResettingId(null); setResetPassword(""); }}>Cancelar</Button></div> : <Button size="sm" variant="ghost" className="h-8 gap-2 px-0 text-slate-600 hover:text-red-700" onClick={() => setResettingId(account.id)}><KeyRound className="h-3.5 w-3.5" /> Redefinir senha</Button>}</div></div>)}</div> : <Empty />}</CardContent></Card>
           </div>
         </div>
@@ -208,12 +208,12 @@ export default function AdminUsersPage() {
         onOpenChange={(open: boolean) => { if (!open) setEditingPromoterId(null); }}
       />
       <Dialog open={permissionsUserId !== null} onOpenChange={(open) => { if (!open) setPermissionsUserId(null); }}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto border-white/10 bg-[#0b1728] text-slate-100 [&_.bg-slate-50]:bg-white/5 [&_.border-slate-200]:border-white/10 [&_.text-slate-500]:text-slate-400 [&_.text-slate-700]:text-slate-300 [&_.text-slate-900]:text-white">
+        <DialogContent className="saas-page max-h-[90vh] max-w-2xl overflow-y-auto border-white/10 bg-[#0b1728] text-slate-100 [&_.bg-slate-50]:bg-white/5 [&_.border-slate-200]:border-white/10 [&_.text-slate-500]:text-slate-400 [&_.text-slate-700]:text-slate-300 [&_.text-slate-900]:text-white">
           <DialogHeader>
             <DialogTitle>Permissões de módulos — {permissionUser?.userName || "usuário"}</DialogTitle>
           </DialogHeader>
           {permissionsQuery.isLoading ? <Loading /> : permissionsQuery.error ? (
-            <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{permissionsQuery.error.message}</p>
+            <p className="rounded-lg border border-rose-300/20 bg-rose-400/10 p-3 text-sm text-rose-200">{permissionsQuery.error.message}</p>
           ) : permissionsQuery.data ? (
             <div className="space-y-4">
               <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
@@ -232,11 +232,11 @@ export default function AdminUsersPage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900">{feature.label}</p>
                         <p className="text-xs text-slate-500">{feature.description}</p>
-                        <p className={`mt-1 text-xs font-semibold ${enabled ? "text-emerald-700" : "text-slate-500"}`}>Acesso efetivo: {enabled ? "liberado" : "bloqueado"}</p>
+                        <p className={`mt-1 text-xs font-semibold ${enabled ? "text-emerald-300" : "text-slate-500"}`}>Acesso efetivo: {enabled ? "liberado" : "bloqueado"}</p>
                       </div>
                       <Select value={mode} onValueChange={(value: PermissionMode) => setPermissionsDraft({ ...permissionsDraft, [feature.key]: value })}>
                         <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-                        <SelectContent>
+                      <SelectContent className="border-white/10 bg-[#0f1d31] text-slate-100">
                           <SelectItem value="inherit">Herdar do papel</SelectItem>
                           <SelectItem value="allow" disabled={!canAllow}>Permitir</SelectItem>
                           <SelectItem value="deny" disabled={!canDeny}>Bloquear</SelectItem>
@@ -279,7 +279,7 @@ function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactiv
               <p className="truncate font-bold text-slate-900">{account.userName}</p>
               <p className="truncate text-xs text-slate-500">{account.email}</p>
               <p className="mt-1 text-xs text-slate-500">{account.employeeCode ? `Matrícula ${account.employeeCode}` : "Sem matrícula"}{account.workStartTime && account.workEndTime ? ` · ${account.workStartTime}–${account.workEndTime}` : ""}</p>
-              <Badge className={`mt-2 ${account.active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-slate-100 text-slate-600 hover:bg-slate-100"}`}>{account.active ? "Ativo" : "Inativo"}</Badge>
+              <Badge className={`mt-2 ${account.active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "border border-white/10 bg-slate-700/60 text-slate-200 hover:bg-slate-700/60"}`}>{account.active ? "Ativo" : "Inativo"}</Badge>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
               <Button size="sm" variant="outline" className="gap-2 border-teal-300/50 text-teal-200 hover:bg-teal-300/10" onClick={() => onEdit(account)}><Pencil className="h-4 w-4" />Editar promotor</Button>
@@ -299,7 +299,7 @@ function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactiv
 function PromoterEditDialog({ open, onOpenChange, account, promoterName, setPromoterName, promoterEmail, setPromoterEmail, employeeCode, setEmployeeCode, workStart, setWorkStart, workEnd, setWorkEnd, weeklyDraft, toggleWeeklyStore, hasFieldOperations, stores, storesLoading, storesError, saving, onGenerateCode, onSave }: any) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto border-white/10 bg-[#0b1728] text-slate-100 [&_.bg-slate-50]:bg-white/5 [&_.border-slate-200]:border-white/10 [&_.text-slate-500]:text-slate-400 [&_.text-slate-700]:text-slate-300 [&_.text-slate-900]:text-white">
+      <DialogContent className="saas-page max-h-[92vh] max-w-4xl overflow-y-auto border-white/10 bg-[#0b1728] text-slate-100 [&_.bg-slate-50]:bg-white/5 [&_.border-slate-200]:border-white/10 [&_.text-slate-500]:text-slate-400 [&_.text-slate-700]:text-slate-300 [&_.text-slate-900]:text-white">
         <DialogHeader>
           <DialogTitle>Editar promotor — {account?.userName || "carregando"}</DialogTitle>
         </DialogHeader>
@@ -314,7 +314,7 @@ function PromoterEditDialog({ open, onOpenChange, account, promoterName, setProm
               <Label htmlFor="promoter-employee-code">Matrícula</Label>
               <div className="mt-1 flex gap-2">
                 <Input id="promoter-employee-code" maxLength={50} value={employeeCode} onChange={(event) => setEmployeeCode(event.target.value)} placeholder="Informe uma matrícula ou gere uma aleatória" />
-                <Button type="button" variant="outline" className="shrink-0 border-teal-300 text-teal-800" onClick={onGenerateCode}>Gerar aleatória</Button>
+                <Button type="button" variant="outline" className="shrink-0 border-teal-300/50 text-teal-200 hover:bg-teal-300/10" onClick={onGenerateCode}>Gerar aleatória</Button>
               </div>
             </div>
             <div>
@@ -332,7 +332,7 @@ function PromoterEditDialog({ open, onOpenChange, account, promoterName, setProm
               <h3 className="flex items-center gap-2 font-bold text-slate-900"><CalendarDays className="h-4 w-4 text-teal-600" />Roteiro semanal fixo</h3>
               <p className="mt-1 text-sm text-slate-500">Escolha as lojas de cada dia. O roteiro do dia será exibido automaticamente no painel inicial do promotor.</p>
             </div>
-            {!hasFieldOperations ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">A programação de visitas exige que o módulo de operações de campo esteja liberado no plano da empresa.</p> : storesLoading ? <Loading /> : storesError ? <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">Não foi possível carregar lojas ou roteiros. Atualize a página e tente novamente.</p> : !stores.length ? <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">Cadastre lojas no módulo de operações antes de montar o roteiro semanal.</p> : (
+            {!hasFieldOperations ? <p className="rounded-lg border border-amber-300/20 bg-amber-400/10 p-3 text-sm text-amber-100">A programação de visitas exige que o módulo de operações de campo esteja liberado no plano da empresa.</p> : storesLoading ? <Loading /> : storesError ? <p role="alert" className="rounded-lg border border-rose-300/20 bg-rose-400/10 p-3 text-sm text-rose-200">Não foi possível carregar lojas ou roteiros. Atualize a página e tente novamente.</p> : !stores.length ? <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">Cadastre lojas no módulo de operações antes de montar o roteiro semanal.</p> : (
               <div className="space-y-2">
                 {weekdays.map((day, weekday) => {
                   const selected = weeklyDraft[weekday] || [];

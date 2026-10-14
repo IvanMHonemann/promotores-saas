@@ -49,10 +49,29 @@ async function askGemini(prompt: string, files: Array<{ path: string; content: s
   const context = files.length ? files.map((file) => `\n--- ${file.path} ---\n${file.content}`).join("\n") : "(nenhum arquivo precisa ser consultado para esta conversa)";
   const conversation = history.slice(-12).map((message) => `${message.role === "user" ? "Usuário" : "Assistente"}: ${message.content}`).join("\n");
   const system = `Você é o assistente de IA e engenheiro de software do Promotores SaaS. Converse naturalmente e responda em português brasileiro, sempre levando em conta exatamente o que o usuário escreveu e o histórico fornecido. Você deve responder perguntas, explicar conceitos, sugerir ideias e ajudar o usuário mesmo quando ele não pedir nenhuma alteração no código.\n\nVocê pode alterar SOMENTE estes arquivos: ${editableFiles.join(", ")}.\nSe o usuário estiver apenas conversando ou fazendo uma pergunta, retorne changes vazio e responda diretamente, sem dizer que alguma alteração foi feita. Só inclua changes quando o usuário pedir explicitamente uma alteração no site ou no código. Quando for solicitada uma alteração, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conteúdo parcial. Não invente arquivos nem diga que publicou algo: o servidor criará um commit real depois de validar sua resposta. Preserve o funcionamento existente e não remova recursos sem pedido explícito.\n\nRetorne SOMENTE JSON válido no formato:\n{"reply":"resposta objetiva","changes":[{"path":"arquivo permitido","content":"conteúdo completo","reason":"motivo"}]}\n\nHistórico recente da conversa:\n${conversation || "(primeira mensagem)"}\n\nCódigo atual:${context}`;
+  const responseSchema = {
+    type: "OBJECT",
+    properties: {
+      reply: { type: "STRING" },
+      changes: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            path: { type: "STRING" },
+            content: { type: "STRING" },
+            reason: { type: "STRING" },
+          },
+          required: ["path", "content"],
+        },
+      },
+    },
+    required: ["reply", "changes"],
+  };
   const requestBody = {
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
+    generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: "application/json", responseSchema },
   };
   let response: Response | null = null;
   let body: any = null;

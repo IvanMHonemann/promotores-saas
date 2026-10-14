@@ -57,7 +57,14 @@ async function askGemini(prompt: string, files: Array<{ path: string; content: s
   let response: Response | null = null;
   let body: any = null;
   let lastError = "resposta inválida";
-  for (const model of ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"]) {
+  const modelListResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+  const modelList = modelListResponse.ok ? await modelListResponse.json() as any : null;
+  const preferredModels = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+  const availableModels = (modelList?.models || [])
+    .filter((model: any) => model.supportedGenerationMethods?.includes("generateContent"))
+    .map((model: any) => String(model.name || "").replace(/^models\//, ""));
+  const models = preferredModels.filter((model) => availableModels.length === 0 || availableModels.includes(model));
+  for (const model of (models.length ? models : ["gemini-3.8-flash"])) {
     response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -65,7 +72,7 @@ async function askGemini(prompt: string, files: Array<{ path: string; content: s
     });
     body = await response.json() as any;
     if (response.ok) break;
-    lastError = body.error?.message || `HTTP ${response.status}`;
+    lastError = `${model}: ${body.error?.message || `HTTP ${response.status}`}`;
   }
   if (!response?.ok) throw new Error(`Gemini indisponível: ${lastError}`);
   const text = body.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("") || "";

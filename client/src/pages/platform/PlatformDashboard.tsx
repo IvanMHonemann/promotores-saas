@@ -74,14 +74,18 @@ function PersistentAIChat() {
     onError: (error) => setMessages((current) => [...current, { role: "assistant", content: `Não foi possível aplicar o pedido: ${error.message}` }]),
   });
   const send = (prompt: string) => {
-    setMessages((current) => [...current, { role: "user", content: prompt }]);
-    chat.mutate({ prompt });
+    const nextMessages = [...messages, { role: "user" as const, content: prompt }];
+    setMessages(nextMessages);
+    chat.mutate({
+      prompt,
+      history: nextMessages.filter((message): message is { role: "user" | "assistant"; content: string } => message.role !== "system").slice(-12),
+    });
   };
   return <section className="mb-6 rounded-3xl border border-teal-300/20 bg-slate-900/80 p-4 sm:p-6">
-    <p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · alterações persistentes</p>
-    <h2 className="mt-1 text-xl font-bold">Peça uma alteração no site</h2>
-    <p className="mt-1 mb-3 text-sm text-slate-300">A IA só confirma depois de criar um commit real no repositório. A Vercel publica a nova versão automaticamente.</p>
-    <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="360px" placeholder="Ex.: altere o título da página..." suggestedPrompts={["Explique como você aplica uma alteração.", "Melhore o texto da visão geral."]} />
+    <p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · chat inteligente</p>
+    <h2 className="mt-1 text-xl font-bold">Converse com a IA ou peça alterações no site</h2>
+    <p className="mt-1 mb-3 text-sm text-slate-300">Faça perguntas normalmente. Quando você pedir uma mudança no site, a IA criará um commit real e a Vercel publicará a nova versão automaticamente.</p>
+    <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="360px" emptyStateMessage="Escreva uma pergunta ou peça uma alteração no site" placeholder="Digite sua pergunta ou pedido..." suggestedPrompts={["O que você consegue fazer?", "Explique como você aplica uma alteração.", "Melhore o texto da visão geral."]} />
   </section>;
 }
 

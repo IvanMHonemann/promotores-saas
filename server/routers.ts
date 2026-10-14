@@ -247,8 +247,11 @@ export const appRouter = router({
   platform: router({
     aiSupport: router({
       chat: platformProcedure
-        .input(z.object({ prompt: z.string().trim().min(1).max(12000) }))
-        .mutation(async ({ input }) => runPersistentGemini(input.prompt)),
+        .input(z.object({
+          prompt: z.string().trim().min(1).max(12000),
+          history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(12000) })).max(12).optional(),
+        }))
+        .mutation(async ({ input }) => runPersistentGemini(input.prompt, input.history ?? [])),
     }),
     plans: router({
       list: platformProcedure.query(() => db.listSubscriptionPlans()),

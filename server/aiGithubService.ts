@@ -16,6 +16,7 @@ type GithubRef = { object: { sha: string } };
 type GithubCommit = { tree: { sha: string } };
 type GithubFile = { sha: string; content: string; encoding: string };
 type GeminiChange = { path: string; content: string; reason?: string };
+type ChatMessage = { role: "user" | "assistant"; content: string };
 
 async function github(path: string, init: RequestInit = {}) {
   const token = process.env.GITHUB_TOKEN;
@@ -42,11 +43,12 @@ async function readFile(path: string, ref: string) {
   return { path, sha: file.sha, content: Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8") };
 }
 
-async function askGemini(prompt: string, files: Array<{ path: string; content: string }>) {
+async function askGemini(prompt: string, files: Array<{ path: string; content: string }>, history: ChatMessage[] = []) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY não está configurada na Vercel.");
   const context = files.map((file) => `\n--- ${file.path} ---\n${file.content}`).join("\n");
-  const system = `Você é o engenheiro de software do Promotores SaaS. Responda em português brasileiro.\n\nVocê pode alterar SOMENTE estes arquivos: ${editableFiles.join(", ")}.\nA solicitação do usuário pode ser apenas uma pergunta. Nesse caso, retorne changes vazio e responda normalmente.\nQuando for solicitada uma alteração, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conteúdo parcial. Não invente arquivos nem diga que publicou algo: o servidor criará um commit real depois de validar sua resposta. Preserve o funcionamento existente e não remova recursos sem pedido explícito.\n\nRetorne SOMENTE JSON válido no formato:\n{"reply":"resposta objetiva","changes":[{"path":"arquivo permitido","content":"conteúdo completo","reason":"motivo"}]}\n\nCódigo atual:${context}`;
+  const conversation = history.slice(-12).map((message) => `${message.role === "user" ? "Usuário" : "Assistente"}: ${message.content}`).join("\n");
+  const system = `Você é o assistente de IA e engenheiro de software do Promotores SaaS. Converse naturalmente e responda em português brasileiro, sempre levando em conta exatamente o que o usuário escreveu e o histórico fornecido. Você deve responder perguntas, explicar conceitos, sugerir ideias e ajudar o usuário mesmo quando ele não pedir nenhuma alteração no código.\n\nVocê pode alterar SOMENTE estes arquivos: ${editableFiles.join(", ")}.\nSe o usuário estiver apenas conversando ou fazendo uma pergunta, retorne changes vazio e responda diretamente, sem dizer que alguma alteração foi feita. Só inclua changes quando o usuário pedir explicitamente uma alteração no site ou no código. Quando for solicitada uma alteração, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conteúdo parcial. Não invente arquivos nem diga que publicou algo: o servidor criará um commit real depois de validar sua resposta. Preserve o funcionamento existente e não remova recursos sem pedido explícito.\n\nRetorne SOMENTE JSON válido no formato:\n{"reply":"resposta objetiva","changes":[{"path":"arquivo permitido","content":"conteúdo completo","reason":"motivo"}]}\n\nHistórico recente da conversa:\n${conversation || "(primeira mensagem)"}\n\nCódigo atual:${context}`;
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -63,12 +65,12 @@ async function askGemini(prompt: string, files: Array<{ path: string; content: s
   catch { throw new Error("O Gemini retornou uma resposta que não pôde ser validada como JSON."); }
 }
 
-export async function runPersistentGemini(prompt: string) {
+export async function runPersistentGemini(prompt: string, history: ChatMessage[] = []) {
   const ref = await github(`/repos/${OWNER}/${REPO}/git/ref/heads/${encodeURIComponent(BRANCH)}`) as GithubRef;
   const files = await Promise.all(editableFiles.map((path) => readFile(path, BRANCH)));
-  const result = await askGemini(prompt, files);
+  const result = await askGemini(prompt, files, history);
   const changes = (result.changes || []).filter((change) => editableFiles.includes(change.path) && typeof change.content === "string");
-  if (!changes.length) return { reply: result.reply || "Não há alteração de código para aplicar.", changed: false as const };
+  if (!changes.length) return { reply: result.reply || "Estou aqui para responder sua mensagem. O que você gostaria de saber?", changed: false as const };
   if (changes.length > 4) throw new Error("A solicitação gerou arquivos demais para uma única alteração segura.");
   for (const change of changes) {
     if (change.content.length > 300_000) throw new Error(`O arquivo ${change.path} excede o limite seguro.`);

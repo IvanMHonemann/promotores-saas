@@ -9,7 +9,6 @@ import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { toast } from "sonner";
 import TimeTrackingDemo from "./TimeTrackingDemo";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { AIChatBox, type Message } from "@/components/AIChatBox";
 
 type Section = "overview" | "companies" | "time";
 const adminLinks = [{ href: "/admin/usuarios", label: "Empresas e usuários", icon: UsersRound }, { href: "/admin/assinaturas", label: "Planos e assinaturas", icon: CreditCard }];
@@ -60,28 +59,10 @@ export default function PlatformDashboard() {
       {menuOpen && <button className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm lg:hidden" onClick={() => setMenuOpen(false)} aria-label="Fechar menu" />}
       <section className="min-w-0 flex-1 px-4 pb-20 pt-4 sm:px-7 sm:pt-6 lg:px-10 lg:pt-8">
         <header className="mb-7 flex items-center justify-between gap-3 border-b border-white/10 pb-5"><div className="flex min-w-0 items-center gap-3"><button className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-slate-200 hover:bg-white/10 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button><div className="min-w-0"><p className="hidden text-xs font-semibold uppercase tracking-[.18em] text-teal-300 sm:block">Promotores SaaS · Administração</p><h1 className="truncate text-2xl font-black tracking-tight sm:mt-1 sm:text-3xl">{title}</h1><p className="mt-1 hidden text-sm text-slate-300 sm:block">Acompanhe a operação da sua plataforma em um só lugar.</p></div></div><div className="flex shrink-0 items-center gap-2"><Button variant="outline" className="hidden gap-2 border-white/15 bg-white/[.04] text-sm text-slate-200 hover:bg-white/10 hover:text-white sm:flex" onClick={() => companies.refetch()}><RefreshCw className={`h-4 w-4 ${companies.isFetching ? "animate-spin" : ""}`} />Atualizar</Button><AccountMenuDropdown /></div></header>
-        <AIChatPanel />
         {section === "time" ? <TimeTrackingDemo /> : section === "companies" ? <CompaniesView data={companies.data} loading={companies.isLoading} /> : <Overview total={total} active={active} onNavigate={selectSection} gpsStatus={gpsStatus} requestGps={requestGps} />}
       </section>
     </div>
   </main>;
-}
-
-function AIChatPanel() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const chat = trpc.platform.aiChat.useMutation({
-    onSuccess: (result) => setMessages((current) => [...current, { role: "assistant", content: result.content }]),
-    onError: (error) => setMessages((current) => [...current, { role: "assistant", content: `Erro da IA: ${error.message}` }]),
-  });
-  const send = (content: string) => {
-    const next = [...messages, { role: "user" as const, content }];
-    setMessages(next);
-    chat.mutate({ messages: next.map(({ role, content: text }) => ({ role: role === "assistant" ? "assistant" as const : "user" as const, content: text })) });
-  };
-  return <section className="mb-6 rounded-3xl border border-teal-300/20 bg-slate-900/80 p-4 sm:p-6">
-    <div className="mb-3"><p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Assistente de operação</p><h2 className="mt-1 text-xl font-bold">Converse com a IA</h2><p className="mt-1 text-sm text-slate-300">Peça diagnósticos, explicações ou sugestões de alteração para o sistema.</p></div>
-    <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="360px" placeholder="Descreva o que você precisa..." suggestedPrompts={["Como posso melhorar a operação?", "Explique os módulos disponíveis."]} />
-  </section>;
 }
 
 function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total: number; active: number; onNavigate: (section: Section) => void; gpsStatus: "checking" | "granted" | "denied" | "unavailable"; requestGps: () => void }) {

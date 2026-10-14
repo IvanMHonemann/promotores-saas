@@ -244,29 +244,6 @@ export const appRouter = router({
   }),
 
   platform: router({
-    aiChat: platformProcedure
-      .input(z.object({
-        messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(12000) })).min(1).max(30),
-      }))
-      .mutation(async ({ input }) => {
-        const apiKey = process.env.OPENAI_API_KEY;
-        if (!apiKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "A IA ainda não está configurada no ambiente de produção." });
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify({
-            model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-            temperature: 0.2,
-            messages: [
-              { role: "system", content: "Você é a IA de suporte do Promotores SaaS. Responda em português brasileiro, seja objetiva e explique claramente o que deve ser alterado. Você pode diagnosticar a aplicação e propor mudanças, mas não invente que alterou arquivos se não tiver executado uma ferramenta." },
-              ...input.messages,
-            ],
-          }),
-        });
-        if (!response.ok) throw new TRPCError({ code: "BAD_GATEWAY", message: "O provedor de IA não respondeu corretamente." });
-        const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-        return { content: payload.choices?.[0]?.message?.content?.trim() || "A IA não retornou conteúdo." };
-      }),
     plans: router({
       list: platformProcedure.query(() => db.listSubscriptionPlans()),
       create: platformProcedure.input(z.object({

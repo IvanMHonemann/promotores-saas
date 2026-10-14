@@ -61,6 +61,10 @@ async function createApp() {
     }
   });
 
+  app.use("/api/trpc", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    next();
+  });
   app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
   app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
   const distPath = path.resolve(process.cwd(), "dist", "public");

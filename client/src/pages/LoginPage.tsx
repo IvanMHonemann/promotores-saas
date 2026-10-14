@@ -15,7 +15,15 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const login = trpc.auth.login.useMutation({
-    onSuccess: async () => { await utils.auth.me.invalidate(); toast.success("Login realizado"); window.location.href = "/"; },
+    onSuccess: async () => {
+      const user = await utils.auth.me.fetch();
+      if (!user) {
+        toast.error("A sessão não foi reconhecida. Recarregue a página e tente novamente.");
+        return;
+      }
+      toast.success("Login realizado");
+      window.location.href = "/";
+    },
     onError: (error) => toast.error(error.message || "Não foi possível entrar"),
   });
   const submit = (event: FormEvent) => { event.preventDefault(); login.mutate({ email: email.trim(), password }); };

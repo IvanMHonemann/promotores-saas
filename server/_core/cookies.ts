@@ -43,9 +43,9 @@ export function getSessionCookieOptions(
   return {
     httpOnly: true,
     path: "/",
-    // O preview da plataforma pode abrir o site em iframe HTTPS. Nesse caso,
-    // o cookie precisa aceitar contexto cross-site; no localhost mantemos Lax.
-    sameSite: allowCrossSite && isSecureRequest(req) ? "none" : "lax",
+    // O login e o painel usam o mesmo domínio. Lax evita que navegadores
+    // rejeitem o cookie quando o proxy não encaminha HTTPS de forma uniforme.
+    sameSite: "lax",
     secure: isSecureRequest(req),
   };
 }

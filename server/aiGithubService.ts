@@ -49,17 +49,25 @@ async function askGemini(prompt: string, files: Array<{ path: string; content: s
   const context = files.length ? files.map((file) => `\n--- ${file.path} ---\n${file.content}`).join("\n") : "(nenhum arquivo precisa ser consultado para esta conversa)";
   const conversation = history.slice(-12).map((message) => `${message.role === "user" ? "Usuário" : "Assistente"}: ${message.content}`).join("\n");
   const system = `Você é o assistente de IA e engenheiro de software do Promotores SaaS. Converse naturalmente e responda em português brasileiro, sempre levando em conta exatamente o que o usuário escreveu e o histórico fornecido. Você deve responder perguntas, explicar conceitos, sugerir ideias e ajudar o usuário mesmo quando ele não pedir nenhuma alteração no código.\n\nVocê pode alterar SOMENTE estes arquivos: ${editableFiles.join(", ")}.\nSe o usuário estiver apenas conversando ou fazendo uma pergunta, retorne changes vazio e responda diretamente, sem dizer que alguma alteração foi feita. Só inclua changes quando o usuário pedir explicitamente uma alteração no site ou no código. Quando for solicitada uma alteração, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conteúdo parcial. Não invente arquivos nem diga que publicou algo: o servidor criará um commit real depois de validar sua resposta. Preserve o funcionamento existente e não remova recursos sem pedido explícito.\n\nRetorne SOMENTE JSON válido no formato:\n{"reply":"resposta objetiva","changes":[{"path":"arquivo permitido","content":"conteúdo completo","reason":"motivo"}]}\n\nHistórico recente da conversa:\n${conversation || "(primeira mensagem)"}\n\nCódigo atual:${context}`;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
-    }),
-  });
-  const body = await response.json() as any;
-  if (!response.ok) throw new Error(`Gemini ${response.status}: ${body.error?.message || "resposta inválida"}`);
+  const requestBody = {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
+  };
+  let response: Response | null = null;
+  let body: any = null;
+  let lastError = "resposta inválida";
+  for (const model of ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"]) {
+    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    body = await response.json() as any;
+    if (response.ok) break;
+    lastError = body.error?.message || `HTTP ${response.status}`;
+  }
+  if (!response?.ok) throw new Error(`Gemini indisponível: ${lastError}`);
   const text = body.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("") || "";
   const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   try { return JSON.parse(cleaned) as { reply: string; changes: GeminiChange[] }; }

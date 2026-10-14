@@ -263,7 +263,14 @@ export const appRouter = router({
             ],
           }),
         });
-        if (!response.ok) throw new TRPCError({ code: "BAD_GATEWAY", message: "O provedor de IA não respondeu corretamente." });
+        if (!response.ok) {
+          const providerError = await response.text();
+          console.error("[aiChat] OpenAI request failed", response.status, providerError.slice(0, 500));
+          let message = `OpenAI retornou HTTP ${response.status}.`;
+          if (response.status === 401) message = "A chave de IA cadastrada é inválida ou foi revogada.";
+          if (response.status === 429) message = "A conta da OpenAI atingiu o limite ou está sem créditos disponíveis.";
+          throw new TRPCError({ code: "BAD_GATEWAY", message });
+        }
         const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
         return { content: payload.choices?.[0]?.message?.content?.trim() || "A IA não retornou conteúdo." };
       }),

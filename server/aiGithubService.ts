@@ -103,8 +103,13 @@ async function askGemini(prompt: string, files: Array<{ path: string; content: s
     if (start >= 0 && end > start) {
       try { return JSON.parse(cleaned.slice(start, end + 1)) as { reply: string; changes: GeminiChange[] }; } catch { /* tenta a resposta de fallback abaixo */ }
     }
-    if (cleaned && !/^an error\b/i.test(cleaned)) return { reply: cleaned, changes: [] };
-    throw new Error("O Gemini retornou uma resposta inválida. Tente enviar a pergunta novamente.");
+    if (cleaned) return {
+      reply: /^an error\b/i.test(cleaned)
+        ? "O Gemini respondeu com uma mensagem de indisponibilidade temporária. Tente enviar novamente em alguns segundos."
+        : cleaned,
+      changes: [],
+    };
+    return { reply: "Não consegui interpretar a resposta do Gemini. Tente enviar a mensagem novamente.", changes: [] };
   }
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, ArrowUpRight, Building2, CheckCircle2, ChevronRight, ClipboardCheck, LayoutDashboard, LocateFixed, LogOut, Menu, RefreshCw, UsersRound, CreditCard, UserRound, X } from "lucide-react";
+import { Activity, ArrowUpRight, Building2, CheckCircle2, ChevronRight, ClipboardCheck, LayoutDashboard, LocateFixed, LogOut, Menu, RefreshCw, UsersRound, CreditCard, UserRound, X, Sparkles } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,12 +11,13 @@ import TimeTrackingDemo from "./TimeTrackingDemo";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 
-type Section = "overview" | "companies" | "time";
+type Section = "overview" | "companies" | "time" | "ai-support";
 const adminLinks = [{ href: "/admin/usuarios", label: "Empresas e usuários", icon: UsersRound }, { href: "/admin/assinaturas", label: "Planos e assinaturas", icon: CreditCard }];
 const sections: { id: Section; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "Visão geral", icon: LayoutDashboard },
   { id: "companies", label: "Empresas", icon: Building2 },
   { id: "time", label: "Ponto eletrônico", icon: ClipboardCheck },
+  { id: "ai-support", label: "Suporte com IA", icon: Sparkles },
 ];
 
 export default function PlatformDashboard() {
@@ -28,7 +29,7 @@ export default function PlatformDashboard() {
   const total = companies.data?.length ?? 0;
   const active = companies.data?.filter((company) => company.active).length ?? 0;
   const selectSection = (value: Section) => { setSection(value); setMenuOpen(false); };
-  const title = section === "time" ? "Ponto eletrônico" : section === "companies" ? "Empresas" : "Visão geral";
+  const title = section === "time" ? "Ponto eletrônico" : section === "companies" ? "Empresas" : section === "ai-support" ? "Suporte com IA" : "Visão geral";
 
   useEffect(() => {
     if (!navigator.geolocation || !window.isSecureContext) { setGpsStatus("unavailable"); return; }
@@ -60,8 +61,8 @@ export default function PlatformDashboard() {
       {menuOpen && <button className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm lg:hidden" onClick={() => setMenuOpen(false)} aria-label="Fechar menu" />}
       <section className="min-w-0 flex-1 px-4 pb-20 pt-4 sm:px-7 sm:pt-6 lg:px-10 lg:pt-8">
         <header className="mb-7 flex items-center justify-between gap-3 border-b border-white/10 pb-5"><div className="flex min-w-0 items-center gap-3"><button className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-slate-200 hover:bg-white/10 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button><div className="min-w-0"><p className="hidden text-xs font-semibold uppercase tracking-[.18em] text-teal-300 sm:block">Promotores SaaS · Administração</p><h1 className="truncate text-2xl font-black tracking-tight sm:mt-1 sm:text-3xl">{title}</h1><p className="mt-1 hidden text-sm text-slate-300 sm:block">Acompanhe a operação da sua plataforma em um só lugar.</p></div></div><div className="flex shrink-0 items-center gap-2"><Button variant="outline" className="hidden gap-2 border-white/15 bg-white/[.04] text-sm text-slate-200 hover:bg-white/10 hover:text-white sm:flex" onClick={() => companies.refetch()}><RefreshCw className={`h-4 w-4 ${companies.isFetching ? "animate-spin" : ""}`} />Atualizar</Button><AccountMenuDropdown /></div></header>
-        <PersistentAIChat />
-        {section === "time" ? <TimeTrackingDemo /> : section === "companies" ? <CompaniesView data={companies.data} loading={companies.isLoading} /> : <Overview total={total} active={active} onNavigate={selectSection} gpsStatus={gpsStatus} requestGps={requestGps} />}
+        {section === "ai-support" ? <PersistentAIChat /> : null}
+        {section === "time" ? <TimeTrackingDemo /> : section === "companies" ? <CompaniesView data={companies.data} loading={companies.isLoading} /> : section === "overview" ? <Overview total={total} active={active} onNavigate={selectSection} gpsStatus={gpsStatus} requestGps={requestGps} /> : null}
       </section>
     </div>
   </main>;
@@ -85,7 +86,7 @@ function PersistentAIChat() {
     <p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · chat inteligente</p>
     <h2 className="mt-1 text-xl font-bold">Converse com a IA ou peça alterações no site</h2>
     <p className="mt-1 mb-3 text-sm text-slate-300">Faça perguntas normalmente. Quando você pedir uma mudança no site, a IA criará um commit real e a Vercel publicará a nova versão automaticamente.</p>
-    <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="360px" emptyStateMessage="Escreva uma pergunta ou peça uma alteração no site" placeholder="Digite sua pergunta ou pedido..." suggestedPrompts={["O que você consegue fazer?", "Explique como você aplica uma alteração.", "Melhore o texto da visão geral."]} />
+    <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="600px" emptyStateMessage="Escreva uma pergunta ou peça uma alteração no site" placeholder="Digite sua pergunta ou pedido..." suggestedPrompts={["O que você consegue fazer?", "Explique como você aplica uma alteração.", "Melhore o texto da visão geral."]} />
   </section>;
 }
 
@@ -125,8 +126,8 @@ function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total:
         <div className="grid gap-3 sm:grid-cols-2">
           <QuickAction icon={Building2} title="Empresas" text="Consulte os ambientes cadastrados." onClick={() => onNavigate("companies")} />
           <QuickAction icon={ClipboardCheck} title="Testar ponto eletrônico" text="Simule uma jornada completa." highlight onClick={() => onNavigate("time")} />
+          <QuickAction icon={Sparkles} title="Suporte com IA" text="Converse com a inteligência artificial da plataforma." onClick={() => onNavigate("ai-support")} />
           <QuickLink href="/admin/usuarios" icon={UserRound} title="Empresas e usuários" text="Crie empresas, acessos e defina permissões." />
-          <QuickLink href="/admin/assinaturas" icon={CreditCard} title="Planos e assinaturas" text="Configure planos, limites e status." />
         </div>
       </div>
     </div>

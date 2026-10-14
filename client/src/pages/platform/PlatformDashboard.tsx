@@ -68,8 +68,23 @@ export default function PlatformDashboard() {
   </main>;
 }
 
+const AI_CHAT_STORAGE_KEY = "promotores-saas:platform-ai-chat:v2";
+
 function PersistentAIChat() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const stored = window.localStorage.getItem(AI_CHAT_STORAGE_KEY);
+      const parsed = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed) ? parsed.filter((message): message is Message =>
+        message && ["user", "assistant", "system"].includes(message.role) && typeof message.content === "string",
+      ) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-40))); } catch { /* armazenamento pode estar bloqueado */ }
+  }, [messages]);
   const chat = trpc.platform.aiSupport.chat.useMutation({
     onSuccess: (result) => setMessages((current) => [...current, { role: "assistant", content: result.reply }]),
     onError: (error) => setMessages((current) => [...current, { role: "assistant", content: `Não foi possível aplicar o pedido: ${error.message}` }]),
@@ -79,13 +94,13 @@ function PersistentAIChat() {
     setMessages(nextMessages);
     chat.mutate({
       prompt,
-      history: nextMessages.filter((message): message is { role: "user" | "assistant"; content: string } => message.role !== "system").slice(-12),
+      history: nextMessages.filter((message): message is { role: "user" | "assistant"; content: string } => message.role !== "system").slice(-30),
     });
   };
   return <section className="mb-6 rounded-3xl border border-teal-300/20 bg-slate-900/80 p-4 sm:p-6">
     <p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · chat inteligente</p>
     <h2 className="mt-1 text-xl font-bold">Converse com a IA ou peça alterações no site</h2>
-    <p className="mt-1 mb-3 text-sm text-slate-300">Faça perguntas normalmente. Quando você pedir uma mudança no site, a IA criará um commit real e a Vercel publicará a nova versão automaticamente.</p>
+    <p className="mt-1 mb-3 text-sm text-slate-300">O histórico fica salvo neste dispositivo. Continue uma conversa ou tarefa anterior a qualquer momento; pedidos de mudança criam um commit real e acionam a Vercel automaticamente.</p>
     <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="600px" emptyStateMessage="Escreva uma pergunta ou peça uma alteração no site" placeholder="Digite sua pergunta ou pedido..." suggestedPrompts={["O que você consegue fazer?", "Explique como você aplica uma alteração.", "Melhore o texto da visão geral."]} />
   </section>;
 }

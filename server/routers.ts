@@ -249,7 +249,7 @@ export const appRouter = router({
         messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(12000) })).min(1).max(30),
       }))
       .mutation(async ({ input }) => {
-        const apiKey = process.env.OPENAI_API_KEY || process.env.promotores;
+        const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "A IA ainda não está configurada no ambiente de produção." });
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",

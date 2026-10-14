@@ -212,11 +212,27 @@ function PersistentAIChat() {
       history: nextMessages.filter((message): message is { role: "user" | "assistant"; content: string } => message.role !== "system").slice(-30),
     });
   };
-  return <section className="mb-6 rounded-3xl border border-teal-300/20 bg-slate-900/80 p-4 sm:p-6">
-    <p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · chat inteligente</p>
-    <h2 className="mt-1 text-xl font-bold">Converse com a IA ou peça alterações no site</h2>
-    <p className="mt-1 mb-3 text-sm text-slate-300">O histórico fica salvo neste dispositivo. Continue uma conversa ou tarefa anterior a qualquer momento; pedidos de mudança criam um commit real e acionam a Vercel automaticamente.</p>
-    <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="600px" emptyStateMessage="Escreva uma pergunta ou peça uma alteração no site" placeholder="Digite sua pergunta ou pedido..." suggestedPrompts={["O que você consegue fazer?", "Explique como você aplica uma alteração.", "Melhore o texto da visão geral."]} />
+  const runAction = (prompt: string) => send(prompt);
+  const health = [
+    { label: "Chat Gemini", value: chat.isPending ? "Analisando" : "Pronto", tone: chat.isPending ? "text-amber-300" : "text-emerald-300", icon: Sparkles },
+    { label: "Sessão", value: "Ativa", tone: "text-emerald-300", icon: CheckCircle },
+    { label: "Código", value: "Aguardando varredura", tone: "text-slate-300", icon: Terminal },
+    { label: "Deploy", value: "Via GitHub + Vercel", tone: "text-teal-300", icon: Activity },
+  ];
+  return <section className="mb-6 space-y-4">
+    <div className="rounded-3xl border border-teal-300/20 bg-slate-900/80 p-4 sm:p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · suporte inteligente</p><h2 className="mt-1 text-xl font-bold">Converse, investigue e continue tarefas</h2><p className="mt-1 text-sm text-slate-300">O histórico fica salvo neste dispositivo. A IA lê o código atual antes de propor alterações.</p></div>
+        <Badge className="border border-emerald-300/30 bg-emerald-300/10 text-emerald-200"><span className="mr-1.5 h-2 w-2 rounded-full bg-emerald-300" />Monitor ativo</Badge>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">{health.map(({ label, value, tone, icon: Icon }) => <div key={label} className="rounded-xl border border-white/10 bg-slate-950/40 p-3"><div className="flex items-center gap-2 text-xs text-slate-400"><Icon className={`h-3.5 w-3.5 ${tone}`} />{label}</div><p className={`mt-1 text-sm font-semibold ${tone}`}>{value}</p></div>)}</div>
+    </div>
+    <div className="grid gap-2 sm:grid-cols-3">
+      <Button variant="outline" disabled={chat.isPending} onClick={() => runAction("Faça uma varredura do código atual e procure erros, bugs, rotas quebradas e funções que não estejam funcionando. Liste os achados por prioridade e não altere nada ainda.")} className="h-auto justify-start gap-2 border-white/10 bg-slate-900/70 px-3 py-3 text-left text-slate-200 hover:bg-white/[.06] hover:text-white"><Search className="h-4 w-4 text-teal-300" /><span><b className="block text-sm">Procurar erros</b><small className="text-xs text-slate-400">Analisar código atual</small></span></Button>
+      <Button variant="outline" disabled={chat.isPending} onClick={() => runAction("Escaneie os arquivos principais do site, verifique problemas de segurança, bugs e integrações. Retorne um diagnóstico objetivo com sinalizadores OK, atenção ou crítico.")} className="h-auto justify-start gap-2 border-white/10 bg-slate-900/70 px-3 py-3 text-left text-slate-200 hover:bg-white/[.06] hover:text-white"><ShieldAlert className="h-4 w-4 text-amber-300" /><span><b className="block text-sm">Scanear código</b><small className="text-xs text-slate-400">Executar diagnóstico</small></span></Button>
+      <Button variant="outline" disabled={chat.isPending || !messages.length} onClick={() => runAction("Continue a tarefa anterior exatamente de onde paramos. Revise o histórico e confirme o próximo passo necessário.")} className="h-auto justify-start gap-2 border-white/10 bg-slate-900/70 px-3 py-3 text-left text-slate-200 hover:bg-white/[.06] hover:text-white"><RefreshCw className="h-4 w-4 text-violet-300" /><span><b className="block text-sm">Continuar tarefa</b><small className="text-xs text-slate-400">Usar histórico salvo</small></span></Button>
+    </div>
+    <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="380px" emptyStateMessage="Escreva uma pergunta ou peça uma alteração no site" placeholder="Digite sua pergunta ou pedido..." suggestedPrompts={["O que você consegue fazer?", "Procure erros no código atual.", "Continue a tarefa anterior."]} />
   </section>;
 }
 

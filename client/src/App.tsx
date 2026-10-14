@@ -146,6 +146,8 @@ function Router() {
       <Route path="/cadastro" component={SignupPage} />
       <Route path="/planos" component={PublicPlansPage} />
       <Route path="/produtos"><CommercialProtected><ProductsPage /></CommercialProtected></Route>
+      <Route path="/lojas/:storeId"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoreGalleryPage /></FeatureProtected></CommercialProtected></Route>
+      <Route path="/lojas"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoresPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lixeira"><CompanyAdminProtected><TrashPage /></CompanyAdminProtected></Route>
       <Route path="/ponto"><PromoterProtected><FeatureProtected featureKey="timeTracking"><PromoterClockPage /></FeatureProtected></PromoterProtected></Route>
       {/* Raiz: visitante → landing; autenticado → painel conforme o perfil */}

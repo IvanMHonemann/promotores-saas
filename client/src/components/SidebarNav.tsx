@@ -44,12 +44,13 @@ export function SidebarNav() {
             { href: "/ponto#historico", label: "Histórico e GPS", icon: CalendarDays },
             { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
           ] : []),
+          { href: "/lojas", label: "Lojas", icon: MapPin },
           { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
         ]
       : [
           { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
           ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: Package }] : []),
-          ...(role === "company_admin" ? [{ href: "/#roteiros", label: "Lojas", icon: MapPin }] : [{ href: "/#roteiros", label: "Roteiros", icon: ClipboardList }]),
+          ...(role === "company_admin" ? [{ href: "/lojas", label: "Lojas", icon: MapPin }] : [{ href: "/lojas", label: "Lojas", icon: MapPin }]),
           { href: "/#visitas", label: "Visitas", icon: CalendarDays },
           ...(role === "company_admin" ? [{ href: "/lixeira", label: "Lixeira", icon: Trash2 }] : []),
           ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: UsersRound }] : []),

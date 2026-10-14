@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const login = trpc.auth.login.useMutation({
     onSuccess: async () => {
+      await utils.auth.me.invalidate();
       const user = await utils.auth.me.fetch();
       if (!user) {
         toast.error("A sessão não foi reconhecida. Recarregue a página e tente novamente.");

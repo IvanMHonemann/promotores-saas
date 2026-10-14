@@ -118,6 +118,30 @@ export const appRouter = router({
         }
         const session = await memberAuth.createSession(principal);
         ctx.res.cookie(MEMBER_COOKIE_NAME, session.rawToken, { ...getSessionCookieOptions(ctx.req, true), maxAge: 30 * 24 * 60 * 60 * 1000 });
+        const user = principal.kind === "platform"
+          ? {
+              id: principal.account.id,
+              openId: `platform:${principal.account.id}`,
+              name: principal.account.userName,
+              email: principal.account.email,
+              loginMethod: "password",
+              role: "platform_admin" as const,
+              createdAt: principal.account.createdAt,
+              updatedAt: principal.account.updatedAt,
+              lastSignedIn: principal.account.createdAt,
+            }
+          : {
+              id: -principal.account.id,
+              openId: `member:${principal.account.id}`,
+              name: principal.account.userName,
+              email: principal.account.email,
+              loginMethod: "password",
+              role: memberAuth.normalizeMemberRole(String(principal.account.role)),
+              companyId: principal.account.companyId,
+              createdAt: principal.account.createdAt,
+              updatedAt: principal.account.updatedAt,
+              lastSignedIn: principal.account.createdAt,
+            };
         void auditFromCtx(ctx, {
           companyId: (principal as any).companyId ?? null,
           action: "login",
@@ -126,7 +150,7 @@ export const appRouter = router({
           description: `Login realizado: ${input.email}`,
           newData: { email: input.email, kind: session.kind },
         });
-        return { success: true, kind: session.kind } as const;
+        return { success: true, kind: session.kind, user } as const;
       }),
 
     recoverPassword: publicProcedure

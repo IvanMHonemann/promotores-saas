@@ -15,10 +15,11 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const login = trpc.auth.login.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       // O login já confirmou a criação do cookie. Ao trocar de conta, auth.me
       // pode ainda conter a identidade antiga no cache do React Query.
       localStorage.removeItem("promotores-saas-auth-user");
+      localStorage.setItem("promotores-saas-auth-user", JSON.stringify(result.user));
       utils.auth.me.setData(undefined, undefined);
       await utils.auth.me.invalidate();
       toast.success("Login realizado");

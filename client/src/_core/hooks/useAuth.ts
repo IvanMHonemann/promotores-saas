@@ -105,7 +105,7 @@ export function useAuth(options?: UseAuthOptions) {
     // deve prevalecer sobre o usuário local antigo em todas as instâncias do
     // hook. Em modo offline, auth.me fica undefined e o cache local continua
     // sendo usado normalmente.
-    const user = meQuery.data !== undefined ? meQuery.data : cachedUser;
+    const user = meQuery.data ?? cachedUser;
     // A sessão própria em cache é suficiente para abrir a aplicação enquanto
     // a confirmação online ocorre em segundo plano. Isso evita tela vazia ou
     // spinner prolongado em previews móveis e mantém o acesso offline-first.

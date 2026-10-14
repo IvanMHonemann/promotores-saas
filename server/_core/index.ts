@@ -89,6 +89,12 @@ app.post("/api/scheduled/database-maintenance", async (req, res) => {
 
   app.use(
     "/api/trpc",
+    (_req, res, next) => {
+      // auth.me depende do cookie atual e nunca pode ser servido por cache.
+      res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
+      res.setHeader("Vary", "Cookie");
+      next();
+    },
     createExpressMiddleware({
       router: appRouter,
       createContext,

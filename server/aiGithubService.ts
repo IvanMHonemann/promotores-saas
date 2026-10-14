@@ -90,7 +90,7 @@ async function askGemini(prompt: string, files: Array<{ path: string; content: s
 }
 
 export async function runPersistentGemini(prompt: string, history: ChatMessage[] = []) {
-  const asksForChange = /\b(altere|alterar|mude|mudar|modifique|modificar|adicione|adicionar|remova|remover|crie|criar|corrija|corrigir|implemente|implementar|troque|trocar|aplique|aplicar|faça|fazer)\b/i.test(prompt);
+  const asksForChange = /\b(altere|alterar|mude|mudar|modifique|modificar|adicione|adicionar|remova|remover|crie|criar|corrija|corrigir|implemente|implementar|troque|trocar|aplique|aplicar|faça|fazer|coloque|colocar|insira|inserir|inclua|incluir|disponibilize|disponibilizar|leve|levar|reative|reativar|restaure|restaurar)\b/i.test(prompt);
   const ref = asksForChange ? await github(`/repos/${OWNER}/${REPO}/git/ref/heads/${encodeURIComponent(BRANCH)}`) as GithubRef : null;
   const files = asksForChange ? await Promise.all(editableFiles.map((path) => readFile(path, BRANCH))) : [];
   const result = await askGemini(prompt, files, history);

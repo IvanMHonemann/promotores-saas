@@ -138,4 +138,101 @@ export const storePhotosRouter = router({
 
       return { id: photoId, expiresAt };
     }),
+
+  /** Recebe imagem em base64, faz upload no storage e cria o registro (com idempotência). */
+  uploadAndCreate: commercialFeatureProcedure("fieldOperations")
+    .input(z.object({
+      storeId: z.number().int().positive(),
+      visitId: z.number().int().positive().optional(),
+      capturedAt: z.string(),
+      latitude: z.number().optional(),
+      longitude: z.number().optional(),
+      accuracy: z.number().optional(),
+      locationStatus: z.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
+      imageBase64: z.string().min(100),
+      mimeType: z.string().default("image/jpeg"),
+      idempotencyKey: z.string().min(8).max(64),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+
+      const [store] = await db.select().from(stores).where(and(eq(stores.id, input.storeId), eq(stores.companyId, ctx.accountId))).limit(1);
+      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada." });
+
+      // Idempotência
+      const [existing] = await db
+        .select()
+        .from(storePhotos)
+        .where(and(eq(storePhotos.companyId, ctx.accountId), eq(storePhotos.idempotencyKey, input.idempotencyKey)))
+        .limit(1);
+      if (existing) return { id: existing.id, alreadyExists: true };
+
+      const { storagePut } = await import("../storage");
+      const buffer = Buffer.from(input.imageBase64, "base64");
+      const ext = input.mimeType.includes("png") ? "png" : "jpg";
+      const relKey = `store-photos/${ctx.accountId}/${input.storeId}/${input.idempotencyKey}.${ext}`;
+
+      let fileKey: string;
+      try {
+        const uploaded = await storagePut(relKey, buffer, input.mimeType);
+        fileKey = uploaded.key;
+      } catch (err) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao salvar a imagem. Verifique a configuração de armazenamento." });
+      }
+
+      const capturedAt = new Date(input.capturedAt);
+      const expiresAt = new Date(capturedAt.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1000);
+
+      const [result] = await db.insert(storePhotos).values({
+        companyId: ctx.accountId,
+        storeId: input.storeId,
+        promoterId: ctx.memberAccountId!,
+        visitId: input.visitId ?? null,
+        capturedAt,
+        latitude: input.latitude ?? null,
+        longitude: input.longitude ?? null,
+        accuracy: input.accuracy ?? null,
+        locationStatus: input.locationStatus ?? "unavailable",
+        fileKey,
+        mimeType: input.mimeType,
+        fileSize: buffer.length,
+        idempotencyKey: input.idempotencyKey,
+        uploadStatus: "uploaded",
+        expiresAt,
+      });
+
+      const photoId = Number((result as any).insertId);
+
+      await auditFromCtx(ctx, {
+        action: "create",
+        module: "store_photos",
+        entityType: "store_photo",
+        entityId: photoId,
+        entityLabel: store.name,
+        description: `Foto registrada na loja ${store.name}`,
+        newData: { storeId: input.storeId, capturedAt: input.capturedAt, hasGps: Boolean(input.latitude), fileSize: buffer.length },
+      });
+
+      return { id: photoId, expiresAt, alreadyExists: false };
+    }),
+
+  /** Retorna URL assinada temporária para visualizar uma foto. */
+  getImageUrl: commercialFeatureProcedure("fieldOperations")
+    .input(z.object({ photoId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+
+      const [photo] = await db
+        .select()
+        .from(storePhotos)
+        .where(and(eq(storePhotos.id, input.photoId), eq(storePhotos.companyId, ctx.accountId)))
+        .limit(1);
+      if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
+
+      const { storageGetSignedUrl } = await import("../storage");
+      const url = await storageGetSignedUrl(photo.fileKey);
+      return { url, expiresIn: 3600 };
+    }),
 });

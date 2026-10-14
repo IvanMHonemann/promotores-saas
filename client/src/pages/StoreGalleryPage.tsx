@@ -5,6 +5,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PhotoCapture } from "@/components/PhotoCapture";
 import { trpc } from "@/lib/trpc";
 
 function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promoterId: number; latitude: number | null }>) {
@@ -15,6 +16,16 @@ function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promo
     groups.get(day)!.push(photo);
   }
   return Array.from(groups.entries());
+}
+
+function PhotoThumb({ photoId }: { photoId: number }) {
+  const { data, isLoading } = trpc.storePhotos.getImageUrl.useQuery(
+    { photoId },
+    { staleTime: 50 * 60 * 1000, retry: 1 },
+  );
+  if (isLoading) return <div className="aspect-square animate-pulse bg-slate-800" />;
+  if (!data?.url) return <div className="aspect-square bg-slate-900 flex items-center justify-center text-slate-500"><Camera className="h-8 w-8" /></div>;
+  return <img src={data.url} alt="" className="aspect-square w-full object-cover" />;
 }
 
 export default function StoreGalleryPage() {
@@ -50,10 +61,13 @@ export default function StoreGalleryPage() {
               <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
             </Button>
           </Link>
-          <Button disabled className="bg-teal-500 text-slate-950">
-            <Camera className="mr-1 h-4 w-4" /> Tirar foto
-          </Button>
-          <span className="text-xs text-slate-400">(captura será habilitada na próxima etapa)</span>
+          {store && (
+            <PhotoCapture
+              storeId={storeId}
+              storeName={store.name}
+              onCaptured={() => void photos.refetch()}
+            />
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -84,9 +98,7 @@ export default function StoreGalleryPage() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {items.map((photo) => (
                 <Card key={photo.id} className="overflow-hidden border-white/10 bg-slate-950/40">
-                  <div className="aspect-square bg-slate-900 flex items-center justify-center text-slate-500">
-                    <Camera className="h-8 w-8" />
-                  </div>
+                  <PhotoThumb photoId={photo.id} />
                   <CardContent className="space-y-1 p-2">
                     <p className="text-xs text-slate-300">
                       {new Date(photo.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}

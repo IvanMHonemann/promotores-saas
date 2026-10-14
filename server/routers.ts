@@ -16,6 +16,7 @@ import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listA
 import { reverseGeocodeAddress } from "./geocoding";
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
+import { runPersistentGemini } from "./aiGithubService";
 
 const emptyToNull = (value?: string) => value?.trim() || null;
 const companyUserRole = z.enum(["company_admin", "supervisor", "promoter"]);
@@ -244,6 +245,11 @@ export const appRouter = router({
   }),
 
   platform: router({
+    aiSupport: router({
+      chat: platformProcedure
+        .input(z.object({ prompt: z.string().trim().min(1).max(12000) }))
+        .mutation(async ({ input }) => runPersistentGemini(input.prompt)),
+    }),
     plans: router({
       list: platformProcedure.query(() => db.listSubscriptionPlans()),
       create: platformProcedure.input(z.object({

@@ -584,3 +584,34 @@ export type InsertSystemSetting = typeof systemSettings.$inferInsert;
 
 // Note: payment-related tables from original (payments, paymentEvents) can be re-added from Asaas module if needed.
 // Trash and other utility tables can be extended as required.
+
+/** Fotos de lojas / evidências de merchandising (retenção de 60 dias). */
+export const storePhotos = mysqlTable("store_photos", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
+  storeId: int("storeId").notNull().references(() => stores.id, { onDelete: "restrict" }),
+  promoterId: int("promoterId").notNull().references(() => memberAccounts.id, { onDelete: "restrict" }),
+  visitId: int("visitId").references(() => visits.id, { onDelete: "set null" }),
+  capturedAt: timestamp("capturedAt").notNull(),
+  latitude: double("latitude"),
+  longitude: double("longitude"),
+  accuracy: double("accuracy"),
+  locationStatus: mysqlEnum("locationStatus", ["success", "permission_denied", "unavailable", "timeout", "error"]).default("unavailable"),
+  fileKey: varchar("fileKey", { length: 512 }).notNull(),
+  thumbnailKey: varchar("thumbnailKey", { length: 512 }),
+  mimeType: varchar("mimeType", { length: 100 }),
+  fileSize: int("fileSize"),
+  idempotencyKey: varchar("idempotencyKey", { length: 64 }),
+  uploadStatus: mysqlEnum("uploadStatus", ["pending", "uploaded", "failed"]).default("pending").notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyStoreDateIdx: index("store_photos_company_store_date_idx").on(table.companyId, table.storeId, table.capturedAt),
+  companyPromoterIdx: index("store_photos_company_promoter_idx").on(table.companyId, table.promoterId),
+  expiresIdx: index("store_photos_expires_idx").on(table.expiresAt),
+  companyIdempotencyUnique: uniqueIndex("store_photos_company_idempotency_unique").on(table.companyId, table.idempotencyKey),
+}));
+
+export type StorePhoto = typeof storePhotos.$inferSelect;
+export type InsertStorePhoto = typeof storePhotos.$inferInsert;

@@ -1,5 +1,6 @@
 import { MEMBER_COOKIE_NAME } from "@shared/const";
 import { timeTrackingRouter } from "./modules/timeTracking";
+import { storePhotosRouter } from "./modules/storePhotos";
 import { z } from "zod";
 import { parse as parseCookie } from "cookie";
 import { TRPCError } from "@trpc/server";
@@ -34,6 +35,7 @@ const clientInput = z.object({
 export const appRouter = router({
   system: systemRouter,
   timeTracking: timeTrackingRouter,
+  storePhotos: storePhotosRouter,
   entitlements: router({
     mine: companyBillingProcedure.query(({ ctx }) => {
       if (!ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário da empresa não encontrado." });

@@ -16,14 +16,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const login = trpc.auth.login.useMutation({
     onSuccess: async () => {
+      // O login já confirmou a criação do cookie. Ao trocar de conta, auth.me
+      // pode ainda conter a identidade antiga no cache do React Query.
+      localStorage.removeItem("promotores-saas-auth-user");
+      utils.auth.me.setData(undefined, undefined);
       await utils.auth.me.invalidate();
-      const user = await utils.auth.me.fetch();
-      if (!user) {
-        toast.error("A sessão não foi reconhecida. Recarregue a página e tente novamente.");
-        return;
-      }
       toast.success("Login realizado");
-      window.location.href = "/";
+      window.location.replace("/");
     },
     onError: (error) => toast.error(error.message || "Não foi possível entrar"),
   });

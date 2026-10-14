@@ -68,7 +68,9 @@ export function resolveEntitlements(input: {
   const roleCeiling = new Set(ROLE_FEATURE_CEILING[input.role]);
   const roleDefaults = new Set(ROLE_FEATURE_DEFAULTS[input.role]);
   return Object.fromEntries(ENTITLEMENT_KEYS.map((key) => {
-    const companyEnabled = input.companyOverrides?.[key] ?? plan.has(key);
+    // O dashboard básico é a porta de entrada de toda conta válida; somente
+    // os módulos comerciais adicionais ficam sujeitos ao plano da empresa.
+    const companyEnabled = key === "dashboard" ? true : (input.companyOverrides?.[key] ?? plan.has(key));
     const mode = input.memberOverrides?.[key] ?? "inherit";
     const requested = mode === "allow" ? true : mode === "deny" ? false : roleDefaults.has(key);
     return [key, Boolean(companyEnabled && roleCeiling.has(key) && requested)];

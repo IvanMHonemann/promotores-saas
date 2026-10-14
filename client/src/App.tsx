@@ -27,6 +27,7 @@ import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import type { EntitlementKey } from "@shared/entitlements";
+import { useEffect } from "react";
 
 function RedirectHome() { if (typeof window !== "undefined") window.location.replace("/"); return <LoadingScreen />; }
 
@@ -61,16 +62,68 @@ function PromoterProtected({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function isUnauthorizedError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const anyErr = error as { message?: string; data?: { code?: string } };
+  const msg = String(anyErr.message || "").toLowerCase();
+  return anyErr.data?.code === "UNAUTHORIZED" || msg.includes("please login") || msg.includes("10001");
+}
+
 function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey; children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-  const access = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
+  const { user, loading, logout } = useAuth();
+  const access = trpc.entitlements.mine.useQuery(undefined, {
+    enabled: Boolean(user && user.role !== "platform_admin"),
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (access.error && isUnauthorizedError(access.error)) {
+      // Sessão do cookie não reconhecida no servidor (comum em preview/Vercel).
+      // Limpa cache local e manda para login em vez de mostrar "módulo não liberado".
+      localStorage.removeItem("promotores-saas-auth-user");
+      window.location.replace("/login");
+    }
+  }, [access.error]);
+
   if (loading) return <LoadingScreen />;
   if (!user) return <RedirectHome />;
   if (user.role === "platform_admin") return <>{children}</>;
+
+  // Dashboard é a porta de entrada: se o usuário está autenticado no cliente,
+  // permite o acesso mesmo se a checagem de entitlement falhar por rede/sessão.
+  if (featureKey === "dashboard" && user) {
+    if (access.isLoading) return <LoadingScreen />;
+    if (access.error && isUnauthorizedError(access.error)) return <LoadingScreen />;
+    return <>{children}</>;
+  }
+
   if (access.isLoading) return <LoadingScreen />;
+
+  if (access.error && isUnauthorizedError(access.error)) {
+    return <LoadingScreen />;
+  }
+
   if (!access.data?.effective[featureKey]) {
     if (featureKey === "timeTracking" && access.data) return <RedirectHome />;
-    return <main className="flex min-h-screen items-center justify-center bg-slate-950 p-5 text-slate-100"><section className="max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-6 text-center"><h1 className="text-xl font-bold">Módulo não liberado</h1><p className="mt-2 text-sm text-slate-300">{access.error?.message || "Este módulo não está habilitado para sua empresa ou para seu perfil."}</p>{user.role === "company_admin" ? <a href="/upgrade" className="mt-5 inline-flex rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white">Ver planos disponíveis</a> : <p className="mt-4 text-xs text-slate-400">Peça ao administrador da empresa para revisar seu acesso.</p>}</section></main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 p-5 text-slate-100">
+        <section className="max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-6 text-center">
+          <h1 className="text-xl font-bold">Módulo não liberado</h1>
+          <p className="mt-2 text-sm text-slate-300">
+            {access.error?.message && !isUnauthorizedError(access.error)
+              ? access.error.message
+              : "Este módulo não está habilitado para sua empresa ou para seu perfil."}
+          </p>
+          {user.role === "company_admin" ? (
+            <a href="/upgrade" className="mt-5 inline-flex rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white">
+              Ver planos disponíveis
+            </a>
+          ) : (
+            <p className="mt-4 text-xs text-slate-400">Peça ao administrador da empresa para revisar seu acesso.</p>
+          )}
+        </section>
+      </main>
+    );
   }
   return <>{children}</>;
 }

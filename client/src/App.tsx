@@ -169,7 +169,15 @@ function Router() {
         {() => {
           localStorage.removeItem("promotores-saas-auth-user");
           localStorage.removeItem("promotores-saas-session-token");
-          window.location.replace("/login");
+          if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.getRegistrations().then((regs) => {
+              regs.forEach((r) => r.unregister());
+            });
+          }
+          if ("caches" in window) {
+            caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
+          }
+          setTimeout(() => window.location.replace("/login"), 300);
           return null;
         }}
       </Route>

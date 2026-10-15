@@ -31,30 +31,13 @@ export function PwaStatusBar() {
   return (
     <>
       <div
-        className={`fixed top-3 right-3 z-40 flex max-w-[min(100vw-1.5rem,18rem)] items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur print:hidden ${
+        className={`fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow backdrop-blur print:hidden ${
           isOnline ? "border-white/15 bg-slate-900/90 text-slate-100" : "border-rose-300/40 bg-slate-900/90 text-rose-200"
         }`}
       >
         {isOnline ? <Wifi className="h-3.5 w-3.5 shrink-0" /> : <WifiOff className="h-3.5 w-3.5 shrink-0" />}
         <span>{isOnline ? "Online" : "Offline — dados locais"}</span>
-        {canInstall && !isInstalling && (
-          <Button
-            size="sm"
-            className="ml-1 h-7 gap-1 rounded-full bg-teal-400 px-2.5 text-[10px] font-bold text-slate-950 hover:bg-teal-300"
-            onClick={() => void install()}
-          >
-            <Download className="h-3.5 w-3.5" /> Instalar aplicativo
-          </Button>
-        )}
-        {isIosInstallable && !canInstall && (
-          <Button
-            size="sm"
-            className="ml-1 h-7 gap-1 rounded-full bg-teal-400 px-2.5 text-[10px] font-bold text-slate-950 hover:bg-teal-300"
-            onClick={() => setShowIosGuide(true)}
-          >
-            <Download className="h-3.5 w-3.5" /> Instalar no iPhone
-          </Button>
-        )}
+        
       </div>
 
       {/* Overlay de instalação com barra real de progresso */}

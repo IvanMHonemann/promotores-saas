@@ -34,7 +34,7 @@ export default function StoresPage() {
         {stores.isLoading && <p className="text-sm text-slate-300">Carregando lojas...</p>}
         {stores.isError && (
           <p className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">
-            Não foi possível carregar as lojas.
+            Não foi possível carregar as lojas. {stores.error?.message || ""}
           </p>
         )}
 

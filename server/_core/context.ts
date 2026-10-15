@@ -31,6 +31,9 @@ export async function createContext(opts: CreateExpressContextOptions): Promise<
   const headerToken = String(opts.req.headers["x-session-token"] || opts.req.headers["authorization"]?.toString().replace(/^Bearer\s+/i, "") || "").trim();
   const queryToken = String(opts.req.query?.token || "").trim();
   const sessionToken = cookies[MEMBER_COOKIE_NAME] || headerToken || queryToken || "";
+  if (!sessionToken) {
+    console.log("[auth] no session token received", { hasCookie: Boolean(cookies[MEMBER_COOKIE_NAME]), hasHeader: Boolean(headerToken), hasQuery: Boolean(queryToken) });
+  }
   if (sessionToken) {
     const platformAdmin = await getPlatformAdminBySessionToken(sessionToken);
     if (platformAdmin) {

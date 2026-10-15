@@ -308,7 +308,7 @@ export default function StoreGalleryPage() {
                         <Badge variant="outline" className="h-5 text-[10px] text-slate-400">Sem GPS</Badge>
                       )}
                       <div className="flex gap-1">
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-slate-300" onClick={() => document.querySelector<HTMLButtonElement>('button:has(svg.lucide-camera)')?.click()}>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-slate-300" onClick={() => { singleDelete.mutate({ photoId: photo.id }); setTimeout(() => document.querySelector<HTMLInputElement>('input[type=file]')?.click(), 300); }}>
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
                         <Button size="sm" variant="ghost" className="h-7 px-2 text-rose-300" onClick={() => singleDelete.mutate({ photoId: photo.id })} disabled={singleDelete.isPending}>

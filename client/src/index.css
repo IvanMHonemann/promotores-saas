@@ -337,3 +337,18 @@
 .saas-page button.bg-red-700 { color: #ffffff; }
 .saas-page button.bg-red-700:hover,
 .saas-page .border-red-300 { border-color: rgb(94 234 212 / 0.45); }
+
+
+/* Ícones nativos (calendário, etc.) claros no tema escuro */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+select {
+  color-scheme: dark;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.2);
+  opacity: 0.8;
+  cursor: pointer;
+}

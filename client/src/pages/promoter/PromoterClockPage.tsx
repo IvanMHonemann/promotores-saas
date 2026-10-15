@@ -92,7 +92,7 @@ export default function PromoterClockPage() {
   const register = trpc.timeTracking.registerEvent.useMutation({
     onSuccess: () => {
       setPunchError("");
-      toast.success("Marcação registrada. Voltando ao painel inicial.");
+      toast.success("Marcação registrada.");
       void utils.timeTracking.myHistory.invalidate();
       void utils.timeTracking.shiftStatus.invalidate();
     },
@@ -126,7 +126,6 @@ export default function PromoterClockPage() {
         deviceInfo: navigator.userAgent,
         idempotencyKey: `${eventType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       });
-      navigate("/");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Não foi possível registrar o ponto.";
       setPunchError(message);

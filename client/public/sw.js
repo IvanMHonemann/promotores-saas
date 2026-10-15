@@ -24,6 +24,7 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   // APIs sempre usam a rede; nunca reutilizamos respostas antigas da API.
   if (url.pathname.startsWith("/api")) return;
+  if (url.pathname === "/reset" || url.pathname === "/login") return;
 
   // Navegações para rotas da SPA sempre vêm do deployment atual. Uma shell
   // antiga pode referenciar um bundle removido e deixar a página totalmente branca.

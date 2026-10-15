@@ -167,18 +167,18 @@ function Router() {
       {/* Rotas públicas do Promotores SaaS */}
       <Route path="/reset">
         {() => {
-          localStorage.removeItem("promotores-saas-auth-user");
-          localStorage.removeItem("promotores-saas-session-token");
-          if ("serviceWorker" in navigator) {
-            navigator.serviceWorker.getRegistrations().then((regs) => {
-              regs.forEach((r) => r.unregister());
-            });
-          }
-          if ("caches" in window) {
-            caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)));
-          }
-          setTimeout(() => window.location.replace("/login"), 300);
-          return null;
+          try {
+            localStorage.removeItem("promotores-saas-auth-user");
+            localStorage.removeItem("promotores-saas-session-token");
+            if ("serviceWorker" in navigator) {
+              navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister())).catch(() => undefined);
+            }
+            if ("caches" in window) {
+              caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).catch(() => undefined);
+            }
+          } catch (e) { /* ignore */ }
+          setTimeout(() => { window.location.href = "/login"; }, 400);
+          return <main className="flex min-h-screen items-center justify-center bg-[#07111f] text-white"><p>Limpando cache... redirecionando</p></main>;
         }}
       </Route>
       <Route path="/login" component={LoginPage} />

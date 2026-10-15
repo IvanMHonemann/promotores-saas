@@ -184,15 +184,6 @@ export default function StoreGalleryPage() {
       a.click();
     }
     toast.success("Fotos baixadas.");
-    return;
-      }
-    }
-    // Fallback: abre a primeira ou orienta download
-    toast.info("Seu navegador não permite compartilhar vários arquivos de uma vez. Baixando a primeira.");
-    const a = document.createElement("a");
-    a.href = urls[0];
-    a.download = `foto-${store?.name || "loja"}.jpg`;
-    a.click();
   };
 
   const deleteSelected = () => {

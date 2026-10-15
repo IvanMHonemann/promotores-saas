@@ -1,54 +1,50 @@
-# Plataforma SaaS de Gestão de Promotores de Merchandising
+# Promotores SaaS
 
-Sistema multiempresa para controle de ponto com geolocalização, roteirização, visitas, checklists e gestão de equipes de merchandising.
+Sistema multiempresa para controle de ponto, visitas, fotos de loja e gestão de promotores de merchandising.
 
-## Stack
+## Requisitos
 
-- Node.js 22, Express e tRPC
-- React 19, Vite, Tailwind e PWA
-- MySQL com Drizzle ORM
-- Autenticação própria com sessões hasheadas (platform admin separado)
-- Auditoria append-only
-- Preparado para Asaas e storage S3-compatible
-- Offline com Dexie
+- Node.js 20+
+- pnpm
+- MySQL ou TiDB (compatível com MySQL)
 
-## Funcionalidades Principais (Base Implementada)
-
-- Multi-tenancy rigoroso
-- Roles: platform_admin, company_admin, supervisor, promoter
-- Registro de ponto com GPS (server time + device time + accuracy)
-- Solicitações de correção rastreáveis
-- Schema completo para clientes, marcas, lojas, roteiros, visitas, checklists e evidências
-- Planos e limites adaptados
-- Auditoria
-
-## Executar
+## Instalação
 
 ```bash
+git clone https://github.com/IvanMHonemann/promotores-saas.git
+cd promotores-saas
 corepack enable
 pnpm install --frozen-lockfile
 cp config/env.example .env
-# Configure EXTERNAL_DATABASE_URL, JWT_SECRET, SCHEDULE_SECRET
-pnpm run check
+# Edite o .env com suas credenciais
 pnpm run build
 pnpm start
 ```
 
-## Banco de Dados
+## Variáveis obrigatórias
 
-O schema novo está em `drizzle/schema.ts`. Gere migrações controladas:
+Veja `config/env.example`. As principais:
+
+- `EXTERNAL_DATABASE_URL` — conexão MySQL/TiDB
+- `JWT_SECRET` — segredo das sessões
+- `SCHEDULE_SECRET` — segredo do cron de manutenção
+- `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` — storage de fotos (R2/S3)
+
+## Banco de dados
+
+As migrações estão em `drizzle/`. Para aplicar:
 
 ```bash
-pnpm drizzle-kit generate
 pnpm drizzle-kit migrate
 ```
 
-## Avisos Importantes
+## Deploy
 
-- O módulo de ponto é uma base técnica. Valide requisitos legais brasileiros (Portaria 671 e correlatas) antes da comercialização.
-- Código legado de extintores foi parcialmente substituído; limpeza completa e testes devem ser continuados.
-- Consulte `DIAGNOSTICO_E_PLANO.md` para detalhes da transformação.
+O `vercel.json` está configurado. Conecte o repositório na Vercel e defina as variáveis de ambiente.
 
-## Variáveis de Ambiente Principais
+## Estrutura
 
-Veja `config/env.example`. Nunca versione segredos.
+- `client/` — frontend React
+- `server/` — API tRPC e Express
+- `drizzle/` — schema e migrações
+- `shared/` — tipos e constantes compartilhados

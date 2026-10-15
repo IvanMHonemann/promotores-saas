@@ -56,7 +56,14 @@ export async function runScheduledMaintenance() {
     const [memberSessions] = await connection.query("DELETE FROM member_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
     const [platformSessions] = await connection.query("DELETE FROM platform_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
     const removed = await pruneBackups(directory, retentionDays);
-    return { file, storageKey: stored.key, tables: tables.length, checksum, removed, cleaned: { trash: (trash as any).affectedRows, memberSessions: (memberSessions as any).affectedRows, platformSessions: (platformSessions as any).affectedRows } };
+    let expiredPhotos = { deleted: 0, errors: 0 };
+    try {
+      const { expireOldStorePhotos } = await import("./modules/storePhotos");
+      expiredPhotos = await expireOldStorePhotos();
+    } catch (e) {
+      console.warn("[maintenance] expire photos failed", e);
+    }
+    return { file, storageKey: stored.key, tables: tables.length, checksum, removed, cleaned: { trash: (trash as any).affectedRows, memberSessions: (memberSessions as any).affectedRows, platformSessions: (platformSessions as any).affectedRows }, expiredPhotos };
   } finally {
     await connection.end();
   }

@@ -235,4 +235,110 @@ export const storePhotosRouter = router({
       const url = await storageGetSignedUrl(photo.fileKey);
       return { url, expiresIn: 3600 };
     }),
+
+  /** Exclui uma foto (com auditoria). */
+  delete: commercialFeatureProcedure("fieldOperations")
+    .input(z.object({ photoId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+
+      const [photo] = await db
+        .select()
+        .from(storePhotos)
+        .where(and(eq(storePhotos.id, input.photoId), eq(storePhotos.companyId, ctx.accountId)))
+        .limit(1);
+      if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
+
+      // Promotor só pode excluir as próprias; admin/supervisor podem excluir da empresa
+      if (ctx.user.role === "promoter" && photo.promoterId !== ctx.memberAccountId) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Você só pode excluir suas próprias fotos." });
+      }
+
+      const { storageDelete } = await import("../storage");
+      if (photo.fileKey) await storageDelete(photo.fileKey);
+      if (photo.thumbnailKey) await storageDelete(photo.thumbnailKey);
+
+      await db.delete(storePhotos).where(eq(storePhotos.id, photo.id));
+
+      await auditFromCtx(ctx, {
+        action: "delete",
+        module: "store_photos",
+        entityType: "store_photo",
+        entityId: photo.id,
+        entityLabel: `Foto #${photo.id}`,
+        description: "Foto excluída manualmente",
+        oldData: { storeId: photo.storeId, capturedAt: photo.capturedAt },
+      });
+
+      return { ok: true };
+    }),
+
+  /** Exclui várias fotos de uma vez. */
+  bulkDelete: commercialFeatureProcedure("fieldOperations")
+    .input(z.object({ photoIds: z.array(z.number().int().positive()).min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+
+      const photos = await db
+        .select()
+        .from(storePhotos)
+        .where(and(eq(storePhotos.companyId, ctx.accountId), sql`${storePhotos.id} IN (${sql.join(input.photoIds.map(id => sql`${id}`), sql`, `)})`));
+
+      if (photos.length === 0) return { deleted: 0 };
+
+      const { storageDelete } = await import("../storage");
+      let deleted = 0;
+      for (const photo of photos) {
+        if (ctx.user.role === "promoter" && photo.promoterId !== ctx.memberAccountId) continue;
+        if (photo.fileKey) await storageDelete(photo.fileKey);
+        if (photo.thumbnailKey) await storageDelete(photo.thumbnailKey);
+        await db.delete(storePhotos).where(eq(storePhotos.id, photo.id));
+        deleted++;
+      }
+
+      await auditFromCtx(ctx, {
+        action: "delete",
+        module: "store_photos",
+        entityType: "store_photo",
+        description: `${deleted} foto(s) excluída(s) em massa`,
+        newData: { count: deleted },
+      });
+
+      return { deleted };
+    }),
 });
+
+
+/** Exclui fotos expiradas (retenção de 60 dias). Chamado pela rotina agendada. */
+export async function expireOldStorePhotos(): Promise<{ deleted: number; errors: number }> {
+  const db = await getDb();
+  if (!db) return { deleted: 0, errors: 0 };
+
+  const now = new Date();
+  const expired = await db
+    .select()
+    .from(storePhotos)
+    .where(lte(storePhotos.expiresAt, now))
+    .limit(200);
+
+  if (expired.length === 0) return { deleted: 0, errors: 0 };
+
+  const { storageDelete } = await import("../storage");
+  let deleted = 0;
+  let errors = 0;
+
+  for (const photo of expired) {
+    try {
+      if (photo.fileKey) await storageDelete(photo.fileKey);
+      if (photo.thumbnailKey) await storageDelete(photo.thumbnailKey);
+      await db.delete(storePhotos).where(eq(storePhotos.id, photo.id));
+      deleted++;
+    } catch {
+      errors++;
+    }
+  }
+
+  return { deleted, errors };
+}

@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "node:crypto";
 
@@ -54,4 +54,17 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
   if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
   if (s3.publicBaseUrl) return `${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
   return getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
+}
+
+
+export async function storageDelete(relKey: string): Promise<boolean> {
+  const key = normalizeKey(relKey);
+  const s3 = getS3Client();
+  if (!s3) return false;
+  try {
+    await s3.client.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
 }

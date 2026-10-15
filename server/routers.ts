@@ -902,7 +902,7 @@ export const appRouter = router({
 
 
   products: router({
-    list: companyBillingProcedure.input(z.object({ search: z.string().optional(), expiry: z.enum(["all", "expired", "near"]).optional() }).optional()).query(({ ctx, input }) => db.listInventoryProducts(ctx.accountId, input?.search, input?.expiry)),
+    list: companyBillingProcedure.input(z.object({ search: z.string().optional(), expiry: z.enum(["all", "expired", "near"]).optional(), storeId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listInventoryProducts(ctx.accountId, input?.search, input?.expiry, input?.storeId)),
     create: companyBillingProcedure.input(z.object({ productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(async ({ ctx, input }) => {
       const product = await db.createInventoryProduct({ ...input, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate as any, price: input.price });
       void auditFromCtx(ctx, { action: "create", module: "products", entityType: "product", entityId: product?.id, entityLabel: input.description, description: `Cadastrou produto: ${input.description}`, newData: input });

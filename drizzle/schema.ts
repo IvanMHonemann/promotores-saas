@@ -277,6 +277,7 @@ export const inventoryProducts = mysqlTable("inventory_products", {
   quantity: int("quantity").notNull().default(0),
   expirationDate: date("expirationDate").notNull(),
   price: decimal("price", { precision: 12, scale: 2 }).notNull().default("0.00"),
+  storeId: int("storeId"),
   createdByMemberId: int("createdByMemberId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

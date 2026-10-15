@@ -83,6 +83,7 @@ export async function ensureOwnerScopeColumns() {
     await pool.query("ALTER TABLE `clients` ADD COLUMN `createdByUserId` int NULL").catch(() => undefined);
     await pool.query("ALTER TABLE `service_orders` ADD COLUMN `createdByUserId` int NULL").catch(() => undefined);
     await pool.query("ALTER TABLE `extinguishers` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => undefined);
+    await pool.query("ALTER TABLE `inventory_products` ADD COLUMN `storeId` int NULL").catch(() => undefined);
     await pool.query("ALTER TABLE `clients` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => undefined);
     ownerScopeReady = true;
   } catch (err) {
@@ -1698,7 +1699,7 @@ export async function updateOperationalVisit(companyId: number, id: number, data
 }
 
 /* Inventário e validade de produtos isolados por empresa. */
-export async function listInventoryProducts(companyId: number, search?: string, expiry?: "all" | "expired" | "near") {
+export async function listInventoryProducts(companyId: number, search?: string, expiry?: "all" | "expired" | "near", storeId?: number) {
   const database = await getDb();
   if (!database) return [];
   const company = requireAccountId(companyId);
@@ -1706,6 +1707,7 @@ export async function listInventoryProducts(companyId: number, search?: string, 
   if (search?.trim()) conditions.push(or(like(inventoryProducts.productCode, `%${search.trim()}%`), like(inventoryProducts.description, `%${search.trim()}%`))!);
   if (expiry === "expired") conditions.push(sql`${inventoryProducts.expirationDate} < CURRENT_DATE()`);
   if (expiry === "near") conditions.push(sql`${inventoryProducts.expirationDate} >= CURRENT_DATE() AND ${inventoryProducts.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)`);
+  if (storeId) conditions.push(eq(inventoryProducts.storeId, storeId));
   return database.select().from(inventoryProducts).where(and(...conditions)).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
 }
 export async function createInventoryProduct(input: typeof inventoryProducts.$inferInsert) {

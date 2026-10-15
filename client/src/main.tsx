@@ -6,6 +6,7 @@ import superjson from "superjson";
 import App from "./App";
 import "./index.css";
 
+const FORCE_RELOAD_VERSION = "v5";
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     let refreshing = false;

@@ -352,3 +352,13 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   opacity: 0.8;
   cursor: pointer;
 }
+
+/* Força ícones claros em todo o app */
+svg { color: inherit; }
+button svg, a svg, [class*="icon"] svg { color: currentColor; }
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.5);
+  opacity: 1;
+}

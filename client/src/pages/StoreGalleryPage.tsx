@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
-import { ArrowLeft, Camera, MapPin, Share2, Trash2, FileText, CheckSquare, X, RotateCcw } from "lucide-react";
+import { ArrowLeft, Camera, MapPin, Share2, Trash2, FileText, CheckSquare, X, Pencil, MessageCircle } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promo
   return Array.from(groups.entries());
 }
 
-function PhotoThumb({ photoId, selected, onToggle, onExpand }: { photoId: number; selected: boolean; onToggle: () => void; onExpand: (url: string) => void }) {
+function PhotoThumb({ photoId, selected, selectMode, onToggle, onExpand }: { photoId: number; selected: boolean; selectMode: boolean; onToggle: () => void; onExpand: (url: string) => void }) {
   const { data, isLoading } = trpc.storePhotos.getImageUrl.useQuery(
     { photoId },
     { staleTime: 50 * 60 * 1000, retry: 1 },
@@ -30,16 +30,35 @@ function PhotoThumb({ photoId, selected, onToggle, onExpand }: { photoId: number
       {isLoading && <div className="aspect-square animate-pulse bg-slate-800" />}
       {!isLoading && !data?.url && (
         <div className="aspect-square bg-slate-900 flex items-center justify-center text-slate-500">
-          <Camera className="h-8 w-8" />
+          <Camera className="h-8 w-8 text-white" />
         </div>
       )}
       {data?.url && <img src={data.url} alt="" className="aspect-square w-full object-cover" />}
-      {selected && (
-        <div className="absolute inset-0 bg-teal-500/30 flex items-center justify-center" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
-          <CheckSquare className="h-8 w-8 text-white drop-shadow" />
-        </div>
+      {selectMode && (
+        <button
+          type="button"
+          className={`absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-md border-2 shadow ${selected ? "border-teal-300 bg-teal-400 text-slate-950" : "border-white/80 bg-black/50 text-white"}`}
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          aria-label={selected ? "Desmarcar" : "Selecionar"}
+        >
+          {selected ? <CheckSquare className="h-4 w-4" /> : <span className="h-3 w-3" />}
+        </button>
       )}
     </div>
+  );
+}
+
+
+function WhatsAppButton({ photoId, storeName }: { photoId: number; storeName?: string }) {
+  const { data } = trpc.storePhotos.getImageUrl.useQuery({ photoId }, { staleTime: 50 * 60 * 1000, retry: 1 });
+  return (
+    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={() => {
+      const text = `Foto da loja ${storeName || ""}`;
+      const url = data?.url ? ` ${data.url}` : "";
+      window.open(`https://wa.me/?text=${encodeURIComponent(text + url)}`, "_blank");
+    }}>
+      <MessageCircle className="h-3.5 w-3.5 text-emerald-300" />
+    </Button>
   );
 }
 
@@ -291,7 +310,8 @@ export default function StoreGalleryPage() {
                   <PhotoThumb
                     photoId={photo.id}
                     selected={selected.has(photo.id)}
-                    onToggle={() => selectMode && toggle(photo.id)}
+                    selectMode={selectMode}
+                    onToggle={() => toggle(photo.id)}
                     onExpand={(url) => setLightbox({ id: photo.id, url })}
                   />
                   <CardContent className="space-y-2 p-2">
@@ -308,11 +328,12 @@ export default function StoreGalleryPage() {
                         <Badge variant="outline" className="h-5 text-[10px] text-slate-400">Sem GPS</Badge>
                       )}
                       <div className="flex gap-1">
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-slate-300" onClick={() => { singleDelete.mutate({ photoId: photo.id }); setTimeout(() => document.querySelector<HTMLInputElement>('input[type=file]')?.click(), 300); }}>
-                          <RotateCcw className="h-3.5 w-3.5" />
+                        <WhatsAppButton photoId={photo.id} storeName={store?.name} />
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-white" title="Refazer" onClick={() => { singleDelete.mutate({ photoId: photo.id }); setTimeout(() => document.querySelector<HTMLInputElement>('input[type=file]')?.click(), 300); }}>
+                          <Pencil className="h-3.5 w-3.5 text-white" />
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-rose-300" onClick={() => singleDelete.mutate({ photoId: photo.id })} disabled={singleDelete.isPending}>
-                          <Trash2 className="h-3.5 w-3.5" />
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-rose-300" title="Excluir" onClick={() => singleDelete.mutate({ photoId: photo.id })} disabled={singleDelete.isPending}>
+                          <Trash2 className="h-3.5 w-3.5 text-rose-300" />
                         </Button>
                       </div>
                     </div>

@@ -304,6 +304,9 @@ export default function StoreGalleryPage() {
               <Button size="sm" className="bg-teal-400 text-slate-950" onClick={shareSelected} disabled={selected.size === 0}>
                 <Share2 className="mr-1 h-3.5 w-3.5" /> Compartilhar
               </Button>
+              <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={downloadSelected} disabled={selected.size === 0}>
+                <Download className="mr-1 h-3.5 w-3.5" /> Baixar
+              </Button>
               <Button size="sm" variant="outline" className="border-rose-300/40 text-rose-200" onClick={deleteSelected} disabled={selected.size === 0 || bulkDelete.isPending}>
                 <Trash2 className="mr-1 h-3.5 w-3.5" /> Excluir
               </Button>

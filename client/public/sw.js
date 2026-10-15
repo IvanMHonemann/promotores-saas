@@ -1,4 +1,4 @@
-const CACHE_NAME = "promotores-saas-shell-v5";
+const CACHE_NAME = "promotores-saas-shell-v6";
 const APP_SHELL = ["/", "/manifest.json", "/promotores-icon.svg"];
 
 self.addEventListener("install", (event) => {

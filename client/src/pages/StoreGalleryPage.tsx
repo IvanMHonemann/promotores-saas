@@ -23,13 +23,21 @@ async function downloadImage(url: string, name: string) {
     window.open(url, "_blank");
   }
 }
-async function shareToWhatsApp(url: string, name: string) {
+async function shareToWhatsApp(url: string, name: string, photoId?: number) {
   try {
-    const blob = await fetch(url).then((r) => r.blob());
-    const file = new File([blob], `foto-${name || "loja"}.jpg`, { type: blob.type || "image/jpeg" });
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: `Foto - ${name}` });
-      return;
+    if (photoId) {
+      const res = await fetch(`/api/trpc/storePhotos.getImageData?input=${encodeURIComponent(JSON.stringify({ photoId }))}`);
+      const data = await res.json();
+      const base64 = data?.result?.data?.base64;
+      if (base64) {
+        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: "image/jpeg" });
+        const file = new File([blob], `foto-${name || "loja"}.jpg`, { type: "image/jpeg" });
+        if (navigator.share && navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: `Foto - ${name}` });
+          return;
+        }
+      }
     }
   } catch (e: any) {
     if (e?.name === "AbortError") return;
@@ -162,10 +170,11 @@ export default function StoreGalleryPage() {
     const files: File[] = [];
     for (const id of ids) {
       try {
-        const res = await utils.storePhotos.getImageUrl.fetch({ photoId: id });
-        if (!res?.url) continue;
-        const blob = await fetch(res.url).then((r) => r.blob());
-        files.push(new File([blob], `foto-${id}.jpg`, { type: "image/jpeg" }));
+        const res = await utils.storePhotos.getImageData.fetch({ photoId: id });
+        if (!res?.base64) continue;
+        const bytes = Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: res.mime || "image/jpeg" });
+        files.push(new File([blob], `foto-${id}.jpg`, { type: res.mime || "image/jpeg" }));
       } catch { /* ignore */ }
     }
     return files;

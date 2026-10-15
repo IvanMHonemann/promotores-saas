@@ -301,6 +301,23 @@ export const storePhotosRouter = router({
       return { url, expiresIn: 3600 };
     }),
 
+  /** Retorna a imagem como base64 para compartilhamento sem CORS. */
+  getImageData: commercialFeatureProcedure("fieldOperations")
+    .input(z.object({ photoId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+      const [photo] = await db.select().from(storePhotos).where(and(eq(storePhotos.id, input.photoId), eq(storePhotos.companyId, ctx.accountId))).limit(1);
+      if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
+      const { storageGetSignedUrl } = await import("../storage");
+      const url = await storageGetSignedUrl(photo.fileKey);
+      const res = await fetch(url);
+      if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível obter a imagem." });
+      const buf = await res.arrayBuffer();
+      const base64 = Buffer.from(buf).toString("base64");
+      return { base64, mime: res.headers.get("content-type") || "image/jpeg" };
+    }),
+
   /** Exclui uma foto (com auditoria). */
   delete: commercialFeatureProcedure("fieldOperations")
     .input(z.object({ photoId: z.number().int().positive() }))

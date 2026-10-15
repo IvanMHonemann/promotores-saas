@@ -155,24 +155,32 @@ export async function runAutoClockOut() {
   let closed = 0;
   let notified = 0;
   try {
-    // Último evento de cada membro que não é clock_out e é de dia anterior
+    // Fecha jornadas abertas: de dia anterior OU cujo horário de saída configurado já passou hoje
     const [rows]: any = await connection.query(`
       SELECT te.companyId, te.memberAccountId, te.eventType, te.serverTime,
-             ma.userName, ma.email, c.name AS companyName
+             ma.userName, ma.email, c.name AS companyName,
+             pp.workEndTime
       FROM time_events te
       INNER JOIN member_accounts ma ON ma.id = te.memberAccountId
       INNER JOIN companies c ON c.id = te.companyId
+      LEFT JOIN promoter_profiles pp ON pp.memberAccountId = te.memberAccountId
       WHERE te.id IN (
         SELECT MAX(id) FROM time_events GROUP BY memberAccountId, companyId
       )
       AND te.eventType != 'clock_out'
-      AND DATE(te.serverTime) < CURDATE()
+      AND (
+        DATE(te.serverTime) < CURDATE()
+        OR (pp.workEndTime IS NOT NULL AND TIME(NOW()) >= pp.workEndTime AND DATE(te.serverTime) = CURDATE())
+      )
     `);
     for (const row of rows || []) {
+      const reason = row.workEndTime && new Date(row.serverTime).toDateString() === new Date().toDateString()
+        ? `Saída automática: horário configurado ${row.workEndTime}`
+        : 'Saída automática: jornada aberta de dia anterior';
       await connection.query(
         `INSERT INTO time_events (companyId, memberAccountId, eventType, notes, synced)
-         VALUES (?, ?, 'clock_out', 'Saída automática: jornada aberta de dia anterior', 1)`,
-        [row.companyId, row.memberAccountId]
+         VALUES (?, ?, 'clock_out', ?, 1)`,
+        [row.companyId, row.memberAccountId, reason]
       );
       closed += 1;
       // Avisa admins da empresa

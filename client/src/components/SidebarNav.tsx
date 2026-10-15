@@ -70,7 +70,7 @@ export function SidebarNav() {
           { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
           ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: Package }] : []),
           ...(role === "company_admin" ? [{ href: "/lojas", label: "Lojas", icon: MapPin }] : [{ href: "/lojas", label: "Lojas", icon: MapPin }]),
-          { href: "/#visitas", label: "Visitas", icon: CalendarDays },
+          { href: "/#roteiros", label: "Roteiros", icon: CalendarDays },
           ...(role === "company_admin" ? [{ href: "/lixeira", label: "Lixeira", icon: Trash2 }] : []),
           ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: UsersRound }] : []),
           ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList }] : []),

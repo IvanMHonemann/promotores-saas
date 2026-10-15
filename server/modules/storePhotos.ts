@@ -24,21 +24,33 @@ export const storePhotosRouter = router({
         conditions.push(eq(stores.city, input.city));
       }
 
-      const rows = await db
-        .select({
-          id: stores.id,
-          name: stores.name,
-          city: stores.city,
-          state: stores.state,
-          address: stores.address,
-          photoCount: sql<number>`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded')`,
-          lastActivity: sql<string | null>`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId})`,
-        })
-        .from(stores)
-        .where(and(...conditions))
-        .orderBy(desc(stores.updatedAt));
-
-      return rows;
+      try {
+        const rows = await db
+          .select({
+            id: stores.id,
+            name: stores.name,
+            city: stores.city,
+            state: stores.state,
+            address: stores.address,
+            photoCount: sql<number>`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded')`,
+            lastActivity: sql<string | null>`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId})`,
+          })
+          .from(stores)
+          .where(and(...conditions))
+          .orderBy(desc(stores.updatedAt));
+        return rows;
+      } catch (err: any) {
+        // Se a tabela store_photos ainda não existe, lista só as lojas.
+        if (String(err?.message || "").includes("store_photos") || err?.code === "ER_NO_SUCH_TABLE") {
+          const rows = await db
+            .select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address })
+            .from(stores)
+            .where(and(...conditions))
+            .orderBy(desc(stores.updatedAt));
+          return rows.map((r) => ({ ...r, photoCount: 0, lastActivity: null }));
+        }
+        throw err;
+      }
     }),
 
   /** Lista fotos de uma loja, agrupáveis por data no cliente. */

@@ -45,7 +45,10 @@ function PhotoThumb({ photoId, selected, selectMode, hasGps, time, onToggle, onE
     { staleTime: 50 * 60 * 1000, retry: 1 },
   );
   return (
-    <div className="relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-slate-800" onClick={() => data?.url && onExpand(data.url)}>
+    <div className="relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-slate-800" onClick={() => {
+        if (selectMode) { onToggle(); return; }
+        if (data?.url) onExpand(data.url);
+      }}>
       {isLoading && <div className="absolute inset-0 animate-pulse bg-slate-800" />}
       {!isLoading && !data?.url && (
         <div className="absolute inset-0 flex items-center justify-center text-slate-500">
@@ -148,31 +151,40 @@ export default function StoreGalleryPage() {
 
   const shareSelected = async () => {
     if (selected.size === 0) return toast.info("Selecione ao menos uma foto.");
-    const ids = Array.from(selected);
-    // Busca URLs e tenta Web Share API com arquivos
-    const urls: string[] = [];
-    for (const id of ids.slice(0, 10)) {
+    const ids = Array.from(selected).slice(0, 10);
+    toast.info("Preparando fotos...");
+    const files: File[] = [];
+    for (const id of ids) {
       try {
         const res = await utils.storePhotos.getImageUrl.fetch({ photoId: id });
-        if (res?.url) urls.push(res.url);
+        if (!res?.url) continue;
+        const blob = await fetch(res.url).then((r) => r.blob());
+        files.push(new File([blob], `foto-${id}.jpg`, { type: "image/jpeg" }));
       } catch { /* ignore */ }
     }
-    if (urls.length === 0) return toast.error("Não foi possível obter as imagens para compartilhar.");
+    if (files.length === 0) return toast.error("Não foi possível obter as imagens.");
 
-    if (navigator.share && navigator.canShare) {
+    if (navigator.share) {
       try {
-        const files: File[] = [];
-        for (const url of urls) {
-          const blob = await fetch(url).then((r) => r.blob());
-          files.push(new File([blob], `foto-${Date.now()}.jpg`, { type: "image/jpeg" }));
-        }
-        if (navigator.canShare({ files })) {
+        if (!navigator.canShare || navigator.canShare({ files })) {
           await navigator.share({ files, title: `Fotos - ${store?.name || "Loja"}` });
           toast.success("Compartilhamento iniciado.");
           return;
         }
       } catch (e: any) {
         if (e?.name === "AbortError") return;
+        toast.error("Não foi possível compartilhar. Baixando as fotos.");
+      }
+    }
+    // Fallback: baixa cada foto
+    for (const file of files) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(file);
+      a.download = file.name;
+      a.click();
+    }
+    toast.success("Fotos baixadas.");
+    return;
       }
     }
     // Fallback: abre a primeira ou orienta download

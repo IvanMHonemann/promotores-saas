@@ -20,8 +20,9 @@ export default function LoginPage() {
       // pode ainda conter a identidade antiga no cache do React Query.
       localStorage.removeItem("promotores-saas-auth-user");
       localStorage.setItem("promotores-saas-auth-user", JSON.stringify(result.user));
-      if ((result as any).sessionToken) {
-        localStorage.setItem("promotores-saas-session-token", (result as any).sessionToken);
+      const token = (result as any).sessionToken;
+      if (token && typeof token === "string" && token.length > 10) {
+        localStorage.setItem("promotores-saas-session-token", token);
       }
       utils.auth.me.setData(undefined, undefined);
       await utils.auth.me.invalidate();

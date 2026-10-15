@@ -34,8 +34,7 @@ async function shareToWhatsApp(url: string, name: string) {
   } catch (e: any) {
     if (e?.name === "AbortError") return;
   }
-  const text = encodeURIComponent(`Foto - ${name}`);
-  window.open(`https://wa.me/?text=${text}%20${encodeURIComponent(url)}`, "_blank");
+  toast.error("Compartilhamento não disponível neste dispositivo.");
 }
 
 function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promoterId: number; latitude: number | null }>) {
@@ -176,20 +175,7 @@ export default function StoreGalleryPage() {
     if (selected.size === 0) return toast.info("Selecione ao menos uma foto.");
     toast.info("Preparando fotos...");
     const files = await getSelectedFiles();
-    if (files.length === 0) {
-      const ids = Array.from(selected).slice(0, 5);
-      const urls: string[] = [];
-      for (const id of ids) {
-        try {
-          const res = await utils.storePhotos.getImageUrl.fetch({ photoId: id });
-          if (res?.url) urls.push(res.url);
-        } catch { /* ignore */ }
-      }
-      if (urls.length === 0) return toast.error("Não foi possível obter as imagens.");
-      const text = encodeURIComponent("Fotos - " + (store?.name || "Loja") + "\n" + urls.join("\n"));
-      window.open("https://wa.me/?text=" + text, "_blank");
-      return;
-    }
+    if (files.length === 0) return toast.error("Não foi possível obter as imagens.");
     if (navigator.share && navigator.canShare?.({ files })) {
       try {
         await navigator.share({ files, title: "Fotos - " + (store?.name || "Loja") });
@@ -199,7 +185,7 @@ export default function StoreGalleryPage() {
         if (e?.name === "AbortError") return;
       }
     }
-    toast.error("Compartilhamento não disponível. Use o botão Baixar.");
+    toast.error("Compartilhamento não disponível neste dispositivo. Use o botão Baixar.");
   };
 
   const downloadSelected = async () => {

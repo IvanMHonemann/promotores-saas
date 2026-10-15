@@ -264,6 +264,7 @@ export default function StoreGalleryPage() {
 
         {selectMode && (
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 p-3">
+            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectPeriod}>Todas</Button>
             <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectToday}>Hoje</Button>
             <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectPeriod}>Todas</Button>
             <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={() => setSelected(new Set())}>Limpar</Button>
@@ -364,8 +365,8 @@ export default function StoreGalleryPage() {
       {lightbox && (() => {
         const photo = allPhotos.find((p) => p.id === lightbox.id);
         return (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-3 sm:items-center" onClick={() => setLightbox(null)}>
-            <div className="w-full max-w-sm rounded-2xl bg-slate-900 p-3 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-4" onClick={() => setLightbox(null)}>
+            <div className="w-full max-w-md rounded-2xl bg-slate-900 p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-xs text-slate-400">Ao tocar em uma foto</p>
                 <button className="text-white" onClick={() => setLightbox(null)}><X className="h-5 w-5" /></button>

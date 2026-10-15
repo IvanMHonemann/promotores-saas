@@ -373,3 +373,15 @@ input[type="date"]::-webkit-inner-spin-button,
 input[type="time"]::-webkit-inner-spin-button {
   filter: invert(1) brightness(2);
 }
+
+
+/* Ícones de calendário forçados claros */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="week"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(3) contrast(1.2) !important;
+  opacity: 1 !important;
+  background: transparent !important;
+}

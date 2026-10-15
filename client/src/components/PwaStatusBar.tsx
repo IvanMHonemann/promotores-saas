@@ -31,8 +31,8 @@ export function PwaStatusBar() {
   return (
     <>
       <div
-        className={`fixed bottom-3 left-3 z-[70] flex max-w-[min(100vw-1.5rem,22rem)] flex-wrap items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur print:hidden ${
-          isOnline ? "border-emerald-200 bg-emerald-50/95 text-emerald-800" : "border-red-200 bg-red-50/95 text-red-800"
+        className={`fixed top-3 right-3 z-40 flex max-w-[min(100vw-1.5rem,18rem)] items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-lg backdrop-blur print:hidden ${
+          isOnline ? "border-white/15 bg-slate-900/90 text-slate-100" : "border-rose-300/40 bg-slate-900/90 text-rose-200"
         }`}
       >
         {isOnline ? <Wifi className="h-3.5 w-3.5 shrink-0" /> : <WifiOff className="h-3.5 w-3.5 shrink-0" />}
@@ -40,7 +40,7 @@ export function PwaStatusBar() {
         {canInstall && !isInstalling && (
           <Button
             size="sm"
-            className="ml-1 h-8 gap-1 rounded-full bg-red-600 px-3 text-xs font-extrabold text-white shadow-md shadow-red-600/30 hover:bg-red-700"
+            className="ml-1 h-7 gap-1 rounded-full bg-teal-400 px-2.5 text-[10px] font-bold text-slate-950 hover:bg-teal-300"
             onClick={() => void install()}
           >
             <Download className="h-3.5 w-3.5" /> Instalar aplicativo
@@ -49,7 +49,7 @@ export function PwaStatusBar() {
         {isIosInstallable && !canInstall && (
           <Button
             size="sm"
-            className="ml-1 h-8 gap-1 rounded-full bg-red-600 px-3 text-xs font-extrabold text-white shadow-md shadow-red-600/30 hover:bg-red-700"
+            className="ml-1 h-7 gap-1 rounded-full bg-teal-400 px-2.5 text-[10px] font-bold text-slate-950 hover:bg-teal-300"
             onClick={() => setShowIosGuide(true)}
           >
             <Download className="h-3.5 w-3.5" /> Instalar no iPhone

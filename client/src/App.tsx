@@ -165,6 +165,13 @@ function Router() {
   return (
     <Switch>
       {/* Rotas públicas do Promotores SaaS */}
+      <Route path="/reset">
+        {() => {
+          localStorage.removeItem("promotores-saas-auth-user");
+          window.location.replace("/login");
+          return null;
+        }}
+      </Route>
       <Route path="/login" component={LoginPage} />
       <Route path="/cadastro" component={SignupPage} />
       <Route path="/planos" component={PublicPlansPage} />

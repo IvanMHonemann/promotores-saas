@@ -217,12 +217,25 @@ export default function StoreGalleryPage() {
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-white" />
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-white" />
-          <Button size="sm" variant="outline" className="border-white/15" onClick={generateReport}>
-            <FileText className="mr-1 h-4 w-4" /> Relatório
-          </Button>
+        <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
+          <p className="mb-3 text-sm font-semibold text-white">Filtrar fotos por período</p>
+          <p className="mb-3 text-xs text-slate-400">Escolha uma data inicial e uma data final para ver só as fotos desse intervalo. Deixe em branco para ver todas.</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="block text-xs text-slate-300">
+              De
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 block rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white" />
+            </label>
+            <label className="block text-xs text-slate-300">
+              Até
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 block rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white" />
+            </label>
+            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={() => { setFrom(""); setTo(""); }}>
+              Limpar filtro
+            </Button>
+            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={generateReport}>
+              <FileText className="mr-1 h-4 w-4" /> Gerar relatório
+            </Button>
+          </div>
         </div>
 
         {photos.isLoading && <p className="text-sm text-slate-300">Carregando fotos...</p>}

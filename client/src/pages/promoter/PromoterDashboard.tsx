@@ -132,17 +132,21 @@ export default function PromoterDashboard() {
             <p className="mt-3 text-sm text-amber-100/70">Nenhum produto perto do vencimento nos próximos 30 dias.</p>
           )}
           <div className="mt-3 space-y-2">
-            {(alerts.data || []).slice(0, 5).map((item: any) => (
-              <div key={item.extinguisher?.id || item.id} className="flex items-center justify-between rounded-xl border border-amber-300/20 bg-slate-950/60 px-3 py-2.5">
-                <div>
-                  <p className="text-sm font-semibold text-white">{item.extinguisher?.typeModel || item.typeModel || "Produto"}</p>
-                  <p className="text-xs text-slate-400">{item.client?.name || "Sem cliente"}</p>
+            {(alerts.data || []).slice(0, 5).map((item: any) => {
+              const exp = item.expirationDate ? new Date(item.expirationDate) : null;
+              const days = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+              return (
+                <div key={item.id} className="flex items-center justify-between rounded-xl border border-amber-300/20 bg-slate-950/60 px-3 py-2.5">
+                  <div>
+                    <p className="text-sm font-semibold text-white">{item.description || item.productCode || "Produto"}</p>
+                    <p className="text-xs text-slate-400">{item.productCode || ""}</p>
+                  </div>
+                  <span className="rounded-lg bg-amber-400/20 px-2 py-1 text-xs font-bold text-amber-200">
+                    {days == null ? "—" : days < 0 ? "Vencido" : `${days}d`}
+                  </span>
                 </div>
-                <span className="rounded-lg bg-amber-400/20 px-2 py-1 text-xs font-bold text-amber-200">
-                  {item.extinguisher?.expirationDate ? new Date(item.extinguisher.expirationDate).toLocaleDateString("pt-BR") : "—"}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 

@@ -5,6 +5,20 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 
+
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=pt-BR`);
+    if (!res.ok) return "Local não disponível";
+    const data = await res.json();
+    const addr = data.address || {};
+    const parts = [addr.road, addr.suburb || addr.neighbourhood, addr.city || addr.town || addr.village, addr.state].filter(Boolean);
+    return parts.slice(0, 3).join(", ") || data.display_name || "Local não disponível";
+  } catch {
+    return "Local não disponível";
+  }
+}
+
 type Props = {
   storeId: number;
   storeName: string;
@@ -112,7 +126,7 @@ export function PhotoCapture({ storeId, storeName, visitId, onCaptured }: Props)
       const dateStr = now.toLocaleDateString("pt-BR");
       const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
       const promoter = user?.name || user?.email || "Promotor";
-      const location = gps ? `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : "Local não disponível";
+      const location = gps ? await reverseGeocode(gps.lat, gps.lng) : "Local não disponível";
       const lines = [
         `Promotor: ${promoter}`,
         `Local: ${location}`,

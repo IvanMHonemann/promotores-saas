@@ -173,28 +173,76 @@ export default function PromoterClockPage() {
     );
   }
 
+  const events = history.data || [];
+  const byType = Object.fromEntries(events.map((e: any) => [e.eventType, e]));
+  const nextEvent: EventType = !byType.clock_in ? "clock_in" : !byType.break_start ? "break_start" : !byType.break_end ? "break_end" : "clock_out";
+  const nextLabel: Record<EventType, string> = {
+    clock_in: "Bater entrada",
+    break_start: "Iniciar intervalo",
+    break_end: "Encerrar intervalo",
+    clock_out: "Bater saída",
+  };
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const dateStr = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }).toUpperCase();
+  const entryTime = byType.clock_in ? new Date(byType.clock_in.deviceTime || byType.clock_in.serverTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : null;
+
   return (
-    <DashboardLayout title="Bater ponto" description="Registre sua jornada, consulte o histórico e solicite correções.">
+    <DashboardLayout title="Ponto" description="">
       <div className="space-y-4">
-        <div id="ponto" className="scroll-mt-6">
-          <Card className="border-teal-300/25">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <Clock3 className="h-5 w-5 text-teal-300" /> Registrar ponto e GPS
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-3">
-                <Button onClick={() => void handlePunch("clock_in")} disabled={loading || register.isPending}>Entrada</Button>
-                <Button onClick={() => void handlePunch("break_start")} disabled={loading || register.isPending} variant="outline">Início intervalo</Button>
-                <Button onClick={() => void handlePunch("break_end")} disabled={loading || register.isPending} variant="outline">Fim intervalo</Button>
-                <Button onClick={() => void handlePunch("clock_out")} disabled={loading || register.isPending}>Saída</Button>
-              </div>
-              <p className="mt-3 text-sm text-slate-300">Cada marcação exige localização GPS válida e registra o endereço do aparelho.</p>
-              {punchError && <p className="mt-3 rounded-lg border border-rose-300/30 bg-rose-300/10 p-3 text-sm font-semibold text-rose-200">{punchError}</p>}
-            </CardContent>
-          </Card>
+        <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-5">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <span>{dateStr}</span>
+            <span className="flex items-center gap-1.5 text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Online</span>
+          </div>
+          <p className="mt-3 text-5xl font-black tracking-tight text-white">{timeStr}</p>
+          <div className="mt-3 flex items-center gap-2">
+            <Badge className="bg-teal-400/15 text-teal-200">Jornada em andamento</Badge>
+            {entryTime && <span className="text-sm text-slate-400">Entrada às {entryTime}</span>}
+          </div>
         </div>
+
+        <Button onClick={() => void handlePunch(nextEvent)} disabled={loading || register.isPending} className="h-14 w-full rounded-2xl bg-teal-400 text-lg font-bold text-slate-950 hover:bg-teal-300">
+          <Clock className="mr-2 h-5 w-5" /> {loading ? "Registrando..." : nextLabel[nextEvent]}
+        </Button>
+        <p className="text-center text-xs text-slate-500">Próxima marcação: {nextLabel[nextEvent].toLowerCase()}</p>
+        {punchError && <p className="rounded-xl border border-rose-300/30 bg-rose-300/10 p-3 text-sm text-rose-100">{punchError}</p>}
+
+        <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
+          <p className="mb-4 text-sm font-semibold text-white">Marcações de hoje</p>
+          <div className="space-y-0">
+            {(["clock_in", "break_start", "break_end", "clock_out"] as EventType[]).map((type, i, arr) => {
+              const ev = byType[type];
+              const done = Boolean(ev);
+              const isNext = type === nextEvent;
+              const time = ev ? new Date(ev.deviceTime || ev.serverTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--";
+              return (
+                <div key={type} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className={`grid h-6 w-6 place-items-center rounded-full border-2 ${done ? "border-teal-400 bg-teal-400 text-slate-950" : isNext ? "border-teal-400 text-teal-300" : "border-slate-600 text-slate-500"}`}>
+                      {done ? <CheckCircle2 className="h-4 w-4" /> : <span className="h-2 w-2 rounded-full bg-current" />}
+                    </div>
+                    {i < arr.length - 1 && <div className={`h-8 w-0.5 ${done ? "bg-teal-400/50" : "bg-slate-700"}`} />}
+                  </div>
+                  <div className="flex flex-1 items-start justify-between pb-2">
+                    <div>
+                      <p className={`text-sm font-semibold ${done || isNext ? "text-white" : "text-slate-500"}`}>{labels[type]}</p>
+                      <p className="text-xs text-slate-500">{done ? "Registrada no aparelho" : isNext ? "Próxima marcação" : "Aguardando"}</p>
+                    </div>
+                    <span className={`text-sm font-semibold ${done ? "text-teal-300" : "text-slate-600"}`}>{time}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex items-start gap-2 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Se esquecer de bater a saída, ela é registrada automaticamente às 18:00.</span>
+        </div>
+
+        <a href="#correcao" className="block text-center text-sm font-semibold text-teal-300 hover:underline">Solicitar correção de horário →</a>
 
         <div id="historico" className="scroll-mt-6">
           <Card>

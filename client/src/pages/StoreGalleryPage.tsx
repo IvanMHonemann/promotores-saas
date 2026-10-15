@@ -257,11 +257,11 @@ export default function StoreGalleryPage() {
           <div className="mt-3 grid grid-cols-2 gap-3">
             <label className="block text-xs font-medium text-slate-300">
               De
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white [color-scheme:dark]" />
             </label>
             <label className="block text-xs font-medium text-slate-300">
               Até
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white [color-scheme:dark]" />
             </label>
           </div>
         </div>

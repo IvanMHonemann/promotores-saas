@@ -145,3 +145,57 @@ export async function runExpirationEmailAlerts(daysAhead = 30) {
   }
   return { companies: companies.length, emails };
 }
+
+
+/** Fecha jornadas abertas de dias anteriores e avisa o admin da empresa. */
+export async function runAutoClockOut() {
+  const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!url) return { closed: 0, notified: 0 };
+  const connection = await mysql.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 10000 });
+  let closed = 0;
+  let notified = 0;
+  try {
+    // Último evento de cada membro que não é clock_out e é de dia anterior
+    const [rows]: any = await connection.query(`
+      SELECT te.companyId, te.memberAccountId, te.eventType, te.serverTime,
+             ma.userName, ma.email, c.name AS companyName
+      FROM time_events te
+      INNER JOIN member_accounts ma ON ma.id = te.memberAccountId
+      INNER JOIN companies c ON c.id = te.companyId
+      WHERE te.id IN (
+        SELECT MAX(id) FROM time_events GROUP BY memberAccountId, companyId
+      )
+      AND te.eventType != 'clock_out'
+      AND DATE(te.serverTime) < CURDATE()
+    `);
+    for (const row of rows || []) {
+      await connection.query(
+        `INSERT INTO time_events (companyId, memberAccountId, eventType, notes, synced)
+         VALUES (?, ?, 'clock_out', 'Saída automática: jornada aberta de dia anterior', 1)`,
+        [row.companyId, row.memberAccountId]
+      );
+      closed += 1;
+      // Avisa admins da empresa
+      const [admins]: any = await connection.query(
+        `SELECT email, userName FROM member_accounts WHERE companyId = ? AND role = 'company_admin' AND active = 1 AND email IS NOT NULL`,
+        [row.companyId]
+      );
+      for (const admin of admins || []) {
+        try {
+          const { emailService } = await import("./email");
+          if (emailService?.send) {
+            await emailService.send({
+              to: admin.email,
+              subject: `Saída automática: ${row.userName}`,
+              text: `A jornada de ${row.userName} (${row.companyName}) foi encerrada automaticamente por estar aberta de um dia anterior.`,
+            });
+            notified += 1;
+          }
+        } catch { /* email optional */ }
+      }
+    }
+  } finally {
+    await connection.end();
+  }
+  return { closed, notified };
+}

@@ -4,7 +4,7 @@ import path from "path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
-import { runScheduledMaintenance, runExpirationEmailAlerts } from "./scheduledMaintenance";
+import { runScheduledMaintenance, runExpirationEmailAlerts, runAutoClockOut } from "./scheduledMaintenance";
 import { notifyOwner } from "./_core/notification";
 import crypto from "node:crypto";
 
@@ -24,7 +24,9 @@ async function createApp() {
       const result = await runScheduledMaintenance();
       let expiry = null;
       try { expiry = await runExpirationEmailAlerts(30); } catch (e) { console.warn("[email] expiry alerts", e); }
-      return res.json({ ok: true, result, expiry });
+      let autoClock = null;
+      try { autoClock = await runAutoClockOut(); } catch (e) { console.warn("[auto-clock]", e); }
+      return res.json({ ok: true, result, expiry, autoClock });
     } catch (error) {
       console.error("[Maintenance] failed:", error);
       await notifyOwner({ title: "Falha no backup diário", content: "O backup automático falhou." }).catch(() => undefined);

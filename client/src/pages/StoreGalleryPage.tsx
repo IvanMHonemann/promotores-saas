@@ -182,60 +182,65 @@ export default function StoreGalleryPage() {
       description={store ? `${store.city}${store.state ? ` · ${store.state}` : ""}` : "Carregando..."}
       onRefresh={() => void photos.refetch()}
     >
-      <div className="space-y-5">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-2">
           <Link href="/lojas">
-            <Button variant="outline" className="border-white/15 text-slate-200">
-              <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
+            <Button variant="ghost" className="h-10 px-2 text-slate-300 hover:bg-white/5 hover:text-white">
+              <ArrowLeft className="mr-1 h-4 w-4" /> Lojas
             </Button>
           </Link>
+          {activeVisit && (
+            <Badge variant="outline" className="border-emerald-300/40 text-emerald-200">Visita em andamento</Badge>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {store && (
             <PhotoCapture storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} onCaptured={() => void photos.refetch()} />
           )}
-          {activeVisit && (
-            <Badge variant="outline" className="border-emerald-300/40 text-emerald-200">
-              Vinculada à visita em andamento
-            </Badge>
-          )}
-          <Button variant="outline" className="border-white/15" onClick={() => setSelectMode((v) => !v)}>
-            <CheckSquare className="mr-1 h-4 w-4" /> {selectMode ? "Cancelar seleção" : "Selecionar"}
+          <Button variant="outline" className="h-11 border-white/15 text-slate-200" onClick={() => setSelectMode((v) => !v)}>
+            <CheckSquare className="mr-1.5 h-4 w-4" /> {selectMode ? "Cancelar" : "Selecionar"}
+          </Button>
+          <Button variant="outline" className="h-11 border-white/15 text-slate-200" onClick={generateReport}>
+            <FileText className="mr-1.5 h-4 w-4" /> Relatório
           </Button>
         </div>
 
         {selectMode && (
-          <div className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-slate-950/40 p-3">
-            <Button size="sm" variant="outline" className="border-white/15" onClick={selectToday}>Hoje</Button>
-            <Button size="sm" variant="outline" className="border-white/15" onClick={selectPeriod}>Todo o período</Button>
-            <Button size="sm" variant="outline" className="border-white/15" onClick={() => setSelected(new Set())}>Limpar</Button>
-            <span className="self-center text-xs text-slate-400">{selected.size} selecionada(s)</span>
-            <Button size="sm" className="bg-teal-500 text-slate-950" onClick={shareSelected} disabled={selected.size === 0}>
-              <Share2 className="mr-1 h-3.5 w-3.5" /> Compartilhar
-            </Button>
-            <Button size="sm" variant="outline" className="border-rose-300/40 text-rose-200" onClick={deleteSelected} disabled={selected.size === 0 || bulkDelete.isPending}>
-              <Trash2 className="mr-1 h-3.5 w-3.5" /> Excluir
-            </Button>
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 p-3">
+            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectToday}>Hoje</Button>
+            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectPeriod}>Todas</Button>
+            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={() => setSelected(new Set())}>Limpar</Button>
+            <span className="text-xs text-slate-400">{selected.size} selecionada(s)</span>
+            <div className="ml-auto flex gap-2">
+              <Button size="sm" className="bg-teal-400 text-slate-950" onClick={shareSelected} disabled={selected.size === 0}>
+                <Share2 className="mr-1 h-3.5 w-3.5" /> Compartilhar
+              </Button>
+              <Button size="sm" variant="outline" className="border-rose-300/40 text-rose-200" onClick={deleteSelected} disabled={selected.size === 0 || bulkDelete.isPending}>
+                <Trash2 className="mr-1 h-3.5 w-3.5" /> Excluir
+              </Button>
+            </div>
           </div>
         )}
 
         <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
-          <p className="mb-3 text-sm font-semibold text-white">Filtrar fotos por período</p>
-          <p className="mb-3 text-xs text-slate-400">Escolha uma data inicial e uma data final para ver só as fotos desse intervalo. Deixe em branco para ver todas.</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block text-xs text-slate-300">
+          <p className="text-sm font-semibold text-white">Período das fotos</p>
+          <p className="mt-1 text-xs text-slate-400">Filtre por intervalo. Vazio = todas as fotos.</p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <label className="block text-xs font-medium text-slate-300">
               De
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 block rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white" />
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
             </label>
-            <label className="block text-xs text-slate-300">
+            <label className="block text-xs font-medium text-slate-300">
               Até
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 block rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white" />
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
             </label>
-            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={() => { setFrom(""); setTo(""); }}>
-              Limpar filtro
-            </Button>
-            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={generateReport}>
-              <FileText className="mr-1 h-4 w-4" /> Gerar relatório
-            </Button>
           </div>
+          {(from || to) && (
+            <Button size="sm" variant="ghost" className="mt-3 h-8 text-slate-400" onClick={() => { setFrom(""); setTo(""); }}>
+              Limpar período
+            </Button>
+          )}
         </div>
 
         {photos.isLoading && <p className="text-sm text-slate-300">Carregando fotos...</p>}

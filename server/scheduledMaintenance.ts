@@ -178,10 +178,13 @@ export async function runAutoClockOut() {
       const reason = row.workEndTime && new Date(row.serverTime).toDateString() === new Date().toDateString()
         ? `Saída automática: horário configurado ${row.workEndTime}`
         : 'Saída automática: jornada aberta de dia anterior';
+      const day = new Date(row.serverTime).toISOString().slice(0, 10);
+      const idemKey = `auto-clock-out:${row.companyId}:${row.memberAccountId}:${day}`;
       await connection.query(
-        `INSERT INTO time_events (companyId, memberAccountId, eventType, notes, synced)
-         VALUES (?, ?, 'clock_out', ?, 1)`,
-        [row.companyId, row.memberAccountId, reason]
+        `INSERT INTO time_events (companyId, memberAccountId, eventType, notes, synced, idempotencyKey)
+         VALUES (?, ?, 'clock_out', ?, 1, ?)
+         ON DUPLICATE KEY UPDATE id = id`,
+        [row.companyId, row.memberAccountId, reason, idemKey]
       );
       closed += 1;
       // Avisa admins da empresa

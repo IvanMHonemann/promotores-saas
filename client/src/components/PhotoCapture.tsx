@@ -47,18 +47,24 @@ function applyWatermark(
       if (!ctx) return reject(new Error("Canvas indisponível"));
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Rodapé mais visível
-      const fontSize = Math.max(18, Math.round(width / 40));
-      const lineH = fontSize + 8;
-      const footerH = lineH * lines.length + 20;
-      ctx.fillStyle = "rgba(0,0,0,0.7)";
-      ctx.fillRect(0, height - footerH, width, footerH);
-
-      ctx.fillStyle = "#ffffff";
+      // Fundo só atrás de cada linha de texto
+      const fontSize = Math.max(16, Math.round(width / 42));
+      const lineH = fontSize + 10;
+      const padX = 8;
+      const padY = 4;
+      const startY = height - (lineH * lines.length) - 16;
       ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
       ctx.textBaseline = "top";
       lines.forEach((line, i) => {
-        ctx.fillText(line, 16, height - footerH + 12 + i * lineH);
+        const y = startY + i * lineH;
+        const metrics = ctx.measureText(line);
+        const textW = metrics.width;
+        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        ctx.beginPath();
+        ctx.roundRect(12, y - padY, textW + padX * 2, fontSize + padY * 2, 4);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(line, 12 + padX, y);
       });
 
       resolve(canvas.toDataURL("image/jpeg", 0.82).split(",")[1]);

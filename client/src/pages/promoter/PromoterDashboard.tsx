@@ -27,7 +27,7 @@ export default function PromoterDashboard() {
   const visits = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations });
   const utils = trpc.useUtils();
   const rows = hasFieldOperations ? visits.data || [] : [];
-  const alerts = trpc.extinguishers.alerts.useQuery({ daysAhead: 30 }, { staleTime: 60000 });
+  const alerts = trpc.extinguishers.alertsSimple.useQuery({ daysAhead: 30 }, { staleTime: 60000 });
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 20, date: today }, { enabled: hasTimeTracking });
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
   const photosToday = (stores.data || []).reduce((sum: number, s: any) => sum + (s.photoCount || 0), 0);

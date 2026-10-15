@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
-import { ArrowLeft, Camera, MapPin, Share2, Trash2, FileText, CheckSquare, X, Pencil, MessageCircle } from "lucide-react";
+import { ArrowLeft, Camera, MapPin, Share2, Trash2, FileText, CheckSquare, X, Pencil, MessageCircle, Download, Calendar } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,28 +20,34 @@ function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promo
   return Array.from(groups.entries());
 }
 
-function PhotoThumb({ photoId, selected, selectMode, onToggle, onExpand }: { photoId: number; selected: boolean; selectMode: boolean; onToggle: () => void; onExpand: (url: string) => void }) {
+function PhotoThumb({ photoId, selected, selectMode, hasGps, time, onToggle, onExpand }: { photoId: number; selected: boolean; selectMode: boolean; hasGps: boolean; time: string; onToggle: () => void; onExpand: (url: string) => void }) {
   const { data, isLoading } = trpc.storePhotos.getImageUrl.useQuery(
     { photoId },
     { staleTime: 50 * 60 * 1000, retry: 1 },
   );
   return (
-    <div className="relative cursor-pointer" onClick={() => data?.url && onExpand(data.url)}>
-      {isLoading && <div className="aspect-square animate-pulse bg-slate-800" />}
+    <div className="relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-slate-800" onClick={() => data?.url && onExpand(data.url)}>
+      {isLoading && <div className="absolute inset-0 animate-pulse bg-slate-800" />}
       {!isLoading && !data?.url && (
-        <div className="aspect-square bg-slate-900 flex items-center justify-center text-slate-500">
-          <Camera className="h-8 w-8 text-white" />
+        <div className="absolute inset-0 flex items-center justify-center text-slate-500">
+          <Camera className="h-8 w-8 text-white/40" />
         </div>
       )}
-      {data?.url && <img src={data.url} alt="" className="aspect-square w-full object-cover" />}
+      {data?.url && <img src={data.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
+      {hasGps && (
+        <div className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-emerald-500 text-white shadow">
+          <MapPin className="h-3.5 w-3.5" />
+        </div>
+      )}
+      <span className="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">{time}</span>
       {selectMode && (
         <button
           type="button"
-          className={`absolute left-2 top-2 grid h-7 w-7 place-items-center rounded-md border-2 shadow ${selected ? "border-teal-300 bg-teal-400 text-slate-950" : "border-white/80 bg-black/50 text-white"}`}
+          className={`absolute left-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full border-2 shadow ${selected ? "border-white bg-blue-500 text-white" : "border-white/80 bg-black/40 text-white"}`}
           onClick={(e) => { e.stopPropagation(); onToggle(); }}
           aria-label={selected ? "Desmarcar" : "Selecionar"}
         >
-          {selected ? <CheckSquare className="h-4 w-4" /> : <span className="h-3 w-3" />}
+          {selected && <CheckSquare className="h-3.5 w-3.5" />}
         </button>
       )}
     </div>
@@ -303,42 +309,22 @@ export default function StoreGalleryPage() {
 
         {grouped.map(([day, items]) => (
           <section key={day}>
-            <h2 className="mb-2 text-sm font-bold uppercase tracking-wider text-teal-300">{day}</h2>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-white">{day}</h2>
+              <span className="text-xs text-slate-400">{items.length} foto{items.length !== 1 ? "s" : ""}{(items[0] as any).promoterName ? ` · ${(items[0] as any).promoterName}` : ""}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
               {items.map((photo) => (
-                <Card key={photo.id} className="overflow-hidden border-white/10 bg-slate-950/40">
-                  <PhotoThumb
-                    photoId={photo.id}
-                    selected={selected.has(photo.id)}
-                    selectMode={selectMode}
-                    onToggle={() => toggle(photo.id)}
-                    onExpand={(url) => setLightbox({ id: photo.id, url })}
-                  />
-                  <CardContent className="space-y-2 p-2">
-                    <p className="text-xs text-slate-300">
-                      {new Date(photo.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                      {(photo as any).promoterName ? ` · ${(photo as any).promoterName}` : ""}
-                    </p>
-                    <div className="flex items-center justify-between gap-1">
-                      {photo.latitude != null ? (
-                        <Badge variant="outline" className="h-5 border-emerald-300/40 text-[10px] text-emerald-200">
-                          <MapPin className="mr-0.5 h-3 w-3" /> GPS
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="h-5 text-[10px] text-slate-400">Sem GPS</Badge>
-                      )}
-                      <div className="flex gap-1">
-                        <WhatsAppButton photoId={photo.id} storeName={store?.name} />
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-white" title="Refazer" onClick={() => { singleDelete.mutate({ photoId: photo.id }); setTimeout(() => document.querySelector<HTMLInputElement>('input[type=file]')?.click(), 300); }}>
-                          <Pencil className="h-3.5 w-3.5 text-white" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-rose-300" title="Excluir" onClick={() => singleDelete.mutate({ photoId: photo.id })} disabled={singleDelete.isPending}>
-                          <Trash2 className="h-3.5 w-3.5 text-rose-300" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <PhotoThumb
+                  key={photo.id}
+                  photoId={photo.id}
+                  selected={selected.has(photo.id)}
+                  selectMode={selectMode}
+                  hasGps={photo.latitude != null}
+                  time={new Date(photo.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  onToggle={() => toggle(photo.id)}
+                  onExpand={(url) => setLightbox({ id: photo.id, url })}
+                />
               ))}
             </div>
           </section>
@@ -357,14 +343,57 @@ export default function StoreGalleryPage() {
         )}
       </div>
 
-      {lightbox && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={() => setLightbox(null)}>
-          <button className="absolute right-4 top-4 text-white" onClick={() => setLightbox(null)}>
-            <X className="h-8 w-8" />
-          </button>
-          <img src={lightbox.url} alt="Foto ampliada" className="max-h-[90vh] max-w-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
-        </div>
-      )}
+      {lightbox && (() => {
+        const photo = allPhotos.find((p) => p.id === lightbox.id);
+        return (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-3 sm:items-center" onClick={() => setLightbox(null)}>
+            <div className="w-full max-w-sm rounded-2xl bg-slate-900 p-3 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs text-slate-400">Ao tocar em uma foto</p>
+                <button className="text-white" onClick={() => setLightbox(null)}><X className="h-5 w-5" /></button>
+              </div>
+              <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-slate-800">
+                <img src={lightbox.url} alt="" className="h-full w-full object-cover" />
+                {photo?.latitude != null && (
+                  <div className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-emerald-500 text-white">
+                    <MapPin className="h-4 w-4" />
+                  </div>
+                )}
+              </div>
+              <div className="mt-3 flex items-start justify-between">
+                <div>
+                  <p className="font-semibold text-white">{store?.name || "Loja"}</p>
+                  <p className="text-xs text-slate-400">
+                    {photo ? new Date(photo.capturedAt).toLocaleDateString("pt-BR") : ""} · {photo ? new Date(photo.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}{(photo as any)?.promoterName ? ` · ${(photo as any).promoterName}` : ""}
+                  </p>
+                </div>
+              </div>
+              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => {
+                const text = `Foto da loja ${store?.name || ""}`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(text + " " + lightbox.url)}`, "_blank");
+              }}>
+                <MessageCircle className="mr-2 h-5 w-5" /> Enviar no WhatsApp
+              </Button>
+              <div className="mt-3 flex justify-around border-t border-white/10 pt-3 text-[10px] text-slate-300">
+                <button className="flex flex-col items-center gap-1" onClick={() => { setLightbox(null); singleDelete.mutate({ photoId: lightbox.id }); setTimeout(() => document.querySelector<HTMLInputElement>('input[type=file]')?.click(), 300); }}>
+                  <Pencil className="h-5 w-5 text-white" /><span>Editar</span>
+                </button>
+                {photo?.latitude != null && (
+                  <a className="flex flex-col items-center gap-1" href={`https://maps.google.com/?q=${photo.latitude},${photo.longitude}`} target="_blank" rel="noreferrer">
+                    <MapPin className="h-5 w-5 text-white" /><span>Mapa</span>
+                  </a>
+                )}
+                <a className="flex flex-col items-center gap-1" href={lightbox.url} download>
+                  <Download className="h-5 w-5 text-white" /><span>Baixar</span>
+                </a>
+                <button className="flex flex-col items-center gap-1 text-rose-300" onClick={() => { singleDelete.mutate({ photoId: lightbox.id }); setLightbox(null); }}>
+                  <Trash2 className="h-5 w-5" /><span>Excluir</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </DashboardLayout>
   );
 }

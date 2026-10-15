@@ -71,6 +71,7 @@ export function useAuth(options?: UseAuthOptions) {
     const msg = String(meQuery.error?.message || "").toLowerCase();
     if (!isOffline && meQuery.error && (code === "UNAUTHORIZED" || msg.includes("please login") || msg.includes("10001"))) {
       localStorage.removeItem(LOCAL_SESSION_KEY);
+      localStorage.removeItem("promotores-saas-session-token");
       setCachedUser(null);
       if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
         window.location.replace("/login");

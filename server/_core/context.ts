@@ -28,7 +28,8 @@ export async function createContext(opts: CreateExpressContextOptions): Promise<
   let isPlatformAdmin = false;
 
   const cookies = parseCookie(opts.req.headers.cookie ?? "");
-  const sessionToken = cookies[MEMBER_COOKIE_NAME] ?? "";
+  const headerToken = String(opts.req.headers["x-session-token"] || opts.req.headers["authorization"]?.replace(/^Bearer\s+/i, "") || "").trim();
+  const sessionToken = cookies[MEMBER_COOKIE_NAME] || headerToken || "";
   if (sessionToken) {
     const platformAdmin = await getPlatformAdminBySessionToken(sessionToken);
     if (platformAdmin) {

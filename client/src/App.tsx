@@ -168,6 +168,7 @@ function Router() {
       <Route path="/reset">
         {() => {
           localStorage.removeItem("promotores-saas-auth-user");
+          localStorage.removeItem("promotores-saas-session-token");
           window.location.replace("/login");
           return null;
         }}

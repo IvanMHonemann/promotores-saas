@@ -152,7 +152,7 @@ export const appRouter = router({
           description: `Login realizado: ${input.email}`,
           newData: { email: input.email, kind: session.kind },
         });
-        return { success: true, kind: session.kind, user } as const;
+        return { success: true, kind: session.kind, user, sessionToken: session.rawToken } as const;
       }),
 
     recoverPassword: publicProcedure

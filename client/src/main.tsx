@@ -45,7 +45,10 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       fetch(input, init) {
-        return globalThis.fetch(input, { ...(init ?? {}), credentials: "include" });
+        const headers = new Headers(init?.headers || {});
+        const token = typeof localStorage !== "undefined" ? localStorage.getItem("promotores-saas-session-token") : null;
+        if (token) headers.set("x-session-token", token);
+        return globalThis.fetch(input, { ...(init ?? {}), headers, credentials: "include" });
       },
     }),
   ],

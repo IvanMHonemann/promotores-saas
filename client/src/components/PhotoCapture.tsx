@@ -158,10 +158,10 @@ export function PhotoCapture({ storeId, storeName, visitId, onCaptured }: Props)
       {!preview && (
         <Button
           type="button"
-          className="bg-teal-500 text-slate-950"
+          className="h-12 w-full bg-teal-400 text-base font-bold text-slate-950 hover:bg-teal-300"
           onClick={() => fileRef.current?.click()}
         >
-          <Camera className="mr-1 h-4 w-4" /> Tirar foto
+          <Camera className="mr-2 h-5 w-5" /> Tirar foto
         </Button>
       )}
 

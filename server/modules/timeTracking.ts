@@ -144,16 +144,16 @@ export const timeTrackingRouter = router({
         }
       }
 
-      const lastEvents = await database.select().from(timeEvents)
-        .where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId)))
-        .orderBy(desc(timeEvents.serverTime)).limit(1);
-      const lastType = lastEvents[0]?.eventType as TimeEventType | undefined;
       const today = localDay(new Date(), input.timeZone);
-      const todayEvents = lastEvents.length ? (await database.select().from(timeEvents).where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId))).orderBy(desc(timeEvents.serverTime)).limit(100)).filter((event) => localDay(event.deviceTime || event.serverTime, input.timeZone) === today) : [];
+      const recent = await database.select().from(timeEvents)
+        .where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId)))
+        .orderBy(desc(timeEvents.serverTime)).limit(100);
+      const todayEvents = recent.filter((event) => localDay(event.deviceTime || event.serverTime, input.timeZone) === today);
       const lastToday = todayEvents[0]?.eventType as TimeEventType | undefined;
+      // Sequência só do dia atual. Evento de dia anterior não bloqueia a entrada de hoje.
       if (input.eventType === "clock_in" && lastToday === "clock_out") throw new TRPCError({ code: "BAD_REQUEST", message: "A jornada de hoje já foi encerrada. O próximo acesso será liberado no próximo dia." });
       if (input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) throw new TRPCError({ code: "BAD_REQUEST", message: "Bata a entrada antes de registrar este evento." });
-      if (!isValidTransition(lastType, input.eventType)) {
+      if (!isValidTransition(lastToday, input.eventType)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Sequência de marcação inválida. Confira o último evento do ponto." });
       }
 

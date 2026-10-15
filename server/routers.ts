@@ -6,7 +6,7 @@ import { parse as parseCookie } from "cookie";
 import { TRPCError } from "@trpc/server";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { checkSubscriptionAccess } from "./subscriptionAccess";
 import * as planLimits from "./planLimits";
 import * as asaas from "./asaas";

@@ -158,10 +158,8 @@ export default function StoreGalleryPage() {
     setSelectMode(true);
   };
 
-  const shareSelected = async () => {
-    if (selected.size === 0) return toast.info("Selecione ao menos uma foto.");
+  const getSelectedFiles = async () => {
     const ids = Array.from(selected).slice(0, 10);
-    toast.info("Preparando fotos...");
     const files: File[] = [];
     for (const id of ids) {
       try {
@@ -171,28 +169,52 @@ export default function StoreGalleryPage() {
         files.push(new File([blob], `foto-${id}.jpg`, { type: "image/jpeg" }));
       } catch { /* ignore */ }
     }
-    if (files.length === 0) return toast.error("Não foi possível obter as imagens.");
+    return files;
+  };
 
-    if (navigator.share) {
+  const shareSelected = async () => {
+    if (selected.size === 0) return toast.info("Selecione ao menos uma foto.");
+    toast.info("Preparando fotos...");
+    const files = await getSelectedFiles();
+    if (files.length === 0) {
+      const ids = Array.from(selected).slice(0, 5);
+      const urls: string[] = [];
+      for (const id of ids) {
+        try {
+          const res = await utils.storePhotos.getImageUrl.fetch({ photoId: id });
+          if (res?.url) urls.push(res.url);
+        } catch { /* ignore */ }
+      }
+      if (urls.length === 0) return toast.error("Não foi possível obter as imagens.");
+      const text = encodeURIComponent("Fotos - " + (store?.name || "Loja") + "\n" + urls.join("\n"));
+      window.open("https://wa.me/?text=" + text, "_blank");
+      return;
+    }
+    if (navigator.share && navigator.canShare?.({ files })) {
       try {
-        if (!navigator.canShare || navigator.canShare({ files })) {
-          await navigator.share({ files, title: `Fotos - ${store?.name || "Loja"}` });
-          toast.success("Compartilhamento iniciado.");
-          return;
-        }
+        await navigator.share({ files, title: "Fotos - " + (store?.name || "Loja") });
+        toast.success("Compartilhamento iniciado.");
+        return;
       } catch (e: any) {
         if (e?.name === "AbortError") return;
-        toast.error("Não foi possível compartilhar. Baixando as fotos.");
       }
     }
-    // Fallback: baixa cada foto
+    toast.error("Compartilhamento não disponível. Use o botão Baixar.");
+  };
+
+  const downloadSelected = async () => {
+    if (selected.size === 0) return toast.info("Selecione ao menos uma foto.");
+    toast.info("Baixando fotos...");
+    const files = await getSelectedFiles();
+    if (files.length === 0) return toast.error("Não foi possível baixar as imagens.");
     for (const file of files) {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(file);
       a.download = file.name;
       a.click();
+      URL.revokeObjectURL(a.href);
     }
-    toast.success("Fotos baixadas.");
+    toast.success(files.length + " foto(s) baixada(s).");
   };
 
   const deleteSelected = () => {

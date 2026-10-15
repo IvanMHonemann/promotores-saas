@@ -354,11 +354,22 @@ input[type="time"]::-webkit-calendar-picker-indicator {
 }
 
 /* Força ícones claros em todo o app */
-svg { color: inherit; }
-button svg, a svg, [class*="icon"] svg { color: currentColor; }
+svg { color: currentColor; }
+button svg, a svg, [class*="icon"] svg, .lucide { color: currentColor; }
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+select {
+  color-scheme: dark !important;
+}
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="time"]::-webkit-calendar-picker-indicator,
 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(1.5);
-  opacity: 1;
+  filter: invert(1) brightness(2) !important;
+  opacity: 1 !important;
+  cursor: pointer;
+}
+input[type="date"]::-webkit-inner-spin-button,
+input[type="time"]::-webkit-inner-spin-button {
+  filter: invert(1) brightness(2);
 }

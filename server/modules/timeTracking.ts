@@ -99,7 +99,7 @@ export const timeTrackingRouter = router({
           clockInTime: entry.deviceTime || entry.serverTime,
           lastEventType: last.eventType,
           lastEventTime: last.deviceTime || last.serverTime,
-          active: last.eventType !== "clock_out",
+          active: last.eventType === "clock_in" || last.eventType === "break_end",
           latitude: entry.latitude,
           longitude: entry.longitude,
           accuracy: entry.accuracy,

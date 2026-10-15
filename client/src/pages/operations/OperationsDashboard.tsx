@@ -155,7 +155,7 @@ function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFiel
       </div>
 
       {hasFieldOperations && <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
-        {isCompanyAdmin && hasTimeTracking && <Metric label="Promotores em jornada" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Entrada registrada hoje" />}
+        {isCompanyAdmin && hasTimeTracking && <Metric label="Em atendimento" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Com ponto de entrada aberto" />}
         <Metric label="Visitas planejadas" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Roteiro de hoje" />
         <Metric label="Concluídas" value={metrics.completed} icon={CheckCircle2} tone="text-emerald-300" hint="Finalizadas hoje" />
         <Metric className={isCompanyAdmin && hasTimeTracking ? "" : "col-span-2"} label="Em andamento" value={metrics.inProgress} icon={Clock3} tone="text-amber-300" hint="Em execução" />
@@ -224,7 +224,7 @@ function PresenceCard({ entries, loading, failed, timeZone }: { entries: Company
                 <p className="mt-1 text-xs text-slate-400">{entry.employeeCode ? `Matrícula ${entry.employeeCode}` : `Promotor #${entry.promoterId}`}</p>
               </div>
               <Badge variant="outline" className={entry.active ? "border-emerald-300/40 bg-emerald-300/10 text-emerald-200" : "border-slate-400/30 text-slate-300"}>
-                {entry.active ? "Em jornada" : "Jornada encerrada"}
+                {entry.active ? "Em atendimento" : entry.lastEventType === "break_start" ? "Em intervalo" : "Fora"}
               </Badge>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">

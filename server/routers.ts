@@ -659,7 +659,7 @@ export const appRouter = router({
     alertsSimple: protectedProcedure.input(z.object({ daysAhead: z.number().optional() }).optional()).query(async ({ ctx, input }) => {
       if (!ctx.accountId) return [];
       const days = input?.daysAhead || 30;
-      try { return await db.getExpiringExtinguishers(days, ctx.accountId); } catch { return []; }
+      try { return await db.getExpiringInventoryProducts(ctx.accountId, days); } catch { return []; }
     }),
     alertsPage: commercialFeatureProcedure("alerts").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().positive().max(100).optional(), daysAhead: z.number().optional(), filter: z.enum(["all", "near", "expired"]).optional(), search: z.string().optional(), city: z.string().optional() }).optional()).query(async ({ ctx, input }) => { const days = input?.daysAhead || parseInt(await db.getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30; return db.getExpiringExtinguishersPage(days, ctx.accountId, input); }),
     create: commercialFeatureProcedure("pointsOfSale").input(z.object({ clientId: z.number(), typeModel: z.string().min(1), capacity: z.string().optional(), serialNumber: z.string().optional(), locationInBuilding: z.string().optional(), expirationDate: z.string(), lastInspectionDate: z.string().optional(), notes: z.string().optional(), stockQuantity: z.number().int().min(1).optional() })).mutation(async ({ ctx, input }) => {

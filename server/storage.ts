@@ -18,10 +18,13 @@ function getS3Client() {
   const accessKeyId = process.env.S3_ACCESS_KEY_ID;
   const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
   if (!bucket || !accessKeyId || !secretAccessKey) return null;
+  const rawRegion = process.env.S3_REGION || "us-east-1";
+  const region = rawRegion === "auto" ? "us-east-1" : rawRegion;
+  const endpoint = process.env.S3_ENDPOINT || undefined;
   const client = new S3Client({
-    region: process.env.S3_REGION || "us-east-1",
-    endpoint: process.env.S3_ENDPOINT || undefined,
-    forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
+    region,
+    endpoint,
+    forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true" || Boolean(endpoint && endpoint.includes("r2.cloudflarestorage.com")),
     credentials: { accessKeyId, secretAccessKey },
   });
   return { bucket, client, publicBaseUrl: process.env.S3_PUBLIC_BASE_URL?.replace(/\/+$/, "") };

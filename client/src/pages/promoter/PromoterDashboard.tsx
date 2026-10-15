@@ -27,8 +27,7 @@ export default function PromoterDashboard() {
   const visits = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations });
   const utils = trpc.useUtils();
   const rows = hasFieldOperations ? visits.data || [] : [];
-  const hasAlerts = user?.features?.includes("alerts") ?? true;
-  const alerts = trpc.extinguishers.alerts.useQuery({ daysAhead: 30 }, { enabled: hasAlerts, staleTime: 60000 });
+  const alerts = trpc.extinguishers.alerts.useQuery({ daysAhead: 30 }, { staleTime: 60000 });
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 20, date: today }, { enabled: hasTimeTracking });
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
   const photosToday = (stores.data || []).reduce((sum: number, s: any) => sum + (s.photoCount || 0), 0);
@@ -122,31 +121,30 @@ export default function PromoterDashboard() {
           <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" />
         </div>
 
-        {hasAlerts && (
-          <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
-              <AlertTriangle className="h-4 w-4 text-amber-300" /> Alertas de validade
-            </h3>
-            {alerts.isLoading && <p className="mt-2 text-sm text-slate-400">Carregando...</p>}
-            {alerts.isError && <p className="mt-2 text-sm text-rose-200">Não foi possível carregar os alertas.</p>}
-            {!alerts.isLoading && !alerts.isError && (alerts.data || []).length === 0 && (
-              <p className="mt-2 text-sm text-slate-400">Nenhum produto perto do vencimento.</p>
-            )}
-            <div className="mt-3 space-y-2">
-              {(alerts.data || []).slice(0, 5).map((item: any) => (
-                <div key={item.extinguisher?.id || item.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2">
-                  <div>
-                    <p className="text-sm font-medium text-white">{item.extinguisher?.typeModel || item.typeModel || "Produto"}</p>
-                    <p className="text-xs text-slate-400">{item.client?.name || ""}</p>
-                  </div>
-                  <span className="text-xs font-semibold text-amber-200">
-                    {item.extinguisher?.expirationDate ? new Date(item.extinguisher.expirationDate).toLocaleDateString("pt-BR") : ""}
-                  </span>
+        <section className="rounded-2xl border-2 border-amber-400/40 bg-amber-400/10 p-4">
+          <h3 className="flex items-center gap-2 text-base font-bold text-amber-100">
+            <AlertTriangle className="h-5 w-5 text-amber-300" /> Alertas de validade
+            {expiringCount > 0 && <span className="ml-auto rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-950">{expiringCount}</span>}
+          </h3>
+          {alerts.isLoading && <p className="mt-3 text-sm text-amber-100/70">Carregando produtos...</p>}
+          {alerts.isError && <p className="mt-3 text-sm text-rose-200">Não foi possível carregar. Verifique se o módulo de alertas está ativo.</p>}
+          {!alerts.isLoading && !alerts.isError && expiringCount === 0 && (
+            <p className="mt-3 text-sm text-amber-100/70">Nenhum produto perto do vencimento nos próximos 30 dias.</p>
+          )}
+          <div className="mt-3 space-y-2">
+            {(alerts.data || []).slice(0, 5).map((item: any) => (
+              <div key={item.extinguisher?.id || item.id} className="flex items-center justify-between rounded-xl border border-amber-300/20 bg-slate-950/60 px-3 py-2.5">
+                <div>
+                  <p className="text-sm font-semibold text-white">{item.extinguisher?.typeModel || item.typeModel || "Produto"}</p>
+                  <p className="text-xs text-slate-400">{item.client?.name || "Sem cliente"}</p>
                 </div>
-              ))}
-            </div>
-          </section>
-        )}
+                <span className="rounded-lg bg-amber-400/20 px-2 py-1 text-xs font-bold text-amber-200">
+                  {item.extinguisher?.expirationDate ? new Date(item.extinguisher.expirationDate).toLocaleDateString("pt-BR") : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
 
         {!hasFieldOperations && <div className="rounded-2xl border border-slate-400/25 bg-slate-400/10 p-4 text-sm text-slate-200">Roteiros e visitas estão disponíveis nos planos Profissional e Empresarial.</div>}
         {hasFieldOperations && <section id="roteiro" className="scroll-mt-6">

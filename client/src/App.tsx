@@ -153,8 +153,11 @@ function RootRoute() {
   if (loading) return <LoadingScreen />;
   if (!user) return <LandingPage />;
   if (user.role === "platform_admin") return <PlatformDashboard />;
-  if (user.role === "promoter") return <FeatureProtected featureKey="dashboard"><PromoterDashboard /></FeatureProtected>;
-  if (user.companyId) return <FeatureProtected featureKey="dashboard"><OperationsDashboard /></FeatureProtected>;
+  // Dashboard é a porta de entrada. Não bloqueia por entitlement aqui;
+  // se a sessão do cookie estiver inválida, o próprio dashboard ou as
+  // chamadas de API redirecionam para login.
+  if (user.role === "promoter") return <PromoterDashboard />;
+  if (user.companyId) return <OperationsDashboard />;
   return <LandingPage />;
 }
 

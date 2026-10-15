@@ -8,6 +8,7 @@ import { toast } from "sonner";
 type Props = {
   storeId: number;
   storeName: string;
+  visitId?: number | null;
   onCaptured: () => void;
 };
 
@@ -51,7 +52,7 @@ function applyWatermark(
   });
 }
 
-export function PhotoCapture({ storeId, storeName, onCaptured }: Props) {
+export function PhotoCapture({ storeId, storeName, visitId, onCaptured }: Props) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -119,6 +120,7 @@ export function PhotoCapture({ storeId, storeName, onCaptured }: Props) {
       const base64 = await applyWatermark(rawDataUrl, lines);
       await upload.mutateAsync({
         storeId,
+        visitId: visitId ?? undefined,
         capturedAt: now.toISOString(),
         latitude: gps?.lat,
         longitude: gps?.lng,

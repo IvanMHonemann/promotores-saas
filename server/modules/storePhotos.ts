@@ -63,7 +63,25 @@ export const storePhotosRouter = router({
       if (input.promoterId) conditions.push(eq(storePhotos.promoterId, input.promoterId));
 
       const photos = await db
-        .select()
+        .select({
+          id: storePhotos.id,
+          companyId: storePhotos.companyId,
+          storeId: storePhotos.storeId,
+          promoterId: storePhotos.promoterId,
+          visitId: storePhotos.visitId,
+          capturedAt: storePhotos.capturedAt,
+          latitude: storePhotos.latitude,
+          longitude: storePhotos.longitude,
+          accuracy: storePhotos.accuracy,
+          locationStatus: storePhotos.locationStatus,
+          fileKey: storePhotos.fileKey,
+          thumbnailKey: storePhotos.thumbnailKey,
+          mimeType: storePhotos.mimeType,
+          fileSize: storePhotos.fileSize,
+          uploadStatus: storePhotos.uploadStatus,
+          expiresAt: storePhotos.expiresAt,
+          promoterName: sql<string>`(SELECT userName FROM member_accounts WHERE member_accounts.id = store_photos.promoterId AND member_accounts.companyId = ${ctx.accountId})`,
+        })
         .from(storePhotos)
         .where(and(...conditions))
         .orderBy(desc(storePhotos.capturedAt));

@@ -54,6 +54,10 @@ export default function StoreGalleryPage() {
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { staleTime: 30000 });
   const store = stores.data?.find((s) => s.id === storeId);
 
+  const today = new Date().toISOString().slice(0, 10);
+  const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000 });
+  const activeVisit = visits.data?.find((v: any) => v.visit?.status === "in_progress" && v.store?.id === storeId);
+
   const photos = trpc.storePhotos.listByStore.useQuery(
     { storeId, from: from || undefined, to: to || undefined },
     { enabled: Number.isFinite(storeId) && storeId > 0, staleTime: 10000 },
@@ -186,7 +190,12 @@ export default function StoreGalleryPage() {
             </Button>
           </Link>
           {store && (
-            <PhotoCapture storeId={storeId} storeName={store.name} onCaptured={() => void photos.refetch()} />
+            <PhotoCapture storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} onCaptured={() => void photos.refetch()} />
+          )}
+          {activeVisit && (
+            <Badge variant="outline" className="border-emerald-300/40 text-emerald-200">
+              Vinculada à visita em andamento
+            </Badge>
           )}
           <Button variant="outline" className="border-white/15" onClick={() => setSelectMode((v) => !v)}>
             <CheckSquare className="mr-1 h-4 w-4" /> {selectMode ? "Cancelar seleção" : "Selecionar"}
@@ -237,6 +246,7 @@ export default function StoreGalleryPage() {
                   <CardContent className="space-y-1 p-2">
                     <p className="text-xs text-slate-300">
                       {new Date(photo.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                      {(photo as any).promoterName ? ` · ${(photo as any).promoterName}` : ""}
                     </p>
                     <div className="flex items-center gap-1">
                       {photo.latitude != null ? (

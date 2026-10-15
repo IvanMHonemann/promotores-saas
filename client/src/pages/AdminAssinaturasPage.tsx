@@ -448,6 +448,12 @@ export default function AdminAssinaturasPage() {
               <div className="flex items-center gap-2 py-12 text-slate-500">
                 <Loader2 className="h-5 w-5 animate-spin" /> Carregando empresas...
               </div>
+            ) : subsQuery.error ? (
+              <Card>
+                <CardContent className="p-10 text-center text-red-500">
+                  Erro ao carregar assinaturas: {subsQuery.error.message}
+                </CardContent>
+              </Card>
             ) : subs.length === 0 ? (
               <Card>
                 <CardContent className="p-10 text-center text-slate-500">Nenhuma assinatura encontrada.</CardContent>

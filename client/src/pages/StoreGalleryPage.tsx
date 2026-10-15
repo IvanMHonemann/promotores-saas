@@ -88,15 +88,28 @@ function WhatsAppButton({ photoId, storeName }: { photoId: number; storeName?: s
 
 export default function StoreGalleryPage() {
   const params = useParams<{ storeId: string }>();
-  const storeId = Number(params.storeId);
+  const urlStoreId = Number(params.storeId);
+  const [selectedStoreId, setSelectedStoreId] = useState<number | null>(() => {
+    if (urlStoreId > 0) return urlStoreId;
+    const saved = localStorage.getItem("selected_store_id");
+    return saved ? Number(saved) : null;
+  });
+  const storeId = selectedStoreId || 0;
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(null);
+  const [filterStoreId, setFilterStoreId] = useState<number | "all">("all");
 
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { staleTime: 30000 });
   const store = stores.data?.find((s) => s.id === storeId);
+
+  const selectStore = (id: number | null) => {
+    setSelectedStoreId(id);
+    if (id) localStorage.setItem("selected_store_id", String(id));
+    else localStorage.removeItem("selected_store_id");
+  };
 
   const today = new Date().toISOString().slice(0, 10);
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000 });
@@ -249,9 +262,42 @@ export default function StoreGalleryPage() {
           )}
         </div>
 
-        {store && (
+        <div className="rounded-2xl border-2 border-teal-400/40 bg-gradient-to-br from-teal-400/10 to-transparent p-4">
+          <p className="mb-2 text-sm font-semibold text-teal-300">Selecione a loja para fotografar</p>
+          <select
+            value={storeId || ""}
+            onChange={(e) => selectStore(e.target.value ? Number(e.target.value) : null)}
+            className="w-full rounded-xl border border-teal-400/30 bg-slate-950 px-4 py-3 text-base font-semibold text-white [color-scheme:dark]"
+          >
+            <option value="">Escolha uma loja...</option>
+            {(stores.data || []).map((s) => (
+              <option key={s.id} value={s.id}>{s.name}{s.city ? ` · ${s.city}` : ""}</option>
+            ))}
+          </select>
+          {!storeId && <p className="mt-2 text-xs text-amber-200">Selecione uma loja antes de tirar foto.</p>}
+        </div>
+
+        {store ? (
           <PhotoCapture storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} onCaptured={() => void photos.refetch()} />
+        ) : (
+          <Button disabled className="h-14 w-full rounded-2xl bg-slate-800 text-slate-500">
+            <Camera className="mr-2 h-5 w-5" /> Selecione uma loja para tirar foto
+          </Button>
         )}
+
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-400">Filtrar fotos:</span>
+          <select
+            value={filterStoreId}
+            onChange={(e) => setFilterStoreId(e.target.value === "all" ? "all" : Number(e.target.value))}
+            className="rounded-lg border border-white/15 bg-slate-950 px-3 py-1.5 text-sm text-white [color-scheme:dark]"
+          >
+            <option value="all">Todas as lojas</option>
+            {(stores.data || []).map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
 
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" className="h-11 border-white/15 text-slate-200" onClick={() => setSelectMode((v) => !v)}>

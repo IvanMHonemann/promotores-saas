@@ -198,6 +198,19 @@ export const timeTrackingRouter = router({
       return inserted;
     }),
 
+  companyHistory: companyAdminFeatureProcedure("timeTracking")
+    .input(z.object({ memberId: z.number().int().positive(), month: z.string().regex(/^\d{4}-\d{2}$/) }))
+    .query(async ({ ctx, input }) => {
+      const database = await db.getDb();
+      if (!database) return [];
+      const [year, mon] = input.month.split("-").map(Number);
+      const start = new Date(Date.UTC(year, mon - 1, 1));
+      const end = new Date(Date.UTC(year, mon, 1));
+      return database.select().from(timeEvents)
+        .where(and(eq(timeEvents.memberAccountId, input.memberId), eq(timeEvents.companyId, ctx.accountId), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end)))
+        .orderBy(timeEvents.serverTime);
+    }),
+
   myHistory: commercialFeatureProcedure("timeTracking")
     .input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional())
     .query(async ({ ctx, input }) => {

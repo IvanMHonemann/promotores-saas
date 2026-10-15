@@ -182,22 +182,26 @@ export default function StoreGalleryPage() {
       description={store ? `${store.city}${store.state ? ` · ${store.state}` : ""}` : "Carregando..."}
       onRefresh={() => void photos.refetch()}
     >
-      <div className="space-y-4">
-        <div className="flex items-center justify-between gap-2">
-          <Link href="/lojas">
-            <Button variant="ghost" className="h-10 px-2 text-slate-300 hover:bg-white/5 hover:text-white">
-              <ArrowLeft className="mr-1 h-4 w-4" /> Lojas
-            </Button>
-          </Link>
+      <div className="space-y-5">
+        <Link href="/lojas" className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white">
+          <ArrowLeft className="h-4 w-4" /> Voltar para Lojas
+        </Link>
+
+        <div>
+          <h2 className="text-2xl font-black text-white">Fotos da loja</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            {store?.name || "Loja"} · Registre fotos e gere o relatório da visita.
+          </p>
           {activeVisit && (
-            <Badge variant="outline" className="border-emerald-300/40 text-emerald-200">Visita em andamento</Badge>
+            <Badge variant="outline" className="mt-2 border-emerald-300/40 text-emerald-200">Visita em andamento</Badge>
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {store && (
-            <PhotoCapture storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} onCaptured={() => void photos.refetch()} />
-          )}
+        {store && (
+          <PhotoCapture storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} onCaptured={() => void photos.refetch()} />
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" className="h-11 border-white/15 text-slate-200" onClick={() => setSelectMode((v) => !v)}>
             <CheckSquare className="mr-1.5 h-4 w-4" /> {selectMode ? "Cancelar" : "Selecionar"}
           </Button>
@@ -223,9 +227,33 @@ export default function StoreGalleryPage() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
+        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
           <p className="text-sm font-semibold text-white">Período das fotos</p>
-          <p className="mt-1 text-xs text-slate-400">Filtre por intervalo. Vazio = todas as fotos.</p>
+          <p className="mt-1 text-xs text-slate-400">Escolha as datas ou deixe em branco para ver todas.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[
+              { id: "all", label: "Todas" },
+              { id: "today", label: "Hoje" },
+              { id: "7d", label: "7 dias" },
+              { id: "30d", label: "30 dias" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const iso = (d: Date) => d.toISOString().slice(0, 10);
+                  if (opt.id === "all") { setFrom(""); setTo(""); }
+                  else if (opt.id === "today") { setFrom(iso(now)); setTo(iso(now)); }
+                  else if (opt.id === "7d") { const d = new Date(now); d.setDate(d.getDate() - 6); setFrom(iso(d)); setTo(iso(now)); }
+                  else if (opt.id === "30d") { const d = new Date(now); d.setDate(d.getDate() - 29); setFrom(iso(d)); setTo(iso(now)); }
+                }}
+                className="rounded-full border border-white/15 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-teal-300/40 hover:text-white"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           <div className="mt-3 grid grid-cols-2 gap-3">
             <label className="block text-xs font-medium text-slate-300">
               De
@@ -236,11 +264,6 @@ export default function StoreGalleryPage() {
               <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white" />
             </label>
           </div>
-          {(from || to) && (
-            <Button size="sm" variant="ghost" className="mt-3 h-8 text-slate-400" onClick={() => { setFrom(""); setTo(""); }}>
-              Limpar período
-            </Button>
-          )}
         </div>
 
         {photos.isLoading && <p className="text-sm text-slate-300">Carregando fotos...</p>}
@@ -283,9 +306,15 @@ export default function StoreGalleryPage() {
         ))}
 
         {!photos.isLoading && !photos.isError && allPhotos.length === 0 && (
-          <p className="rounded-xl border border-dashed border-white/15 p-8 text-center text-sm text-slate-300">
-            Nenhuma foto registrada nesta loja no período.
-          </p>
+          <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-teal-300/10 text-teal-300">
+              <Camera className="h-6 w-6" />
+            </div>
+            <p className="mt-4 text-base font-semibold text-white">Nenhuma foto neste período</p>
+            <p className="mt-1 text-sm text-slate-400">
+              Toque em <span className="font-semibold text-teal-300">Tirar foto</span> para registrar a primeira, ou mude o período acima.
+            </p>
+          </div>
         )}
       </div>
     </DashboardLayout>

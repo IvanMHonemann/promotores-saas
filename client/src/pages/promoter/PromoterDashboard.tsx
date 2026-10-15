@@ -32,6 +32,7 @@ export default function PromoterDashboard() {
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 20, date: today }, { enabled: hasTimeTracking });
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
   const photosToday = (stores.data || []).reduce((sum: number, s: any) => sum + (s.photoCount || 0), 0);
+  const storeCount = (stores.data || []).length;
   const punchesToday = (history.data || []).length;
   const expiringCount = (alerts.data || []).length;
   const active = hasTimeTracking && shift.data?.active === true;
@@ -114,9 +115,10 @@ export default function PromoterDashboard() {
         )}
         {hasTimeTracking && shift.error && <div className="rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-sm text-rose-100">Não foi possível consultar o estado da jornada. Tente atualizar o painel.</div>}
 
-        <div className="grid grid-cols-3 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
-          <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-teal-300" />
-          <Metric label="Fotos" detail="Registradas" value={photosToday} icon={ClipboardList} tone="text-sky-300" />
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20 sm:grid-cols-4">
+          <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-teal-300" />
+          <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-sky-300" />
+          <Metric label="Fotos" detail="Registradas" value={photosToday} icon={ClipboardList} tone="text-emerald-300" />
           <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" />
         </div>
 

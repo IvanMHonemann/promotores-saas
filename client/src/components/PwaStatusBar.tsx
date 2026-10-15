@@ -32,7 +32,7 @@ export function PwaStatusBar() {
     <>
       <div
         className={`fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow backdrop-blur print:hidden ${
-          isOnline ? "border-white/15 bg-slate-900/90 text-slate-100" : "border-rose-300/40 bg-slate-900/90 text-rose-200"
+          isOnline ? "border-emerald-400/40 bg-emerald-500/90 text-white" : "border-rose-300/40 bg-rose-500/90 text-white"
         }`}
       >
         {isOnline ? <Wifi className="h-3.5 w-3.5 shrink-0" /> : <WifiOff className="h-3.5 w-3.5 shrink-0" />}

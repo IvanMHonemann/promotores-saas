@@ -118,12 +118,19 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
 
   if (!access.data?.effective[featureKey]) {
     if (featureKey === "timeTracking" && access.data) return <RedirectHome />;
+    // Last-resort: if the error message contains login/10001, force redirect
+    const errMsg = String((access.error as any)?.message || (access.error as any)?.shape?.message || "").toLowerCase();
+    if (errMsg.includes("please login") || errMsg.includes("10001") || isUnauthorizedError(access.error)) {
+      localStorage.removeItem("promotores-saas-auth-user");
+      window.location.replace("/login");
+      return <LoadingScreen />;
+    }
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950 p-5 text-slate-100">
         <section className="max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-6 text-center">
           <h1 className="text-xl font-bold">Módulo não liberado</h1>
           <p className="mt-2 text-sm text-slate-300">
-            {access.error?.message && !isUnauthorizedError(access.error)
+            {access.error?.message
               ? access.error.message
               : "Este módulo não está habilitado para sua empresa ou para seu perfil."}
           </p>

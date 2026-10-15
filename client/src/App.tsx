@@ -16,6 +16,8 @@ import MySubscriptionPage from "./pages/MySubscriptionPage";
 import PaymentHistoryPage from "./pages/PaymentHistoryPage";
 import MyAccountPage from "./pages/MyAccountPage";
 import AuditPage from "./pages/AuditPage";
+import StoresPage from "./pages/StoresPage";
+import StoreGalleryPage from "./pages/StoreGalleryPage";
 import PromoterDashboard from "./pages/promoter/PromoterDashboard";
 import PromoterClockPage from "./pages/promoter/PromoterClockPage";
 import OperationsDashboard from "./pages/operations/OperationsDashboard";

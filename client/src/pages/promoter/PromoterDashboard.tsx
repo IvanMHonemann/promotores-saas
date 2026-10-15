@@ -29,6 +29,11 @@ export default function PromoterDashboard() {
   const rows = hasFieldOperations ? visits.data || [] : [];
   const hasAlerts = user?.features?.includes("alerts") ?? true;
   const alerts = trpc.extinguishers.alerts.useQuery({ daysAhead: 30 }, { enabled: hasAlerts, staleTime: 60000 });
+  const history = trpc.timeTracking.myHistory.useQuery({ limit: 20, date: today }, { enabled: hasTimeTracking });
+  const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
+  const photosToday = (stores.data || []).reduce((sum: number, s: any) => sum + (s.photoCount || 0), 0);
+  const punchesToday = (history.data || []).length;
+  const expiringCount = (alerts.data || []).length;
   const active = hasTimeTracking && shift.data?.active === true;
 
   const startVisit = trpc.operations.visits.start.useMutation({
@@ -109,11 +114,11 @@ export default function PromoterDashboard() {
         )}
         {hasTimeTracking && shift.error && <div className="rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-sm text-rose-100">Não foi possível consultar o estado da jornada. Tente atualizar o painel.</div>}
 
-        {hasFieldOperations && <div className="grid grid-cols-3 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
-          <Metric label="Previstas" detail="No roteiro" value={rows.length} icon={ClipboardList} tone="text-teal-300" />
-          <Metric label="Pendentes" detail="A fazer" value={rows.length - completed} icon={Clock3} tone="text-amber-300" />
-          <Metric label="Concluídas" detail="Finalizadas" value={completed} icon={CheckCircle2} tone="text-emerald-300" />
-        </div>}
+        <div className="grid grid-cols-3 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
+          <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-teal-300" />
+          <Metric label="Fotos" detail="Registradas" value={photosToday} icon={ClipboardList} tone="text-sky-300" />
+          <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" />
+        </div>
 
         {hasAlerts && (
           <section className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">

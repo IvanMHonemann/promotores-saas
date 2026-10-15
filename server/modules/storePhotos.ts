@@ -8,6 +8,39 @@ import { auditFromCtx } from "../audit";
 
 const RETENTION_DAYS = 60;
 
+async function ensureStorePhotosTable(db: any) {
+  try {
+    await db.execute(`CREATE TABLE IF NOT EXISTS store_photos (
+      id int AUTO_INCREMENT NOT NULL,
+      companyId int NOT NULL,
+      storeId int NOT NULL,
+      promoterId int NOT NULL,
+      visitId int,
+      capturedAt timestamp NOT NULL,
+      latitude double,
+      longitude double,
+      accuracy double,
+      locationStatus enum('success','permission_denied','unavailable','timeout','error') DEFAULT 'unavailable',
+      fileKey varchar(512) NOT NULL,
+      thumbnailKey varchar(512),
+      mimeType varchar(100),
+      fileSize int,
+      idempotencyKey varchar(64),
+      uploadStatus enum('pending','uploaded','failed') NOT NULL DEFAULT 'pending',
+      expiresAt timestamp NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY store_photos_company_store_date_idx (companyId,storeId,capturedAt),
+      KEY store_photos_company_promoter_idx (companyId,promoterId),
+      KEY store_photos_expires_idx (expiresAt),
+      UNIQUE KEY store_photos_company_idempotency_unique (companyId,idempotencyKey)
+    )`);
+  } catch (e) {
+    console.warn("[storePhotos] ensure table", e);
+  }
+}
+
 export const storePhotosRouter = router({
   /** Lista lojas com contagem de fotos e última atividade. */
   listStoresWithStats: commercialFeatureProcedure("fieldOperations")
@@ -15,6 +48,7 @@ export const storePhotosRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+      await ensureStorePhotosTable(db);
 
       const conditions = [eq(stores.companyId, ctx.accountId), eq(stores.active, true)];
       if (input?.search) {

@@ -121,7 +121,7 @@ export default function OperationsDashboard() {
         />
       )}
       {visibleSection === "routes" && (
-        <RoutesModule weekly={weekly.data || []}
+        <RoutesModule weekly={weekly.data || []} promoters={promoters.data || []} saveWeekly={saveWeekly}
           isCompanyAdmin={isCompanyAdmin}
           stores={stores.data || []}
           storesLoading={stores.isLoading}
@@ -284,12 +284,41 @@ const weekdays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "
 function RoutesModule(props: any) {
   const {
     isCompanyAdmin, stores = [], storesLoading, storesFailed, storeName, setStoreName, storeCity, setStoreCity,
-    storeAddress, setStoreAddress, createStore, routes = [], routesLoading, routesFailed, weekly = [],
+    storeAddress, setStoreAddress, createStore, routes = [], routesLoading, routesFailed, weekly = [], promoters = [], saveWeekly,
   } = props;
+  const [promoterId, setPromoterId] = useState<number | "">("");
+  const [weekday, setWeekday] = useState(1);
+  const [routeName, setRouteName] = useState("");
+  const [selectedStores, setSelectedStores] = useState<number[]>([]);
+  const filtered = weekly.filter((w: any) => !promoterId || w.promoterId === promoterId);
   return (
     <div className="space-y-6">
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-teal-950/30 p-5 sm:p-7">
-        <h2 className="text-2xl font-black">Lojas e roteiros de hoje</h2>
+        <h2 className="text-2xl font-black">Roteiros dos promotores</h2>
+        {isCompanyAdmin && <div className="mt-4 flex flex-wrap gap-3">
+          <select value={promoterId} onChange={(e) => setPromoterId(e.target.value ? Number(e.target.value) : "")} className="rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white">
+            <option value="">Selecione um promotor</option>
+            {promoters.map((p: any) => <option key={p.id} value={p.id}>{p.userName}</option>)}
+          </select>
+          <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))} className="rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white">
+            {weekdays.map((d, i) => <option key={i} value={i}>{d}</option>)}
+          </select>
+          <input value={routeName} onChange={(e) => setRouteName(e.target.value)} placeholder="Nome do roteiro" className="rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white" />
+        </div>}
+        {isCompanyAdmin && promoterId && <div className="mt-3 space-y-2">
+          <p className="text-sm text-slate-300">Lojas do roteiro</p>
+          <div className="flex flex-wrap gap-2">
+            {stores.map((s: any) => (
+              <label key={s.id} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-slate-950/40 px-2 py-1 text-xs text-slate-200">
+                <input type="checkbox" checked={selectedStores.includes(s.id)} onChange={(e) => setSelectedStores(e.target.checked ? [...selectedStores, s.id] : selectedStores.filter(id => id !== s.id))} />
+                {s.name}
+              </label>
+            ))}
+          </div>
+          <Button size="sm" className="bg-teal-400 text-slate-950" disabled={!routeName.trim() || selectedStores.length === 0 || saveWeekly?.isPending} onClick={() => saveWeekly.mutate({ name: routeName.trim(), weekday, promoterId, storeIds: selectedStores })}>
+            Salvar roteiro
+          </Button>
+        </div>}
         <p className="mt-2 text-sm text-slate-300">Cadastre pontos de venda e consulte as rotas distribuídas. A programação semanal é definida no cadastro de cada promotor.</p>
       </div>
       {isCompanyAdmin && <>
@@ -335,7 +364,7 @@ function RoutesModule(props: any) {
       {weekly.length > 0 && <Card>
         <CardHeader><CardTitle className="text-white">Programação semanal</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          {weekly.map((w: any) => (
+          {filtered.map((w: any) => (
             <div key={w.id} className="rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
               <p className="font-semibold text-teal-300">{weekdays[w.weekday] || `Dia ${w.weekday}`}</p>
               <p className="text-slate-300">{w.name} · {(w.storeIds || []).length} loja(s)</p>

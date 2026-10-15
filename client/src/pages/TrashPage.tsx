@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-const typeLabels: Record<string,string> = { client: "Cliente", order: "Ordem de serviço", extinguisher: "Equipamento", product: "Produto" };
+const typeLabels: Record<string,string> = { client: "Cliente", order: "Ordem de serviço", extinguisher: "Equipamento", product: "Produto", store_photo: "Foto de loja" };
 export default function TrashPage() {
   const [busyId, setBusyId] = useState<number|null>(null);
   const utils = trpc.useUtils();
@@ -16,7 +16,7 @@ export default function TrashPage() {
   const permanentlyDelete = trpc.trash.permanentlyDelete.useMutation({ onMutate:({id})=>setBusyId(id), onSuccess:()=>{toast.success("Registro removido definitivamente da lixeira.");refresh();}, onError:e=>toast.error(e.message||"Não foi possível excluir o registro."), onSettled:()=>setBusyId(null) });
   return <DashboardLayout title="Lixeira" description="Restaure itens removidos recentemente ou exclua os registros definitivamente.">
     <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2"><Trash2 className="h-5 w-5 text-teal-300"/>Itens removidos</CardTitle></CardHeader><CardContent className="space-y-3">
-      <p className="text-sm text-slate-300">Os itens permanecem disponíveis para restauração por 24 horas após a exclusão.</p>
+      <p className="text-sm text-slate-300">Os itens permanecem disponíveis para restauração. Fotos ficam 70 dias.</p>
       {list.isLoading&&<p className="flex items-center gap-2 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin"/>Carregando lixeira...</p>}
       {list.isError&&<p role="alert" className="text-sm text-rose-200">Não foi possível carregar a lixeira.</p>}
       {!list.isLoading&&!list.isError&&!list.data?.length&&<div className="rounded-xl border border-dashed border-white/15 p-8 text-center text-sm text-slate-300"><Trash2 className="mx-auto mb-2 h-8 w-8 text-slate-500"/>A lixeira está vazia.</div>}

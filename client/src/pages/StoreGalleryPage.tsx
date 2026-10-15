@@ -11,7 +11,19 @@ import { toast } from "sonner";
 import { jsPDF } from "jspdf";
 
 
-async function shareImage(url: string, name: string) {
+async function downloadImage(url: string, name: string) {
+  try {
+    const blob = await fetch(url).then((r) => r.blob());
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `foto-${name || "loja"}.jpg`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch {
+    window.open(url, "_blank");
+  }
+}
+async function shareToWhatsApp(url: string, name: string) {
   try {
     const blob = await fetch(url).then((r) => r.blob());
     const file = new File([blob], `foto-${name || "loja"}.jpg`, { type: blob.type || "image/jpeg" });
@@ -22,11 +34,8 @@ async function shareImage(url: string, name: string) {
   } catch (e: any) {
     if (e?.name === "AbortError") return;
   }
-  // Fallback: baixa a imagem
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `foto-${name || "loja"}.jpg`;
-  a.click();
+  const text = encodeURIComponent(`Foto - ${name}`);
+  window.open(`https://wa.me/?text=${text}%20${encodeURIComponent(url)}`, "_blank");
 }
 
 function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promoterId: number; latitude: number | null }>) {
@@ -80,7 +89,7 @@ function PhotoThumb({ photoId, selected, selectMode, hasGps, time, onToggle, onE
 function WhatsAppButton({ photoId, storeName }: { photoId: number; storeName?: string }) {
   const { data } = trpc.storePhotos.getImageUrl.useQuery({ photoId }, { staleTime: 50 * 60 * 1000, retry: 1 });
   return (
-    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={() => data?.url && shareImage(data.url, storeName || "loja")}>
+    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={() => data?.url && shareToWhatsApp(data.url, storeName || "loja")}>
       <MessageCircle className="h-3.5 w-3.5 text-emerald-300" />
     </Button>
   );
@@ -387,7 +396,7 @@ export default function StoreGalleryPage() {
                   </p>
                 </div>
               </div>
-              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => shareImage(lightbox.url, store?.name || "loja")}>
+              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => shareToWhatsApp(lightbox.url, store?.name || "loja")}>
                 <MessageCircle className="mr-2 h-5 w-5" /> Enviar no WhatsApp
               </Button>
               <div className="mt-3 flex justify-around border-t border-white/10 pt-3 text-[10px] text-slate-300">
@@ -399,7 +408,7 @@ export default function StoreGalleryPage() {
                     <MapPin className="h-5 w-5 text-white" /><span>Mapa</span>
                   </a>
                 )}
-                <button className="flex flex-col items-center gap-1" onClick={() => shareImage(lightbox.url, store?.name || "loja")}>
+                <button className="flex flex-col items-center gap-1" onClick={() => shareToWhatsApp(lightbox.url, store?.name || "loja")}>
                   <Download className="h-5 w-5 text-white" /><span>Baixar</span>
                 </button>
                 <button className="flex flex-col items-center gap-1 text-rose-300" onClick={() => { singleDelete.mutate({ photoId: lightbox.id }); setLightbox(null); }}>

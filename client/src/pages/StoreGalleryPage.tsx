@@ -391,7 +391,7 @@ export default function StoreGalleryPage() {
                 <MessageCircle className="mr-2 h-5 w-5" /> Enviar no WhatsApp
               </Button>
               <div className="mt-3 flex justify-around border-t border-white/10 pt-3 text-[10px] text-slate-300">
-                <button className="flex flex-col items-center gap-1" onClick={() => { setLightbox(null); singleDelete.mutate({ photoId: lightbox.id }); setTimeout(() => document.querySelector<HTMLInputElement>('input[type=file]')?.click(), 300); }}>
+                <button className="flex flex-col items-center gap-1" onClick={() => { setLightbox(null); setTimeout(() => document.querySelector<HTMLInputElement>('input[type=file]')?.click(), 300); }}>
                   <Pencil className="h-5 w-5 text-white" /><span>Editar</span>
                 </button>
                 {photo?.latitude != null && (
@@ -399,9 +399,9 @@ export default function StoreGalleryPage() {
                     <MapPin className="h-5 w-5 text-white" /><span>Mapa</span>
                   </a>
                 )}
-                <a className="flex flex-col items-center gap-1" href={lightbox.url} download>
+                <button className="flex flex-col items-center gap-1" onClick={() => shareImage(lightbox.url, store?.name || "loja")}>
                   <Download className="h-5 w-5 text-white" /><span>Baixar</span>
-                </a>
+                </button>
                 <button className="flex flex-col items-center gap-1 text-rose-300" onClick={() => { singleDelete.mutate({ photoId: lightbox.id }); setLightbox(null); }}>
                   <Trash2 className="h-5 w-5" /><span>Excluir</span>
                 </button>

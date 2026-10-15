@@ -2,11 +2,12 @@ import { z } from "zod";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { storePhotos, stores } from "../../drizzle/schema";
+import { trashItems } from "../../drizzle/schema.original";
 import { getDb } from "../db";
 import { commercialFeatureProcedure, router } from "../_core/trpc";
 import { auditFromCtx } from "../audit";
 
-const RETENTION_DAYS = 60;
+const RETENTION_DAYS = 65;
 
 async function ensureStorePhotosTable(db: any) {
   try {
@@ -319,10 +320,16 @@ export const storePhotosRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "Você só pode excluir suas próprias fotos." });
       }
 
-      const { storageDelete } = await import("../storage");
-      if (photo.fileKey) await storageDelete(photo.fileKey);
-      if (photo.thumbnailKey) await storageDelete(photo.thumbnailKey);
-
+      // Soft-delete: move to trash instead of hard delete
+      const expiresAt = new Date(Date.now() + 65 * 24 * 60 * 60 * 1000);
+      await db.insert(trashItems).values({
+        accountId: ctx.accountId,
+        itemType: "store_photo",
+        originalId: photo.id,
+        label: `Foto #${photo.id}`,
+        snapshot: JSON.stringify(photo),
+        expiresAt,
+      });
       await db.delete(storePhotos).where(eq(storePhotos.id, photo.id));
 
       await auditFromCtx(ctx, {

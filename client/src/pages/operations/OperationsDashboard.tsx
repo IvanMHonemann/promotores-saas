@@ -316,6 +316,22 @@ function RoutesModule(props: any) {
         </Card>
       </>}
       {!isCompanyAdmin && <p className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-slate-300">A programação semanal é configurada no cadastro de cada promotor. Aqui você pode consultar as rotas distribuídas.</p>}
+      <Card>
+        <CardHeader><CardTitle className="text-white">Calendário de roteiros</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-300">Selecione um dia para ver o roteiro. A programação semanal se aplica a todos os meses.</p>
+          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-xs">
+            {["D","S","T","Q","Q","S","S"].map((d, i) => <div key={i} className="font-semibold text-slate-400">{d}</div>)}
+            {Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }, (_, i) => {
+              const day = i + 1;
+              const date = new Date(new Date().getFullYear(), new Date().getMonth(), day);
+              const weekday = date.getDay();
+              const hasRoute = weekly.some((w: any) => w.weekday === weekday);
+              return <div key={day} className={`rounded p-1 ${hasRoute ? "bg-teal-400/20 text-teal-200" : "text-slate-500"}`}>{day}</div>;
+            })}
+          </div>
+        </CardContent>
+      </Card>
       {weekly.length > 0 && <Card>
         <CardHeader><CardTitle className="text-white">Programação semanal</CardTitle></CardHeader>
         <CardContent className="space-y-2">

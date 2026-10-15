@@ -760,7 +760,7 @@ export default function AdminAssinaturasPage() {
                   <Input
                     type="date"
                     value={companyEdit.startsAt}
-                    onChange={(e) => setCompanyEdit({ ...companyEdit, startsAt: e.target.value })}
+                    onChange={(e) = className="[color-scheme:dark]"> setCompanyEdit({ ...companyEdit, startsAt: e.target.value })}
                   />
                 </div>
                 <div>
@@ -768,7 +768,7 @@ export default function AdminAssinaturasPage() {
                   <Input
                     type="date"
                     value={companyEdit.endsAt}
-                    onChange={(e) => setCompanyEdit({ ...companyEdit, endsAt: e.target.value })}
+                    onChange={(e) = className="[color-scheme:dark]"> setCompanyEdit({ ...companyEdit, endsAt: e.target.value })}
                   />
                 </div>
                 <div className="sm:col-span-2">

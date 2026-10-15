@@ -7,7 +7,7 @@ import { getDb } from "../db";
 import { commercialFeatureProcedure, router } from "../_core/trpc";
 import { auditFromCtx } from "../audit";
 
-const RETENTION_DAYS = 70;
+const RETENTION_DAYS = 60;
 
 async function ensureStorePhotosTable(db: any) {
   try {
@@ -321,7 +321,7 @@ export const storePhotosRouter = router({
       }
 
       // Soft-delete: move to trash instead of hard delete
-      const expiresAt = new Date(Date.now() + 70 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
       await db.insert(trashItems).values({
         accountId: ctx.accountId,
         itemType: "store_photo",
@@ -359,7 +359,7 @@ export const storePhotosRouter = router({
 
       if (photos.length === 0) return { deleted: 0 };
 
-      const expiresAt = new Date(Date.now() + 70 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
       let deleted = 0;
       for (const photo of photos) {
         if (ctx.user.role === "promoter" && photo.promoterId !== ctx.memberAccountId) continue;

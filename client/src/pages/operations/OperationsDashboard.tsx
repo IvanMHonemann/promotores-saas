@@ -121,7 +121,7 @@ export default function OperationsDashboard() {
         />
       )}
       {visibleSection === "routes" && (
-        <RoutesModule
+        <RoutesModule weekly={weekly.data || []}
           isCompanyAdmin={isCompanyAdmin}
           stores={stores.data || []}
           storesLoading={stores.isLoading}
@@ -280,10 +280,11 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
   );
 }
 
+const weekdays = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 function RoutesModule(props: any) {
   const {
     isCompanyAdmin, stores = [], storesLoading, storesFailed, storeName, setStoreName, storeCity, setStoreCity,
-    storeAddress, setStoreAddress, createStore, routes = [], routesLoading, routesFailed,
+    storeAddress, setStoreAddress, createStore, routes = [], routesLoading, routesFailed, weekly = [],
   } = props;
   return (
     <div className="space-y-6">
@@ -315,6 +316,17 @@ function RoutesModule(props: any) {
         </Card>
       </>}
       {!isCompanyAdmin && <p className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-slate-300">A programação semanal é configurada no cadastro de cada promotor. Aqui você pode consultar as rotas distribuídas.</p>}
+      {weekly.length > 0 && <Card>
+        <CardHeader><CardTitle className="text-white">Programação semanal</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          {weekly.map((w: any) => (
+            <div key={w.id} className="rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
+              <p className="font-semibold text-teal-300">{weekdays[w.weekday] || `Dia ${w.weekday}`}</p>
+              <p className="text-slate-300">{w.name} · {(w.storeIds || []).length} loja(s)</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>}
       <Card>
         <CardHeader><CardTitle className="text-white">Roteiros de hoje</CardTitle></CardHeader>
         <CardContent className="space-y-2">

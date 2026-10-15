@@ -258,7 +258,7 @@ export default function PromoterClockPage() {
                   id="history-date"
                   type="date"
                   value={selectedDate}
-                  onChange={(event) = className="[color-scheme:dark]"> setSelectedDate(event.target.value)}
+                  onChange={(event) => setSelectedDate(event.target.value)}
                   className="h-10 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100"
                 />
               </div>

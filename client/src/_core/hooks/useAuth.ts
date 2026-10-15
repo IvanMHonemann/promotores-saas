@@ -64,11 +64,19 @@ export function useAuth(options?: UseAuthOptions) {
       localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(meQuery.data));
       setCachedUser(meQuery.data);
     }
-    // Não apagamos a identidade local por causa de uma resposta vazia do
-    // preview. O logout explícito é o único fluxo que remove o cache; assim,
-    // uma falha de cookie, iframe ou rede não transforma o modo offline em
-    // uma tela de login.
+    // Se o servidor rejeitar a sessão (UNAUTHORIZED) e estivermos online,
+    // limpa o cache local e força novo login. Isso corrige o caso em que
+    // o cookie não é reconhecido na Vercel.
     const code = meQuery.error instanceof TRPCClientError ? meQuery.error.data?.code : undefined;
+    const msg = String(meQuery.error?.message || "").toLowerCase();
+    if (!isOffline && meQuery.error && (code === "UNAUTHORIZED" || msg.includes("please login") || msg.includes("10001"))) {
+      localStorage.removeItem(LOCAL_SESSION_KEY);
+      setCachedUser(null);
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.replace("/login");
+      }
+      return;
+    }
     if (!isOffline && cachedUser && meQuery.error && code !== "UNAUTHORIZED") {
       setIsOffline(true);
       window.dispatchEvent(new Event("offline"));

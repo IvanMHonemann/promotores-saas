@@ -199,3 +199,56 @@ export async function runAutoClockOut() {
   }
   return { closed, notified };
 }
+
+
+/** Exclui fotos expiradas (60 dias) do storage e do banco. Alerta se o consumo estiver alto. */
+export async function runPhotoMaintenance() {
+  const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!url) return { deleted: 0, alerted: 0 };
+  const connection = await mysql.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 10000 });
+  let deleted = 0;
+  let alerted = 0;
+  const PHOTO_LIMIT = Number(process.env.PHOTO_STORAGE_ALERT_COUNT || 5000);
+  try {
+    // Fotos expiradas
+    const [expired]: any = await connection.query(
+      `SELECT id, fileKey, thumbnailKey FROM store_photos WHERE expiresAt <= UTC_TIMESTAMP() LIMIT 200`
+    );
+    const { storageDelete } = await import("./storage");
+    for (const photo of expired || []) {
+      try {
+        if (photo.fileKey) await storageDelete(photo.fileKey);
+        if (photo.thumbnailKey) await storageDelete(photo.thumbnailKey);
+      } catch { /* storage optional */ }
+      await connection.query(`DELETE FROM store_photos WHERE id = ?`, [photo.id]);
+      deleted += 1;
+    }
+    // Alerta de consumo por empresa
+    const [counts]: any = await connection.query(
+      `SELECT companyId, COUNT(*) AS total FROM store_photos GROUP BY companyId HAVING total >= ?`,
+      [PHOTO_LIMIT]
+    );
+    for (const row of counts || []) {
+      const [admins]: any = await connection.query(
+        `SELECT email FROM member_accounts WHERE companyId = ? AND role = 'company_admin' AND active = 1 AND email IS NOT NULL`,
+        [row.companyId]
+      );
+      for (const admin of admins || []) {
+        try {
+          const { emailService } = await import("./email");
+          if (emailService?.send) {
+            await emailService.send({
+              to: admin.email,
+              subject: "Alerta de consumo de fotos",
+              text: `Sua empresa possui ${row.total} fotos armazenadas. O limite de alerta é ${PHOTO_LIMIT}. Considere revisar ou aumentar o plano.`,
+            });
+            alerted += 1;
+          }
+        } catch { /* optional */ }
+      }
+    }
+  } finally {
+    await connection.end();
+  }
+  return { deleted, alerted };
+}

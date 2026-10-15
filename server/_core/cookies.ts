@@ -40,12 +40,13 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  // Na Vercel o request chega via proxy. Garantimos secure=true em produção
+  // para que o cookie seja aceito e enviado corretamente.
+  const secure = process.env.NODE_ENV === "production" || isSecureRequest(req);
   return {
     httpOnly: true,
     path: "/",
-    // O login e o painel usam o mesmo domínio. Lax evita que navegadores
-    // rejeitem o cookie quando o proxy não encaminha HTTPS de forma uniforme.
     sameSite: "lax",
-    secure: isSecureRequest(req),
+    secure,
   };
 }

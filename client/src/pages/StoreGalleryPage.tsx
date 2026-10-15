@@ -115,9 +115,10 @@ export default function StoreGalleryPage() {
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000 });
   const activeVisit = visits.data?.find((v: any) => v.visit?.status === "in_progress" && v.store?.id === storeId);
 
+  const photoStoreId = filterStoreId === "all" ? storeId : filterStoreId;
   const photos = trpc.storePhotos.listByStore.useQuery(
-    { storeId, from: from || undefined, to: to || undefined },
-    { enabled: Number.isFinite(storeId) && storeId > 0, staleTime: 10000 },
+    { storeId: photoStoreId, from: from || undefined, to: to || undefined },
+    { enabled: Number.isFinite(photoStoreId) && photoStoreId > 0, staleTime: 10000 },
   );
 
   const utils = trpc.useUtils();

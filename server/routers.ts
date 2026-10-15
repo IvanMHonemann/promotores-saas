@@ -597,6 +597,11 @@ export const appRouter = router({
   }),
 
   settings: router({
+    getAutoClockOut: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => await db.getSetting("auto_clock_out_time", ctx.accountId, "")),
+    setAutoClockOut: companyAdminFeatureProcedure("timeTracking").input(z.object({ time: z.string().regex(/^\d{2}:\d{2}$/).optional() })).mutation(async ({ ctx, input }) => {
+      await db.setSetting("auto_clock_out_time", input.time || "", ctx.accountId);
+      return { success: true, time: input.time || "" };
+    }),
     getAlertDays: commercialFeatureProcedure("alerts").query(async ({ ctx }) => parseInt(await db.getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30),
     setAlertDays: companyAdminFeatureProcedure("alerts").input(z.object({ days: z.number().min(1).max(365) })).mutation(async ({ ctx, input }) => {
       const prev = await db.getSetting("alert_days_ahead", ctx.accountId, "30");

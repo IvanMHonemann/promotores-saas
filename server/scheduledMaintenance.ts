@@ -159,18 +159,19 @@ export async function runAutoClockOut() {
     const [rows]: any = await connection.query(`
       SELECT te.companyId, te.memberAccountId, te.eventType, te.serverTime,
              ma.userName, ma.email, c.name AS companyName,
-             pp.workEndTime
+             COALESCE(pp.workEndTime, s.settingValue) AS workEndTime
       FROM time_events te
       INNER JOIN member_accounts ma ON ma.id = te.memberAccountId
       INNER JOIN companies c ON c.id = te.companyId
       LEFT JOIN promoter_profiles pp ON pp.memberAccountId = te.memberAccountId
+      LEFT JOIN system_settings s ON s.accountId = te.companyId AND s.settingKey = 'auto_clock_out_time'
       WHERE te.id IN (
         SELECT MAX(id) FROM time_events GROUP BY memberAccountId, companyId
       )
       AND te.eventType != 'clock_out'
       AND (
         DATE(te.serverTime) < CURDATE()
-        OR (pp.workEndTime IS NOT NULL AND TIME(NOW()) >= pp.workEndTime AND DATE(te.serverTime) = CURDATE())
+        OR (COALESCE(pp.workEndTime, s.settingValue) IS NOT NULL AND TIME(NOW()) >= COALESCE(pp.workEndTime, s.settingValue) AND DATE(te.serverTime) = CURDATE())
       )
     `);
     for (const row of rows || []) {

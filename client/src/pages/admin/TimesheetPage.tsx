@@ -11,6 +11,9 @@ const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Inte
 export default function TimesheetPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [autoTime, setAutoTime] = useState("");
+  const autoSetting = trpc.settings.getAutoClockOut.useQuery(undefined, { staleTime: 60000 });
+  const setAuto = trpc.settings.setAutoClockOut.useMutation({ onSuccess: () => toast.success("Horário salvo.") });
   const utils = trpc.useUtils();
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { staleTime: 30000 });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { staleTime: 15000 });
@@ -53,6 +56,16 @@ export default function TimesheetPage() {
               {selected && <p className="mt-3 text-sm text-slate-300">Selecionado: <span className="font-semibold text-white">{selected.userName}</span></p>}
             </CardContent>
           </Card>
+          <Card className="border-white/10 bg-slate-900/70 text-white sm:col-span-2">
+            <CardHeader><CardTitle className="text-base">Saída automática da empresa</CardTitle></CardHeader>
+            <CardContent className="flex items-end gap-3">
+              <div>
+                <label className="text-xs text-slate-400">Horário padrão (HH:MM)</label>
+                <input type="time" value={autoTime || autoSetting.data || ""} onChange={(e) => setAutoTime(e.target.value)} className="mt-1 block rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-white [color-scheme:dark]" />
+              </div>
+              <Button size="sm" className="bg-teal-400 text-slate-950" disabled={setAuto.isPending} onClick={() => setAuto.mutate({ time: autoTime || autoSetting.data || "" })}>Salvar</Button>
+            </CardContent>
+          </Card>
         </div>
 
         {selectedId && (
@@ -61,9 +74,25 @@ export default function TimesheetPage() {
             <CardContent className="space-y-3">
               {history.isLoading && <p className="text-sm text-slate-400">Carregando...</p>}
               {!history.isLoading && byDay.length === 0 && <p className="text-sm text-slate-400">Nenhuma marcação neste mês.</p>}
-              {byDay.map(([day, events]) => (
+              {byDay.map(([day, events]) => {
+                  let mins = 0;
+                  let start: Date | null = null;
+                  for (const ev of events) {
+                    const t = new Date(ev.deviceTime || ev.serverTime);
+                    if (ev.eventType === "clock_in" || ev.eventType === "break_end") start = t;
+                    if ((ev.eventType === "break_start" || ev.eventType === "clock_out") && start) {
+                      mins += Math.max(0, Math.round((t.getTime() - start.getTime()) / 60000));
+                      start = null;
+                    }
+                  }
+                  const hours = Math.floor(mins / 60);
+                  const rem = mins % 60;
+                  return (
                 <div key={day} className="rounded-lg border border-white/10 bg-slate-950/40 p-3">
-                  <p className="mb-2 text-sm font-semibold text-teal-300">{new Date(day + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</p>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-teal-300">{new Date(day + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</p>
+                    {mins > 0 && <span className="text-xs text-slate-400">{hours}h{rem.toString().padStart(2, "0")}</span>}
+                  </div>
                   <div className="space-y-1">
                     {events.map((ev: any) => (
                       <div key={ev.id} className="flex items-center justify-between text-sm">
@@ -76,7 +105,7 @@ export default function TimesheetPage() {
                     ))}
                   </div>
                 </div>
-              ))}
+              );})}
             </CardContent>
           </Card>
         )}

@@ -10,6 +10,25 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { jsPDF } from "jspdf";
 
+
+async function shareImage(url: string, name: string) {
+  try {
+    const blob = await fetch(url).then((r) => r.blob());
+    const file = new File([blob], `foto-${name || "loja"}.jpg`, { type: blob.type || "image/jpeg" });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: `Foto - ${name}` });
+      return;
+    }
+  } catch (e: any) {
+    if (e?.name === "AbortError") return;
+  }
+  // Fallback: baixa a imagem
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `foto-${name || "loja"}.jpg`;
+  a.click();
+}
+
 function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promoterId: number; latitude: number | null }>) {
   const groups = new Map<string, typeof photos>();
   for (const photo of photos) {
@@ -58,11 +77,7 @@ function PhotoThumb({ photoId, selected, selectMode, hasGps, time, onToggle, onE
 function WhatsAppButton({ photoId, storeName }: { photoId: number; storeName?: string }) {
   const { data } = trpc.storePhotos.getImageUrl.useQuery({ photoId }, { staleTime: 50 * 60 * 1000, retry: 1 });
   return (
-    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={() => {
-      const text = `Foto da loja ${storeName || ""}`;
-      const url = data?.url ? ` ${data.url}` : "";
-      window.open(`https://wa.me/?text=${encodeURIComponent(text + url)}`, "_blank");
-    }}>
+    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={() => data?.url && shareImage(data.url, storeName || "loja")}>
       <MessageCircle className="h-3.5 w-3.5 text-emerald-300" />
     </Button>
   );
@@ -368,10 +383,7 @@ export default function StoreGalleryPage() {
                   </p>
                 </div>
               </div>
-              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => {
-                const text = `Foto da loja ${store?.name || ""}`;
-                window.open(`https://wa.me/?text=${encodeURIComponent(text + " " + lightbox.url)}`, "_blank");
-              }}>
+              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => shareImage(lightbox.url, store?.name || "loja")}>
                 <MessageCircle className="mr-2 h-5 w-5" /> Enviar no WhatsApp
               </Button>
               <div className="mt-3 flex justify-around border-t border-white/10 pt-3 text-[10px] text-slate-300">

@@ -33,16 +33,18 @@ function applyWatermark(
       if (!ctx) return reject(new Error("Canvas indisponível"));
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Rodapé semitransparente
-      const footerH = 28 * lines.length + 16;
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      // Rodapé mais visível
+      const fontSize = Math.max(18, Math.round(width / 40));
+      const lineH = fontSize + 8;
+      const footerH = lineH * lines.length + 20;
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
       ctx.fillRect(0, height - footerH, width, footerH);
 
       ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 16px system-ui, sans-serif";
+      ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
       ctx.textBaseline = "top";
       lines.forEach((line, i) => {
-        ctx.fillText(line, 12, height - footerH + 10 + i * 26);
+        ctx.fillText(line, 16, height - footerH + 12 + i * lineH);
       });
 
       resolve(canvas.toDataURL("image/jpeg", 0.82).split(",")[1]);
@@ -109,13 +111,14 @@ export function PhotoCapture({ storeId, storeName, visitId, onCaptured }: Props)
       const now = new Date();
       const dateStr = now.toLocaleDateString("pt-BR");
       const timeStr = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-      const promoter = user?.name || "Promotor";
+      const promoter = user?.name || user?.email || "Promotor";
+      const location = gps ? `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : "Local não disponível";
       const lines = [
         `Promotor: ${promoter}`,
+        `Local: ${location}`,
         `Loja: ${storeName}`,
         `Data: ${dateStr}  Hora: ${timeStr}`,
       ];
-      if (gps) lines.push("GPS registrado");
 
       const base64 = await applyWatermark(rawDataUrl, lines);
       await upload.mutateAsync({

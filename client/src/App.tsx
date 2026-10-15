@@ -63,10 +63,18 @@ function PromoterProtected({ children }: { children: React.ReactNode }) {
 }
 
 function isUnauthorizedError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const anyErr = error as { message?: string; data?: { code?: string } };
-  const msg = String(anyErr.message || "").toLowerCase();
-  return anyErr.data?.code === "UNAUTHORIZED" || msg.includes("please login") || msg.includes("10001");
+  if (!error) return false;
+  const anyErr = error as any;
+  const msg = String(anyErr.message || anyErr.shape?.message || anyErr.data?.message || "").toLowerCase();
+  const code = anyErr.data?.code || anyErr.shape?.data?.code;
+  if (code === "UNAUTHORIZED") return true;
+  if (msg.includes("please login") || msg.includes("10001")) return true;
+  // fallback: stringified search
+  try {
+    const raw = JSON.stringify(error).toLowerCase();
+    if (raw.includes("please login") || raw.includes("10001") || raw.includes("unauthorized")) return true;
+  } catch {}
+  return false;
 }
 
 function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey; children: React.ReactNode }) {
@@ -100,6 +108,9 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
   if (access.isLoading) return <LoadingScreen />;
 
   if (access.error && isUnauthorizedError(access.error)) {
+    // Force redirect on render as well (useEffect may lag on mobile/PWA)
+    localStorage.removeItem("promotores-saas-auth-user");
+    window.location.replace("/login");
     return <LoadingScreen />;
   }
 

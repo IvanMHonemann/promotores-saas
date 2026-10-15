@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
-import { ArrowLeft, Camera, MapPin, Share2, Trash2, FileText, CheckSquare } from "lucide-react";
+import { ArrowLeft, Camera, MapPin, Share2, Trash2, FileText, CheckSquare, X, RotateCcw } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,13 +20,13 @@ function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promo
   return Array.from(groups.entries());
 }
 
-function PhotoThumb({ photoId, selected, onToggle }: { photoId: number; selected: boolean; onToggle: () => void }) {
+function PhotoThumb({ photoId, selected, onToggle, onExpand }: { photoId: number; selected: boolean; onToggle: () => void; onExpand: (url: string) => void }) {
   const { data, isLoading } = trpc.storePhotos.getImageUrl.useQuery(
     { photoId },
     { staleTime: 50 * 60 * 1000, retry: 1 },
   );
   return (
-    <div className="relative cursor-pointer" onClick={onToggle}>
+    <div className="relative cursor-pointer" onClick={() => data?.url && onExpand(data.url)}>
       {isLoading && <div className="aspect-square animate-pulse bg-slate-800" />}
       {!isLoading && !data?.url && (
         <div className="aspect-square bg-slate-900 flex items-center justify-center text-slate-500">
@@ -35,7 +35,7 @@ function PhotoThumb({ photoId, selected, onToggle }: { photoId: number; selected
       )}
       {data?.url && <img src={data.url} alt="" className="aspect-square w-full object-cover" />}
       {selected && (
-        <div className="absolute inset-0 bg-teal-500/30 flex items-center justify-center">
+        <div className="absolute inset-0 bg-teal-500/30 flex items-center justify-center" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
           <CheckSquare className="h-8 w-8 text-white drop-shadow" />
         </div>
       )}
@@ -50,6 +50,7 @@ export default function StoreGalleryPage() {
   const [to, setTo] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
+  const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(null);
 
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { staleTime: 30000 });
   const store = stores.data?.find((s) => s.id === storeId);
@@ -64,6 +65,14 @@ export default function StoreGalleryPage() {
   );
 
   const utils = trpc.useUtils();
+  const singleDelete = trpc.storePhotos.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Foto excluída.");
+      void photos.refetch();
+    },
+    onError: () => toast.error("Não foi possível excluir."),
+  });
+
   const bulkDelete = trpc.storePhotos.bulkDelete.useMutation({
     onSuccess: (res) => {
       toast.success(`${res.deleted} foto(s) excluída(s).`);
@@ -283,13 +292,14 @@ export default function StoreGalleryPage() {
                     photoId={photo.id}
                     selected={selected.has(photo.id)}
                     onToggle={() => selectMode && toggle(photo.id)}
+                    onExpand={(url) => setLightbox({ id: photo.id, url })}
                   />
-                  <CardContent className="space-y-1 p-2">
+                  <CardContent className="space-y-2 p-2">
                     <p className="text-xs text-slate-300">
                       {new Date(photo.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                       {(photo as any).promoterName ? ` · ${(photo as any).promoterName}` : ""}
                     </p>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-between gap-1">
                       {photo.latitude != null ? (
                         <Badge variant="outline" className="h-5 border-emerald-300/40 text-[10px] text-emerald-200">
                           <MapPin className="mr-0.5 h-3 w-3" /> GPS
@@ -297,6 +307,14 @@ export default function StoreGalleryPage() {
                       ) : (
                         <Badge variant="outline" className="h-5 text-[10px] text-slate-400">Sem GPS</Badge>
                       )}
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-slate-300" onClick={() => document.querySelector<HTMLButtonElement>('button:has(svg.lucide-camera)')?.click()}>
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-rose-300" onClick={() => singleDelete.mutate({ photoId: photo.id })} disabled={singleDelete.isPending}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -317,6 +335,15 @@ export default function StoreGalleryPage() {
           </div>
         )}
       </div>
+
+      {lightbox && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={() => setLightbox(null)}>
+          <button className="absolute right-4 top-4 text-white" onClick={() => setLightbox(null)}>
+            <X className="h-8 w-8" />
+          </button>
+          <img src={lightbox.url} alt="Foto ampliada" className="max-h-[90vh] max-w-full rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </DashboardLayout>
   );
 }

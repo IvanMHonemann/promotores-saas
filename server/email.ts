@@ -1,12 +1,12 @@
 /**
- * Serviço de e-mail do Extinfy (preparado para migração de hospedagem).
+ * Serviço de e-mail do Promotores SaaS (preparado para migração de hospedagem).
  *
  * Por padrão os e-mails só são registrados no log (EMAIL_PROVIDER=console).
  * Quando migrar a hospedagem, configure o provedor de e-mail de lá:
  *
  * - EMAIL_PROVIDER=console|resend|webhook
  * - ADMIN_NOTIFICATION_EMAIL=seu@email.com   (você recebe cadastros e upgrades)
- * - EMAIL_FROM="Extinfy <noreply@seudominio.com>"
+ * - EMAIL_FROM="Promotores SaaS <noreply@seudominio.com>"
  * - APP_PUBLIC_URL=https://seu-dominio.com
  * - RESEND_API_KEY=...          (se usar Resend)
  * - EMAIL_WEBHOOK_URL=...       (se usar gateway/SMTP da nova hospedagem via webhook)
@@ -30,11 +30,11 @@ export function getAdminNotificationEmail(): string {
 }
 
 export function getAppPublicUrl(): string {
-  return env("APP_PUBLIC_URL", "https://gestao-de-extintores-teste.vercel.app").replace(/\/$/, "");
+  return env("APP_PUBLIC_URL", "https://promotores-saas-teste.vercel.app").replace(/\/$/, "");
 }
 
 export function getEmailFrom(): string {
-  return env("EMAIL_FROM", "Extinfy <onboarding@resend.dev>");
+  return env("EMAIL_FROM", "Promotores SaaS <onboarding@resend.dev>");
 }
 
 function provider(): "resend" | "webhook" | "console" {
@@ -63,15 +63,15 @@ function layout(title: string, bodyHtml: string): string {
     <tr><td align="center">
       <table role="presentation" width="100%" style="max-width:560px;background:#141a2e;border:1px solid #2a334d;border-radius:16px;overflow:hidden;">
         <tr><td style="padding:20px 24px;background:linear-gradient(135deg,#e10600,#ff2d2d);">
-          <div style="font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.02em;">Extinfy</div>
-          <div style="font-size:12px;color:rgba(255,255,255,.9);margin-top:2px;">Gestão de Extintores</div>
+          <div style="font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.02em;">Promotores SaaS</div>
+          <div style="font-size:12px;color:rgba(255,255,255,.9);margin-top:2px;">Gestão de operações</div>
         </td></tr>
         <tr><td style="padding:28px 24px;">
           <h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:#fff;">${escapeHtml(title)}</h1>
           ${bodyHtml}
         </td></tr>
         <tr><td style="padding:16px 24px 24px;border-top:1px solid #2a334d;font-size:12px;color:#8b93ad;">
-          Este e-mail foi enviado automaticamente pelo Extinfy. Não responda a esta mensagem se não reconhecer a atividade.
+          Este e-mail foi enviado automaticamente pelo Promotores SaaS. Não responda a esta mensagem se não reconhecer a atividade.
         </td></tr>
       </table>
     </td></tr>
@@ -202,16 +202,16 @@ export async function emailAccountCreated(input: {
   rows.push(["Plano", planLine]);
 
   const html = layout(
-    "Sua conta Extinfy foi criada",
+    "Sua conta Promotores SaaS foi criada",
     `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Olá, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Sua conta foi criada com sucesso. Guarde estes dados em local seguro.</p>
     ${dataTable(rows)}
     <p style="margin:0 0 8px;color:#c4cae0;font-size:13px;line-height:1.5;">Use o <strong style="color:#fff;">código de redefinição</strong> se precisar trocar a senha na tela de recuperação.</p>
-    ${cta(loginUrl, "Entrar no Extinfy")}`,
+    ${cta(loginUrl, "Entrar no Promotores SaaS")}`,
   );
 
   return sendEmail({
     to: input.to,
-    subject: "Extinfy — conta criada e dados de acesso",
+    subject: "Promotores SaaS — conta criada e dados de acesso",
     html,
     text: `Conta criada\nEmpresa: ${input.companyName}\nE-mail: ${input.email}\nSenha: ${input.password || "(a definida no cadastro)"}\nCódigo de redefinição: ${input.recoveryCode}\nPlano: ${planLine}\nAcesse: ${loginUrl}`,
   });
@@ -246,7 +246,7 @@ export async function emailPlanChanged(input: {
 
   return sendEmail({
     to: input.to,
-    subject: `Extinfy — ${title}: ${input.planName}`,
+    subject: `Promotores SaaS — ${title}: ${input.planName}`,
     html,
     text: `${title}\nEmpresa: ${input.companyName}\nPlano: ${input.planName}\nStatus: ${input.status}`,
   });
@@ -271,7 +271,7 @@ export async function emailAdminNewCompany(input: {
 
   const html = layout(
     "Nova empresa cadastrada",
-    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Uma nova empresa acabou de se cadastrar no Extinfy.</p>
+    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Uma nova empresa acabou de se cadastrar no Promotores SaaS.</p>
     ${dataTable([
       ["Empresa", input.companyName],
       ["Responsável", input.userName],
@@ -283,7 +283,7 @@ export async function emailAdminNewCompany(input: {
 
   return sendEmail({
     to: admin,
-    subject: `Extinfy — nova empresa: ${input.companyName} (${planLabel})`,
+    subject: `Promotores SaaS — nova empresa: ${input.companyName} (${planLabel})`,
     html,
     text: `Nova empresa\n${input.companyName}\n${input.userName} <${input.email}>\nPlano: ${planLabel}`,
   });
@@ -307,7 +307,7 @@ export async function emailAdminPlanChanged(input: {
   const title = input.isUpgrade ? "Upgrade de plano na plataforma" : "Plano adquirido na plataforma";
   const html = layout(
     title,
-    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Um cliente alterou ou adquiriu um plano no Extinfy.</p>
+    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Um cliente alterou ou adquiriu um plano no Promotores SaaS.</p>
     ${dataTable([
       ["Empresa", input.companyName],
       ["Responsável", input.userName],
@@ -321,7 +321,7 @@ export async function emailAdminPlanChanged(input: {
 
   return sendEmail({
     to: admin,
-    subject: `Extinfy — ${input.isUpgrade ? "upgrade" : "plano"}: ${input.companyName} → ${input.planName}`,
+    subject: `Promotores SaaS — ${input.isUpgrade ? "upgrade" : "plano"}: ${input.companyName} → ${input.planName}`,
     html,
     text: `${title}\nEmpresa: ${input.companyName}\n${input.userName} <${input.email}>\nPlano: ${input.planName}\nStatus: ${input.status}`,
   });
@@ -336,5 +336,5 @@ export async function emailProductExpirationAlerts(input: {
   const list = input.items.slice(0, 50).map((item) => `<li style="margin:0 0 12px;color:#c4cae0;"><strong style="color:#fff;">${escapeHtml(item.description)}</strong><br/>Código: ${escapeHtml(item.productCode)} · Quantidade: ${item.quantity} · Preço: R$ ${escapeHtml(String(item.price))}<br/><span style="color:#fbbf24;">Validade: ${escapeHtml(item.expirationDate)}</span></li>`).join("");
   const more = input.items.length > 50 ? `<p style="color:#8b93ad;font-size:13px;">… e mais ${input.items.length - 50} produto(s).</p>` : "";
   const html = layout("Produtos próximos do vencimento", `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Olá, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong> (${escapeHtml(input.companyName)}). Estes produtos vencem nos próximos 30 dias:</p><ul style="margin:0;padding-left:18px;">${list}</ul>${more}${cta(getAppPublicUrl() + "/produtos", "Ver produtos e validades")}`);
-  return sendEmail({ to: input.to, subject: `Extinfy — ${input.items.length} produto(s) vencem em até 30 dias (${input.companyName})`, html, text: `Produtos com validade nos próximos 30 dias: ${input.items.map(i => `${i.description} (${i.productCode}), quantidade ${i.quantity}, validade ${i.expirationDate}, preço R$ ${i.price}`).join("; ")}. Acesse /produtos.` });
+  return sendEmail({ to: input.to, subject: `Promotores SaaS — ${input.items.length} produto(s) vencem em até 30 dias (${input.companyName})`, html, text: `Produtos com validade nos próximos 30 dias: ${input.items.map(i => `${i.description} (${i.productCode}), quantidade ${i.quantity}, validade ${i.expirationDate}, preço R$ ${i.price}`).join("; ")}. Acesse /produtos.` });
 }

@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import * as memberAuth from "./memberAuth";
 import { sql, eq } from "drizzle-orm";
-import { clients, extinguishers } from "../drizzle/schema.original";
+import { clients } from "../drizzle/schema.original";
 import { ENTITLEMENT_KEYS, type EntitlementKey } from "../shared/entitlements";
 import { assertCompanyFeatureAccess, getCompanyEntitlementBase } from "./entitlements";
 
@@ -54,16 +54,6 @@ async function countClients(companyId: number): Promise<number> {
   return Number(rows[0]?.total || 0);
 }
 
-async function countExtinguishers(companyId: number): Promise<number> {
-  const database = await db.getDb();
-  if (!database) return 0;
-  const rows = await database
-    .select({ total: sql<number>`count(*)` })
-    .from(extinguishers)
-    .where(eq(extinguishers.accountId, companyId));
-  return Number(rows[0]?.total || 0);
-}
-
 async function countUsers(companyId: number): Promise<number> {
   const list = await memberAuth.listMemberAccounts(companyId);
   return Array.isArray(list) ? list.length : 0;
@@ -83,20 +73,6 @@ export async function assertClientLimit(companyId: number) {
   return plan;
 }
 
-export async function assertExtinguisherLimit(companyId: number) {
-  const plan = await requireModuleAccess(companyId, "pointsOfSale", "Cadastro de pontos de venda não está disponível no seu plano.");
-  if (plan.maxExtinguishers == null) return plan;
-  const current = await countExtinguishers(companyId);
-  if (current >= plan.maxExtinguishers) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: `Limite de pontos de venda do plano ${plan.name} atingido (${plan.maxExtinguishers}). Faça upgrade para continuar.`,
-      cause: { code: "PLAN_LIMIT", resource: "pointsOfSale", limit: plan.maxExtinguishers, current },
-    });
-  }
-  return plan;
-}
-
 export async function assertUserLimit(companyId: number) {
   const plan = await getEffectivePlan(companyId);
   if (plan.maxUsers == null) return plan;
@@ -109,10 +85,6 @@ export async function assertUserLimit(companyId: number) {
     });
   }
   return plan;
-}
-
-export async function assertServiceOrderFeature(companyId: number) {
-  return requireModuleAccess(companyId, "serviceOrders", "Ordens de serviço não estão disponíveis no seu plano.");
 }
 
 export async function assertAlertsFeature(companyId: number) {

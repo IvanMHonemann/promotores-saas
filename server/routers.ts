@@ -260,7 +260,6 @@ export const appRouter = router({
   }),
 
   offline: router({
-    snapshot: commercialFeatureProcedure("offline").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().min(10).max(100).optional() }).optional()).query(({ ctx, input }) => db.getOfflineSnapshot(ctx.accountId, input)),
   }),
 
   platform: router({
@@ -361,7 +360,6 @@ export const appRouter = router({
       }),
       update: platformProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().min(2).optional(), active: z.boolean().optional() })).mutation(async ({ input }) => { await db.updateCompany(input.id, { name: input.name, active: input.active }); return { success: true } as const; }),
     }),
-    dashboard: platformProcedure.input(z.object({ companyId: z.number().int().positive(), city: z.string().optional(), from: z.string().optional(), to: z.string().optional() })).query(({ input }) => db.getPlatformDashboardStats(input.companyId, input)),
     users: router({
       list: platformProcedure.query(() => memberAuth.listMemberAccounts()),
       create: platformProcedure.input(z.object({ companyId: z.number().int().positive(), userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole })).mutation(async ({ input, ctx }) => {
@@ -535,7 +533,6 @@ export const appRouter = router({
 
   // O dashboard é a tela básica de toda conta autenticada; módulos pagos
   // continuam usando commercialFeatureProcedure normalmente.
-  dashboard: router({ stats: companyBillingProcedure.query(async ({ ctx }) => { if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Este painel não está disponível para promotores." }); return db.getDashboardStats(ctx.accountId); }) }),
 
   companyProfile: router({
     updateName: companyAdminProcedure.input(z.object({ name: z.string().min(2).max(255) })).mutation(async ({ ctx, input }) => {

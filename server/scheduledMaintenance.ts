@@ -5,7 +5,7 @@ import mysql from "mysql2/promise";
 import { storagePut } from "./storage";
 
 function backupDirectory() {
-  return process.env.BACKUP_DIR || "/tmp/gestao-extintores-backups/daily";
+  return process.env.BACKUP_DIR || "/tmp/promotores-saas-backups/daily";
 }
 
 async function pruneBackups(directory: string, retentionDays: number) {
@@ -13,7 +13,7 @@ async function pruneBackups(directory: string, retentionDays: number) {
   let removed = 0;
   try {
     for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      if (!entry.isFile() || !/^extintores-.*\.json$/.test(entry.name)) continue;
+      if (!entry.isFile() || !/^promotores-saas-.*\.json$/.test(entry.name)) continue;
       const file = path.join(directory, entry.name);
       if ((await fs.stat(file)).mtimeMs < cutoff) {
         await fs.rm(file);
@@ -45,7 +45,7 @@ export async function runScheduledMaintenance() {
     }
     const backup = { format: 1, generatedAt: new Date().toISOString(), database: "mysql-compatible", schemaOnly: false, tables };
     const serialized = JSON.stringify(backup, null, 2);
-    const file = path.join(directory, `extintores-${new Date().toISOString().replaceAll(/[:.]/g, "-")}.json`);
+    const file = path.join(directory, `promotores-saas-${new Date().toISOString().replaceAll(/[:.]/g, "-")}.json`);
     await fs.writeFile(file, serialized, { mode: 0o600 });
     const checksum = crypto.createHash("sha256").update(serialized).digest("hex");
     await fs.writeFile(`${file}.sha256`, `${checksum}  ${path.basename(file)}\n`, { mode: 0o600 });

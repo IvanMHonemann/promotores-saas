@@ -64,7 +64,7 @@ export async function notifyOwner(
         accept: "application/json",
         "content-type": "application/json",
       },
-      body: JSON.stringify({ title, content, source: "gestao-extintores", timestamp: new Date().toISOString() }),
+      body: JSON.stringify({ title, content, source: "promotores-saas", timestamp: new Date().toISOString() }),
     });
 
     if (!response.ok) {

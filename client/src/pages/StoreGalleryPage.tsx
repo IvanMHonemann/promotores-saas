@@ -11,38 +11,46 @@ import { toast } from "sonner";
 import { jsPDF } from "jspdf";
 
 
-async function downloadImage(url: string, name: string) {
+async function getImageFile(photoId: number, name: string): Promise<File | null> {
   try {
-    const blob = await fetch(url).then((r) => r.blob());
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `foto-${name || "loja"}.jpg`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const res = await fetch(`/api/trpc/storePhotos.getImageData?input=${encodeURIComponent(JSON.stringify({ photoId }))}`);
+    const data = await res.json();
+    const base64 = data?.result?.data?.base64;
+    if (!base64) return null;
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: "image/jpeg" });
+    return new File([blob], `foto-${name || "loja"}.jpg`, { type: "image/jpeg" });
   } catch {
-    window.open(url, "_blank");
+    return null;
   }
 }
-async function shareToWhatsApp(url: string, name: string, photoId?: number) {
-  try {
-    if (photoId) {
-      const res = await fetch(`/api/trpc/storePhotos.getImageData?input=${encodeURIComponent(JSON.stringify({ photoId }))}`);
-      const data = await res.json();
-      const base64 = data?.result?.data?.base64;
-      if (base64) {
-        const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-        const blob = new Blob([bytes], { type: "image/jpeg" });
-        const file = new File([blob], `foto-${name || "loja"}.jpg`, { type: "image/jpeg" });
-        if (navigator.share && navigator.canShare?.({ files: [file] })) {
-          await navigator.share({ files: [file], title: `Foto - ${name}` });
-          return;
-        }
-      }
+async function downloadImage(photoId: number, name: string) {
+  const file = await getImageFile(photoId, name);
+  if (!file) return toast.error("Não foi possível baixar.");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+async function shareToWhatsApp(photoId: number, name: string) {
+  const file = await getImageFile(photoId, name);
+  if (!file) return toast.error("Não foi possível obter a imagem.");
+  if (navigator.share) {
+    try {
+      await navigator.share({ files: [file], title: `Foto - ${name}` });
+      return;
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
     }
-  } catch (e: any) {
-    if (e?.name === "AbortError") return;
   }
-  toast.error("Compartilhamento não disponível neste dispositivo.");
+  // Fallback: baixa o arquivo
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast.info("Arquivo baixado. Compartilhe manualmente.");
 }
 
 function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promoterId: number; latitude: number | null }>) {
@@ -96,7 +104,7 @@ function PhotoThumb({ photoId, selected, selectMode, hasGps, time, onToggle, onE
 function WhatsAppButton({ photoId, storeName }: { photoId: number; storeName?: string }) {
   const { data } = trpc.storePhotos.getImageUrl.useQuery({ photoId }, { staleTime: 50 * 60 * 1000, retry: 1 });
   return (
-    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={() => data?.url && shareToWhatsApp(data.url, storeName || "loja")}>
+    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={() => shareToWhatsApp(photoId, storeName || "loja")}>
       <MessageCircle className="h-3.5 w-3.5 text-emerald-300" />
     </Button>
   );
@@ -416,7 +424,7 @@ export default function StoreGalleryPage() {
                   </p>
                 </div>
               </div>
-              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => shareToWhatsApp(lightbox.url, store?.name || "loja")}>
+              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => shareToWhatsApp(lightbox.id, store?.name || "loja")}>
                 <MessageCircle className="mr-2 h-5 w-5" /> Enviar no WhatsApp
               </Button>
               <div className="mt-3 flex justify-around border-t border-white/10 pt-3 text-[10px] text-slate-300">
@@ -428,7 +436,7 @@ export default function StoreGalleryPage() {
                     <MapPin className="h-5 w-5 text-white" /><span>Mapa</span>
                   </a>
                 )}
-                <button className="flex flex-col items-center gap-1" onClick={() => shareToWhatsApp(lightbox.url, store?.name || "loja")}>
+                <button className="flex flex-col items-center gap-1" onClick={() => shareToWhatsApp(lightbox.id, store?.name || "loja")}>
                   <Download className="h-5 w-5 text-white" /><span>Baixar</span>
                 </button>
                 <button className="flex flex-col items-center gap-1 text-rose-300" onClick={() => { singleDelete.mutate({ photoId: lightbox.id }); setLightbox(null); }}>

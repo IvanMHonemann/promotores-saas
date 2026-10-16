@@ -6,11 +6,11 @@ import superjson from "superjson";
 import App from "./App";
 import "./index.css";
 
-const FORCE_RELOAD_VERSION = "v9";
+const FORCE_RELOAD_VERSION = "v10";
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     let refreshing = false;
-    navigator.serviceWorker.register("/sw.js").then((registration) => {
+    navigator.serviceWorker.register(`/sw.js?version=${FORCE_RELOAD_VERSION}`).then((registration) => {
       void registration.update();
       window.addEventListener("online", () => void registration.update());
       document.addEventListener("visibilitychange", () => {

@@ -47,10 +47,19 @@ export default function OperationsDashboard() {
   const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
   const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
   const routes = trpc.operations.routes.list.useQuery({ date: today }, { enabled: hasFieldOperations });
+  const weekly = trpc.operations.routes.weekly.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
+  const promoters = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { enabled: hasFieldOperations });
   const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin && hasTimeTracking });
   const utils = trpc.useUtils();
+  const saveWeekly = trpc.operations.routes.saveWeekly.useMutation({
+    onSuccess: async () => {
+      toast.success("Roteiro semanal salvo.");
+      await utils.operations.routes.weekly.invalidate();
+    },
+    onError: (error) => toast.error(error.message || "Não foi possível salvar o roteiro semanal."),
+  });
   const [storeName, setStoreName] = useState("");
   const [storeCity, setStoreCity] = useState("");
   const [storeAddress, setStoreAddress] = useState("");

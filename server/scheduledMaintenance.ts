@@ -194,12 +194,13 @@ export async function runAutoClockOut() {
       );
       for (const admin of admins || []) {
         try {
-          const { emailService } = await import("./email");
-          if (emailService?.send) {
-            await emailService.send({
+          const { sendEmail } = await import("./email");
+          if (sendEmail) {
+            await sendEmail({
               to: admin.email,
               subject: `Saída automática: ${row.userName}`,
               text: `A jornada de ${row.userName} (${row.companyName}) foi encerrada automaticamente por estar aberta de um dia anterior.`,
+              html: `<p>A jornada de ${row.userName} (${row.companyName}) foi encerrada automaticamente por estar aberta de um dia anterior.</p>`,
             });
             notified += 1;
           }
@@ -247,12 +248,13 @@ export async function runPhotoMaintenance() {
       );
       for (const admin of admins || []) {
         try {
-          const { emailService } = await import("./email");
-          if (emailService?.send) {
-            await emailService.send({
+          const { sendEmail } = await import("./email");
+          if (sendEmail) {
+            await sendEmail({
               to: admin.email,
               subject: "Alerta de consumo de fotos",
               text: `Sua empresa possui ${row.total} fotos armazenadas. O limite de alerta é ${PHOTO_LIMIT}. Considere revisar ou aumentar o plano.`,
+              html: `<p>Sua empresa possui ${row.total} fotos armazenadas. O limite de alerta é ${PHOTO_LIMIT}. Considere revisar ou aumentar o plano.</p>`,
             });
             alerted += 1;
           }

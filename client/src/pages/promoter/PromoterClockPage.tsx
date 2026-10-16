@@ -255,7 +255,7 @@ export default function PromoterClockPage() {
                 <label htmlFor="history-date" className="text-sm font-semibold text-slate-200">Dia para visualizar</label>
                 <input
                   id="history-date"
-                  type="date" className="[color-scheme:dark]"
+                  type="date"
                   value={selectedDate}
                   onChange={(event) => setSelectedDate(event.target.value)}
                   className="h-10 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100"

@@ -26,6 +26,7 @@ import ProductsPage from "./pages/ProductsPage";
 import TrashPage from "./pages/TrashPage";
 import PlatformDashboard from "./pages/platform/PlatformDashboard";
 import { PwaStatusBar } from "./components/PwaStatusBar";
+import { BusyProvider } from "./components/BusyOverlay";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -212,9 +213,11 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
-          <Toaster />
-          <PwaStatusBar />
-          <Router />
+          <BusyProvider>
+            <Toaster />
+            <PwaStatusBar />
+            <Router />
+          </BusyProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

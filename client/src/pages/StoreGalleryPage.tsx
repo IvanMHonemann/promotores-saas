@@ -9,9 +9,43 @@ import { PhotoCapture } from "@/components/PhotoCapture";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { jsPDF } from "jspdf";
+import { useBusy } from "@/components/BusyOverlay";
+import { buildZip } from "@/lib/zip";
+
+const SHARE_BATCH_SIZE = 10;
+const FETCH_CONCURRENCY = 4;
+
+/** Dispara o download de um arquivo (revoga a URL só depois, senão alguns navegadores cancelam). */
+function saveFile(file: Blob, filename: string) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/** Executa `worker` sobre `items` com no máximo `limit` chamadas em paralelo, mantendo a ordem. */
+async function mapPool<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>, onDone?: (done: number) => void): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  let done = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i], i);
+      done += 1;
+      onDone?.(done);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
 
 
-async function getImageFile(photoId: number, name: string): Promise<File | null> {
+async function getImageFile(photoId: number, name: string, fileBase?: string): Promise<File | null> {
   try {
     // A sessão vai no header (igual ao cliente tRPC em main.tsx); sem isso a API responde 401.
     const headers: Record<string, string> = {};
@@ -31,7 +65,7 @@ async function getImageFile(photoId: number, name: string): Promise<File | null>
     const ext = mime.includes("png") ? "png" : "jpg";
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
     const blob = new Blob([bytes], { type: mime });
-    return new File([blob], `foto-${name || "loja"}.${ext}`, { type: mime });
+    return new File([blob], `${fileBase || `foto-${name || "loja"}`}.${ext}`, { type: mime });
   } catch {
     return null;
   }
@@ -39,30 +73,7 @@ async function getImageFile(photoId: number, name: string): Promise<File | null>
 async function downloadImage(photoId: number, name: string) {
   const file = await getImageFile(photoId, name);
   if (!file) return toast.error("Não foi possível baixar.");
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(file);
-  a.download = file.name;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-async function shareToWhatsApp(photoId: number, name: string) {
-  const file = await getImageFile(photoId, name);
-  if (!file) return toast.error("Não foi possível obter a imagem.");
-  if (navigator.share) {
-    try {
-      await navigator.share({ files: [file], title: `Foto - ${name}` });
-      return;
-    } catch (e: any) {
-      if (e?.name === "AbortError") return;
-    }
-  }
-  // Fallback: baixa o arquivo
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(file);
-  a.download = file.name;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast.info("Arquivo baixado. Compartilhe manualmente.");
+  saveFile(file, file.name);
 }
 
 function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promoterId: number; latitude: number | null }>) {
@@ -150,6 +161,8 @@ export default function StoreGalleryPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(null);
+  const [ready, setReady] = useState<{ files: File[]; failed: number; sent: number[] } | null>(null);
+  const { run } = useBusy();
 
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { staleTime: 30000 });
   const store = stores.data?.find((s) => s.id === storeId);
@@ -205,61 +218,97 @@ export default function StoreGalleryPage() {
     setSelectMode(true);
   };
 
-  const getSelectedFiles = async () => {
-    const ids = Array.from(selected).slice(0, 10);
-    const files: File[] = [];
-    for (const id of ids) {
-      try {
-        const res = await utils.storePhotos.getImageData.fetch({ photoId: id });
-        if (!res?.base64) continue;
-        const bytes = Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
-        const blob = new Blob([bytes], { type: res.mime || "image/jpeg" });
-        files.push(new File([blob], `foto-${id}.jpg`, { type: res.mime || "image/jpeg" }));
-      } catch { /* ignore */ }
-    }
-    return files;
-  };
+  const storeLabel = (store?.name || "loja").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "loja";
+
+  /** Baixa as fotos selecionadas (em paralelo, com progresso). Nada é descartado em silêncio: devolve também quantas falharam. */
+  const prepareSelectedFiles = (label: string) =>
+    run(label, async ({ setProgress }) => {
+      const ids = Array.from(selected);
+      setProgress(0, `0 de ${ids.length}`);
+      const results = await mapPool(
+        ids,
+        FETCH_CONCURRENCY,
+        (id, i) => getImageFile(id, storeLabel, `foto-${storeLabel}-${String(i + 1).padStart(2, "0")}`),
+        (done) => setProgress(done / ids.length, `${done} de ${ids.length}`),
+      );
+      const files = results.filter((f): f is File => !!f);
+      return { files, failed: ids.length - files.length };
+    });
+
+  const downloadFiles = (files: File[]) =>
+    run(files.length > 1 ? "Compactando fotos..." : "Baixando foto...", async ({ setProgress }) => {
+      if (files.length === 1) {
+        saveFile(files[0], files[0].name);
+        return;
+      }
+      setProgress(null);
+      const zip = await buildZip(files);
+      saveFile(zip, `fotos-${storeLabel}-${new Date().toISOString().slice(0, 10)}.zip`);
+    });
 
   const shareSelected = async () => {
     if (selected.size === 0) return toast.info("Selecione ao menos uma foto.");
-    toast.info("Preparando fotos...");
-    const files = await getSelectedFiles();
+    const { files, failed } = await prepareSelectedFiles("Preparando fotos para compartilhar...");
     if (files.length === 0) return toast.error("Não foi possível obter as imagens.");
-    if (navigator.share && navigator.canShare?.({ files })) {
-      try {
-        await navigator.share({ files, title: "Fotos - " + (store?.name || "Loja") });
-        toast.success("Compartilhamento iniciado.");
-        return;
-      } catch (e: any) {
-        if (e?.name === "AbortError") return;
-      }
+    const canShareFiles = typeof navigator.share === "function" && (navigator.canShare?.({ files: files.slice(0, SHARE_BATCH_SIZE) }) ?? true);
+    if (!canShareFiles) {
+      await downloadFiles(files);
+      toast.info("Compartilhamento direto indisponível neste aparelho. Baixei as fotos em um .zip para você enviar manualmente.");
+      return;
     }
-    toast.error("Compartilhamento não disponível neste dispositivo. Use o botão Baixar.");
+    // O navegador só abre o compartilhamento a partir de um toque do usuário. Como a preparação das
+    // fotos demora, pedimos um novo toque (botão abaixo) em vez de tentar compartilhar "sem gesto".
+    setReady({ files, failed, sent: [] });
+  };
+
+  const shareBatch = (index: number) => {
+    if (!ready) return;
+    const batch = ready.files.slice(index * SHARE_BATCH_SIZE, (index + 1) * SHARE_BATCH_SIZE);
+    // IMPORTANTE: sem nenhum "await" antes — precisa rodar dentro do toque.
+    navigator
+      .share({ files: batch, title: `Fotos - ${store?.name || "Loja"}` })
+      .then(() => setReady((r) => (r ? { ...r, sent: Array.from(new Set([...r.sent, index])) } : r)))
+      .catch((e: any) => {
+        if (e?.name === "AbortError") return;
+        toast.error("Não foi possível abrir o compartilhamento. Use \"Baixar tudo (.zip)\".");
+      });
   };
 
   const downloadSelected = async () => {
     if (selected.size === 0) return toast.info("Selecione ao menos uma foto.");
-    toast.info("Baixando fotos...");
-    const files = await getSelectedFiles();
+    const { files, failed } = await prepareSelectedFiles("Baixando fotos...");
     if (files.length === 0) return toast.error("Não foi possível baixar as imagens.");
-    for (const file of files) {
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(file);
-      a.download = file.name;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    }
-    toast.success(files.length + " foto(s) baixada(s).");
+    await downloadFiles(files);
+    toast.success(`${files.length} foto(s) baixada(s)${files.length > 1 ? " em um arquivo .zip" : ""}.${failed ? ` ${failed} não puderam ser obtidas.` : ""}`);
   };
 
   const deleteSelected = () => {
     if (selected.size === 0) return;
     if (!confirm(`Excluir ${selected.size} foto(s)? Esta ação pode ser definitiva.`)) return;
-    bulkDelete.mutate({ photoIds: Array.from(selected) });
+    void run("Excluindo fotos...", () => bulkDelete.mutateAsync({ photoIds: Array.from(selected) })).catch(() => {});
   };
 
-  const generateReport = async () => {
+  const shareOne = async (photoId: number) => {
+    const file = await run("Preparando foto...", () => getImageFile(photoId, store?.name || "loja"));
+    if (!file) return toast.error("Não foi possível obter a imagem.");
+    if (typeof navigator.share === "function" && (navigator.canShare?.({ files: [file] }) ?? true)) {
+      try {
+        await navigator.share({ files: [file], title: `Foto - ${store?.name || "Loja"}` });
+        return;
+      } catch (e: any) {
+        if (e?.name === "AbortError") return;
+      }
+    }
+    saveFile(file, file.name);
+    toast.info("Arquivo baixado. Compartilhe manualmente.");
+  };
+
+  const generateReport = () => {
     if (allPhotos.length === 0) return toast.info("Nenhuma foto no período para o relatório.");
+    return run("Gerando relatório em PDF...", ({ setProgress }) => buildReport(setProgress));
+  };
+
+  const buildReport = async (setProgress: (v: number | null, d?: string) => void) => {
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     doc.setFontSize(16);
     doc.text(`Relatório fotográfico - ${store?.name || "Loja"}`, 14, 18);
@@ -268,7 +317,9 @@ export default function StoreGalleryPage() {
     doc.text(`Período: ${from || "início"} a ${to || "hoje"} · ${allPhotos.length} foto(s)`, 14, 32);
 
     let y = 42;
-    for (const photo of allPhotos.slice(0, 12)) {
+    const reportPhotos = allPhotos.slice(0, 12);
+    for (const [index, photo] of reportPhotos.entries()) {
+      setProgress(index / reportPhotos.length, `Foto ${index + 1} de ${reportPhotos.length}`);
       try {
         const res = await utils.storePhotos.getImageUrl.fetch({ photoId: photo.id });
         if (res?.url) {
@@ -332,7 +383,6 @@ export default function StoreGalleryPage() {
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 p-3">
             <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectPeriod}>Todas</Button>
             <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectToday}>Hoje</Button>
-            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectPeriod}>Todas</Button>
             <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={() => setSelected(new Set())}>Limpar</Button>
             <span className="text-xs text-slate-400">{selected.size} selecionada(s)</span>
             <div className="ml-auto flex gap-2">
@@ -431,6 +481,40 @@ export default function StoreGalleryPage() {
         )}
       </div>
 
+      {ready && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 p-4 sm:items-center" onClick={() => setReady(null)}>
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-base font-bold text-white">{ready.files.length} foto(s) prontas</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Toque no botão para abrir o compartilhamento (WhatsApp etc.).
+                  {ready.files.length > SHARE_BATCH_SIZE ? ` Enviamos em lotes de ${SHARE_BATCH_SIZE} fotos.` : ""}
+                  {ready.failed > 0 ? ` ${ready.failed} foto(s) não puderam ser obtidas.` : ""}
+                </p>
+              </div>
+              <button className="text-white" onClick={() => setReady(null)} aria-label="Fechar"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {Array.from({ length: Math.ceil(ready.files.length / SHARE_BATCH_SIZE) }, (_, i) => {
+                const start = i * SHARE_BATCH_SIZE + 1;
+                const end = Math.min((i + 1) * SHARE_BATCH_SIZE, ready.files.length);
+                const sent = ready.sent.includes(i);
+                return (
+                  <Button key={i} className={`h-11 w-full text-base font-bold ${sent ? "bg-slate-700 text-slate-200" : "bg-green-500 text-white hover:bg-green-400"}`} onClick={() => shareBatch(i)}>
+                    <MessageCircle className="mr-2 h-5 w-5" />
+                    {sent ? "Enviado ✓ — enviar de novo" : ready.files.length > SHARE_BATCH_SIZE ? `Enviar fotos ${start}–${end}` : "Compartilhar fotos"}
+                  </Button>
+                );
+              })}
+              <Button variant="outline" className="h-10 w-full border-white/15 text-slate-200" onClick={() => void downloadFiles(ready.files)}>
+                <Download className="mr-2 h-4 w-4" /> Baixar tudo (.zip)
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {lightbox && (() => {
         const photo = allPhotos.find((p) => p.id === lightbox.id);
         return (
@@ -456,7 +540,7 @@ export default function StoreGalleryPage() {
                   </p>
                 </div>
               </div>
-              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => shareToWhatsApp(lightbox.id, store?.name || "loja")}>
+              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => void shareOne(lightbox.id)}>
                 <MessageCircle className="mr-2 h-5 w-5" /> Enviar no WhatsApp
               </Button>
               <div className="mt-3 flex justify-around border-t border-white/10 pt-3 text-[10px] text-slate-300">
@@ -468,10 +552,10 @@ export default function StoreGalleryPage() {
                     <MapPin className="h-5 w-5 text-white" /><span>Mapa</span>
                   </a>
                 )}
-                <button className="flex flex-col items-center gap-1" onClick={() => shareToWhatsApp(lightbox.id, store?.name || "loja")}>
+                <button className="flex flex-col items-center gap-1" onClick={() => void run("Baixando foto...", () => downloadImage(lightbox.id, store?.name || "loja"))}>
                   <Download className="h-5 w-5 text-white" /><span>Baixar</span>
                 </button>
-                <button className="flex flex-col items-center gap-1 text-rose-300" onClick={() => { singleDelete.mutate({ photoId: lightbox.id }); setLightbox(null); }}>
+                <button className="flex flex-col items-center gap-1 text-rose-300" onClick={() => { const id = lightbox.id; setLightbox(null); void run("Excluindo foto...", () => singleDelete.mutateAsync({ photoId: id })).catch(() => {}); }}>
                   <Trash2 className="h-5 w-5" /><span>Excluir</span>
                 </button>
               </div>

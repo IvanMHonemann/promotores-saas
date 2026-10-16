@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useBusy } from "@/components/BusyOverlay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -92,6 +93,7 @@ export default function AuditPage() {
   const promotersQuery = trpc.audit.promoters.useQuery();
   const listQuery = trpc.audit.promoterActivity.useQuery(filters);
   const utils = trpc.useUtils();
+  const { run } = useBusy();
   const exportMutation = trpc.audit.promoterActivityExportCsv.useMutation({
     onSuccess: (result) => { downloadCsv(result.csv, result.filename); toast.success("Arquivo de atividades baixado."); },
     onError: (error) => toast.error(error.message || "Não foi possível exportar o histórico."),
@@ -167,7 +169,7 @@ export default function AuditPage() {
     <div className="min-w-0 space-y-5">
       <div className="flex flex-col gap-3 rounded-2xl border border-teal-300/15 bg-gradient-to-br from-teal-300/[.10] to-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div className="flex min-w-0 items-start gap-3"><div className="rounded-xl bg-teal-300/10 p-2.5 text-teal-200"><Activity className="h-5 w-5"/></div><div className="min-w-0"><h2 className="font-bold text-white">Histórico de campo</h2><p className="mt-1 text-sm leading-relaxed text-slate-300">Reúne tarefas e visitas, marcações de ponto, correções, produtos e outros eventos registrados no sistema.</p></div></div>
-        <Button onClick={() => exportMutation.mutate({ from: from || undefined, to: to || undefined, promoterId: promoterId === "all" ? undefined : Number(promoterId), category: category === "all" ? undefined : category, search: search.trim() || undefined })} disabled={exportMutation.isPending} className="w-full shrink-0 bg-teal-300 font-semibold text-slate-950 hover:bg-teal-200 sm:w-auto"><span className="flex items-center justify-center gap-2">{exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin"/> : <Download className="h-4 w-4"/>}Exportar CSV</span></Button>
+        <Button onClick={() => void run("Exportando histórico...", () => exportMutation.mutateAsync({ from: from || undefined, to: to || undefined, promoterId: promoterId === "all" ? undefined : Number(promoterId), category: category === "all" ? undefined : category, search: search.trim() || undefined })).catch(() => {})} disabled={exportMutation.isPending} className="w-full shrink-0 bg-teal-300 font-semibold text-slate-950 hover:bg-teal-200 sm:w-auto"><span className="flex items-center justify-center gap-2">{exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin"/> : <Download className="h-4 w-4"/>}Exportar CSV</span></Button>
       </div>
 
       <Card className="min-w-0 border-white/10 bg-slate-900/70 text-white">

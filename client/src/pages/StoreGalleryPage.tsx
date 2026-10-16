@@ -102,9 +102,29 @@ function PhotoThumb({ photoId, selected, selectMode, hasGps, time, onToggle, onE
 
 
 function WhatsAppButton({ photoId, storeName }: { photoId: number; storeName?: string }) {
-  const { data } = trpc.storePhotos.getImageUrl.useQuery({ photoId }, { staleTime: 50 * 60 * 1000, retry: 1 });
+  const utils = trpc.useUtils();
+  const share = async () => {
+    try {
+      const res = await utils.storePhotos.getImageData.fetch({ photoId });
+      if (!res?.base64) return toast.error("Não foi possível obter a imagem.");
+      const bytes = Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: res.mime || "image/jpeg" });
+      const file = new File([blob], `foto-${storeName || "loja"}.jpg`, { type: res.mime || "image/jpeg" });
+      if (navigator.share) {
+        await navigator.share({ files: [file], title: `Foto - ${storeName}` });
+      } else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError") toast.error("Não foi possível compartilhar.");
+    }
+  };
   return (
-    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={() => shareToWhatsApp(photoId, storeName || "loja")}>
+    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={share}>
       <MessageCircle className="h-3.5 w-3.5 text-emerald-300" />
     </Button>
   );

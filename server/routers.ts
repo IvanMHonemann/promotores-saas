@@ -578,7 +578,9 @@ export const appRouter = router({
     resetPassword: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), newPassword: z.string().min(8) })).mutation(async ({ ctx, input }) => { const users = await memberAuth.listMemberAccounts(ctx.accountId); if (!users.some(account => account.id === input.id)) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." }); await memberAuth.resetMemberPassword(input.id, input.newPassword); return { success: true } as const; }),
   }),
 
-  dashboard: router({ stats: commercialFeatureProcedure("dashboard").query(async ({ ctx }) => { if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Este painel não está disponível para promotores." }); return db.getDashboardStats(ctx.accountId); }) }),
+  // O dashboard é a tela básica de toda conta autenticada; módulos pagos
+  // continuam usando commercialFeatureProcedure normalmente.
+  dashboard: router({ stats: companyBillingProcedure.query(async ({ ctx }) => { if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Este painel não está disponível para promotores." }); return db.getDashboardStats(ctx.accountId); }) }),
 
   companyProfile: router({
     updateName: companyAdminProcedure.input(z.object({ name: z.string().min(2).max(255) })).mutation(async ({ ctx, input }) => {

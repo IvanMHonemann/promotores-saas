@@ -306,18 +306,6 @@ export async function getClientById(id: number, accountId: number, ownerUserId?:
   return result[0];
 }
 
-export async function createClient(data: InsertClient) {
-  const tenant = requireAccountId(data.accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const optional = ["cnpj", "address", "cep", "phone", "contactName", "cpf", "birthDate", "notes"] as const;
-  const payload: any = { ...data, accountId: tenant, stockQuantity: Number((data as any).stockQuantity) > 0 ? Number((data as any).stockQuantity) : 1 };
-  for (const key of optional) if (payload[key] === "") payload[key] = null;
-  const result = await db.insert(clients).values(payload);
-  return Number(result[0].insertId);
-}
-
 export async function updateClient(id: number, data: Partial<InsertClient>, accountId: number) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
@@ -385,31 +373,12 @@ export async function getExtinguishers(accountId: number) {
   return await db.select().from(extinguishers).where(eq(extinguishers.accountId, tenant)).orderBy(extinguishers.expirationDate).limit(500);
 }
 
-export async function getExtinguisherById(id: number, accountId: number) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return undefined;
-  const rows = await db.select().from(extinguishers).where(and(eq(extinguishers.id, id), eq(extinguishers.accountId, tenant))).limit(1);
-  return rows[0];
-}
-
 export async function getExtinguishersByClient(clientId: number, accountId: number) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) return [];
   if (!(await getClientById(clientId, tenant))) return [];
   return await db.select().from(extinguishers).where(and(eq(extinguishers.clientId, clientId), eq(extinguishers.accountId, tenant))).orderBy(extinguishers.expirationDate);
-}
-
-export async function createExtinguisher(data: InsertExtinguisher, accountId: number) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  if (data.accountId !== tenant || !(await getClientById(data.clientId, tenant))) throw new Error("Cliente sem permissão");
-  const publicToken = data.publicToken?.trim() || generateExtinguisherPublicToken();
-  const result = await db.insert(extinguishers).values({ ...data, accountId: tenant, publicToken });
-  return Number(result[0].insertId);
 }
 
 /** Garante publicToken no extintor do tenant; não regenera se já existir. */
@@ -537,26 +506,6 @@ export async function deleteExtinguisher(id: number, accountId: number) {
   });
 }
 
-export async function getExpiringExtinguishers(daysAhead: number, accountId: number) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return [];
-  const result = await db.select({ extinguisher: extinguishers, client: clients }).from(extinguishers).innerJoin(clients, and(eq(extinguishers.clientId, clients.id), eq(extinguishers.accountId, clients.accountId))).where(and(eq(extinguishers.accountId, tenant), eq(clients.accountId, tenant), sql`${extinguishers.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${daysAhead} DAY)`)).orderBy(extinguishers.expirationDate).limit(300);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return result.map(item => {
-    const expDate = new Date(item.extinguisher.expirationDate);
-    expDate.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((expDate.getTime() - today.getTime()) / 86400000);
-    let alertStatus: "expired" | "urgent" | "warning" | "ok" = "ok";
-    let alertMessage = "";
-    if (diffDays < 0) { alertStatus = "expired"; alertMessage = `VENCIDO há ${Math.abs(diffDays)} dia(s)!`; }
-    else if (diffDays <= 15) { alertStatus = "urgent"; alertMessage = diffDays === 0 ? "VENCE HOJE!" : `Vence em ${diffDays} dia(s) (Urgente)`; }
-    else if (diffDays <= daysAhead) { alertStatus = "warning"; alertMessage = `Vence em ${diffDays} dia(s) (Alerta prévio)`; }
-    return { ...item, diffDays, alertStatus, alertMessage, isNearExpiration: diffDays <= daysAhead };
-  });
-}
-
 export async function getServiceOrdersPage(accountId: number, options: { page?: number; pageSize?: number; clientId?: number; search?: string; city?: string; from?: string; to?: string; ownerUserId?: number | null } = {}) {
   const tenant = requireAccountId(accountId);
   await ensureOwnerScopeColumns();
@@ -644,41 +593,6 @@ async function allocateOrderNumber(tx: any, tenant: number) {
 
 function isDuplicateKeyError(error: unknown) {
   return Number((error as any)?.code) === 1062 || String((error as any)?.message || "").includes("Duplicate entry");
-}
-
-export async function createServiceOrder(order: InsertServiceOrder, items: Omit<InsertServiceOrderItem, "serviceOrderId">[], accountId: number) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const pool = await getPool();
-  const db = await getDb();
-  if (!pool) throw new Error("Database not connected");
-  if (!db) throw new Error("Database not connected");
-  if (order.accountId !== tenant || !(await getClientById(order.clientId, tenant))) throw new Error("Cliente sem permissão");
-  const requestedNumber = order.orderNumber && Number.isInteger(order.orderNumber) ? order.orderNumber : undefined;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      return await db.transaction(async (tx) => {
-        const orderNumber = requestedNumber ?? await allocateOrderNumber(tx, tenant);
-        const result = await tx.insert(serviceOrders).values({ ...order, accountId: tenant, orderNumber });
-        const orderId = Number(result[0].insertId);
-        if (items.length) await tx.insert(serviceOrderItems).values(items.map(item => { const { extinguisherId: _ignored, ...row } = item as any; return { ...row, serviceOrderId: orderId }; }));
-      for (const item of items as any[]) {
-        const extId = Number(item.extinguisherId);
-        const qty = Number(item.quantity) || 0;
-        if (!extId || qty < 1) continue;
-        const [rows] = await pool.query("SELECT stockQuantity FROM extinguishers WHERE id = ? AND accountId = ? LIMIT 1", [extId, tenant]) as any;
-        const current = Number(rows?.[0]?.stockQuantity ?? 1);
-        if (current < qty) throw new Error("Estoque insuficiente para o extintor selecionado.");
-        await pool.query("UPDATE extinguishers SET stockQuantity = stockQuantity - ? WHERE id = ? AND accountId = ?", [qty, extId, tenant]);
-      }
-        return { id: orderId, orderNumber };
-      });
-    } catch (error) {
-      if (requestedNumber !== undefined || !isDuplicateKeyError(error) || attempt === 3) throw error;
-      console.warn(`[Database] OS number conflict; retrying allocation (${attempt}/3).`);
-    }
-  }
-  throw new Error("Não foi possível criar a OS.");
 }
 
 export async function getServiceOrderById(id: number, accountId: number) {

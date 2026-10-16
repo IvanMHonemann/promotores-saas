@@ -327,49 +327,6 @@ export async function emailAdminPlanChanged(input: {
   });
 }
 
-export async function emailExtinguisherAlerts(input: {
-  to: string;
-  companyName: string;
-  userName: string;
-  items: Array<{
-    clientName: string;
-    type?: string;
-    capacity?: string;
-    expirationDate: string;
-    alertMessage: string;
-  }>;
-}) {
-  if (!input.items.length) return { ok: true, id: "empty" };
-
-  const list = input.items
-    .slice(0, 40)
-    .map(
-      (item) =>
-        `<li style="margin:0 0 10px;color:#c4cae0;"><strong style="color:#fff;">${escapeHtml(item.clientName)}</strong> — ${escapeHtml(item.type || "Extintor")}${item.capacity ? ` (${escapeHtml(item.capacity)})` : ""}<br/><span style="color:#ff6b6b;">${escapeHtml(item.alertMessage)}</span> · validade ${escapeHtml(item.expirationDate)}</li>`,
-    )
-    .join("");
-
-  const more =
-    input.items.length > 40
-      ? `<p style="color:#8b93ad;font-size:13px;">… e mais ${input.items.length - 40} item(ns). Veja o painel completo no sistema.</p>`
-      : "";
-
-  const html = layout(
-    "Alertas de validade de extintores",
-    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Olá, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong> (${escapeHtml(input.companyName)}). Há <strong style="color:#fff;">${input.items.length}</strong> extintor(es) vencido(s) ou próximos do vencimento:</p>
-    <ul style="margin:0;padding-left:18px;">${list}</ul>
-    ${more}
-    ${cta(getAppPublicUrl() + "/", "Abrir painel Extinfy")}`,
-  );
-
-  return sendEmail({
-    to: input.to,
-    subject: `Extinfy — ${input.items.length} alerta(s) de validade (${input.companyName})`,
-    html,
-    text: `Alertas de validade (${input.companyName}): ${input.items.length} item(ns). Acesse o painel.`,
-  });
-}
-
 /** Alertas de validade do inventário de produtos cadastrados pela empresa. */
 export async function emailProductExpirationAlerts(input: {
   to: string; companyName: string; userName: string;

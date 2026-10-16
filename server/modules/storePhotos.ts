@@ -309,13 +309,13 @@ export const storePhotosRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
       const [photo] = await db.select().from(storePhotos).where(and(eq(storePhotos.id, input.photoId), eq(storePhotos.companyId, ctx.accountId))).limit(1);
       if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
-      const { storageGetSignedUrl } = await import("../storage");
-      const url = await storageGetSignedUrl(photo.fileKey);
-      const res = await fetch(url);
-      if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível obter a imagem." });
-      const buf = await res.arrayBuffer();
-      const base64 = Buffer.from(buf).toString("base64");
-      return { base64, mime: res.headers.get("content-type") || "image/jpeg" };
+      const { storageRead } = await import("../storage");
+      try {
+        const image = await storageRead(photo.fileKey);
+        return { base64: image.data.toString("base64"), mime: image.contentType || photo.mimeType || "image/jpeg" };
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível obter a imagem armazenada." });
+      }
     }),
 
   /** Exclui uma foto (com auditoria). */

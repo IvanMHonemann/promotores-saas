@@ -59,6 +59,16 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
   return getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
 }
 
+export async function storageRead(relKey: string): Promise<{ data: Buffer; contentType?: string }> {
+  const key = normalizeKey(relKey);
+  const s3 = getS3Client();
+  if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
+  const result = await s3.client.send(new GetObjectCommand({ Bucket: s3.bucket, Key: key }));
+  if (!result.Body) throw new Error("Storage returned an empty image.");
+  const bytes = await result.Body.transformToByteArray();
+  return { data: Buffer.from(bytes), contentType: result.ContentType };
+}
+
 
 export async function storageDelete(relKey: string): Promise<boolean> {
   const key = normalizeKey(relKey);

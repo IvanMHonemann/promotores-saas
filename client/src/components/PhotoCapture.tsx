@@ -153,8 +153,8 @@ export function PhotoCapture({ storeId, storeName, visitId, onCaptured }: Props)
         mimeType: "image/jpeg",
         idempotencyKey,
       });
-    } catch {
-      // toast já tratado
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível processar a foto.");
     } finally {
       setUploading(false);
     }

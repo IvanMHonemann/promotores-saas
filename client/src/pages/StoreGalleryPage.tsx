@@ -13,13 +13,25 @@ import { jsPDF } from "jspdf";
 
 async function getImageFile(photoId: number, name: string): Promise<File | null> {
   try {
-    const res = await fetch(`/api/trpc/storePhotos.getImageData?input=${encodeURIComponent(JSON.stringify({ photoId }))}`);
+    // A sessão vai no header (igual ao cliente tRPC em main.tsx); sem isso a API responde 401.
+    const headers: Record<string, string> = {};
+    const token = typeof localStorage !== "undefined" ? localStorage.getItem("promotores-saas-session-token") : null;
+    if (token) {
+      headers["x-session-token"] = token;
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    const res = await fetch(`/api/trpc/storePhotos.getImageData?input=${encodeURIComponent(JSON.stringify({ json: { photoId } }))}`, { headers, credentials: "include" });
+    if (!res.ok) return null;
     const data = await res.json();
-    const base64 = data?.result?.data?.base64;
+    // O tRPC deste projeto usa superjson: o payload vem em result.data.json
+    const payload = data?.result?.data?.json ?? data?.result?.data;
+    const base64 = payload?.base64;
     if (!base64) return null;
+    const mime: string = payload?.mime || "image/jpeg";
+    const ext = mime.includes("png") ? "png" : "jpg";
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-    const blob = new Blob([bytes], { type: "image/jpeg" });
-    return new File([blob], `foto-${name || "loja"}.jpg`, { type: "image/jpeg" });
+    const blob = new Blob([bytes], { type: mime });
+    return new File([blob], `foto-${name || "loja"}.${ext}`, { type: mime });
   } catch {
     return null;
   }

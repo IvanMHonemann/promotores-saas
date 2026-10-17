@@ -59,7 +59,7 @@ export function SidebarNav() {
           { href: "/", label: "Painel inicial", icon: LayoutDashboard },
           { href: "/produtos", label: "Produtos e validades", icon: Package },
           ...(hasFeature("timeTracking") ? [
-            { href: "/ponto", label: "Bater ponto", icon: Clock3 },
+            { href: "/ponto", label: "Cartão ponto", icon: Clock3 },
             { href: "/ponto#historico", label: "Histórico e GPS", icon: CalendarDays },
             { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
           ] : []),

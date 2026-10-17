@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ClipboardList, Clock3, MapPin } from "lucide-react";
+import { AlertTriangle, ClipboardList, Clock3, MapPin } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { getCurrentPosition } from "./geolocation";
+import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 
 const visitStatus: Record<string, string> = {
   pending: "Pendente",
@@ -28,11 +29,11 @@ export default function PromoterDashboard() {
   const utils = trpc.useUtils();
   const rows = hasFieldOperations ? visits.data || [] : [];
   const alerts = trpc.inventoryAlerts.useQuery({ daysAhead: 30 }, { staleTime: 60000 });
-  const history = trpc.timeTracking.myHistory.useQuery({ limit: 20, date: today }, { enabled: hasTimeTracking });
+  const history = trpc.timeTracking.myHistory.useQuery({ limit: 30 }, { enabled: hasTimeTracking });
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
   const photosToday = (stores.data || []).reduce((sum: number, s: any) => sum + (s.photoCount || 0), 0);
   const storeCount = (stores.data || []).length;
-  const punchesToday = (history.data || []).length;
+  const punchesToday = (history.data || []).filter((e: any) => localDayKey(new Date(e.deviceTime || e.serverTime), timeZone) === today).length;
   const expiringCount = (alerts.data || []).length;
   const active = hasTimeTracking && shift.data?.active === true;
 
@@ -65,54 +66,33 @@ export default function PromoterDashboard() {
   const completed = rows.filter(({ visit }) => visit.status === "completed").length;
   const inProgress = rows.filter(({ visit }) => visit.status === "in_progress").length;
   const canManageVisits = hasFieldOperations && active && !shift.isLoading && !shift.error && !startVisit.isPending && !completeVisit.isPending;
-  const shiftStatus = !hasTimeTracking
-    ? "Ponto não liberado para esta empresa"
-    : shift.isLoading
-    ? "Verificando jornada..."
-    : shift.error
-      ? "Não foi possível verificar a jornada"
-      : active
-        ? "Jornada ativa"
-        : shift.data?.status === "closed"
-          ? "Jornada encerrada"
-          : "Entrada ainda não registrada";
-
   return (
     <DashboardLayout
       title="Painel inicial"
-      description="Resumo da sua jornada e das visitas planejadas para hoje."
+      description="Ponto, roteiro e alertas do dia."
       onRefresh={() => window.location.reload()}
     >
       <div className="space-y-5">
-        <section className="rounded-3xl border border-teal-300/20 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/40 p-5 sm:p-7">
-          <p className="text-xs font-bold uppercase tracking-[.18em] text-teal-300">Visão geral</p>
-          <h2 className="mt-2 text-2xl font-black sm:text-4xl">Olá, {firstName}</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-            Acompanhe sua jornada e o roteiro do dia por aqui. As marcações de entrada, intervalo e saída ficam na seção de ponto.
-          </p>
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            {hasTimeTracking && <a href="/ponto" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-teal-300 px-4 py-2.5 text-sm font-bold text-[#07111f] transition hover:bg-teal-200">
-              <Clock3 className="h-4 w-4" /> Bater ponto
-            </a>}
-            {hasFieldOperations && <a href="#roteiro" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[.04] px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/10">
-              <ClipboardList className="h-4 w-4" /> Meu roteiro
-            </a>}
-            {hasTimeTracking && <span className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 text-xs font-semibold ${active ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200" : shift.data?.status === "closed" ? "border-slate-400/30 bg-slate-400/10 text-slate-200" : "border-amber-300/30 bg-amber-300/10 text-amber-200"}`}>
-              <span className={`h-2 w-2 rounded-full ${active ? "bg-emerald-300" : shift.data?.status === "closed" ? "bg-slate-300" : "bg-amber-300"}`} />
-              {shiftStatus}
-            </span>}
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-black text-white sm:text-3xl">Olá, {firstName}</h2>
+            <p className="mt-1 text-sm text-slate-200">Bata o ponto aqui e siga para o seu roteiro de hoje.</p>
           </div>
-        </section>
+          {hasFieldOperations && <a href="#roteiro" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15">
+            <ClipboardList className="h-4 w-4 text-teal-300" /> Meu roteiro
+          </a>}
+        </header>
+
+        {hasTimeTracking && <PunchPanel />}
 
         {!hasTimeTracking && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">O ponto eletrônico e o GPS estão disponíveis nos planos Profissional e Empresarial. Peça ao administrador da empresa para revisar o plano.</div>}
-        {hasTimeTracking && !shift.isLoading && !active && !shift.error && (
-          <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">
+        {hasFieldOperations && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
+          <div className="rounded-2xl border border-amber-300/40 bg-amber-300/15 p-4 text-sm font-medium text-amber-50">
             {shift.data?.status === "closed"
-              ? "Sua jornada foi encerrada. O painel continua disponível para consulta."
-              : "Registre sua entrada com GPS em Bater ponto antes de iniciar as visitas."}
+              ? "Sua jornada foi encerrada. O roteiro continua disponível para consulta."
+              : "Bata a entrada no ponto, acima, para iniciar as visitas."}
           </div>
         )}
-        {hasTimeTracking && shift.error && <div className="rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-sm text-rose-100">Não foi possível consultar o estado da jornada. Tente atualizar o painel.</div>}
 
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20 sm:grid-cols-4">
           <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-teal-300" />

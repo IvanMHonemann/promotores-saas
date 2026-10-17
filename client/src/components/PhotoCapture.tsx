@@ -199,7 +199,7 @@ export function PhotoCapture({ storeId, storeName, visitId, onCaptured }: Props)
             {gpsStatus === "idle" && "Aguardando GPS"}
           </div>
           <div className="flex gap-2">
-            <Button type="button" variant="outline" className="border-white/15" onClick={retake} disabled={uploading}>
+            <Button type="button" variant="outline" className="border-white/30 bg-slate-700 text-white hover:bg-slate-600" onClick={retake} disabled={uploading}>
               <RotateCcw className="mr-1 h-4 w-4" /> Refazer
             </Button>
             <Button type="button" className="bg-emerald-500 text-slate-950" onClick={keep} disabled={uploading}>

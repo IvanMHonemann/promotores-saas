@@ -1,14 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
-import { ArrowLeft, Camera, MapPin, Share2, Trash2, FileText, CheckSquare, X, Pencil, MessageCircle, Download, Calendar } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, Download, ListChecks, MapPin, MessageCircle, Share2, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { jsPDF } from "jspdf";
 import { useBusy } from "@/components/BusyOverlay";
 import { buildZip } from "@/lib/zip";
 
@@ -86,70 +83,71 @@ function groupByDay(photos: Array<{ id: number; capturedAt: Date | string; promo
   return Array.from(groups.entries());
 }
 
+
+/** Data local no formato AAAA-MM-DD (toISOString usa UTC e, à noite no Brasil, já cai no dia seguinte). */
+function localISO(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+const PERIODS = [
+  { id: "all", label: "Todas" },
+  { id: "today", label: "Hoje" },
+  { id: "7d", label: "7 dias" },
+  { id: "30d", label: "30 dias" },
+] as const;
+
+function periodRange(id: (typeof PERIODS)[number]["id"]) {
+  const now = new Date();
+  if (id === "all") return { from: "", to: "" };
+  if (id === "today") return { from: localISO(now), to: localISO(now) };
+  const back = new Date(now);
+  back.setDate(back.getDate() - (id === "7d" ? 6 : 29));
+  return { from: localISO(back), to: localISO(now) };
+}
+
+function dayLabel(key: string) {
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (key === now.toLocaleDateString("pt-BR")) return "Hoje";
+  if (key === yesterday.toLocaleDateString("pt-BR")) return "Ontem";
+  return key;
+}
+
 function PhotoThumb({ photoId, selected, selectMode, hasGps, time, onToggle, onExpand }: { photoId: number; selected: boolean; selectMode: boolean; hasGps: boolean; time: string; onToggle: () => void; onExpand: (url: string) => void }) {
   const { data, isLoading } = trpc.storePhotos.getImageUrl.useQuery(
     { photoId },
     { staleTime: 50 * 60 * 1000, retry: 1 },
   );
   return (
-    <div className="relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-slate-800" onClick={() => {
+    <button
+      type="button"
+      onClick={() => {
         if (selectMode) { onToggle(); return; }
         if (data?.url) onExpand(data.url);
-      }}>
-      {isLoading && <div className="absolute inset-0 animate-pulse bg-slate-800" />}
+      }}
+      aria-label={selectMode ? (selected ? "Desmarcar foto" : "Selecionar foto") : "Abrir foto"}
+      aria-pressed={selectMode ? selected : undefined}
+      className={`group relative aspect-square overflow-hidden rounded-xl bg-slate-800 ring-2 transition-all focus-visible:outline-none focus-visible:ring-teal-300 ${selected ? "ring-teal-300" : "ring-transparent"}`}
+    >
+      {isLoading && <div className="absolute inset-0 animate-pulse bg-slate-700" />}
       {!isLoading && !data?.url && (
-        <div className="absolute inset-0 flex items-center justify-center text-slate-500">
-          <Camera className="h-8 w-8 text-white/40" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Camera className="h-8 w-8 text-slate-500" />
         </div>
       )}
-      {data?.url && <img src={data.url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
-      {hasGps && (
-        <div className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-emerald-500 text-white shadow">
-          <MapPin className="h-3.5 w-3.5" />
-        </div>
-      )}
-      <span className="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">{time}</span>
+      {data?.url && <img src={data.url} alt="" loading="lazy" className={`absolute inset-0 h-full w-full object-cover transition-transform duration-200 ${selected ? "scale-[0.92] rounded-lg" : "group-active:scale-[0.98]"}`} />}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-slate-950/85 to-transparent px-2 pb-1.5 pt-6">
+        <span className="text-xs font-semibold text-white">{time}</span>
+        {hasGps && <MapPin className="h-3.5 w-3.5 text-teal-300" aria-label="Com localização" />}
+      </div>
       {selectMode && (
-        <button
-          type="button"
-          className={`absolute left-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full border-2 shadow ${selected ? "border-white bg-blue-500 text-white" : "border-white/80 bg-black/40 text-white"}`}
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          aria-label={selected ? "Desmarcar" : "Selecionar"}
-        >
-          {selected && <CheckSquare className="h-3.5 w-3.5" />}
-        </button>
+        <span className={`absolute left-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full border-2 shadow-md ${selected ? "border-teal-300 bg-teal-300 text-slate-950" : "border-white bg-slate-950/50 text-transparent"}`}>
+          <Check className="h-3.5 w-3.5" strokeWidth={3} />
+        </span>
       )}
-    </div>
-  );
-}
-
-
-function WhatsAppButton({ photoId, storeName }: { photoId: number; storeName?: string }) {
-  const utils = trpc.useUtils();
-  const share = async () => {
-    try {
-      const res = await utils.storePhotos.getImageData.fetch({ photoId });
-      if (!res?.base64) return toast.error("Não foi possível obter a imagem.");
-      const bytes = Uint8Array.from(atob(res.base64), (c) => c.charCodeAt(0));
-      const blob = new Blob([bytes], { type: res.mime || "image/jpeg" });
-      const file = new File([blob], `foto-${storeName || "loja"}.jpg`, { type: res.mime || "image/jpeg" });
-      if (navigator.share) {
-        await navigator.share({ files: [file], title: `Foto - ${storeName}` });
-      } else {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = file.name;
-        a.click();
-        URL.revokeObjectURL(a.href);
-      }
-    } catch (e: any) {
-      if (e?.name !== "AbortError") toast.error("Não foi possível compartilhar.");
-    }
-  };
-  return (
-    <Button size="sm" variant="ghost" className="h-7 px-2" title="WhatsApp" onClick={share}>
-      <MessageCircle className="h-3.5 w-3.5 text-emerald-300" />
-    </Button>
+    </button>
   );
 }
 
@@ -206,16 +204,30 @@ export default function StoreGalleryPage() {
     });
   };
 
-  const selectToday = () => {
-    const today = new Date().toLocaleDateString("pt-BR");
-    const ids = allPhotos.filter((p) => new Date(p.capturedAt).toLocaleDateString("pt-BR") === today).map((p) => p.id);
-    setSelected(new Set(ids));
-    setSelectMode(true);
+  const selectAll = () => setSelected(new Set(allPhotos.map((p) => p.id)));
+
+  const toggleDay = (ids: number[]) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const all = ids.every((id) => next.has(id));
+      ids.forEach((id) => (all ? next.delete(id) : next.add(id)));
+      return next;
+    });
   };
 
-  const selectPeriod = () => {
-    setSelected(new Set(allPhotos.map((p) => p.id)));
-    setSelectMode(true);
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelected(new Set());
+  };
+
+  const activePeriod = PERIODS.find((opt) => { const r = periodRange(opt.id); return r.from === from && r.to === to; })?.id;
+  const withGps = allPhotos.filter((p) => p.latitude != null).length;
+  const lightboxPhoto = lightbox ? allPhotos.find((p) => p.id === lightbox.id) : undefined;
+
+  const deleteOne = (photoId: number) => {
+    if (!confirm("Excluir esta foto?")) return;
+    setLightbox(null);
+    void run("Excluindo foto...", () => singleDelete.mutateAsync({ photoId })).catch(() => {});
   };
 
   const storeLabel = (store?.name || "loja").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "loja";
@@ -285,6 +297,7 @@ export default function StoreGalleryPage() {
   const deleteSelected = () => {
     if (selected.size === 0) return;
     if (!confirm(`Excluir ${selected.size} foto(s)? Esta ação pode ser definitiva.`)) return;
+    setSelectMode(false);
     void run("Excluindo fotos...", () => bulkDelete.mutateAsync({ photoIds: Array.from(selected) })).catch(() => {});
   };
 
@@ -303,47 +316,6 @@ export default function StoreGalleryPage() {
     toast.info("Arquivo baixado. Compartilhe manualmente.");
   };
 
-  const generateReport = () => {
-    if (allPhotos.length === 0) return toast.info("Nenhuma foto no período para o relatório.");
-    return run("Gerando relatório em PDF...", ({ setProgress }) => buildReport(setProgress));
-  };
-
-  const buildReport = async (setProgress: (v: number | null, d?: string) => void) => {
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    doc.setFontSize(16);
-    doc.text(`Relatório fotográfico - ${store?.name || "Loja"}`, 14, 18);
-    doc.setFontSize(10);
-    doc.text(`${store?.city || ""}${store?.state ? " · " + store.state : ""}`, 14, 26);
-    doc.text(`Período: ${from || "início"} a ${to || "hoje"} · ${allPhotos.length} foto(s)`, 14, 32);
-
-    let y = 42;
-    const reportPhotos = allPhotos.slice(0, 12);
-    for (const [index, photo] of reportPhotos.entries()) {
-      setProgress(index / reportPhotos.length, `Foto ${index + 1} de ${reportPhotos.length}`);
-      try {
-        const res = await utils.storePhotos.getImageUrl.fetch({ photoId: photo.id });
-        if (res?.url) {
-          const blob = await fetch(res.url).then((r) => r.blob());
-          const dataUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.readAsDataURL(blob);
-          });
-          if (y > 250) { doc.addPage(); y = 18; }
-          doc.addImage(dataUrl, "JPEG", 14, y, 80, 60);
-          doc.setFontSize(8);
-          doc.text(
-            `${new Date(photo.capturedAt).toLocaleString("pt-BR")} ${photo.latitude ? "· GPS" : ""}`,
-            100,
-            y + 10,
-          );
-          y += 70;
-        }
-      } catch { /* skip image */ }
-    }
-    doc.save(`relatorio-${store?.name || "loja"}.pdf`);
-    toast.success("Relatório gerado.");
-  };
 
   return (
     <DashboardLayout
@@ -351,149 +323,158 @@ export default function StoreGalleryPage() {
       description={store ? `${store.city}${store.state ? ` · ${store.state}` : ""}` : "Carregando..."}
       onRefresh={() => void photos.refetch()}
     >
-      <div className="space-y-5">
-        <Link href="/lojas" className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white">
+      <div className={`space-y-5 ${selectMode ? "pb-32" : ""}`}>
+        <Link href="/lojas" className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-300 hover:text-teal-200">
           <ArrowLeft className="h-4 w-4" /> Voltar para Lojas
         </Link>
 
         <div>
           <h2 className="text-2xl font-black text-white">Fotos da loja</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            {store?.name || "Loja"} · Registre fotos e gere o relatório da visita.
-          </p>
-          {activeVisit && (
-            <Badge variant="outline" className="mt-2 border-emerald-300/40 text-emerald-200">Visita em andamento</Badge>
-          )}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold">
+            <span className="rounded-full bg-teal-400/15 px-2.5 py-1 text-teal-200">{allPhotos.length} foto{allPhotos.length !== 1 ? "s" : ""}</span>
+            {withGps > 0 && <span className="rounded-full bg-sky-400/15 px-2.5 py-1 text-sky-200">{withGps} com GPS</span>}
+            {activeVisit && <span className="rounded-full bg-emerald-400/20 px-2.5 py-1 text-emerald-200">Visita em andamento</span>}
+          </div>
         </div>
 
         {store && (
           <PhotoCapture storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} onCaptured={() => void photos.refetch()} />
         )}
 
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" className="h-11 border-white/15 text-slate-200" onClick={() => setSelectMode((v) => !v)}>
-            <CheckSquare className="mr-1.5 h-4 w-4" /> {selectMode ? "Cancelar" : "Selecionar"}
-          </Button>
-          <Button variant="outline" className="h-11 border-white/15 text-slate-200" onClick={generateReport}>
-            <FileText className="mr-1.5 h-4 w-4" /> Relatório
-          </Button>
-        </div>
-
-        {selectMode && (
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 p-3">
-            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectPeriod}>Todas</Button>
-            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={selectToday}>Hoje</Button>
-            <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={() => setSelected(new Set())}>Limpar</Button>
-            <span className="text-xs text-slate-400">{selected.size} selecionada(s)</span>
-            <div className="ml-auto flex gap-2">
-              <Button size="sm" className="bg-teal-400 text-slate-950" onClick={shareSelected} disabled={selected.size === 0}>
-                <Share2 className="mr-1 h-3.5 w-3.5" /> Compartilhar
+        <section className="rounded-2xl border border-white/15 bg-slate-800/70 p-4 shadow-lg shadow-black/20">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-bold text-white">Período</h3>
+            {allPhotos.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                className={selectMode ? "bg-white text-slate-900 hover:bg-slate-200" : "bg-teal-400 text-slate-950 hover:bg-teal-300"}
+              >
+                {selectMode ? <><X className="mr-1.5 h-4 w-4" /> Cancelar seleção</> : <><ListChecks className="mr-1.5 h-4 w-4" /> Selecionar fotos</>}
               </Button>
-              <Button size="sm" variant="outline" className="border-white/15 text-slate-200" onClick={downloadSelected} disabled={selected.size === 0}>
-                <Download className="mr-1 h-3.5 w-3.5" /> Baixar
-              </Button>
-              <Button size="sm" variant="outline" className="border-rose-300/40 text-rose-200" onClick={deleteSelected} disabled={selected.size === 0 || bulkDelete.isPending}>
-                <Trash2 className="mr-1 h-3.5 w-3.5" /> Excluir
-              </Button>
-            </div>
+            )}
           </div>
-        )}
-
-        <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-          <p className="text-sm font-semibold text-white">Período das fotos</p>
-          <p className="mt-1 text-xs text-slate-400">Escolha as datas ou deixe em branco para ver todas.</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              { id: "all", label: "Todas" },
-              { id: "today", label: "Hoje" },
-              { id: "7d", label: "7 dias" },
-              { id: "30d", label: "30 dias" },
-            ].map((opt) => (
+            {PERIODS.map((opt) => (
               <button
                 key={opt.id}
                 type="button"
-                onClick={() => {
-                  const now = new Date();
-                  const iso = (d: Date) => d.toISOString().slice(0, 10);
-                  if (opt.id === "all") { setFrom(""); setTo(""); }
-                  else if (opt.id === "today") { setFrom(iso(now)); setTo(iso(now)); }
-                  else if (opt.id === "7d") { const d = new Date(now); d.setDate(d.getDate() - 6); setFrom(iso(d)); setTo(iso(now)); }
-                  else if (opt.id === "30d") { const d = new Date(now); d.setDate(d.getDate() - 29); setFrom(iso(d)); setTo(iso(now)); }
-                }}
-                className="rounded-full border border-white/15 bg-slate-950 px-3 py-1.5 text-xs font-medium text-slate-200 hover:border-teal-300/40 hover:text-white"
+                aria-pressed={activePeriod === opt.id}
+                onClick={() => { const r = periodRange(opt.id); setFrom(r.from); setTo(r.to); }}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${activePeriod === opt.id ? "bg-teal-400 text-slate-950" : "bg-slate-700 text-slate-100 hover:bg-slate-600"}`}
               >
                 {opt.label}
               </button>
             ))}
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <label className="block text-xs font-medium text-slate-300">
-              De
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white [color-scheme:dark]" />
-            </label>
-            <label className="block text-xs font-medium text-slate-300">
-              Até
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white [color-scheme:dark]" />
-            </label>
-          </div>
-        </div>
+          <details className="group mt-3" open={!!(from || to) && !activePeriod}>
+            <summary className="flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-slate-200 hover:text-white">
+              Escolher datas <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="block text-xs font-semibold text-slate-200">
+                De
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-lg border border-white/20 bg-slate-900 px-3 py-2.5 text-sm text-white [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:invert" />
+              </label>
+              <label className="block text-xs font-semibold text-slate-200">
+                Até
+                <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 w-full rounded-lg border border-white/20 bg-slate-900 px-3 py-2.5 text-sm text-white [color-scheme:dark] [&::-webkit-calendar-picker-indicator]:invert" />
+              </label>
+            </div>
+          </details>
+        </section>
 
-        {photos.isLoading && <p className="text-sm text-slate-300">Carregando fotos...</p>}
+        {photos.isLoading && <p className="text-sm text-slate-200">Carregando fotos...</p>}
         {photos.isError && (
-          <p className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">
-            Não foi possível carregar a galeria.
+          <p className="rounded-xl border border-rose-300/40 bg-rose-400/15 p-3 text-sm text-rose-100">
+            Não foi possível carregar a galeria. Puxe para atualizar ou tente novamente.
           </p>
         )}
 
-        {grouped.map(([day, items]) => (
-          <section key={day}>
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-white">{day}</h2>
-              <span className="text-xs text-slate-400">{items.length} foto{items.length !== 1 ? "s" : ""}{(items[0] as any).promoterName ? ` · ${(items[0] as any).promoterName}` : ""}</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {items.map((photo) => (
-                <PhotoThumb
-                  key={photo.id}
-                  photoId={photo.id}
-                  selected={selected.has(photo.id)}
-                  selectMode={selectMode}
-                  hasGps={photo.latitude != null}
-                  time={new Date(photo.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                  onToggle={() => toggle(photo.id)}
-                  onExpand={(url) => setLightbox({ id: photo.id, url })}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
+        {grouped.map(([day, items]) => {
+          const ids = items.map((i) => i.id);
+          const allDaySelected = ids.every((id) => selected.has(id));
+          return (
+            <section key={day}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-base font-bold text-white">
+                  {dayLabel(day)}
+                  <span className="ml-2 text-sm font-medium text-slate-300">{items.length} foto{items.length !== 1 ? "s" : ""}{(items[0] as any).promoterName ? ` · ${(items[0] as any).promoterName}` : ""}</span>
+                </h3>
+                {selectMode && (
+                  <button type="button" onClick={() => toggleDay(ids)} className="text-sm font-semibold text-teal-300 hover:text-teal-200">
+                    {allDaySelected ? "Desmarcar dia" : "Selecionar dia"}
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {items.map((photo) => (
+                  <PhotoThumb
+                    key={photo.id}
+                    photoId={photo.id}
+                    selected={selected.has(photo.id)}
+                    selectMode={selectMode}
+                    hasGps={photo.latitude != null}
+                    time={new Date(photo.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    onToggle={() => toggle(photo.id)}
+                    onExpand={(url) => setLightbox({ id: photo.id, url })}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
 
         {!photos.isLoading && !photos.isError && allPhotos.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center">
-            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-teal-300/10 text-teal-300">
+          <div className="rounded-2xl border border-dashed border-white/25 bg-slate-800/40 p-8 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-teal-400/20 text-teal-300">
               <Camera className="h-6 w-6" />
             </div>
-            <p className="mt-4 text-base font-semibold text-white">Nenhuma foto neste período</p>
-            <p className="mt-1 text-sm text-slate-400">
-              Toque em <span className="font-semibold text-teal-300">Tirar foto</span> para registrar a primeira, ou mude o período acima.
-            </p>
+            <p className="mt-4 text-base font-bold text-white">Nenhuma foto neste período</p>
+            <p className="mt-1 text-sm text-slate-300">Toque em <span className="font-semibold text-teal-300">Tirar foto</span> para registrar a primeira ou escolha outro período.</p>
           </div>
         )}
       </div>
 
+      {selectMode && (
+        <div className="fixed inset-x-0 bottom-0 z-[60] border-t border-teal-300/30 bg-slate-900/95 px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-3 shadow-2xl shadow-black/50 backdrop-blur">
+          <div className="mx-auto max-w-2xl">
+            <div className="mb-2.5 flex items-center justify-between text-sm">
+              <span className="font-bold text-white">{selected.size} selecionada{selected.size !== 1 ? "s" : ""}</span>
+              <div className="flex gap-4 font-semibold">
+                <button type="button" onClick={selectAll} className="text-teal-300 hover:text-teal-200">Selecionar todas</button>
+                <button type="button" onClick={() => setSelected(new Set())} className="text-slate-200 hover:text-white">Limpar</button>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Button className="h-11 bg-teal-400 font-bold text-slate-950 hover:bg-teal-300" onClick={shareSelected} disabled={selected.size === 0}>
+                <Share2 className="mr-1.5 h-4 w-4" /> Enviar
+              </Button>
+              <Button className="h-11 bg-slate-600 font-bold text-white hover:bg-slate-500" onClick={downloadSelected} disabled={selected.size === 0}>
+                <Download className="mr-1.5 h-4 w-4" /> Baixar
+              </Button>
+              <Button className="h-11 bg-rose-500 font-bold text-white hover:bg-rose-400" onClick={deleteSelected} disabled={selected.size === 0 || bulkDelete.isPending}>
+                <Trash2 className="mr-1.5 h-4 w-4" /> Excluir
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {ready && (
-        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/70 p-4 sm:items-center" onClick={() => setReady(null)}>
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between">
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/75 p-4 sm:items-center" onClick={() => setReady(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-800 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-base font-bold text-white">{ready.files.length} foto(s) prontas</p>
-                <p className="mt-1 text-xs text-slate-400">
-                  Toque no botão para abrir o compartilhamento (WhatsApp etc.).
+                <p className="text-lg font-bold text-white">{ready.files.length} foto{ready.files.length !== 1 ? "s" : ""} pronta{ready.files.length !== 1 ? "s" : ""}</p>
+                <p className="mt-1 text-sm text-slate-200">
+                  Toque para abrir o compartilhamento (WhatsApp e outros apps).
                   {ready.files.length > SHARE_BATCH_SIZE ? ` Enviamos em lotes de ${SHARE_BATCH_SIZE} fotos.` : ""}
                   {ready.failed > 0 ? ` ${ready.failed} foto(s) não puderam ser obtidas.` : ""}
                 </p>
               </div>
-              <button className="text-white" onClick={() => setReady(null)} aria-label="Fechar"><X className="h-5 w-5" /></button>
+              <button className="rounded-full bg-slate-700 p-1.5 text-white hover:bg-slate-600" onClick={() => setReady(null)} aria-label="Fechar"><X className="h-5 w-5" /></button>
             </div>
             <div className="mt-4 space-y-2">
               {Array.from({ length: Math.ceil(ready.files.length / SHARE_BATCH_SIZE) }, (_, i) => {
@@ -501,13 +482,13 @@ export default function StoreGalleryPage() {
                 const end = Math.min((i + 1) * SHARE_BATCH_SIZE, ready.files.length);
                 const sent = ready.sent.includes(i);
                 return (
-                  <Button key={i} className={`h-11 w-full text-base font-bold ${sent ? "bg-slate-700 text-slate-200" : "bg-green-500 text-white hover:bg-green-400"}`} onClick={() => shareBatch(i)}>
-                    <MessageCircle className="mr-2 h-5 w-5" />
-                    {sent ? "Enviado ✓ — enviar de novo" : ready.files.length > SHARE_BATCH_SIZE ? `Enviar fotos ${start}–${end}` : "Compartilhar fotos"}
+                  <Button key={i} className={`h-12 w-full text-base font-bold ${sent ? "bg-slate-600 text-white hover:bg-slate-500" : "bg-green-500 text-white hover:bg-green-400"}`} onClick={() => shareBatch(i)}>
+                    {sent ? <Check className="mr-2 h-5 w-5" /> : <MessageCircle className="mr-2 h-5 w-5" />}
+                    {sent ? "Enviado — enviar de novo" : ready.files.length > SHARE_BATCH_SIZE ? `Enviar fotos ${start} a ${end}` : "Compartilhar fotos"}
                   </Button>
                 );
               })}
-              <Button variant="outline" className="h-10 w-full border-white/15 text-slate-200" onClick={() => void downloadFiles(ready.files)}>
+              <Button className="h-11 w-full bg-slate-600 font-semibold text-white hover:bg-slate-500" onClick={() => void downloadFiles(ready.files)}>
                 <Download className="mr-2 h-4 w-4" /> Baixar tudo (.zip)
               </Button>
             </div>
@@ -515,54 +496,41 @@ export default function StoreGalleryPage() {
         </div>
       )}
 
-      {lightbox && (() => {
-        const photo = allPhotos.find((p) => p.id === lightbox.id);
-        return (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-4" onClick={() => setLightbox(null)}>
-            <div className="w-full max-w-md rounded-2xl bg-slate-900 p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-xs text-slate-400">Ao tocar em uma foto</p>
-                <button className="text-white" onClick={() => setLightbox(null)}><X className="h-5 w-5" /></button>
-              </div>
-              <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-slate-800">
-                <img src={lightbox.url} alt="" className="h-full w-full object-cover" />
-                {photo?.latitude != null && (
-                  <div className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-emerald-500 text-white">
-                    <MapPin className="h-4 w-4" />
-                  </div>
-                )}
-              </div>
-              <div className="mt-3 flex items-start justify-between">
-                <div>
-                  <p className="font-semibold text-white">{store?.name || "Loja"}</p>
-                  <p className="text-xs text-slate-400">
-                    {photo ? new Date(photo.capturedAt).toLocaleDateString("pt-BR") : ""} · {photo ? new Date(photo.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""}{(photo as any)?.promoterName ? ` · ${(photo as any).promoterName}` : ""}
-                  </p>
-                </div>
-              </div>
-              <Button className="mt-3 h-11 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => void shareOne(lightbox.id)}>
+      {lightbox && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4" onClick={() => setLightbox(null)}>
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-white/15 bg-slate-800 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="relative bg-slate-950">
+              <img src={lightbox.url} alt="" className="max-h-[55vh] w-full object-contain" />
+              <button className="absolute right-2 top-2 rounded-full bg-slate-900/85 p-2 text-white hover:bg-slate-700" onClick={() => setLightbox(null)} aria-label="Fechar">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <p className="text-base font-bold text-white">{store?.name || "Loja"}</p>
+              <p className="mt-0.5 text-sm text-slate-200">
+                {lightboxPhoto ? `${new Date(lightboxPhoto.capturedAt).toLocaleDateString("pt-BR")} às ${new Date(lightboxPhoto.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}
+                {(lightboxPhoto as any)?.promoterName ? ` · ${(lightboxPhoto as any).promoterName}` : ""}
+              </p>
+              <Button className="mt-4 h-12 w-full bg-green-500 text-base font-bold text-white hover:bg-green-400" onClick={() => void shareOne(lightbox.id)}>
                 <MessageCircle className="mr-2 h-5 w-5" /> Enviar no WhatsApp
               </Button>
-              <div className="mt-3 flex justify-around border-t border-white/10 pt-3 text-[10px] text-slate-300">
-                <button className="flex flex-col items-center gap-1" onClick={() => { setLightbox(null); setTimeout(() => document.querySelector<HTMLInputElement>('input[type=file]')?.click(), 300); }}>
-                  <Pencil className="h-5 w-5 text-white" /><span>Editar</span>
-                </button>
-                {photo?.latitude != null && (
-                  <a className="flex flex-col items-center gap-1" href={`https://maps.google.com/?q=${photo.latitude},${photo.longitude}`} target="_blank" rel="noreferrer">
-                    <MapPin className="h-5 w-5 text-white" /><span>Mapa</span>
+              <div className={`mt-2 grid gap-2 ${lightboxPhoto?.latitude != null ? "grid-cols-3" : "grid-cols-2"}`}>
+                <Button className="h-11 bg-slate-600 font-semibold text-white hover:bg-slate-500" onClick={() => void run("Baixando foto...", () => downloadImage(lightbox.id, store?.name || "loja"))}>
+                  <Download className="mr-1.5 h-4 w-4" /> Baixar
+                </Button>
+                {lightboxPhoto?.latitude != null && (
+                  <a className="inline-flex h-11 items-center justify-center rounded-md bg-sky-500 text-sm font-semibold text-white hover:bg-sky-400" href={`https://maps.google.com/?q=${lightboxPhoto.latitude},${(lightboxPhoto as any).longitude}`} target="_blank" rel="noreferrer">
+                    <MapPin className="mr-1.5 h-4 w-4" /> Mapa
                   </a>
                 )}
-                <button className="flex flex-col items-center gap-1" onClick={() => void run("Baixando foto...", () => downloadImage(lightbox.id, store?.name || "loja"))}>
-                  <Download className="h-5 w-5 text-white" /><span>Baixar</span>
-                </button>
-                <button className="flex flex-col items-center gap-1 text-rose-300" onClick={() => { const id = lightbox.id; setLightbox(null); void run("Excluindo foto...", () => singleDelete.mutateAsync({ photoId: id })).catch(() => {}); }}>
-                  <Trash2 className="h-5 w-5" /><span>Excluir</span>
-                </button>
+                <Button className="h-11 bg-rose-500 font-semibold text-white hover:bg-rose-400" onClick={() => deleteOne(lightbox.id)}>
+                  <Trash2 className="mr-1.5 h-4 w-4" /> Excluir
+                </Button>
               </div>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
     </DashboardLayout>
   );
 }

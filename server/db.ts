@@ -23,6 +23,7 @@ import {
   storePhotos,
   subscriptionPlanFeatures,
 } from "../drizzle/schema";
+import { ensureStoreOwnersTable, recordStoreOwner, storeVisibleToMember } from "./storeAccess";
 import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits, weeklyRouteSchedules, inventoryProducts } from "../drizzle/schema";
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -907,19 +908,27 @@ export async function ensureSeedPlans() {
 
 
 /* Núcleo operacional de promotores — usa as tabelas novas e permanece separado do legado. */
-export async function listOperationalStores(companyId: number, search?: string) {
+/** `memberAccountId` = usuário não administrador: só vê lojas que cadastrou ou que estão em visitas atribuídas a ele. */
+export async function listOperationalStores(companyId: number, search?: string, memberAccountId?: number | null) {
   const database = await getDb();
   if (!database) return [];
-  const conditions = [eq(operationalStores.companyId, requireAccountId(companyId)), eq(operationalStores.active, true)];
+  const conditions: any[] = [eq(operationalStores.companyId, requireAccountId(companyId)), eq(operationalStores.active, true)];
   if (search?.trim()) conditions.push(like(operationalStores.name, `%${search.trim()}%`));
+  if (memberAccountId != null) {
+    await ensureStoreOwnersTable(database);
+    conditions.push(storeVisibleToMember(operationalStores.id, memberAccountId));
+  }
   return database.select().from(operationalStores).where(and(...conditions)).orderBy(operationalStores.name);
 }
 
-export async function createOperationalStore(input: typeof operationalStores.$inferInsert) {
+export async function createOperationalStore(input: typeof operationalStores.$inferInsert, ownerMemberAccountId?: number | null) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
   const result = await database.insert(operationalStores).values(input);
-  const rows = await database.select().from(operationalStores).where(eq(operationalStores.id, Number((result as any)[0]?.insertId))).limit(1);
+  const storeId = Number((result as any)[0]?.insertId);
+  // Registra quem cadastrou a loja (define quem poderá vê-la, além do administrador).
+  if (ownerMemberAccountId) await recordStoreOwner(database, { storeId, companyId: input.companyId, memberAccountId: ownerMemberAccountId });
+  const rows = await database.select().from(operationalStores).where(eq(operationalStores.id, storeId)).limit(1);
   return rows[0];
 }
 

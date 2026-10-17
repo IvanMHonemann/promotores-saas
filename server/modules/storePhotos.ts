@@ -6,6 +6,7 @@ import { trashItems } from "../../drizzle/schema.original";
 import { ensureTrashTable, getDb } from "../db";
 import { commercialFeatureProcedure, router } from "../_core/trpc";
 import { auditFromCtx } from "../audit";
+import { assertPhotoAccess, assertStoreAccess, ensureStoreOwnersTable, scopeMemberId, storeVisibleToMember } from "../storeAccess";
 
 const RETENTION_DAYS = 60;
 /** Prazo para restaurar uma foto excluída (igual ao da tela Lixeira: 5 dias). */
@@ -75,8 +76,15 @@ export const storePhotosRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
       await ensureStorePhotosTable(db);
+      const memberId = scopeMemberId(ctx); // null = administrador (vê tudo)
 
-      const conditions = [eq(stores.companyId, ctx.accountId), eq(stores.active, true)];
+      const conditions: any[] = [eq(stores.companyId, ctx.accountId), eq(stores.active, true)];
+      if (memberId !== null) {
+        await ensureStoreOwnersTable(db);
+        conditions.push(storeVisibleToMember(stores.id, memberId));
+      }
+      // Não administrador conta e mostra só as próprias fotos.
+      const ownPhotos = memberId !== null ? sql` AND store_photos.promoterId = ${memberId}` : sql``;
       if (input?.search) {
         conditions.push(sql`${stores.name} LIKE ${`%${input.search}%`}`);
       }
@@ -92,8 +100,8 @@ export const storePhotosRouter = router({
             city: stores.city,
             state: stores.state,
             address: stores.address,
-            photoCount: sql<number>`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded')`,
-            lastActivity: sql<string | null>`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId})`,
+            photoCount: sql<number>`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
+            lastActivity: sql<string | null>`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`,
           })
           .from(stores)
           .where(and(...conditions))
@@ -125,14 +133,16 @@ export const storePhotosRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
-      // Garante que a loja pertence à empresa
-      const [store] = await db.select().from(stores).where(and(eq(stores.id, input.storeId), eq(stores.companyId, ctx.accountId))).limit(1);
-      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada." });
+      // A loja precisa ser da empresa e visível para este usuário
+      await assertStoreAccess(db, ctx, input.storeId);
+      const memberId = scopeMemberId(ctx);
 
       const conditions = [eq(storePhotos.companyId, ctx.accountId), eq(storePhotos.storeId, input.storeId)];
+      // Não administrador só enxerga as próprias fotos
+      if (memberId !== null) conditions.push(eq(storePhotos.promoterId, memberId));
       if (input.from) conditions.push(gte(storePhotos.capturedAt, new Date(input.from)));
       if (input.to) conditions.push(lte(storePhotos.capturedAt, new Date(input.to)));
-      if (input.promoterId) conditions.push(eq(storePhotos.promoterId, input.promoterId));
+      if (memberId === null && input.promoterId) conditions.push(eq(storePhotos.promoterId, input.promoterId));
 
       const photos = await db
         .select({
@@ -181,8 +191,7 @@ export const storePhotosRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
-      const [store] = await db.select().from(stores).where(and(eq(stores.id, input.storeId), eq(stores.companyId, ctx.accountId))).limit(1);
-      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada." });
+      const store = await assertStoreAccess(db, ctx, input.storeId);
 
       // Idempotência
       const [existing] = await db
@@ -247,8 +256,7 @@ export const storePhotosRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
-      const [store] = await db.select().from(stores).where(and(eq(stores.id, input.storeId), eq(stores.companyId, ctx.accountId))).limit(1);
-      if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada." });
+      const store = await assertStoreAccess(db, ctx, input.storeId);
 
       // Idempotência
       const [existing] = await db
@@ -320,6 +328,7 @@ export const storePhotosRouter = router({
         .where(and(eq(storePhotos.id, input.photoId), eq(storePhotos.companyId, ctx.accountId)))
         .limit(1);
       if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
+      assertPhotoAccess(ctx, photo);
 
       const { storageGetSignedUrl } = await import("../storage");
       const url = await storageGetSignedUrl(photo.fileKey);
@@ -334,6 +343,7 @@ export const storePhotosRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
       const [photo] = await db.select().from(storePhotos).where(and(eq(storePhotos.id, input.photoId), eq(storePhotos.companyId, ctx.accountId))).limit(1);
       if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
+      assertPhotoAccess(ctx, photo);
       const { storageRead } = await import("../storage");
       try {
         const image = await storageRead(photo.fileKey);
@@ -357,8 +367,8 @@ export const storePhotosRouter = router({
         .limit(1);
       if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
 
-      // Promotor só pode excluir as próprias; admin/supervisor podem excluir da empresa
-      if (ctx.user.role === "promoter" && photo.promoterId !== ctx.memberAccountId) {
+      // Só o administrador da empresa pode excluir fotos de outros usuários
+      if (scopeMemberId(ctx) !== null && photo.promoterId !== ctx.memberAccountId) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Você só pode excluir suas próprias fotos." });
       }
 
@@ -397,8 +407,9 @@ export const storePhotosRouter = router({
 
       if (photos.length === 0) return { deleted: 0 };
 
-      // Promotor só exclui as próprias fotos; as demais são ignoradas.
-      const allowed = photos.filter((photo) => !(ctx.user.role === "promoter" && photo.promoterId !== ctx.memberAccountId));
+      // Só o administrador exclui fotos de outros usuários; para os demais, as de terceiros são ignoradas.
+      const memberId = scopeMemberId(ctx);
+      const allowed = photos.filter((photo) => memberId === null || photo.promoterId === memberId);
       if (allowed.length === 0) throw new TRPCError({ code: "FORBIDDEN", message: "Você só pode excluir suas próprias fotos." });
       try {
         await moveStorePhotosToTrash(db, ctx.accountId, allowed);

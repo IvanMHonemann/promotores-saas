@@ -15,6 +15,7 @@ import * as memberAuth from "./memberAuth";
 import * as emailService from "./email";
 import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory, listPromoterActivities } from "./audit";
 import { reverseGeocodeAddress } from "./geocoding";
+import { scopeMemberId } from "./storeAccess";
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 import { runPersistentGemini } from "./aiGithubService";
@@ -726,17 +727,18 @@ export const appRouter = router({
       }),
     }),
     stores: router({
-      list: commercialFeatureProcedure("fieldOperations").input(z.object({ search: z.string().optional() }).optional()).query(({ ctx, input }) => db.listOperationalStores(ctx.accountId, input?.search)),
+      list: commercialFeatureProcedure("fieldOperations").input(z.object({ search: z.string().optional() }).optional()).query(({ ctx, input }) => db.listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
       create: commercialFeatureProcedure("fieldOperations").input(z.object({ name: z.string().min(2), city: z.string().min(2), address: z.string().optional(), state: z.string().length(2).optional(), cep: z.string().optional(), code: z.string().optional(), latitude: z.number().optional(), longitude: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Promotores não podem cadastrar lojas." });
-        return db.createOperationalStore({ ...input, companyId: ctx.accountId, active: true });
+        // Todo usuário da empresa pode cadastrar lojas; a loja fica visível a quem a cadastrou (e ao administrador).
+        return db.createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
       }),
     }),
     routes: router({
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
         const date = input?.date || new Date().toISOString().slice(0, 10);
-        if (ctx.user.role === "promoter") await db.materializeWeeklyRoutes(ctx.accountId, ctx.memberAccountId!, date);
-        return db.listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId });
+        const ownerId = scopeMemberId(ctx); // null = administrador (vê tudo)
+        if (ownerId !== null) await db.materializeWeeklyRoutes(ctx.accountId, ownerId, date);
+        return db.listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ownerId ?? input?.promoterId });
       }),
       weekly: commercialFeatureProcedure("fieldOperations").query(({ ctx }) => db.listWeeklyRouteSchedules(ctx.accountId)),
       saveWeekly: companyAdminProcedure.input(z.object({ name: z.string().min(2).max(255), weekday: z.number().int().min(0).max(6), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1) })).mutation(async ({ ctx, input }) => {
@@ -757,20 +759,20 @@ export const appRouter = router({
     visits: router({
       today: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional()).query(async ({ ctx, input }) => {
         const date = input?.date || new Date().toISOString().slice(0, 10);
-        const promoterId = ctx.user.role === "promoter" ? ctx.memberAccountId : undefined;
+        const promoterId = scopeMemberId(ctx) ?? undefined;
         if (promoterId) await db.materializeWeeklyRoutes(ctx.accountId, promoterId, date);
         return db.listOperationalVisits(ctx.accountId, { date, promoterId: promoterId ?? undefined });
       }),
-      list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), routeId: z.number().int().positive().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
+      list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), routeId: z.number().int().positive().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
       start: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional() })).mutation(async ({ ctx, input }) => {
-        const visit = await db.listOperationalVisits(ctx.accountId, { promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : undefined });
+        const visit = await db.listOperationalVisits(ctx.accountId, { promoterId: scopeMemberId(ctx) ?? undefined });
         const owned = visit.find((row) => row.visit.id === input.id);
         if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "Visita não encontrada para esta empresa." });
-        if (ctx.user.role === "promoter" && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Visita não pertence ao promotor autenticado." });
+        if (scopeMemberId(ctx) !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Visita não pertence ao promotor autenticado." });
         return db.updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: new Date(), startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
       }),
       complete: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
-        const visit = await db.listOperationalVisits(ctx.accountId, { promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : undefined });
+        const visit = await db.listOperationalVisits(ctx.accountId, { promoterId: scopeMemberId(ctx) ?? undefined });
         const owned = visit.find((row) => row.visit.id === input.id);
         if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "Visita não encontrada para esta empresa." });
         return db.updateOperationalVisit(ctx.accountId, input.id, { status: "completed", actualEnd: new Date(), endLatitude: input.latitude, endLongitude: input.longitude, endAccuracy: input.accuracy, notes: input.notes });

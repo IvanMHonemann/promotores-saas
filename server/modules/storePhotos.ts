@@ -3,11 +3,36 @@ import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { storePhotos, stores } from "../../drizzle/schema";
 import { trashItems } from "../../drizzle/schema.original";
-import { getDb } from "../db";
+import { ensureTrashTable, getDb } from "../db";
 import { commercialFeatureProcedure, router } from "../_core/trpc";
 import { auditFromCtx } from "../audit";
 
 const RETENTION_DAYS = 60;
+/** Prazo para restaurar uma foto excluída (igual ao da tela Lixeira: 5 dias). */
+const TRASH_DAYS = 5;
+
+/** Move fotos para a lixeira de forma atômica: ou grava na lixeira e remove da galeria, ou não muda nada. */
+async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<typeof storePhotos.$inferSelect>) {
+  if (photos.length === 0) return;
+  await ensureTrashTable();
+  const storeIds = Array.from(new Set(photos.map((p) => p.storeId)));
+  const storeRows = await db.select({ id: stores.id, name: stores.name }).from(stores).where(and(eq(stores.companyId, accountId), sql`${stores.id} IN (${sql.join(storeIds.map((id) => sql`${id}`), sql`, `)})`));
+  const storeName = new Map<number, string>(storeRows.map((r: any) => [r.id, r.name]));
+  const expiresAt = new Date(Date.now() + TRASH_DAYS * 24 * 60 * 60 * 1000);
+  await db.transaction(async (tx: any) => {
+    await tx.insert(trashItems).values(
+      photos.map((photo) => ({
+        accountId,
+        itemType: "store_photo",
+        originalId: photo.id,
+        label: `Foto - ${storeName.get(photo.storeId) || "Loja"} - ${new Date(photo.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}`.slice(0, 255),
+        snapshot: JSON.stringify(photo),
+        expiresAt,
+      })),
+    );
+    await tx.delete(storePhotos).where(and(eq(storePhotos.companyId, accountId), sql`${storePhotos.id} IN (${sql.join(photos.map((p) => sql`${p.id}`), sql`, `)})`));
+  });
+}
 
 async function ensureStorePhotosTable(db: any) {
   try {
@@ -337,17 +362,13 @@ export const storePhotosRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "Você só pode excluir suas próprias fotos." });
       }
 
-      // Soft-delete: move to trash instead of hard delete
-      const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
-      await db.insert(trashItems).values({
-        accountId: ctx.accountId,
-        itemType: "store_photo",
-        originalId: photo.id,
-        label: `Foto #${photo.id}`,
-        snapshot: JSON.stringify(photo),
-        expiresAt,
-      });
-      await db.delete(storePhotos).where(eq(storePhotos.id, photo.id));
+      // Vai para a lixeira (restaurável por 5 dias) em vez de ser apagada de vez.
+      try {
+        await moveStorePhotosToTrash(db, ctx.accountId, [photo]);
+      } catch (error) {
+        console.error("[storePhotos.delete] falha ao enviar para a lixeira", error);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível enviar a foto para a lixeira." });
+      }
 
       await auditFromCtx(ctx, {
         action: "delete",
@@ -355,7 +376,7 @@ export const storePhotosRouter = router({
         entityType: "store_photo",
         entityId: photo.id,
         entityLabel: `Foto #${photo.id}`,
-        description: "Foto excluída manualmente",
+        description: "Foto enviada para a lixeira",
         oldData: { storeId: photo.storeId, capturedAt: photo.capturedAt },
       });
 
@@ -376,27 +397,22 @@ export const storePhotosRouter = router({
 
       if (photos.length === 0) return { deleted: 0 };
 
-      const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
-      let deleted = 0;
-      for (const photo of photos) {
-        if (ctx.user.role === "promoter" && photo.promoterId !== ctx.memberAccountId) continue;
-        await db.insert(trashItems).values({
-          accountId: ctx.accountId,
-          itemType: "store_photo",
-          originalId: photo.id,
-          label: `Foto #${photo.id}`,
-          snapshot: JSON.stringify(photo),
-          expiresAt,
-        });
-        await db.delete(storePhotos).where(eq(storePhotos.id, photo.id));
-        deleted++;
+      // Promotor só exclui as próprias fotos; as demais são ignoradas.
+      const allowed = photos.filter((photo) => !(ctx.user.role === "promoter" && photo.promoterId !== ctx.memberAccountId));
+      if (allowed.length === 0) throw new TRPCError({ code: "FORBIDDEN", message: "Você só pode excluir suas próprias fotos." });
+      try {
+        await moveStorePhotosToTrash(db, ctx.accountId, allowed);
+      } catch (error) {
+        console.error("[storePhotos.bulkDelete] falha ao enviar para a lixeira", error);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível enviar as fotos para a lixeira." });
       }
+      const deleted = allowed.length;
 
       await auditFromCtx(ctx, {
         action: "delete",
         module: "store_photos",
         entityType: "store_photo",
-        description: `${deleted} foto(s) excluída(s) em massa`,
+        description: `${deleted} foto(s) enviada(s) para a lixeira em massa`,
         newData: { count: deleted },
       });
 

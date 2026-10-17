@@ -20,6 +20,7 @@ import {
   memberAccounts as entitlementMemberAccounts,
   memberFeaturePermissions,
   promoterProfiles,
+  storePhotos,
   subscriptionPlanFeatures,
 } from "../drizzle/schema";
 import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
@@ -162,19 +163,71 @@ export async function updateCompany(id: number, data: { name?: string; active?: 
   await db.update(companies).set({ ...data, name: data.name?.trim() }).where(eq(companies.id, id));
 }
 
+let _trashTableReady: Promise<void> | null = null;
+/** Garante que a tabela da lixeira existe: nenhuma migração do projeto a cria, e sem ela toda exclusão falha. */
+export async function ensureTrashTable(): Promise<void> {
+  if (_trashTableReady) return _trashTableReady;
+  _trashTableReady = (async () => {
+    const database = await getDb();
+    if (!database) return;
+    await database.execute(`CREATE TABLE IF NOT EXISTS trash_items (
+      id int AUTO_INCREMENT NOT NULL,
+      accountId int NOT NULL,
+      itemType varchar(40) NOT NULL,
+      originalId int NOT NULL,
+      label varchar(255) NOT NULL,
+      snapshot text NOT NULL,
+      deletedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expiresAt timestamp NOT NULL,
+      PRIMARY KEY (id),
+      KEY trash_items_account_expiry_idx (accountId, expiresAt),
+      KEY trash_items_account_deleted_idx (accountId, deletedAt)
+    )`);
+  })().catch((error) => {
+    _trashTableReady = null; // tenta de novo na próxima chamada
+    throw error;
+  });
+  return _trashTableReady;
+}
+
+/** Apaga da lixeira os itens vencidos; fotos vencidas também têm o arquivo removido do armazenamento. */
+async function purgeExpiredTrash(database: NonNullable<Awaited<ReturnType<typeof getDb>>>, accountId?: number) {
+  const expiredWhere = accountId != null
+    ? and(eq(trashItems.accountId, accountId), sql`${trashItems.expiresAt} <= NOW()`)
+    : sql`${trashItems.expiresAt} <= NOW()`;
+  const expiredPhotos = await database.select().from(trashItems).where(and(eq(trashItems.itemType, "store_photo"), expiredWhere));
+  if (expiredPhotos.length) {
+    const { storageDelete } = await import("./storage");
+    for (const item of expiredPhotos) await deletePhotoFiles(item.snapshot, storageDelete);
+  }
+  return database.delete(trashItems).where(expiredWhere);
+}
+
+async function deletePhotoFiles(snapshot: string, storageDelete: (key: string) => Promise<boolean>) {
+  try {
+    const photo = JSON.parse(snapshot);
+    if (photo?.fileKey) await storageDelete(photo.fileKey);
+    if (photo?.thumbnailKey) await storageDelete(photo.thumbnailKey);
+  } catch (error) {
+    console.warn("[trash] não foi possível remover o arquivo da foto", error);
+  }
+}
+
 export async function listTrash(accountId: number) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) return [];
-  await db.delete(trashItems).where(and(eq(trashItems.accountId, tenant), sql`${trashItems.expiresAt} <= NOW()`));
+  await ensureTrashTable();
+  await purgeExpiredTrash(db, tenant);
   return await db.select().from(trashItems).where(and(eq(trashItems.accountId, tenant), sql`${trashItems.expiresAt} > NOW()`)).orderBy(desc(trashItems.deletedAt));
 }
 
 export async function cleanupExpiredData() {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
+  await ensureTrashTable();
   const [trashResult, memberResult, platformResult] = await Promise.all([
-    db.delete(trashItems).where(sql`${trashItems.expiresAt} <= NOW()`),
+    purgeExpiredTrash(db),
     db.delete(memberSessions).where(sql`${memberSessions.expiresAt} <= NOW()`),
     db.delete(platformSessions).where(sql`${platformSessions.expiresAt} <= NOW()`),
   ]);
@@ -195,7 +248,7 @@ function parseTrashSnapshot(snapshot: string): any {
 
 function restoreDateFields<T extends Record<string, any>>(value: T): T {
   const restored: Record<string, any> = { ...value };
-  for (const key of ["createdAt", "updatedAt"] as const) {
+  for (const key of ["createdAt", "updatedAt", "capturedAt", "expiresAt"] as const) {
     if (restored[key] && !(restored[key] instanceof Date)) restored[key] = new Date(restored[key]);
   }
   return restored as T;
@@ -205,6 +258,7 @@ export async function restoreTrashItem(id: number, accountId: number) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
+  await ensureTrashTable();
   const item = (await db.select().from(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant))).limit(1))[0];
   if (!item) throw new Error("Item não encontrado na lixeira ou sem permissão.");
   if (new Date(item.expiresAt).getTime() <= Date.now()) {
@@ -218,6 +272,14 @@ export async function restoreTrashItem(id: number, accountId: number) {
       const existing = await tx.select({ id: inventoryProducts.id }).from(inventoryProducts).where(and(eq(inventoryProducts.id, item.originalId), eq(inventoryProducts.companyId, tenant))).limit(1);
       if (existing[0]) throw new Error("Já existe um produto com esse identificador. Não foi possível restaurar.");
       await tx.insert(inventoryProducts).values({ ...restoreDateFields(snapshot), id: item.originalId, companyId: tenant } as any);
+    } else if (item.itemType === "store_photo") {
+      const existing = await tx.select({ id: storePhotos.id }).from(storePhotos).where(and(eq(storePhotos.id, item.originalId), eq(storePhotos.companyId, tenant))).limit(1);
+      if (existing[0]) throw new Error("Esta foto já existe na galeria. Não foi possível restaurar.");
+      const restored = restoreDateFields(snapshot);
+      // Foto restaurada não pode ser apagada de imediato pela rotina de retenção.
+      const minExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
+      const expiresAt = new Date(Math.max(restored.expiresAt ? new Date(restored.expiresAt).getTime() : 0, minExpiry));
+      await tx.insert(storePhotos).values({ ...restored, id: item.originalId, companyId: tenant, expiresAt } as any);
     } else {
       throw new Error("Tipo de item da lixeira não reconhecido.");
     }
@@ -229,8 +291,14 @@ export async function permanentlyDeleteTrashItem(id: number, accountId: number) 
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
+  await ensureTrashTable();
+  const item = (await db.select().from(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant))).limit(1))[0];
   const result = await db.delete(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant)));
   if (!result[0]?.affectedRows) throw new Error("Item não encontrado na lixeira ou sem permissão.");
+  if (item?.itemType === "store_photo") {
+    const { storageDelete } = await import("./storage");
+    await deletePhotoFiles(item.snapshot, storageDelete);
+  }
 }
 
 /* Configuração por empresa */
@@ -1092,6 +1160,7 @@ export async function deleteInventoryProducts(companyId: number, ids: number[]) 
   const tenant = requireAccountId(companyId);
   const uniqueIds = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
   if (!uniqueIds.length) return { deleted: 0 };
+  await ensureTrashTable();
   return database.transaction(async (tx) => {
     const rows = await tx.select().from(inventoryProducts).where(and(inArray(inventoryProducts.id, uniqueIds), eq(inventoryProducts.companyId, tenant)));
     if (rows.length !== uniqueIds.length) throw new Error("Um ou mais produtos não existem ou não pertencem à sua empresa.");

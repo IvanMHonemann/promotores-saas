@@ -177,19 +177,23 @@ export default function StoreGalleryPage() {
   const utils = trpc.useUtils();
   const singleDelete = trpc.storePhotos.delete.useMutation({
     onSuccess: () => {
-      toast.success("Foto excluída.");
+      toast.success("Foto enviada para a lixeira.");
       void photos.refetch();
+      void utils.storePhotos.listStoresWithStats.invalidate();
+      void utils.trash.list.invalidate();
     },
-    onError: () => toast.error("Não foi possível excluir."),
+    onError: (e) => toast.error(e.message || "Não foi possível excluir a foto."),
   });
 
   const bulkDelete = trpc.storePhotos.bulkDelete.useMutation({
     onSuccess: (res) => {
-      toast.success(`${res.deleted} foto(s) excluída(s).`);
+      toast.success(`${res.deleted} foto${res.deleted !== 1 ? "s" : ""} enviada${res.deleted !== 1 ? "s" : ""} para a lixeira.`);
       setSelected(new Set());
       void photos.refetch();
+      void utils.storePhotos.listStoresWithStats.invalidate();
+      void utils.trash.list.invalidate();
     },
-    onError: () => toast.error("Não foi possível excluir as fotos."),
+    onError: (e) => toast.error(e.message || "Não foi possível excluir as fotos."),
   });
 
   const grouped = useMemo(() => groupByDay(photos.data || []), [photos.data]);
@@ -225,7 +229,7 @@ export default function StoreGalleryPage() {
   const lightboxPhoto = lightbox ? allPhotos.find((p) => p.id === lightbox.id) : undefined;
 
   const deleteOne = (photoId: number) => {
-    if (!confirm("Excluir esta foto?")) return;
+    if (!confirm("Enviar esta foto para a lixeira? Você pode restaurá-la por 5 dias.")) return;
     setLightbox(null);
     void run("Excluindo foto...", () => singleDelete.mutateAsync({ photoId })).catch(() => {});
   };
@@ -296,7 +300,7 @@ export default function StoreGalleryPage() {
 
   const deleteSelected = () => {
     if (selected.size === 0) return;
-    if (!confirm(`Excluir ${selected.size} foto(s)? Esta ação pode ser definitiva.`)) return;
+    if (!confirm(`Enviar ${selected.size} foto(s) para a lixeira? Você pode restaurá-las por 5 dias.`)) return;
     setSelectMode(false);
     void run("Excluindo fotos...", () => bulkDelete.mutateAsync({ photoIds: Array.from(selected) })).catch(() => {});
   };

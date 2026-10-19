@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import MissingPunchAlert from "@/components/MissingPunchAlert";
 import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { SidebarMenuButton, SidebarNav } from "@/components/SidebarNav";
 
@@ -43,6 +44,7 @@ export default function DashboardLayout({ title, description, children, refreshi
               <AccountMenuDropdown />
             </div>
           </header>
+          <MissingPunchAlert />
           {children}
         </section>
       </div>

@@ -6,6 +6,7 @@ import { memberAccounts, timeEvents, timeCorrectionRequests } from "../../drizzl
 import { eq, and, desc, gte, lt } from "drizzle-orm";
 import { auditFromCtx } from "../audit";
 import { recordAdjustment } from "./timesheetMirror";
+import { findMissingPunches } from "../missingPunch";
 
 const timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 type TimeEventType = z.infer<typeof timeEventType>;
@@ -211,6 +212,15 @@ export const timeTrackingRouter = router({
         .where(and(eq(timeEvents.memberAccountId, input.memberId), eq(timeEvents.companyId, ctx.accountId), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end)))
         .orderBy(timeEvents.serverTime);
     }),
+
+  /** Alerta ao promotor: batida faltante (jornada aberta). Não cria marcações. */
+  myMissingPunch: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
+    if (!ctx.accountId || !ctx.memberAccountId) return null;
+    return (await findMissingPunches({ companyId: ctx.accountId, memberId: ctx.memberAccountId }))[0] ?? null;
+  }),
+
+  /** Alerta ao administrador: funcionários com batida faltante. */
+  companyMissingPunches: companyAdminFeatureProcedure("timeTracking").query(({ ctx }) => findMissingPunches({ companyId: ctx.accountId })),
 
   myHistory: commercialFeatureProcedure("timeTracking")
     .input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional())

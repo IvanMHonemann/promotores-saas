@@ -24,6 +24,7 @@ import {
   subscriptionPlanFeatures,
 } from "../drizzle/schema";
 import { ensureStoreOwnersTable, recordStoreOwner, storeVisibleToMember } from "./storeAccess";
+import { todayInZone, addDays } from "../shared/expiry";
 import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits, weeklyRouteSchedules, inventoryProducts } from "../drizzle/schema";
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -180,10 +181,18 @@ export async function ensureTrashTable(): Promise<void> {
       snapshot text NOT NULL,
       deletedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
       expiresAt timestamp NOT NULL,
+      deletedByMemberId int NULL,
+      deletedByName varchar(255) NULL,
+      ownerMemberId int NULL,
       PRIMARY KEY (id),
       KEY trash_items_account_expiry_idx (accountId, expiresAt),
       KEY trash_items_account_deleted_idx (accountId, deletedAt)
     )`);
+    const [cols]: any = await database.execute(`SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'trash_items'`);
+    const have = new Set((cols as any[]).map((c) => String(c.COLUMN_NAME ?? c.column_name).toLowerCase()));
+    if (!have.has("deletedbymemberid")) await database.execute(`ALTER TABLE trash_items ADD COLUMN deletedByMemberId int NULL`);
+    if (!have.has("deletedbyname")) await database.execute(`ALTER TABLE trash_items ADD COLUMN deletedByName varchar(255) NULL`);
+    if (!have.has("ownermemberid")) await database.execute(`ALTER TABLE trash_items ADD COLUMN ownerMemberId int NULL`);
   })().catch((error) => {
     _trashTableReady = null; // tenta de novo na próxima chamada
     throw error;
@@ -214,13 +223,20 @@ async function deletePhotoFiles(snapshot: string, storageDelete: (key: string) =
   }
 }
 
-export async function listTrash(accountId: number) {
+/** scopeMemberId=null: administrador (tudo da empresa). Número: só itens que o usuário apagou ou que são dele. */
+function trashScope(accountId: number, scopeMemberId?: number | null) {
+  const base = eq(trashItems.accountId, accountId);
+  if (scopeMemberId == null) return base;
+  return and(base, or(eq(trashItems.deletedByMemberId, scopeMemberId), eq(trashItems.ownerMemberId, scopeMemberId)))!;
+}
+
+export async function listTrash(accountId: number, scopeMemberId?: number | null) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) return [];
   await ensureTrashTable();
   await purgeExpiredTrash(db, tenant);
-  return await db.select().from(trashItems).where(and(eq(trashItems.accountId, tenant), sql`${trashItems.expiresAt} > NOW()`)).orderBy(desc(trashItems.deletedAt));
+  return await db.select().from(trashItems).where(and(trashScope(tenant, scopeMemberId), sql`${trashItems.expiresAt} > NOW()`)).orderBy(desc(trashItems.deletedAt));
 }
 
 export async function cleanupExpiredData() {
@@ -255,12 +271,12 @@ function restoreDateFields<T extends Record<string, any>>(value: T): T {
   return restored as T;
 }
 
-export async function restoreTrashItem(id: number, accountId: number) {
+export async function restoreTrashItem(id: number, accountId: number, scopeMemberId?: number | null) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   await ensureTrashTable();
-  const item = (await db.select().from(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant))).limit(1))[0];
+  const item = (await db.select().from(trashItems).where(and(eq(trashItems.id, id), trashScope(tenant, scopeMemberId))).limit(1))[0];
   if (!item) throw new Error("Item não encontrado na lixeira ou sem permissão.");
   if (new Date(item.expiresAt).getTime() <= Date.now()) {
     await db.delete(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant)));
@@ -286,20 +302,23 @@ export async function restoreTrashItem(id: number, accountId: number) {
     }
     await tx.delete(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant)));
   });
+  return { itemType: item.itemType, label: item.label, originalId: item.originalId };
 }
 
-export async function permanentlyDeleteTrashItem(id: number, accountId: number) {
+export async function permanentlyDeleteTrashItem(id: number, accountId: number, scopeMemberId?: number | null) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   await ensureTrashTable();
-  const item = (await db.select().from(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant))).limit(1))[0];
+  const item = (await db.select().from(trashItems).where(and(eq(trashItems.id, id), trashScope(tenant, scopeMemberId))).limit(1))[0];
+  if (!item) throw new Error("Item não encontrado na lixeira ou sem permissão.");
   const result = await db.delete(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant)));
   if (!result[0]?.affectedRows) throw new Error("Item não encontrado na lixeira ou sem permissão.");
   if (item?.itemType === "store_photo") {
     const { storageDelete } = await import("./storage");
     await deletePhotoFiles(item.snapshot, storageDelete);
   }
+  return { itemType: item.itemType, label: item.label, originalId: item.originalId };
 }
 
 /* Configuração por empresa */
@@ -1137,58 +1156,126 @@ export async function updateOperationalVisit(companyId: number, id: number, data
 }
 
 /* Inventário e validade de produtos isolados por empresa. */
-export async function listInventoryProducts(companyId: number, search?: string, expiry?: "all" | "expired" | "near", storeId?: number) {
+let _inventoryReady: Promise<void> | null = null;
+/**
+ * Auto-reparo idempotente: o schema passou a ter inventory_products.storeId, mas nenhuma migração o criava,
+ * então todo SELECT/INSERT falhava em bancos já existentes. Cria a tabela/coluna só se faltarem; nunca apaga dados.
+ */
+export async function ensureInventoryProductsSchema(): Promise<void> {
+  if (_inventoryReady) return _inventoryReady;
+  _inventoryReady = (async () => {
+    const database = await getDb();
+    if (!database) return;
+    await database.execute(`CREATE TABLE IF NOT EXISTS inventory_products (
+      id int AUTO_INCREMENT NOT NULL,
+      companyId int NOT NULL,
+      productCode varchar(64) NOT NULL,
+      description varchar(500) NOT NULL,
+      quantity int NOT NULL DEFAULT 0,
+      expirationDate date NOT NULL,
+      price decimal(12,2) NOT NULL DEFAULT 0.00,
+      storeId int NULL,
+      createdByMemberId int NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY inventory_products_company_idx (companyId),
+      KEY inventory_products_code_idx (companyId, productCode),
+      KEY inventory_products_expiry_idx (companyId, expirationDate)
+    )`);
+    const [cols]: any = await database.execute(`SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'inventory_products'`);
+    const names = new Set((cols as any[]).map((c) => String(c.COLUMN_NAME ?? c.column_name).toLowerCase()));
+    if (!names.has("storeid")) await database.execute(`ALTER TABLE inventory_products ADD COLUMN storeId int NULL`);
+    if (!names.has("createdbymemberid")) await database.execute(`ALTER TABLE inventory_products ADD COLUMN createdByMemberId int NULL`);
+  })().catch((error) => {
+    _inventoryReady = null;
+    throw error;
+  });
+  return _inventoryReady;
+}
+
+export type InventoryFilters = { search?: string; expiry?: "all" | "expired" | "near" | "valid"; storeId?: number; from?: string; to?: string };
+export async function listInventoryProducts(companyId: number, filters: InventoryFilters = {}) {
   const database = await getDb();
   if (!database) return [];
+  await ensureInventoryProductsSchema();
   const company = requireAccountId(companyId);
+  const today = todayInZone();
+  const limit = addDays(today, 30);
   const conditions = [eq(inventoryProducts.companyId, company)];
-  if (search?.trim()) conditions.push(or(like(inventoryProducts.productCode, `%${search.trim()}%`), like(inventoryProducts.description, `%${search.trim()}%`))!);
-  if (expiry === "expired") conditions.push(sql`${inventoryProducts.expirationDate} < CURRENT_DATE()`);
-  if (expiry === "near") conditions.push(sql`${inventoryProducts.expirationDate} >= CURRENT_DATE() AND ${inventoryProducts.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)`);
-  if (storeId) conditions.push(eq(inventoryProducts.storeId, storeId));
+  const search = filters.search?.trim();
+  if (search) conditions.push(or(like(inventoryProducts.productCode, `%${search}%`), like(inventoryProducts.description, `%${search}%`))!);
+  if (filters.expiry === "expired") conditions.push(sql`${inventoryProducts.expirationDate} < ${today}`);
+  if (filters.expiry === "near") conditions.push(sql`${inventoryProducts.expirationDate} >= ${today} AND ${inventoryProducts.expirationDate} <= ${limit}`);
+  if (filters.expiry === "valid") conditions.push(sql`${inventoryProducts.expirationDate} > ${limit}`);
+  if (filters.storeId) conditions.push(eq(inventoryProducts.storeId, filters.storeId));
+  if (filters.from) conditions.push(sql`${inventoryProducts.expirationDate} >= ${filters.from}`);
+  if (filters.to) conditions.push(sql`${inventoryProducts.expirationDate} <= ${filters.to}`);
   return database.select().from(inventoryProducts).where(and(...conditions)).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
+}
+export async function getInventoryProduct(companyId: number, id: number) {
+  const database = await getDb();
+  if (!database) return null;
+  await ensureInventoryProductsSchema();
+  const company = requireAccountId(companyId);
+  return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company))).limit(1))[0] ?? null;
 }
 export async function createInventoryProduct(input: typeof inventoryProducts.$inferInsert) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
+  await ensureInventoryProductsSchema();
   const companyId = requireAccountId(input.companyId);
+  // Evita duplicar em duplo clique/reenvio: mesmo produto, validade, loja e quantidade criado há menos de 60 s.
+  const dup = await database.select().from(inventoryProducts).where(and(
+    eq(inventoryProducts.companyId, companyId),
+    eq(inventoryProducts.productCode, input.productCode),
+    sql`${inventoryProducts.expirationDate} = ${input.expirationDate}`,
+    input.storeId ? eq(inventoryProducts.storeId, input.storeId) : isNull(inventoryProducts.storeId),
+    eq(inventoryProducts.quantity, input.quantity ?? 0),
+    sql`${inventoryProducts.createdAt} >= DATE_SUB(NOW(), INTERVAL 60 SECOND)`,
+  )).limit(1);
+  if (dup[0]) return dup[0];
   const result = await database.insert(inventoryProducts).values({ ...input, companyId });
   const id = Number((result as any)[0]?.insertId);
   return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, companyId))).limit(1))[0];
 }
-export async function updateInventoryProduct(companyId: number, id: number, data: Pick<typeof inventoryProducts.$inferInsert, "productCode"|"description"|"quantity"|"expirationDate"|"price">) {
+export async function updateInventoryProduct(companyId: number, id: number, data: Pick<typeof inventoryProducts.$inferInsert, "productCode"|"description"|"quantity"|"expirationDate"|"price"> & { storeId?: number | null }) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
+  await ensureInventoryProductsSchema();
   const company = requireAccountId(companyId);
   await database.update(inventoryProducts).set(data).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company)));
   return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company))).limit(1))[0] || null;
 }
-export async function deleteInventoryProducts(companyId: number, ids: number[]) {
+export type TrashActor = { memberId?: number | null; name?: string | null };
+export async function deleteInventoryProducts(companyId: number, ids: number[], actor?: TrashActor) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
   const tenant = requireAccountId(companyId);
   const uniqueIds = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
   if (!uniqueIds.length) return { deleted: 0 };
   await ensureTrashTable();
+  await ensureInventoryProductsSchema();
   return database.transaction(async (tx) => {
     const rows = await tx.select().from(inventoryProducts).where(and(inArray(inventoryProducts.id, uniqueIds), eq(inventoryProducts.companyId, tenant)));
     if (rows.length !== uniqueIds.length) throw new Error("Um ou mais produtos não existem ou não pertencem à sua empresa.");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await tx.insert(trashItems).values(rows.map((product) => ({ accountId: tenant, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
+    const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    await tx.insert(trashItems).values(rows.map((product) => ({ accountId: tenant, deletedByMemberId: actor?.memberId ?? null, deletedByName: actor?.name ?? null, ownerMemberId: product.createdByMemberId ?? null, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
     await tx.delete(inventoryProducts).where(and(inArray(inventoryProducts.id, uniqueIds), eq(inventoryProducts.companyId, tenant)));
     return { deleted: rows.length };
   });
 }
-export async function deleteInventoryProduct(companyId: number, id: number) {
-  return deleteInventoryProducts(companyId, [id]);
+export async function deleteInventoryProduct(companyId: number, id: number, actor?: TrashActor) {
+  return deleteInventoryProducts(companyId, [id], actor);
 }
 export async function getExpiringInventoryProducts(companyId: number, daysAhead = 30) {
   const database = await getDb();
   if (!database) return [];
+  await ensureInventoryProductsSchema();
   const company = requireAccountId(companyId);
   const days = Math.max(0, Math.min(365, Math.trunc(daysAhead)));
   return database.select().from(inventoryProducts).where(and(
     eq(inventoryProducts.companyId, company),
-    sql`${inventoryProducts.expirationDate} >= CURRENT_DATE() AND ${inventoryProducts.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${days} DAY)`,
+    sql`${inventoryProducts.expirationDate} >= ${todayInZone()} AND ${inventoryProducts.expirationDate} <= ${addDays(todayInZone(), days)}`,
   )).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
 }

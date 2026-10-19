@@ -13,7 +13,7 @@ const RETENTION_DAYS = 60;
 const TRASH_DAYS = 5;
 
 /** Move fotos para a lixeira de forma atômica: ou grava na lixeira e remove da galeria, ou não muda nada. */
-async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<typeof storePhotos.$inferSelect>) {
+async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<typeof storePhotos.$inferSelect>, actor?: { memberId?: number | null; name?: string | null }) {
   if (photos.length === 0) return;
   await ensureTrashTable();
   const storeIds = Array.from(new Set(photos.map((p) => p.storeId)));
@@ -24,6 +24,9 @@ async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<
     await tx.insert(trashItems).values(
       photos.map((photo) => ({
         accountId,
+        deletedByMemberId: actor?.memberId ?? null,
+        deletedByName: actor?.name ?? null,
+        ownerMemberId: photo.promoterId ?? null,
         itemType: "store_photo",
         originalId: photo.id,
         label: `Foto - ${storeName.get(photo.storeId) || "Loja"} - ${new Date(photo.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}`.slice(0, 255),
@@ -374,7 +377,7 @@ export const storePhotosRouter = router({
 
       // Vai para a lixeira (restaurável por 5 dias) em vez de ser apagada de vez.
       try {
-        await moveStorePhotosToTrash(db, ctx.accountId, [photo]);
+        await moveStorePhotosToTrash(db, ctx.accountId, [photo], { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
       } catch (error) {
         console.error("[storePhotos.delete] falha ao enviar para a lixeira", error);
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível enviar a foto para a lixeira." });
@@ -412,7 +415,7 @@ export const storePhotosRouter = router({
       const allowed = photos.filter((photo) => memberId === null || photo.promoterId === memberId);
       if (allowed.length === 0) throw new TRPCError({ code: "FORBIDDEN", message: "Você só pode excluir suas próprias fotos." });
       try {
-        await moveStorePhotosToTrash(db, ctx.accountId, allowed);
+        await moveStorePhotosToTrash(db, ctx.accountId, allowed, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
       } catch (error) {
         console.error("[storePhotos.bulkDelete] falha ao enviar para a lixeira", error);
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível enviar as fotos para a lixeira." });

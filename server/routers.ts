@@ -1,5 +1,6 @@
 import { MEMBER_COOKIE_NAME } from "@shared/const";
 import { timeTrackingRouter } from "./modules/timeTracking";
+import { timesheetMirrorRouter } from "./modules/timesheetMirror";
 import { storePhotosRouter } from "./modules/storePhotos";
 import { z } from "zod";
 import { parse as parseCookie } from "cookie";
@@ -15,7 +16,7 @@ import * as memberAuth from "./memberAuth";
 import * as emailService from "./email";
 import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory, listPromoterActivities } from "./audit";
 import { reverseGeocodeAddress } from "./geocoding";
-import { scopeMemberId } from "./storeAccess";
+import { scopeMemberId, assertStoreAccess } from "./storeAccess";
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 import { runPersistentGemini } from "./aiGithubService";
@@ -26,9 +27,27 @@ const entitlementFeatureKey = z.enum(ENTITLEMENT_KEYS);
 const permissionModeSchema = z.enum(["inherit", "allow", "deny"]);
 const featurePermissionListSchema = z.array(z.object({ featureKey: entitlementFeatureKey, mode: permissionModeSchema })).max(ENTITLEMENT_KEYS.length);
 
+
+const productInput = z.object({
+  productCode: z.string().trim().min(1).max(64),
+  description: z.string().trim().min(1).max(500),
+  quantity: z.number().int().min(0).max(2147483647),
+  expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/),
+  storeId: z.number().int().positive().nullish(),
+});
+/** Garante que a loja informada pertence à empresa (e é visível ao usuário) antes de vincular a um produto. */
+async function assertStoreInCompany(ctx: any, storeId?: number | null): Promise<number | null> {
+  if (!storeId) return null;
+  const database = await db.getDb();
+  await assertStoreAccess(database, ctx, storeId); // lança NOT_FOUND se a loja não for da empresa/visível ao usuário
+  return storeId;
+}
+
 export const appRouter = router({
   system: systemRouter,
   timeTracking: timeTrackingRouter,
+  timesheetMirror: timesheetMirrorRouter,
   storePhotos: storePhotosRouter,
   entitlements: router({
     mine: companyBillingProcedure.query(({ ctx }) => {
@@ -569,12 +588,21 @@ export const appRouter = router({
   inventoryAlerts: protectedProcedure.input(z.object({ daysAhead: z.number().optional() }).optional()).query(async ({ ctx, input }) => {
     if (!ctx.accountId) return [];
     const days = input?.daysAhead || 30;
-    try { return await db.getExpiringInventoryProducts(ctx.accountId, days); } catch { return []; }
+    try { return await db.getExpiringInventoryProducts(ctx.accountId, days); } catch (error) { console.error("[inventoryAlerts] falha ao consultar validades", error); throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível consultar as validades." }); }
   }),
   trash: router({
-    list: companyAdminProcedure.query(({ ctx }) => db.listTrash(ctx.accountId)),
-    restore: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => { await db.restoreTrashItem(input.id, ctx.accountId); return { success: true } as const; }),
-    permanentlyDelete: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => { await db.permanentlyDeleteTrashItem(input.id, ctx.accountId); return { success: true } as const; }),
+    // Qualquer usuário autenticado da empresa; não-administradores só enxergam/operam o que apagaram ou é deles.
+    list: companyBillingProcedure.query(({ ctx }) => db.listTrash(ctx.accountId, scopeMemberId(ctx))),
+    restore: companyBillingProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const item = await db.restoreTrashItem(input.id, ctx.accountId, scopeMemberId(ctx));
+      void auditFromCtx(ctx, { action: "restore", module: "trash", entityType: item.itemType, entityId: item.originalId, entityLabel: item.label, description: `Restaurou da lixeira: ${item.label}` });
+      return { success: true } as const;
+    }),
+    permanentlyDelete: companyBillingProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const item = await db.permanentlyDeleteTrashItem(input.id, ctx.accountId, scopeMemberId(ctx));
+      void auditFromCtx(ctx, { action: "permanent_delete", module: "trash", entityType: item.itemType, entityId: item.originalId, entityLabel: item.label, description: `Excluiu definitivamente: ${item.label}` });
+      return { success: true } as const;
+    }),
   }),
   /** Planos públicos (sem login) — página de preços e cadastro. */
   publicCatalog: router({
@@ -692,27 +720,36 @@ export const appRouter = router({
 
 
   products: router({
-    list: companyBillingProcedure.input(z.object({ search: z.string().optional(), expiry: z.enum(["all", "expired", "near"]).optional(), storeId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listInventoryProducts(ctx.accountId, input?.search, input?.expiry, input?.storeId)),
-    create: companyBillingProcedure.input(z.object({ productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(async ({ ctx, input }) => {
-      const product = await db.createInventoryProduct({ ...input, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate as any, price: input.price });
+    list: companyBillingProcedure.input(z.object({
+      search: z.string().max(100).optional(),
+      expiry: z.enum(["all", "expired", "near", "valid"]).optional(),
+      storeId: z.number().int().positive().optional(),
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }).optional()).query(({ ctx, input }) => db.listInventoryProducts(ctx.accountId, input ?? {})),
+    create: companyBillingProcedure.input(productInput).mutation(async ({ ctx, input }) => {
+      const storeId = await assertStoreInCompany(ctx, input.storeId);
+      const product = await db.createInventoryProduct({ ...input, storeId, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate as any, price: input.price });
       void auditFromCtx(ctx, { action: "create", module: "products", entityType: "product", entityId: product?.id, entityLabel: input.description, description: `Cadastrou produto: ${input.description}`, newData: input });
       return product;
     }),
-    update: companyBillingProcedure.input(z.object({ id: z.number().int().positive(), productCode: z.string().trim().min(1).max(64), description: z.string().trim().min(1).max(500), quantity: z.number().int().min(0).max(2147483647), expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(async ({ ctx, input }) => {
+    update: companyBillingProcedure.input(productInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      const before = (await db.listInventoryProducts(ctx.accountId)).find((row: any) => row.id === id);
-      const product = await db.updateInventoryProduct(ctx.accountId, id, { ...data, expirationDate: data.expirationDate as any });
+      const before = await db.getInventoryProduct(ctx.accountId, id);
+      if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "Produto não encontrado." });
+      const storeId = await assertStoreInCompany(ctx, data.storeId);
+      const product = await db.updateInventoryProduct(ctx.accountId, id, { ...data, storeId, expirationDate: data.expirationDate as any });
       if (product) void auditFromCtx(ctx, { action: "update", module: "products", entityType: "product", entityId: id, entityLabel: product.description, description: `Alterou produto: ${product.description}`, oldData: before, newData: product });
       return product;
     }),
     delete: companyBillingProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-      const before = (await db.listInventoryProducts(ctx.accountId)).find((row: any) => row.id === input.id);
-      const result = await db.deleteInventoryProduct(ctx.accountId, input.id);
+      const before = await db.getInventoryProduct(ctx.accountId, input.id);
+      const result = await db.deleteInventoryProduct(ctx.accountId, input.id, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
       if (before) void auditFromCtx(ctx, { action: "delete", module: "products", entityType: "product", entityId: input.id, entityLabel: before.description, description: `Enviou produto à lixeira: ${before.description}`, oldData: before });
       return result;
     }),
     deleteMany: companyBillingProcedure.input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
-      const result = await db.deleteInventoryProducts(ctx.accountId, input.ids);
+      const result = await db.deleteInventoryProducts(ctx.accountId, input.ids, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
       void auditFromCtx(ctx, { action: "delete", module: "products", entityType: "product_bulk", entityLabel: `${result.deleted} produtos`, description: `Enviou ${result.deleted} produto(s) à lixeira`, newData: { productIds: input.ids, count: result.deleted } });
       return result;
     }),

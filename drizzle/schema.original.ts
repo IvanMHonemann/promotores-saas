@@ -215,6 +215,9 @@ export const trashItems = mysqlTable("trash_items", {
   snapshot: text("snapshot").notNull(),
   deletedAt: timestamp("deletedAt").defaultNow().notNull(),
   expiresAt: timestamp("expiresAt").notNull(),
+  deletedByMemberId: int("deletedByMemberId"),
+  deletedByName: varchar("deletedByName", { length: 255 }),
+  ownerMemberId: int("ownerMemberId"),
 }, (table) => ({
   accountExpiryIdx: index("trash_items_account_expiry_idx").on(table.accountId, table.expiresAt),
   accountDeletedIdx: index("trash_items_account_deleted_idx").on(table.accountId, table.deletedAt),

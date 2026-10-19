@@ -5,6 +5,7 @@ import * as db from "../db";
 import { memberAccounts, timeEvents, timeCorrectionRequests } from "../../drizzle/schema";
 import { eq, and, desc, gte, lt } from "drizzle-orm";
 import { auditFromCtx } from "../audit";
+import { recordAdjustment } from "./timesheetMirror";
 
 const timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 type TimeEventType = z.infer<typeof timeEventType>;
@@ -355,6 +356,8 @@ export const timeTrackingRouter = router({
           if (!event) throw new TRPCError({ code: "NOT_FOUND", message: "A marcação original não foi encontrada." });
           const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
           const note = `Ajuste aprovado em ${new Date().toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcionário: ${request.justification}`;
+          // Preserva o valor ORIGINAL antes de qualquer alteração (rastreabilidade: original, corrigido, justificativa, responsável, data/hora).
+          await recordAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
           await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}\n` : ""}${note}` }).where(eq(timeEvents.id, event.id));
         }
         await database.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: new Date(), reviewNotes: input.reviewNotes || null }).where(eq(timeCorrectionRequests.id, request.id));

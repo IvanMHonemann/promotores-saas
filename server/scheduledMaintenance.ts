@@ -1,61 +1,18 @@
-import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import mysql from "mysql2/promise";
-import { storagePut } from "./storage";
-
-function backupDirectory() {
-  return process.env.BACKUP_DIR || "/tmp/promotores-saas-backups/daily";
-}
-
-async function pruneBackups(directory: string, retentionDays: number) {
-  const cutoff = Date.now() - retentionDays * 86400000;
-  let removed = 0;
-  try {
-    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      if (!entry.isFile() || !/^promotores-saas-.*\.json$/.test(entry.name)) continue;
-      const file = path.join(directory, entry.name);
-      if ((await fs.stat(file)).mtimeMs < cutoff) {
-        await fs.rm(file);
-        await fs.rm(`${file}.sha256`, { force: true });
-        removed += 1;
-      }
-    }
-  } catch (error: any) {
-    if (error?.code !== "ENOENT") throw error;
-  }
-  return removed;
-}
 
 export async function runScheduledMaintenance() {
   const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!url) throw new Error("Database URL is not configured.");
-  const directory = backupDirectory();
-  const retentionDays = Math.max(1, Number(process.env.BACKUP_RETENTION_DAYS || 14));
   const connection = await mysql.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 10000 });
   try {
-    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-    const [tableRows] = await connection.query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
-    const tableNames = (tableRows as any[]).map((row: any) => Object.values(row)[0]).filter((name: any) => name !== "__drizzle_migrations");
-    const tables = [];
-    for (const tableName of tableNames) {
-      const [[definition]]: any = await connection.query(`SHOW CREATE TABLE \`${tableName}\``);
-      const [rows] = await connection.query(`SELECT * FROM \`${tableName}\``);
-      tables.push({ name: tableName, createSql: definition["Create Table"], rows });
-    }
-    const backup = { format: 1, generatedAt: new Date().toISOString(), database: "mysql-compatible", schemaOnly: false, tables };
-    const serialized = JSON.stringify(backup, null, 2);
-    const file = path.join(directory, `promotores-saas-${new Date().toISOString().replaceAll(/[:.]/g, "-")}.json`);
-    await fs.writeFile(file, serialized, { mode: 0o600 });
-    const checksum = crypto.createHash("sha256").update(serialized).digest("hex");
-    await fs.writeFile(`${file}.sha256`, `${checksum}  ${path.basename(file)}\n`, { mode: 0o600 });
-    const objectPrefix = `backups/database/${new Date().toISOString().slice(0, 10)}`;
-    const stored = await storagePut(`${objectPrefix}/${path.basename(file)}`, serialized, "application/json");
-    await storagePut(`${objectPrefix}/${path.basename(file)}.sha256`, `${checksum}  ${path.basename(file)}\n`, "text/plain");
+    // Backup em partes, retomável (cabe no limite de tempo da função). Se "complete" vier false, chame o endpoint de novo.
+    const { runBackupStep } = await import("./backup");
+    const backup = await runBackupStep(connection, { budgetMs: Number(process.env.BACKUP_BUDGET_MS || 18000) });
     const [trash] = await connection.query("DELETE FROM trash_items WHERE expiresAt <= UTC_TIMESTAMP()");
     const [memberSessions] = await connection.query("DELETE FROM member_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
     const [platformSessions] = await connection.query("DELETE FROM platform_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
-    const removed = await pruneBackups(directory, retentionDays);
+    await connection.query("DELETE FROM backup_progress WHERE day < DATE_FORMAT(DATE_SUB(UTC_DATE(), INTERVAL 30 DAY), '%Y-%m-%d')");
+    const retention = await purgeOldAuditLogs(connection);
     let expiredPhotos = { deleted: 0, errors: 0 };
     try {
       const { expireOldStorePhotos } = await import("./modules/storePhotos");
@@ -63,10 +20,33 @@ export async function runScheduledMaintenance() {
     } catch (e) {
       console.warn("[maintenance] expire photos failed", e);
     }
-    return { file, storageKey: stored.key, tables: tables.length, checksum, removed, cleaned: { trash: (trash as any).affectedRows, memberSessions: (memberSessions as any).affectedRows, platformSessions: (platformSessions as any).affectedRows }, expiredPhotos };
+    return { backup, cleaned: { trash: (trash as any).affectedRows, memberSessions: (memberSessions as any).affectedRows, platformSessions: (platformSessions as any).affectedRows, ...retention }, expiredPhotos };
   } finally {
     await connection.end();
   }
+}
+
+/**
+ * Retenção do log de auditoria (ele só cresce). Padrão: 2 anos; registros do módulo de ponto (time_tracking) 5 anos.
+ * Configure com AUDIT_RETENTION_DAYS e AUDIT_RETENTION_TIME_DAYS. Apaga em lotes para não travar a tabela.
+ */
+export async function purgeOldAuditLogs(connection: mysql.Connection) {
+  const general = Math.max(90, Number(process.env.AUDIT_RETENTION_DAYS || 730));
+  const timeDays = Math.max(general, Number(process.env.AUDIT_RETENTION_TIME_DAYS || 1825));
+  let auditLogs = 0;
+  try {
+    for (let i = 0; i < 10; i++) {
+      const [r]: any = await connection.query(
+        `DELETE FROM audit_logs WHERE (module <> 'time_tracking' AND createdAt < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)) OR (module = 'time_tracking' AND createdAt < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)) LIMIT 5000`,
+        [general, timeDays],
+      );
+      auditLogs += r.affectedRows || 0;
+      if ((r.affectedRows || 0) < 5000) break;
+    }
+  } catch (e: any) {
+    if (e?.code !== "ER_NO_SUCH_TABLE") throw e;
+  }
+  return { auditLogs };
 }
 
 

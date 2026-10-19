@@ -127,14 +127,26 @@ export const timesheetMirrorRouter = router({
       const end = new Date(Date.parse(`${input.to}T00:00:00Z`) + 60 * 3600000);
       const company = (await database.select({ name: companies.name }).from(companies).where(eq(companies.id, ctx.accountId)).limit(1))[0];
       const legal = await readJson<z.infer<typeof legalSchema>>("company_legal_profile", ctx.accountId);
-      const results = [];
-      for (const m of members) {
-        const rows = await database.select().from(timeEvents).where(and(eq(timeEvents.companyId, ctx.accountId), eq(timeEvents.memberAccountId, m.id), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end))).orderBy(timeEvents.serverTime);
-        const ids = rows.map((r) => r.id);
-        const adjRows: any[] = ids.length ? ((await database.execute(sql`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${ctx.accountId} AND memberAccountId = ${m.id}`)) as any)[0] : [];
-        const adjByEvent = new Map<number, any>();
+      // Consultas em lote (4 no total, independentes do nº de funcionários) em vez de 3+ por funcionário.
+      const memberIds = members.map((m) => m.id);
+      const eventRows = memberIds.length
+        ? await database.select().from(timeEvents).where(and(eq(timeEvents.companyId, ctx.accountId), inArray(timeEvents.memberAccountId, memberIds), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end))).orderBy(timeEvents.serverTime)
+        : [];
+      const eventsByMember = new Map<number, typeof eventRows>();
+      for (const r of eventRows) eventsByMember.set(r.memberAccountId, [...(eventsByMember.get(r.memberAccountId) || []), r]);
+      const evIds = eventRows.map((r) => r.id);
+      const adjByEvent = new Map<number, any>();
+      if (evIds.length) {
+        const adjRows: any[] = ((await database.execute(sql`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${ctx.accountId} AND memberAccountId IN (${sql.join(memberIds.map((id) => sql`${id}`), sql`, `)}) ORDER BY id`)) as any)[0];
         for (const a of adjRows) if (!adjByEvent.has(Number(a.timeEventId))) adjByEvent.set(Number(a.timeEventId), a);
-        const events: MirrorEvent[] = rows.map((r) => {
+      }
+      const laborByMember = new Map<number, LaborProfile>();
+      if (memberIds.length) {
+        const laborRows: any[] = ((await database.execute(sql`SELECT settingKey, settingValue FROM system_settings WHERE accountId = ${ctx.accountId} AND settingKey LIKE 'labor\\_profile:%'`)) as any)[0];
+        for (const r of laborRows) { try { laborByMember.set(Number(String(r.settingKey).split(":")[1]), JSON.parse(r.settingValue)); } catch { /* ignora perfil corrompido */ } }
+      }
+      const results = members.map((m) => {
+        const events: MirrorEvent[] = (eventsByMember.get(m.id) || []).map((r) => {
           const a = adjByEvent.get(r.id);
           const notes = r.notes || "";
           return {
@@ -144,13 +156,9 @@ export const timesheetMirrorRouter = router({
             legacyAdjustment: !a && /Ajuste aprovado em/.test(notes),
           };
         });
-        const labor = await readJson<LaborProfile>(`labor_profile:${m.id}`, ctx.accountId);
-        results.push({
-          member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null },
-          labor: labor ? { ...labor } : null,
-          report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor }),
-        });
-      }
+        const labor = laborByMember.get(m.id) ?? null;
+        return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: labor ? { ...labor } : null, report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor }) };
+      });
       void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "timesheet_mirror", description: `Gerou espelho de ponto ${input.from} a ${input.to} (${results.length} funcionário(s))`, newData: { from: input.from, to: input.to, memberIds: results.map((r) => r.member.id) } });
       return { company: { name: company?.name ?? "", legal: legal ?? null }, generatedAt: new Date().toISOString(), timeZone: TZ, results };
     }),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, ClipboardList, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X } from "lucide-react";
+import { CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useInstallPrompt } from "@/pwa/hooks";
 import { Download } from "lucide-react";
@@ -59,12 +59,13 @@ export function SidebarNav() {
           { href: "/", label: "Painel inicial", icon: LayoutDashboard },
           { href: "/produtos", label: "Produtos e validades", icon: Package },
           ...(hasFeature("timeTracking") ? [
-            { href: "/ponto", label: "Bater ponto", icon: Clock3 },
+            { href: "/ponto", label: "Cartão ponto", icon: Clock3 },
             { href: "/ponto#historico", label: "Histórico e GPS", icon: CalendarDays },
             { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
           ] : []),
           { href: "/lojas", label: "Lojas", icon: MapPin },
           { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
+          { href: "/lixeira", label: "Lixeira", icon: Trash2 },
         ]
       : [
           { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
@@ -72,7 +73,8 @@ export function SidebarNav() {
           ...(role === "company_admin" ? [{ href: "/lojas", label: "Lojas", icon: MapPin }] : [{ href: "/lojas", label: "Lojas", icon: MapPin }]),
           { href: "/#roteiros", label: "Roteiros", icon: CalendarDays },
           { href: "/cartao-ponto", label: "Cartão-ponto", icon: Clock3 },
-          ...(role === "company_admin" ? [{ href: "/lixeira", label: "Lixeira", icon: Trash2 }] : []),
+          ...(role === "company_admin" && hasFeature("timeTracking") ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: FileText }] : []),
+          { href: "/lixeira", label: "Lixeira", icon: Trash2 },
           ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: UsersRound }] : []),
           ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList }] : []),
         ];

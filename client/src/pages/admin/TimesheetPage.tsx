@@ -57,10 +57,10 @@ export default function TimesheetPage() {
             </CardContent>
           </Card>
           <Card className="border-white/10 bg-slate-900/70 text-white sm:col-span-2">
-            <CardHeader><CardTitle className="text-base">Saída automática da empresa</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Horário limite para alerta de batida faltante</CardTitle></CardHeader>
             <CardContent className="flex items-end gap-3">
               <div>
-                <label className="text-xs text-slate-400">Horário padrão (HH:MM)</label>
+                <label className="text-xs text-slate-400">Horário padrão (HH:MM) — após ele, jornada aberta gera alerta ao promotor e ao administrador; nenhuma marcação é criada automaticamente</label>
                 <input type="time" value={autoTime || autoSetting.data || ""} onChange={(e) => setAutoTime(e.target.value)} className="mt-1 block rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-white [color-scheme:dark]" />
               </div>
               <Button size="sm" className="bg-teal-400 text-slate-950" disabled={setAuto.isPending} onClick={() => setAuto.mutate({ time: autoTime || autoSetting.data || "" })}>Salvar</Button>

@@ -5,6 +5,8 @@ import * as db from "../db";
 import { memberAccounts, timeEvents, timeCorrectionRequests } from "../../drizzle/schema";
 import { eq, and, desc, gte, lt } from "drizzle-orm";
 import { auditFromCtx } from "../audit";
+import { recordAdjustment } from "./timesheetMirror";
+import { findMissingPunches } from "../missingPunch";
 
 const timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 type TimeEventType = z.infer<typeof timeEventType>;
@@ -211,6 +213,15 @@ export const timeTrackingRouter = router({
         .orderBy(timeEvents.serverTime);
     }),
 
+  /** Alerta ao promotor: batida faltante (jornada aberta). Não cria marcações. */
+  myMissingPunch: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
+    if (!ctx.accountId || !ctx.memberAccountId) return null;
+    return (await findMissingPunches({ companyId: ctx.accountId, memberId: ctx.memberAccountId }))[0] ?? null;
+  }),
+
+  /** Alerta ao administrador: funcionários com batida faltante. */
+  companyMissingPunches: companyAdminFeatureProcedure("timeTracking").query(({ ctx }) => findMissingPunches({ companyId: ctx.accountId })),
+
   myHistory: commercialFeatureProcedure("timeTracking")
     .input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional())
     .query(async ({ ctx, input }) => {
@@ -355,6 +366,8 @@ export const timeTrackingRouter = router({
           if (!event) throw new TRPCError({ code: "NOT_FOUND", message: "A marcação original não foi encontrada." });
           const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
           const note = `Ajuste aprovado em ${new Date().toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcionário: ${request.justification}`;
+          // Preserva o valor ORIGINAL antes de qualquer alteração (rastreabilidade: original, corrigido, justificativa, responsável, data/hora).
+          await recordAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
           await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}\n` : ""}${note}` }).where(eq(timeEvents.id, event.id));
         }
         await database.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: new Date(), reviewNotes: input.reviewNotes || null }).where(eq(timeCorrectionRequests.id, request.id));

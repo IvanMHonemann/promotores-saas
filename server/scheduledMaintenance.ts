@@ -70,70 +70,42 @@ export async function runScheduledMaintenance() {
 }
 
 
-/** Fecha jornadas abertas de dias anteriores e avisa o admin da empresa. */
-export async function runAutoClockOut() {
-  const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
-  if (!url) return { closed: 0, notified: 0 };
-  const connection = await mysql.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 10000 });
-  let closed = 0;
+/**
+ * Alerta de batida faltante (NÃO cria marcações). Avisa por e-mail o promotor (para corrigir) e os administradores
+ * da empresa, uma vez por funcionário e dia de jornada aberta (deduplicado em system_settings).
+ */
+export async function runMissingPunchAlerts() {
+  const { findMissingPunches } = await import("./missingPunch");
+  const dbm = await import("./db");
+  const database = await dbm.getDb();
+  if (!database) return { found: 0, notified: 0 };
+  const { and, eq } = await import("drizzle-orm");
+  const { memberAccounts } = await import("../drizzle/schema");
+  const { sendEmail } = await import("./email");
+  const missing = await findMissingPunches();
   let notified = 0;
-  try {
-    // Fecha jornadas abertas: de dia anterior OU cujo horário de saída configurado já passou hoje
-    const [rows]: any = await connection.query(`
-      SELECT te.companyId, te.memberAccountId, te.eventType, te.serverTime,
-             ma.userName, ma.email, c.name AS companyName,
-             COALESCE(pp.workEndTime, s.settingValue) AS workEndTime
-      FROM time_events te
-      INNER JOIN member_accounts ma ON ma.id = te.memberAccountId
-      INNER JOIN companies c ON c.id = te.companyId
-      LEFT JOIN promoter_profiles pp ON pp.memberAccountId = te.memberAccountId
-      LEFT JOIN system_settings s ON s.accountId = te.companyId AND s.settingKey = 'auto_clock_out_time'
-      WHERE te.id IN (
-        SELECT MAX(id) FROM time_events GROUP BY memberAccountId, companyId
-      )
-      AND te.eventType != 'clock_out'
-      AND (
-        DATE(te.serverTime) < CURDATE()
-        OR (COALESCE(pp.workEndTime, s.settingValue) IS NOT NULL AND TIME(NOW()) >= COALESCE(pp.workEndTime, s.settingValue) AND DATE(te.serverTime) = CURDATE())
-      )
-    `);
-    for (const row of rows || []) {
-      const reason = row.workEndTime && new Date(row.serverTime).toDateString() === new Date().toDateString()
-        ? `Saída automática: horário configurado ${row.workEndTime}`
-        : 'Saída automática: jornada aberta de dia anterior';
-      const day = new Date(row.serverTime).toISOString().slice(0, 10);
-      const idemKey = `auto-clock-out:${row.companyId}:${row.memberAccountId}:${day}`;
-      await connection.query(
-        `INSERT INTO time_events (companyId, memberAccountId, eventType, notes, synced, idempotencyKey)
-         VALUES (?, ?, 'clock_out', ?, 1, ?)
-         ON DUPLICATE KEY UPDATE id = id`,
-        [row.companyId, row.memberAccountId, reason, idemKey]
-      );
-      closed += 1;
-      // Avisa admins da empresa
-      const [admins]: any = await connection.query(
-        `SELECT email, userName FROM member_accounts WHERE companyId = ? AND role = 'company_admin' AND active = 1 AND email IS NOT NULL`,
-        [row.companyId]
-      );
-      for (const admin of admins || []) {
-        try {
-          const { sendEmail } = await import("./email");
-          if (sendEmail) {
-            await sendEmail({
-              to: admin.email,
-              subject: `Saída automática: ${row.userName}`,
-              text: `A jornada de ${row.userName} (${row.companyName}) foi encerrada automaticamente por estar aberta de um dia anterior.`,
-              html: `<p>A jornada de ${row.userName} (${row.companyName}) foi encerrada automaticamente por estar aberta de um dia anterior.</p>`,
-            });
-            notified += 1;
-          }
-        } catch { /* email optional */ }
+  for (const m of missing) {
+    const key = `missing_punch_notified:${m.memberId}:${m.day}`;
+    if (await dbm.getSetting(key, m.companyId, "")) continue;
+    const when = new Date(m.lastTime).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
+    const detail = `Última marcação: ${m.lastLabel} em ${when}. Falta registrar: ${m.missing}.`;
+    try {
+      if (m.email) {
+        await sendEmail({ to: m.email, subject: "Falta de batida no cartão ponto", text: `${detail} Abra o app, vá em Cartão ponto > Correções de ponto e solicite a correção com a justificativa.`, html: `<p>${detail}</p><p>Abra o app, vá em <b>Cartão ponto &gt; Correções de ponto</b> e solicite a correção com a justificativa.</p>` });
+        notified += 1;
       }
+      const admins = await database.select({ email: memberAccounts.email }).from(memberAccounts).where(and(eq(memberAccounts.companyId, m.companyId), eq(memberAccounts.role, "company_admin"), eq(memberAccounts.active, true)));
+      for (const admin of admins) {
+        if (!admin.email) continue;
+        await sendEmail({ to: admin.email, subject: `Falta de batida: ${m.name}`, text: `${m.name}: ${detail}`, html: `<p><b>${m.name}</b>: ${detail}</p><p>O promotor foi avisado para solicitar a correção; você poderá analisá-la em Cartão-ponto.</p>` });
+        notified += 1;
+      }
+      await dbm.setSetting(key, new Date().toISOString(), m.companyId);
+    } catch (error) {
+      console.warn("[missing-punch] falha ao enviar aviso", error);
     }
-  } finally {
-    await connection.end();
   }
-  return { closed, notified };
+  return { found: missing.length, notified };
 }
 
 

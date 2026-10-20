@@ -297,6 +297,13 @@ export async function restoreTrashItem(id: number, accountId: number, scopeMembe
       const minExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
       const expiresAt = new Date(Math.max(restored.expiresAt ? new Date(restored.expiresAt).getTime() : 0, minExpiry));
       await tx.insert(storePhotos).values({ ...restored, id: item.originalId, companyId: tenant, expiresAt } as any);
+      const restoredClientId = Number((restored as any).storeClientId);
+      if (Number.isInteger(restoredClientId) && restoredClientId > 0) {
+        try {
+          // Só religa se o cliente ainda existe nesta loja/empresa.
+          await tx.execute(sql`UPDATE store_photos SET storeClientId = ${restoredClientId} WHERE id = ${item.originalId} AND companyId = ${tenant} AND EXISTS (SELECT 1 FROM store_clients c WHERE c.id = ${restoredClientId} AND c.companyId = ${tenant} AND c.storeId = store_photos.storeId)`);
+        } catch { /* coluna/tabela ausente: foto restaurada sem cliente */ }
+      }
     } else {
       throw new Error("Tipo de item da lixeira não reconhecido.");
     }

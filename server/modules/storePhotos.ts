@@ -6,6 +6,7 @@ import { trashItems } from "../../drizzle/schema.original";
 import { ensureTrashTable, getDb } from "../db";
 import { commercialFeatureProcedure, router } from "../_core/trpc";
 import { auditFromCtx } from "../audit";
+import { ensureStoreClientsSchema } from "../storeClients";
 import { assertPhotoAccess, assertStoreAccess, ensureStoreOwnersTable, scopeMemberId, storeVisibleToMember } from "../storeAccess";
 
 const RETENTION_DAYS = 60;
@@ -19,6 +20,13 @@ async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<
   const storeIds = Array.from(new Set(photos.map((p) => p.storeId)));
   const storeRows = await db.select({ id: stores.id, name: stores.name }).from(stores).where(and(eq(stores.companyId, accountId), sql`${stores.id} IN (${sql.join(storeIds.map((id) => sql`${id}`), sql`, `)})`));
   const storeName = new Map<number, string>(storeRows.map((r: any) => [r.id, r.name]));
+  // O vínculo com o cliente da loja fica fora do schema Drizzle (coluna sob demanda): guarda no snapshot para restaurar.
+  const clientOf = new Map<number, number | null>();
+  try {
+    await ensureStoreClientsSchema(db);
+    const res: any = await db.execute(sql`SELECT id, storeClientId FROM store_photos WHERE companyId = ${accountId} AND id IN (${sql.join(photos.map((p) => sql`${p.id}`), sql`, `)})`);
+    for (const r of (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])) clientOf.set(Number(r.id), r.storeClientId == null ? null : Number(r.storeClientId));
+  } catch { /* sem vínculo: a foto volta sem cliente */ }
   const expiresAt = new Date(Date.now() + TRASH_DAYS * 24 * 60 * 60 * 1000);
   await db.transaction(async (tx: any) => {
     await tx.insert(trashItems).values(
@@ -30,7 +38,7 @@ async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<
         itemType: "store_photo",
         originalId: photo.id,
         label: `Foto - ${storeName.get(photo.storeId) || "Loja"} - ${new Date(photo.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}`.slice(0, 255),
-        snapshot: JSON.stringify(photo),
+        snapshot: JSON.stringify({ ...photo, storeClientId: clientOf.get(photo.id) ?? null }),
         expiresAt,
       })),
     );
@@ -69,6 +77,18 @@ async function ensureStorePhotosTable(db: any) {
   } catch (e) {
     console.warn("[storePhotos] ensure table", e);
   }
+}
+
+/** Confere que o cliente pertence à loja/empresa e grava o vínculo da foto (coluna criada sob demanda). */
+async function assertStoreClient(db: any, companyId: number, storeId: number, storeClientId: number) {
+  await ensureStoreClientsSchema(db);
+  const res: any = await db.execute(sql`SELECT id, active FROM store_clients WHERE id = ${storeClientId} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`);
+  const r = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0];
+  if (!r) throw new TRPCError({ code: "BAD_REQUEST", message: "Cliente não encontrado nesta loja." });
+  if (!r.active) throw new TRPCError({ code: "BAD_REQUEST", message: "Este cliente foi removido da loja." });
+}
+async function linkPhotoToClient(db: any, companyId: number, photoId: number, storeClientId: number) {
+  await db.execute(sql`UPDATE store_photos SET storeClientId = ${storeClientId} WHERE id = ${photoId} AND companyId = ${companyId}`);
 }
 
 export const storePhotosRouter = router({
@@ -131,6 +151,8 @@ export const storePhotosRouter = router({
       from: z.string().optional(),
       to: z.string().optional(),
       promoterId: z.number().int().positive().optional(),
+      storeClientId: z.number().int().positive().optional(),
+      withoutClient: z.boolean().optional(),
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
@@ -138,9 +160,13 @@ export const storePhotosRouter = router({
 
       // A loja precisa ser da empresa e visível para este usuário
       await assertStoreAccess(db, ctx, input.storeId);
+      await ensureStorePhotosTable(db);
+      await ensureStoreClientsSchema(db);
       const memberId = scopeMemberId(ctx);
 
-      const conditions = [eq(storePhotos.companyId, ctx.accountId), eq(storePhotos.storeId, input.storeId)];
+      const conditions: any[] = [eq(storePhotos.companyId, ctx.accountId), eq(storePhotos.storeId, input.storeId)];
+      if (input.storeClientId) conditions.push(sql`store_photos.storeClientId = ${input.storeClientId}`);
+      else if (input.withoutClient) conditions.push(sql`store_photos.storeClientId IS NULL`);
       // Não administrador só enxerga as próprias fotos
       if (memberId !== null) conditions.push(eq(storePhotos.promoterId, memberId));
       if (input.from) conditions.push(gte(storePhotos.capturedAt, new Date(input.from)));
@@ -165,6 +191,8 @@ export const storePhotosRouter = router({
           fileSize: storePhotos.fileSize,
           uploadStatus: storePhotos.uploadStatus,
           expiresAt: storePhotos.expiresAt,
+          storeClientId: sql<number | null>`store_photos.storeClientId`,
+          clientName: sql<string | null>`(SELECT name FROM store_clients WHERE store_clients.id = store_photos.storeClientId AND store_clients.companyId = ${ctx.accountId})`,
           promoterName: sql<string>`(SELECT userName FROM member_accounts WHERE member_accounts.id = store_photos.promoterId AND member_accounts.companyId = ${ctx.accountId})`,
         })
         .from(storePhotos)
@@ -188,6 +216,7 @@ export const storePhotosRouter = router({
       thumbnailKey: z.string().optional(),
       mimeType: z.string().optional(),
       fileSize: z.number().int().optional(),
+      storeClientId: z.number().int().positive().optional(),
       idempotencyKey: z.string().min(8).max(64),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -195,6 +224,7 @@ export const storePhotosRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
       const store = await assertStoreAccess(db, ctx, input.storeId);
+      if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
 
       // Idempotência
       const [existing] = await db
@@ -227,6 +257,7 @@ export const storePhotosRouter = router({
       });
 
       const photoId = Number((result as any).insertId);
+      if (input.storeClientId) await linkPhotoToClient(db, ctx.accountId, photoId, input.storeClientId);
 
       await auditFromCtx(ctx, {
         action: "create",
@@ -253,6 +284,7 @@ export const storePhotosRouter = router({
       locationStatus: z.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
       imageBase64: z.string().min(100),
       mimeType: z.string().default("image/jpeg"),
+      storeClientId: z.number().int().positive().optional(),
       idempotencyKey: z.string().min(8).max(64),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -260,6 +292,7 @@ export const storePhotosRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
       const store = await assertStoreAccess(db, ctx, input.storeId);
+      if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
 
       // Idempotência
       const [existing] = await db
@@ -304,6 +337,7 @@ export const storePhotosRouter = router({
       });
 
       const photoId = Number((result as any).insertId);
+      if (input.storeClientId) await linkPhotoToClient(db, ctx.accountId, photoId, input.storeClientId);
 
       await auditFromCtx(ctx, {
         action: "create",

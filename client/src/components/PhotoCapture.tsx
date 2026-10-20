@@ -27,6 +27,9 @@ type Shot = { dataUrl: string; capturedAt: Date; gps: GpsFix | null; gpsStatus: 
 type Props = {
   storeId: number;
   storeName: string;
+  /** Cliente da loja em que a foto está sendo tirada. */
+  storeClientId?: number | null;
+  clientName?: string | null;
   visitId?: number | null;
   onCaptured: () => void;
 };
@@ -79,7 +82,7 @@ function applyWatermark(
   });
 }
 
-export function PhotoCapture({ storeId, storeName, visitId, onCaptured }: Props) {
+export function PhotoCapture({ storeId, storeName, storeClientId, clientName, visitId, onCaptured }: Props) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -224,6 +227,7 @@ export function PhotoCapture({ storeId, storeName, visitId, onCaptured }: Props)
       `Promotor: ${promoter}`,
       `Local: ${location}`,
       `Loja: ${storeName}`,
+      ...(clientName ? [`Cliente: ${clientName}`] : []),
       `Data: ${s.capturedAt.toLocaleDateString("pt-BR")}  Hora: ${s.capturedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
     ];
     const base64 = await applyWatermark(s.dataUrl, lines);
@@ -231,6 +235,7 @@ export function PhotoCapture({ storeId, storeName, visitId, onCaptured }: Props)
     const idempotencyKey = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
     const payload = {
       storeId,
+      storeClientId: storeClientId ?? undefined,
       visitId: visitId ?? undefined,
       capturedAt: s.capturedAt.toISOString(),
       latitude: s.gps?.lat,

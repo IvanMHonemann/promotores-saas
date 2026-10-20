@@ -2,6 +2,7 @@ import { MEMBER_COOKIE_NAME } from "@shared/const";
 import { timeTrackingRouter } from "./modules/timeTracking";
 import { timesheetMirrorRouter } from "./modules/timesheetMirror";
 import { storePhotosRouter } from "./modules/storePhotos";
+import { storeClientsRouter } from "./modules/storeClients";
 import { z } from "zod";
 import { parse as parseCookie } from "cookie";
 import { TRPCError } from "@trpc/server";
@@ -49,6 +50,7 @@ export const appRouter = router({
   timeTracking: timeTrackingRouter,
   timesheetMirror: timesheetMirrorRouter,
   storePhotos: storePhotosRouter,
+  storeClients: storeClientsRouter,
   entitlements: router({
     mine: companyBillingProcedure.query(({ ctx }) => {
       if (!ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário da empresa não encontrado." });

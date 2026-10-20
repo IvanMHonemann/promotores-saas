@@ -3,7 +3,7 @@ import { Link, useParams } from "wouter";
 import { ArrowLeft, Camera, Check, ChevronDown, Download, ListChecks, MapPin, MessageCircle, Share2, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { PhotoCapture } from "@/components/PhotoCapture";
+import { StoreClientsPanel, type ClientFilter } from "@/components/StoreClientsPanel";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { useBusy } from "@/components/BusyOverlay";
@@ -156,6 +156,7 @@ export default function StoreGalleryPage() {
   const storeId = Number(params.storeId);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(null);
@@ -170,7 +171,7 @@ export default function StoreGalleryPage() {
   const activeVisit = visits.data?.find((v: any) => v.visit?.status === "in_progress" && v.store?.id === storeId);
 
   const photos = trpc.storePhotos.listByStore.useQuery(
-    { storeId, from: from || undefined, to: to || undefined },
+    { storeId, from: from || undefined, to: to || undefined, storeClientId: typeof clientFilter === "number" ? clientFilter : undefined, withoutClient: clientFilter === "none" ? true : undefined },
     { enabled: Number.isFinite(storeId) && storeId > 0, staleTime: 10000 },
   );
 
@@ -198,6 +199,8 @@ export default function StoreGalleryPage() {
 
   const grouped = useMemo(() => groupByDay(photos.data || []), [photos.data]);
   const allPhotos = photos.data || [];
+  const legacyQuery = trpc.storePhotos.listByStore.useQuery({ storeId, withoutClient: true }, { enabled: Number.isFinite(storeId) && storeId > 0, staleTime: 30000 });
+  const legacyPhotos = legacyQuery.data?.length ?? 0;
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -342,7 +345,7 @@ export default function StoreGalleryPage() {
         </div>
 
         {store && (
-          <PhotoCapture storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} onCaptured={() => void photos.refetch()} />
+          <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />
         )}
 
         <section className="rounded-2xl border border-white/15 bg-slate-800/70 p-4 shadow-lg shadow-black/20">
@@ -436,7 +439,7 @@ export default function StoreGalleryPage() {
               <Camera className="h-6 w-6" />
             </div>
             <p className="mt-4 text-base font-bold text-white">Nenhuma foto neste período</p>
-            <p className="mt-1 text-sm text-slate-300">Toque em <span className="font-semibold text-teal-300">Tirar foto</span> para registrar a primeira ou escolha outro período.</p>
+            <p className="mt-1 text-sm text-slate-300">Toque em <span className="font-semibold text-teal-300">Tirar foto</span> dentro de um cliente para registrar a primeira ou escolha outro período.</p>
           </div>
         )}
       </div>
@@ -510,7 +513,7 @@ export default function StoreGalleryPage() {
               </button>
             </div>
             <div className="p-4">
-              <p className="text-base font-bold text-white">{store?.name || "Loja"}</p>
+              <p className="text-base font-bold text-white">{store?.name || "Loja"}{(lightboxPhoto as any)?.clientName ? ` · ${(lightboxPhoto as any).clientName}` : ""}</p>
               <p className="mt-0.5 text-sm text-slate-200">
                 {lightboxPhoto ? `${new Date(lightboxPhoto.capturedAt).toLocaleDateString("pt-BR")} às ${new Date(lightboxPhoto.capturedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}
                 {(lightboxPhoto as any)?.promoterName ? ` · ${(lightboxPhoto as any).promoterName}` : ""}

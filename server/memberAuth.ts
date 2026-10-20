@@ -109,7 +109,8 @@ export async function getMemberBySessionToken(rawToken: string) {
   const now = new Date();
   const result = await db.select({ account: memberAccounts, session: memberSessions }).from(memberSessions)
     .innerJoin(memberAccounts, eq(memberSessions.memberAccountId, memberAccounts.id))
-    .where(and(eq(memberSessions.tokenHash, hashToken(rawToken)), gt(memberSessions.expiresAt, now), eq(memberAccounts.active, true)))
+    .innerJoin(companies, eq(memberAccounts.companyId, companies.id))
+    .where(and(eq(memberSessions.tokenHash, hashToken(rawToken)), gt(memberSessions.expiresAt, now), eq(memberAccounts.active, true), eq(companies.active, true)))
     .limit(1);
   await db.delete(memberSessions).where(lte(memberSessions.expiresAt, now));
   return result[0]?.account ?? null;

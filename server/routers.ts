@@ -720,6 +720,11 @@ export const appRouter = router({
 
 
   products: router({
+    /** Descobre a descrição pelo código de barras: 1º produtos já cadastrados pela empresa, 2º bases abertas (e Cosmos, se houver token). */
+    lookupByCode: companyBillingProcedure.input(z.object({ code: z.string().trim().min(6).max(64) })).query(async ({ ctx, input }) => {
+      const { lookupProductByCode } = await import("./productLookup");
+      return lookupProductByCode(ctx.accountId, input.code);
+    }),
     list: companyBillingProcedure.input(z.object({
       search: z.string().max(100).optional(),
       expiry: z.enum(["all", "expired", "near", "valid"]).optional(),

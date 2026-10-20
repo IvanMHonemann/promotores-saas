@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayInZone, expiryStatus } from "@shared/expiry";
+import { isValidGtin, looksNumeric } from "@shared/barcode";
 
 type Product = { id: number; productCode: string; description: string; quantity: number; expirationDate: string | Date; price: string | number; storeId?: number | null };
 const blank = { productCode: "", description: "", quantity: "0", expirationDate: "", price: "0.00", storeId: "" };
@@ -62,20 +63,17 @@ export default function ProductsPage() {
     setForm(old => ({ ...old, productCode: code }));
     setLookupLoading(true);
     try {
-      const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}?fields=product_name,product_name_pt,product_name_en,brands`, { headers: { "User-Agent": "PromotoresSaaS/1.0 (product barcode lookup)" } });
-      if (!response.ok) throw new Error("lookup failed");
-      const data = await response.json();
-      const p = data?.product;
-      const description = p?.product_name_pt || p?.product_name || p?.product_name_en || "";
-      if (data?.status === 1 && description) {
-        const branded = p?.brands ? `${description} — ${p.brands}` : description;
-        setForm(old => ({ ...old, productCode: code, description: branded.slice(0, 500) }));
-        toast.success("Código lido e descrição preenchida. Confira os dados antes de salvar.");
+      const r = await utils.products.lookupByCode.fetch({ code });
+      if (r.found && r.description) {
+        setForm(old => ({ ...old, productCode: code, description: r.description, price: r.price && Number(old.price) === 0 ? Number(r.price).toFixed(2) : old.price }));
+        const origin = r.source === "company" ? "já cadastrado na sua empresa" : r.source === "cosmos" ? "catálogo Cosmos" : "catálogo aberto";
+        toast.success(`Código lido (${origin}). Confira os dados antes de salvar.`);
       } else {
-        toast.info("Código lido. Produto não encontrado no catálogo; informe a descrição manualmente.");
+        toast.info("Código lido, mas o produto não está nos catálogos. Informe a descrição: da próxima vez ele será reconhecido automaticamente.");
+        window.setTimeout(() => document.getElementById("product-description")?.focus(), 100);
       }
     } catch {
-      toast.info("Código lido. Não foi possível consultar o catálogo; informe a descrição manualmente.");
+      toast.info("Código lido. Não foi possível consultar os catálogos agora; informe a descrição manualmente.");
     } finally { setLookupLoading(false); stopCamera(); }
   }
   async function startCamera() {
@@ -86,10 +84,10 @@ export default function ProductsPage() {
       const video = videoRef.current;
       if (!video) { setCameraError("Não foi possível abrir a visualização da câmera."); setCameraOpen(false); return; }
       const reader = new BrowserMultiFormatReader();
-      void reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" } }, audio: false }, video, (result, error, controls) => {
+      void reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: "continuous" } as any] }, audio: false }, video, (result, error, controls) => {
         if (controls && !controlsRef.current) controlsRef.current = controls;
         const code = result?.getText()?.trim();
-        if (code && !scannedRef.current) { scannedRef.current = true; controls.stop(); controlsRef.current = null; void lookupBarcode(code); }
+        if (code && !scannedRef.current && (!looksNumeric(code) || isValidGtin(code))) { scannedRef.current = true; controls.stop(); controlsRef.current = null; void lookupBarcode(code); }
       }).then(controls => { if (scannedRef.current) controls.stop(); else controlsRef.current = controls; }).catch(() => { setCameraError("Não foi possível acessar a câmera. Permita o uso da câmera nas configurações do navegador e tente novamente."); stopCamera(); });
     });
   }

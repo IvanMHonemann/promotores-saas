@@ -95,6 +95,7 @@ export function useAuth(options?: UseAuthOptions) {
       if (!(error instanceof TRPCClientError) || error.data?.code !== "UNAUTHORIZED") throw error;
     } finally {
       localStorage.removeItem(LOCAL_SESSION_KEY);
+      localStorage.removeItem("promotores-saas-act-as");
       setCachedUser(null);
       utils.auth.me.setData(undefined, null);
       window.dispatchEvent(new Event("promotores-saas:logout"));

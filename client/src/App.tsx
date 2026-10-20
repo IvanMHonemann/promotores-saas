@@ -26,6 +26,9 @@ import OperationsDashboard from "./pages/operations/OperationsDashboard";
 import ProductsPage from "./pages/ProductsPage";
 import TrashPage from "./pages/TrashPage";
 import PlatformDashboard from "./pages/platform/PlatformDashboard";
+import PlatformCompaniesPage from "./pages/platform/PlatformCompaniesPage";
+import PlatformPaymentsPage from "./pages/platform/PlatformPaymentsPage";
+import PlatformAuditPage from "./pages/platform/PlatformAuditPage";
 import { PwaStatusBar } from "./components/PwaStatusBar";
 import { BusyProvider } from "./components/BusyOverlay";
 import { useAuth } from "./_core/hooks/useAuth";
@@ -42,6 +45,13 @@ function CommercialProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user || user.role === "platform_admin" || !user.companyId) return <RedirectHome />;
+  return <>{children}</>;
+}
+
+function PlatformProtected({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user || user.role !== "platform_admin") return <RedirectHome />;
   return <>{children}</>;
 }
 
@@ -196,6 +206,12 @@ function Router() {
       <Route path="/cartao-ponto"><AdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetPage /></FeatureProtected></AdminProtected></Route>
       {/* Raiz: visitante → landing; autenticado → painel conforme o perfil */}
       <Route path="/"><RootRoute /></Route>
+      <Route path="/admin/empresas"><PlatformProtected><PlatformCompaniesPage /></PlatformProtected></Route>
+      <Route path="/admin/pagamentos"><PlatformProtected><PlatformPaymentsPage /></PlatformProtected></Route>
+      <Route path="/admin/auditoria"><PlatformProtected><PlatformAuditPage /></PlatformProtected></Route>
+      <Route path="/plataforma/ponto"><PlatformProtected><PlatformDashboard section="time" /></PlatformProtected></Route>
+      <Route path="/plataforma/scanner"><PlatformProtected><PlatformDashboard section="code-scanner" /></PlatformProtected></Route>
+      <Route path="/plataforma/ia"><PlatformProtected><PlatformDashboard section="ai-support" /></PlatformProtected></Route>
       <Route path="/admin/usuarios"><AdminProtected><FeatureProtected featureKey="teamManagement"><AdminUsersPage /></FeatureProtected></AdminProtected></Route>
       <Route path="/admin/assinaturas"><AdminProtected><AdminAssinaturasPage /></AdminProtected></Route>
       <Route path="/conta/planos"><CompanyAdminProtected><PlansPage /></CompanyAdminProtected></Route>

@@ -1,6 +1,7 @@
 import { MEMBER_COOKIE_NAME } from "@shared/const";
 import { timeTrackingRouter } from "./modules/timeTracking";
 import { timesheetMirrorRouter } from "./modules/timesheetMirror";
+import { platformCompaniesRouter } from "./modules/platformCompanies";
 import { storePhotosRouter } from "./modules/storePhotos";
 import { z } from "zod";
 import { parse as parseCookie } from "cookie";
@@ -48,6 +49,7 @@ export const appRouter = router({
   system: systemRouter,
   timeTracking: timeTrackingRouter,
   timesheetMirror: timesheetMirrorRouter,
+  platformCompanies: platformCompaniesRouter,
   storePhotos: storePhotosRouter,
   entitlements: router({
     mine: companyBillingProcedure.query(({ ctx }) => {
@@ -130,6 +132,13 @@ export const appRouter = router({
         if (!principal) {
           void auditFromCtx(ctx, { action: "login_failed", module: "auth", entityType: "session", description: `Tentativa de login falhou para ${input.email}`, newData: { email: input.email } });
           throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
+        }
+        if (principal.kind === "company") {
+          const company = await db.getCompanyById(principal.account.companyId);
+          if (!company || company.active === false) {
+            const reason = company ? await db.getSetting("blocked_reason", company.id, "") : "";
+            throw new TRPCError({ code: "FORBIDDEN", message: reason || "Acesso da empresa bloqueado. Entre em contato com o suporte." });
+          }
         }
         const session = await memberAuth.createSession(principal);
         ctx.res.cookie(MEMBER_COOKIE_NAME, session.rawToken, { ...getSessionCookieOptions(ctx.req, true), maxAge: 30 * 24 * 60 * 60 * 1000 });

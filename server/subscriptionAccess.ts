@@ -34,6 +34,11 @@ export async function checkSubscriptionAccess(companyId: number): Promise<Access
     return { allowed: false, status: "none", reason: "Empresa não encontrada." };
   }
 
+  if (company.active === false) {
+    const reason = await db.getSetting("blocked_reason", companyId, "");
+    return { allowed: false, status: "suspended", reason: reason || "Empresa bloqueada. Entre em contato com o suporte." };
+  }
+
   // Prefer denormalized company fields; fall back to latest subscription
   let status = (company.subscriptionStatus as SubscriptionStatus | null) || null;
   let expiresAt = parseDate(company.subscriptionExpiresAt);

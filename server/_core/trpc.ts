@@ -23,7 +23,7 @@ const requireCompanyUser = t.middleware(async opts => {
   }
   const companyRoles: AccessLevel[] = ["company_admin", "supervisor", "promoter"];
   if (!companyRoles.includes(user.role)) throw new TRPCError({ code: "FORBIDDEN", message: "Perfil sem permissão comercial." });
-  if (process.env.NODE_ENV !== "test") {
+  if (process.env.NODE_ENV !== "test" && !opts.ctx.actingAsPlatform) {
     const { checkSubscriptionAccess } = await import("../subscriptionAccess");
     const access = await checkSubscriptionAccess(opts.ctx.accountId);
     if (!access.allowed) {
@@ -71,6 +71,7 @@ const requireEntitlement = (featureKey: EntitlementKey) => t.middleware(async (o
   if (!user || !companyId || user.role === "platform_admin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Não foi possível determinar a empresa e o perfil para validar este módulo." });
   }
+  if (opts.ctx.actingAsPlatform) return opts.next({ ctx: { ...opts.ctx, user, accountId: companyId } }); // administrador da plataforma: acesso total
   const { assertMemberFeatureAccess } = await import("../entitlements");
   await assertMemberFeatureAccess({
     companyId,

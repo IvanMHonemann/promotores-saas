@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X } from "lucide-react";
+import { Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useInstallPrompt } from "@/pwa/hooks";
 import { Download } from "lucide-react";
@@ -51,8 +51,14 @@ export function SidebarNav() {
   const links = role === "platform_admin"
     ? [
         { href: "/", label: "Visão geral", icon: LayoutDashboard },
-        { href: "/admin/usuarios", label: "Empresas e usuários", icon: UsersRound },
+        { href: "/admin/empresas", label: "Empresas", icon: Building2 },
+        { href: "/admin/usuarios", label: "Usuários", icon: UsersRound },
         { href: "/admin/assinaturas", label: "Planos e assinaturas", icon: CreditCard },
+        { href: "/admin/pagamentos", label: "Pagamentos", icon: Wallet },
+        { href: "/admin/auditoria", label: "Auditoria geral", icon: ClipboardList },
+        { href: "/plataforma/ponto", label: "Ponto eletrônico (teste)", icon: Clock3 },
+        { href: "/plataforma/scanner", label: "Scanner e erros", icon: ShieldAlert },
+        { href: "/plataforma/ia", label: "Suporte com IA", icon: Sparkles },
       ]
     : role === "promoter"
       ? [

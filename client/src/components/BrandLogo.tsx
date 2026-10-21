@@ -1,13 +1,38 @@
 import { cn } from "@/lib/utils";
 
-type BrandLogoProps = { variant?: "dark" | "light"; className?: string; iconOnly?: boolean; wordmarkOnly?: boolean; height?: number };
+type BrandLogoProps = {
+  variant?: "dark" | "light";
+  className?: string;
+  height?: number;
+  iconOnly?: boolean;
+  wordmarkOnly?: boolean;
+};
 
-export function BrandLogo({ variant = "dark", className = "", iconOnly = false, height = 42 }: BrandLogoProps) {
-  const ink = variant === "dark" ? "#5eead4" : "#0f766e";
-  if (iconOnly) return <span aria-label="Promotores SaaS" className={cn("grid place-items-center rounded-xl bg-teal-400 font-black text-slate-950", className)} style={{ height, width: height }}>P</span>;
-  return <span className={cn("inline-flex items-center gap-2 font-black tracking-tight", className)} style={{ fontSize: Math.max(18, height * .48) }}><span className="grid place-items-center rounded-xl bg-teal-400 font-black text-slate-950" style={{ height: height * .82, width: height * .82 }}>P</span><span style={{ color: variant === "dark" ? "white" : "#0f172a" }}>Promotores <strong style={{ color: ink }}>SaaS</strong></span></span>;
+/** Identidade visual GONDUP, usando a arte oficial fornecida pelo proprietário. */
+export function BrandLogo({ variant = "dark", className, height = 48, iconOnly = false }: BrandLogoProps) {
+  if (iconOnly) {
+    return (
+      <span
+        aria-label="GONDUP"
+        className={cn("grid place-items-center rounded-lg bg-[#102019] font-black tracking-tight text-[#52e777]", className)}
+        style={{ height, width: height, fontSize: height * 0.5 }}
+      >
+        G.
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={variant === "light" ? "/gondup-logo-light.svg" : "/gondup-logo.svg"}
+      alt="GONDUP — da gôndola ao trade. Seu próximo upgrade."
+      className={cn("block h-auto w-full object-contain object-left", className)}
+      style={{ maxHeight: height }}
+      draggable={false}
+    />
+  );
 }
 
-export const BRAND_NAME = "Promotores SaaS";
-export const BRAND_TAGLINE = "Gestão de equipes de campo";
-export const BRAND_FULL = "Promotores SaaS — Gestão de equipes de campo";
+export const BRAND_NAME = "GONDUP";
+export const BRAND_TAGLINE = "Da gôndola ao trade. Seu próximo upgrade.";
+export const BRAND_FULL = `${BRAND_NAME} — ${BRAND_TAGLINE}`;

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
-import { ArrowLeft, Camera, Check, ChevronDown, Download, ListChecks, MapPin, MessageCircle, Share2, Trash2, X } from "lucide-react";
+import { ArrowLeft, Camera, Check, ChevronDown, Download, ListChecks, MapPin, MessageCircle, Share2, Trash2, UserRound, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { StoreClientsPanel, type ClientFilter } from "@/components/StoreClientsPanel";
@@ -196,6 +196,24 @@ export default function StoreGalleryPage() {
     },
     onError: (e) => toast.error(e.message || "Não foi possível excluir as fotos."),
   });
+
+  const [moveOpen, setMoveOpen] = useState(false);
+  const clientList = trpc.storeClients.list.useQuery({ storeId }, { enabled: Number.isFinite(storeId) && storeId > 0, staleTime: 10000 });
+  const assignClient = trpc.storePhotos.assignClient.useMutation({
+    onSuccess: (res, vars) => {
+      toast.success(`${res.moved} foto${res.moved !== 1 ? "s" : ""} movida${res.moved !== 1 ? "s" : ""} ${vars.storeClientId ? "para o cliente" : "para \"Sem cliente\""}.`);
+      setMoveOpen(false);
+      exitSelectMode();
+      void photos.refetch();
+      void utils.storeClients.list.invalidate();
+      void utils.storePhotos.listByStore.invalidate();
+    },
+    onError: (e) => toast.error(e.message || "Não foi possível mover as fotos."),
+  });
+  const moveSelected = (storeClientId: number | null) => {
+    if (selected.size === 0) return;
+    void run("Movendo fotos...", () => assignClient.mutateAsync({ storeId, photoIds: Array.from(selected), storeClientId })).catch(() => {});
+  };
 
   const grouped = useMemo(() => groupByDay(photos.data || []), [photos.data]);
   const allPhotos = photos.data || [];
@@ -454,7 +472,10 @@ export default function StoreGalleryPage() {
                 <button type="button" onClick={() => setSelected(new Set())} className="text-slate-200 hover:text-white">Limpar</button>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <Button className="h-11 bg-sky-500 font-bold text-white hover:bg-sky-400" onClick={() => setMoveOpen(true)} disabled={selected.size === 0}>
+                <UserRound className="mr-1.5 h-4 w-4" /> Mover
+              </Button>
               <Button className="h-11 bg-teal-400 font-bold text-slate-950 hover:bg-teal-300" onClick={shareSelected} disabled={selected.size === 0}>
                 <Share2 className="mr-1.5 h-4 w-4" /> Enviar
               </Button>
@@ -464,6 +485,29 @@ export default function StoreGalleryPage() {
               <Button className="h-11 bg-rose-500 font-bold text-white hover:bg-rose-400" onClick={deleteSelected} disabled={selected.size === 0 || bulkDelete.isPending}>
                 <Trash2 className="mr-1.5 h-4 w-4" /> Excluir
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {moveOpen && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/75 p-4 sm:items-center" onClick={() => setMoveOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-800 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-bold text-white">Mover {selected.size} foto{selected.size !== 1 ? "s" : ""} para qual cliente?</p>
+                <p className="mt-1 text-sm text-slate-200">As fotos continuam na loja; só muda o cliente a que pertencem.</p>
+              </div>
+              <button className="rounded-full bg-slate-700 p-1.5 text-white hover:bg-slate-600" onClick={() => setMoveOpen(false)} aria-label="Fechar"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="mt-4 max-h-[50vh] space-y-2 overflow-y-auto">
+              {(clientList.data || []).map((c) => (
+                <Button key={c.id} disabled={assignClient.isPending} className="h-12 w-full justify-start bg-teal-400 text-base font-bold text-slate-950 hover:bg-teal-300" onClick={() => moveSelected(c.id)}>
+                  <UserRound className="mr-2 h-5 w-5" /> {c.name}
+                </Button>
+              ))}
+              {clientList.isSuccess && (clientList.data || []).length === 0 && <p className="rounded-xl border border-dashed border-white/25 p-4 text-center text-sm text-slate-200">Esta loja ainda não tem clientes. Cadastre um cliente primeiro.</p>}
+              <Button disabled={assignClient.isPending} variant="outline" className="h-11 w-full border-white/25 bg-transparent font-semibold text-white hover:bg-white/10" onClick={() => moveSelected(null)}>Tirar do cliente (Sem cliente)</Button>
             </div>
           </div>
         </div>

@@ -466,6 +466,42 @@ export const storePhotosRouter = router({
 
       return { deleted };
     }),
+
+  /** Move fotos já tiradas para um cliente da mesma loja (ou tira o vínculo com `storeClientId: null`). */
+  assignClient: commercialFeatureProcedure("fieldOperations")
+    .input(z.object({
+      storeId: z.number().int().positive(),
+      photoIds: z.array(z.number().int().positive()).min(1).max(200),
+      storeClientId: z.number().int().positive().nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+      const store = await assertStoreAccess(db, ctx, input.storeId);
+      await ensureStorePhotosTable(db);
+      await ensureStoreClientsSchema(db);
+      let clientName = "Sem cliente";
+      if (input.storeClientId) {
+        await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
+        const res: any = await db.execute(sql`SELECT name FROM store_clients WHERE id = ${input.storeClientId} AND companyId = ${ctx.accountId} LIMIT 1`);
+        clientName = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0]?.name ?? clientName;
+      }
+      // Só fotos desta loja/empresa; quem não é administrador move apenas as próprias.
+      const memberId = scopeMemberId(ctx);
+      const owner = memberId !== null ? sql` AND promoterId = ${memberId}` : sql``;
+      const ids = sql.join(input.photoIds.map((id) => sql`${id}`), sql`, `);
+      const res: any = await db.execute(sql`UPDATE store_photos SET storeClientId = ${input.storeClientId} WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND id IN (${ids})${owner}`);
+      const moved = Number((Array.isArray(res) ? res[0] : res)?.affectedRows ?? 0);
+      if (moved === 0) throw new TRPCError({ code: "FORBIDDEN", message: "Nenhuma das fotos selecionadas pôde ser movida (só é possível mover as suas próprias fotos desta loja)." });
+      await auditFromCtx(ctx, {
+        action: "update",
+        module: "store_photos",
+        entityType: "store_photo",
+        description: `${moved} foto(s) da loja ${store.name} movida(s) para: ${clientName}`,
+        newData: { storeId: input.storeId, storeClientId: input.storeClientId, count: moved },
+      });
+      return { moved };
+    }),
 });
 
 

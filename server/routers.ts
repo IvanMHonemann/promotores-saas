@@ -3,6 +3,7 @@ import { timeTrackingRouter } from "./modules/timeTracking";
 import { timesheetMirrorRouter } from "./modules/timesheetMirror";
 import { platformCompaniesRouter } from "./modules/platformCompanies";
 import { storePhotosRouter } from "./modules/storePhotos";
+import { storeClientsRouter } from "./modules/storeClients";
 import { z } from "zod";
 import { parse as parseCookie } from "cookie";
 import { TRPCError } from "@trpc/server";
@@ -51,6 +52,7 @@ export const appRouter = router({
   timesheetMirror: timesheetMirrorRouter,
   platformCompanies: platformCompaniesRouter,
   storePhotos: storePhotosRouter,
+  storeClients: storeClientsRouter,
   entitlements: router({
     mine: companyBillingProcedure.query(({ ctx }) => {
       if (!ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário da empresa não encontrado." });

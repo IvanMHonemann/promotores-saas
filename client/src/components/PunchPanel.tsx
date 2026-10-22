@@ -102,9 +102,17 @@ export function PunchPanel() {
 
   const todayKey = localDayKey(now, timeZone);
   const today = useMemo(() => {
-    const events = (history.data || []).filter((e: any) => localDayKey(eventTime(e), timeZone) === todayKey);
-    return [...events].sort((a: any, b: any) => eventTime(a).getTime() - eventTime(b).getTime());
-  }, [history.data, timeZone, todayKey]);
+    const serverEvents = (history.data || []).filter((e: any) => localDayKey(eventTime(e), timeZone) === todayKey);
+    // Inclui batidas da fila offline para avançar a tela
+    const queuedEvents = queue.map((q) => ({
+      eventType: q.eventType,
+      deviceTime: q.deviceTime,
+      serverTime: q.deviceTime,
+      id: q.id,
+      queued: true,
+    })).filter((e) => localDayKey(eventTime(e), timeZone) === todayKey);
+    return [...serverEvents, ...queuedEvents].sort((a: any, b: any) => eventTime(a).getTime() - eventTime(b).getTime());
+  }, [history.data, queue, timeZone, todayKey]);
 
   const last = today[today.length - 1] as any;
   const lastType = (last?.eventType as PunchType | undefined) ?? undefined;
@@ -157,7 +165,7 @@ export function PunchPanel() {
         if (!isOnline()) {
           enqueue(payload);
           refreshQueue();
-          toast.info("Sem conexão. Batida salva e será enviada ao voltar online.");
+          toast.success(`${action.type === "clock_in" ? "Entrada" : action.type === "clock_out" ? "Saída" : action.type === "break_start" ? "Início do intervalo" : "Retorno"} salva offline às ${hhmm(new Date())}.`);
           return;
         }
         setLabel("Registrando ponto...");

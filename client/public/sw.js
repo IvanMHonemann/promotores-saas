@@ -1,5 +1,5 @@
-const CACHE_NAME = "promotores-saas-shell-v10";
-const APP_SHELL = ["/", "/manifest.json", "/icon-192.png"];
+const CACHE_NAME = "promotores-saas-shell-v11";
+const APP_SHELL = ["/", "/manifest.json", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -22,41 +22,43 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  // APIs sempre usam a rede; nunca reutilizamos respostas antigas da API.
   if (url.pathname.startsWith("/api")) return;
   if (url.pathname === "/reset" || url.pathname === "/login") return;
 
-  // Navegações para rotas da SPA sempre vêm do deployment atual. Uma shell
-  // antiga pode referenciar um bundle removido e deixar a página totalmente branca.
+  // Navegações SPA: offline devolve a shell para o router client-side funcionar
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request, { cache: "no-store" }).catch(async () => {
-        const shell = await caches.match("/");
-        return shell || new Response("Offline", { status: 503, statusText: "Offline" });
-      })
+      fetch(request, { cache: "no-store" })
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put("/", clone));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const shell = await caches.match("/");
+          if (shell) return shell;
+          return new Response("Offline", { status: 503, statusText: "Offline" });
+        })
     );
     return;
   }
 
-  // Network-first para HTML, JS, CSS e demais arquivos: online, sempre revalida
-  // o deployment atual; o cache permanece apenas como fallback offline.
+  // Assets: network-first com cache
   event.respondWith(
     fetch(request, { cache: "no-cache" })
       .then((response) => {
-        if (response.ok) {
-          const cacheKey = request.mode === "navigate" ? "/" : request;
-          void caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, response.clone()));
+        if (response.ok && (url.pathname.endsWith(".js") || url.pathname.endsWith(".css") || url.pathname.includes("/assets/"))) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         }
         return response;
       })
       .catch(async () => {
         const cached = await caches.match(request);
         if (cached) return cached;
-        if (request.mode === "navigate") {
-          const shell = await caches.match("/");
-          if (shell) return shell;
-        }
-        return new Response("Offline", { status: 503, statusText: "Offline" });
+        return new Response("", { status: 503 });
       })
   );
 });

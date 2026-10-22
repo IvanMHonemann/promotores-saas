@@ -37,6 +37,7 @@ export default function PromoterDashboard() {
   const alerts = useOfflineQuery(alertsQuery, "alerts");
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 30 }, { enabled: hasTimeTracking });
   const storesQuery = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
+  if (storesQuery.data) cacheSet("stores", storesQuery.data);
   const stores = useOfflineQuery(storesQuery, "stores");
   const photosToday = (stores.data || []).reduce((sum: number, s: any) => sum + (s.photoCount || 0), 0);
   const storeCount = (stores.data || []).length;

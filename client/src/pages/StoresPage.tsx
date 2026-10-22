@@ -20,8 +20,9 @@ export default function StoresPage() {
   );
   const stores = useOfflineQuery(storesQuery, "stores");
   const rawList = stores.data || [];
-  // Se offline e sem dados, tenta cache direto
-  const list = !isOnline() && !rawList.length ? (cacheGet<any[]>("stores") || []) : rawList;
+  // Offline: usa cache se disponível, senão lista vazia
+  const cachedStores = cacheGet<any[]>("stores");
+  const list = !isOnline() ? (cachedStores || rawList) : rawList;
 
   const { run } = useBusy();
   const [formOpen, setFormOpen] = useState(false);

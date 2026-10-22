@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useBusy } from "@/components/BusyOverlay";
 import { getCurrentPosition } from "@/pages/promoter/geolocation";
+import { enqueue, list as listQueue, remove as removeQueue, isOnline, type QueuedPunch } from "@/lib/offlineQueue";
 
 export type PunchType = "clock_in" | "break_start" | "break_end" | "clock_out";
 
@@ -48,6 +49,41 @@ const STEPS: Array<{ type: PunchType; label: string }> = [
  * Histórico completo, localização e pedidos de correção ficam em "Cartão ponto".
  */
 export function PunchPanel() {
+  const [queue, setQueue] = useState<QueuedPunch[]>([]);
+  const refreshQueue = () => setQueue(listQueue());
+  useEffect(() => { refreshQueue(); }, []);
+
+  // Sync queue when online
+  useEffect(() => {
+    const sync = async () => {
+      if (!isOnline()) return;
+      const pending = listQueue();
+      if (!pending.length) return;
+      for (const item of pending) {
+        try {
+          await register.mutateAsync({
+            eventType: item.eventType,
+            timeZone: item.timeZone,
+            deviceTime: item.deviceTime,
+            latitude: item.latitude,
+            longitude: item.longitude,
+            accuracy: item.accuracy,
+            locationStatus: item.locationStatus as any,
+            deviceInfo: item.deviceInfo,
+            idempotencyKey: item.idempotencyKey,
+          });
+          removeQueue(item.id);
+        } catch { /* retry next time */ }
+      }
+      refreshQueue();
+      void utils.timeTracking.myHistory.invalidate();
+      void utils.timeTracking.shiftStatus.invalidate();
+    };
+    window.addEventListener("online", sync);
+    sync();
+    return () => window.removeEventListener("online", sync);
+  }, []);
+
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const utils = trpc.useUtils();
   const { run } = useBusy();
@@ -109,19 +145,28 @@ export function PunchPanel() {
         if (position.accuracy > 10000) {
           throw new Error("O GPS informou uma precisão muito baixa. Ative a localização precisa e tente em um local aberto.");
         }
-        setLabel("Registrando ponto...");
-        await register.mutateAsync({
+        const payload = {
           eventType: action.type,
           timeZone,
           deviceTime: new Date().toISOString(),
           ...position,
-          locationStatus: "success",
+          locationStatus: "success" as const,
           deviceInfo: navigator.userAgent,
           idempotencyKey: `${action.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        });
+        };
+        if (!isOnline()) {
+          enqueue(payload);
+          refreshQueue();
+          toast.info("Sem conexão. Batida salva e será enviada ao voltar online.");
+          return;
+        }
+        setLabel("Registrando ponto...");
+        await register.mutateAsync(payload);
       });
-      toast.success(`${action.type === "clock_in" ? "Entrada" : action.type === "clock_out" ? "Saída" : action.type === "break_start" ? "Início do intervalo" : "Retorno do intervalo"} registrada às ${hhmm(new Date())}.`);
-      await Promise.all([utils.timeTracking.myHistory.invalidate(), utils.timeTracking.shiftStatus.invalidate()]);
+      if (isOnline()) {
+        toast.success(`${action.type === "clock_in" ? "Entrada" : action.type === "clock_out" ? "Saída" : action.type === "break_start" ? "Início do intervalo" : "Retorno do intervalo"} registrada às ${hhmm(new Date())}.`);
+        await Promise.all([utils.timeTracking.myHistory.invalidate(), utils.timeTracking.shiftStatus.invalidate()]);
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Não foi possível registrar o ponto.";
       setError(message);
@@ -156,6 +201,11 @@ export function PunchPanel() {
             <span className={`h-2 w-2 rounded-full ${status.dot}`} />
             {status.text}
           </span>
+          {queue.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/15 px-2 py-1 text-xs font-bold text-amber-200">
+              {queue.length} pendente{queue.length > 1 ? "s" : ""}
+            </span>
+          )}
         </div>
 
         {loading ? (

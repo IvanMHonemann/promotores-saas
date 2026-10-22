@@ -25,7 +25,7 @@ export default function DashboardLayout({ title, description, children, refreshi
               <SidebarMenuButton />
               <div className="min-w-0">
                 <p className="hidden text-xs font-semibold uppercase tracking-[.18em] text-teal-300 sm:block">
-                  Promotores SaaS · Operação
+                  GondUp · Operação
                 </p>
                 <h1 className="truncate text-2xl font-black tracking-tight sm:mt-1 sm:text-3xl">{title}</h1>
                 <p className="mt-1 hidden text-sm text-slate-300 sm:block">{description}</p>

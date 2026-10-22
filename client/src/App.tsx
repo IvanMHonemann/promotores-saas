@@ -177,7 +177,7 @@ function RootRoute() {
 function Router() {
   return (
     <Switch>
-      {/* Rotas públicas do Promotores SaaS */}
+      {/* Rotas públicas do GondUp */}
       <Route path="/reset">
         {() => {
           try {

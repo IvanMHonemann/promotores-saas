@@ -47,7 +47,7 @@ export function PwaStatusBar() {
             <div className="mb-4 flex items-center gap-3">
               <Loader2 className="h-6 w-6 animate-spin text-red-500" />
               <div>
-                <p className="text-base font-bold">Instalando Promotores SaaS</p>
+                <p className="text-base font-bold">Instalando GondUp</p>
                 <p className="text-xs text-slate-400">{installStep || "Processando…"}</p>
               </div>
             </div>
@@ -72,7 +72,7 @@ export function PwaStatusBar() {
         <div className="fixed bottom-16 left-3 right-3 z-[70] mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-xl print:hidden sm:left-3 sm:right-auto">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="text-sm font-bold">Instalar o Promotores SaaS no iPhone</p>
+              <p className="text-sm font-bold">Instalar o GondUp no iPhone</p>
               <p className="mt-1 text-xs text-slate-600">
                 No iPhone use o Safari: <strong>Compartilhar</strong> → <strong>Adicionar à Tela de Início</strong>.
               </p>

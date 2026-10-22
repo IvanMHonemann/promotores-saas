@@ -217,6 +217,25 @@ function Router() {
           return <main className="flex min-h-screen items-center justify-center bg-[#07111f] text-white"><p>Limpando cache... redirecionando</p></main>;
         }}
       </Route>
+      <Route path="/clean">
+        {() => {
+          try {
+            // Limpa tudo: auth, offline queue, offline cache
+            const keys = Object.keys(localStorage);
+            keys.forEach((k) => {
+              if (k.startsWith("gondup:") || k.startsWith("promotores-saas-")) localStorage.removeItem(k);
+            });
+            if ("serviceWorker" in navigator) {
+              navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister())).catch(() => undefined);
+            }
+            if ("caches" in window) {
+              caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).catch(() => undefined);
+            }
+          } catch (e) { /* ignore */ }
+          setTimeout(() => { window.location.href = "/login"; }, 600);
+          return <main className="flex min-h-screen items-center justify-center bg-[#07111f] text-white"><p>Limpando todos os dados locais... redirecionando</p></main>;
+        }}
+      </Route>
       <Route path="/login" component={LoginPage} />
       <Route path="/cadastro" component={SignupPage} />
       <Route path="/planos" component={PublicPlansPage} />

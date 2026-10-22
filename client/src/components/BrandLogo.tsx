@@ -12,21 +12,21 @@ type BrandLogoProps = {
 export function BrandLogo({ variant = "dark", className, height = 48, iconOnly = false }: BrandLogoProps) {
   if (iconOnly) {
     return (
-      <span
-        aria-label="GONDUP"
-        className={cn("grid place-items-center rounded-lg bg-[#102019] font-black tracking-tight text-[#52e777]", className)}
-        style={{ height, width: height, fontSize: height * 0.5 }}
-      >
-        G.
-      </span>
+      <img
+        src="/gondup-logo.png"
+        alt="GONDUP"
+        className={cn("block object-contain", className)}
+        style={{ height, width: height }}
+        draggable={false}
+      />
     );
   }
 
   return (
     <img
-      src={variant === "light" ? "/gondup-logo-light.svg" : "/gondup-logo.svg"}
+      src="/gondup-logo.png"
       alt="GONDUP — da gôndola ao trade. Seu próximo upgrade."
-      className={cn("block h-auto w-full object-contain object-left", className)}
+      className={cn("block h-auto w-auto object-contain object-left", className)}
       style={{ maxHeight: height }}
       draggable={false}
     />

@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import { useBusy } from "@/components/BusyOverlay";
 import { trpc } from "@/lib/trpc";
 import { useOfflineQuery } from "@/lib/useOfflineQuery";
-import { isOnline } from "@/lib/offlineCache";
+import { isOnline, cacheGet } from "@/lib/offlineCache";
 
 export default function StoresPage() {
   const [search, setSearch] = useState("");
@@ -19,7 +19,9 @@ export default function StoresPage() {
     { staleTime: 15000 },
   );
   const stores = useOfflineQuery(storesQuery, "stores");
-  const list = stores.data || [];
+  const rawList = stores.data || [];
+  // Se offline e sem dados, tenta cache direto
+  const list = !isOnline() && !rawList.length ? (cacheGet<any[]>("stores") || []) : rawList;
 
   const { run } = useBusy();
   const [formOpen, setFormOpen] = useState(false);

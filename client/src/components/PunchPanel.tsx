@@ -6,6 +6,7 @@ import { trpc } from "@/lib/trpc";
 import { useBusy } from "@/components/BusyOverlay";
 import { getCurrentPosition } from "@/pages/promoter/geolocation";
 import { enqueue, list as listQueue, remove as removeQueue, isOnline, type QueuedPunch } from "@/lib/offlineQueue";
+import { cacheGet, cacheSet } from "@/lib/offlineCache";
 
 export type PunchType = "clock_in" | "break_start" | "break_end" | "clock_out";
 
@@ -97,7 +98,9 @@ export function PunchPanel() {
   }, []);
 
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone });
-  const history = trpc.timeTracking.myHistory.useQuery({ limit: 30 });
+  const historyQuery = trpc.timeTracking.myHistory.useQuery({ limit: 30 });
+  if (historyQuery.data) cacheSet("punch-history", historyQuery.data);
+  const history = { ...historyQuery, data: historyQuery.data ?? (!isOnline() ? cacheGet<any[]>("punch-history") : undefined) };
   const register = trpc.timeTracking.registerEvent.useMutation();
 
   const todayKey = localDayKey(now, timeZone);

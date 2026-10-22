@@ -139,12 +139,27 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
 
   if (!access.data?.effective[featureKey]) {
     if (featureKey === "timeTracking" && access.data) return <RedirectHome />;
+    // Offline: se temos cache, permite acesso
+    if (!isOnline() && cachedEntitlements?.effective?.[featureKey]) {
+      return <>{children}</>;
+    }
     // Last-resort: if the error message contains login/10001, force redirect
     const errMsg = String((access.error as any)?.message || (access.error as any)?.shape?.message || "").toLowerCase();
     if (errMsg.includes("please login") || errMsg.includes("10001") || isUnauthorizedError(access.error)) {
       localStorage.removeItem("promotores-saas-auth-user");
       window.location.replace("/login");
       return <LoadingScreen />;
+    }
+    // Offline sem cache: mostra aviso mas não bloqueia completamente
+    if (!isOnline()) {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-slate-950 p-5 text-slate-100">
+          <section className="max-w-lg rounded-2xl border border-amber-400/30 bg-slate-900 p-6 text-center">
+            <h1 className="text-xl font-bold">Sem conexão</h1>
+            <p className="mt-2 text-sm text-slate-300">Os dados não estão disponíveis offline. Conecte-se para carregar este módulo.</p>
+          </section>
+        </main>
+      );
     }
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-950 p-5 text-slate-100">

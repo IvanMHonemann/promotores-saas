@@ -22,7 +22,7 @@ export default defineConfig({
   server: {
     host: true,
     hmr: false,
-    allowedHosts: ["localhost", "127.0.0.1"],
+    allowedHosts: ["localhost", "127.0.0.1", ".monkeycode-ai.live"],
     fs: { strict: true, deny: ["**/.*"] },
   },
 });

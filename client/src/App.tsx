@@ -34,6 +34,7 @@ import { BusyProvider } from "./components/BusyOverlay";
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
 import type { EntitlementKey } from "@shared/entitlements";
 import { useEffect } from "react";
 
@@ -94,10 +95,17 @@ function isUnauthorizedError(error: unknown): boolean {
 
 function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey; children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
-  const access = trpc.entitlements.mine.useQuery(undefined, {
+  const accessQuery = trpc.entitlements.mine.useQuery(undefined, {
     enabled: Boolean(user && user.role !== "platform_admin"),
     retry: false,
   });
+  // Cache entitlements for offline
+  const cachedEntitlements = cacheGet<any>("entitlements");
+  if (accessQuery.data) cacheSet("entitlements", accessQuery.data);
+  const access = {
+    ...accessQuery,
+    data: accessQuery.data ?? (!isOnline() ? cachedEntitlements : undefined),
+  };
 
   useEffect(() => {
     if (access.error && isUnauthorizedError(access.error)) {

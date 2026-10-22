@@ -53,8 +53,10 @@ export default function ProductsPage() {
   const stores = trpc.operations.stores.list.useQuery(undefined, { staleTime: 60000 });
   const productsQuery = trpc.products.list.useQuery({ search: search.trim() || undefined, expiry, storeId: storeFilter, from: from || undefined, to: to || undefined }, { staleTime: 15000 });
   const products = useOfflineQuery(productsQuery, "products");
-  const expiringProducts = trpc.products.list.useQuery({ expiry: "near" }, { staleTime: 60000 });
-  const expiredProducts = trpc.products.list.useQuery({ expiry: "expired" }, { staleTime: 60000 });
+  const expiringQuery = trpc.products.list.useQuery({ expiry: "near" }, { staleTime: 60000 });
+  const expiringProducts = useOfflineQuery(expiringQuery, "products-near");
+  const expiredQuery = trpc.products.list.useQuery({ expiry: "expired" }, { staleTime: 60000 });
+  const expiredProducts = useOfflineQuery(expiredQuery, "products-expired");
   const { run } = useBusy();
   const create = trpc.products.create.useMutation({ onSuccess: () => { toast.success("Produto cadastrado."); resetForm(); void utils.products.list.invalidate(); }, onError: e => toast.error(e.message || "Falha ao cadastrar produto.") });
   const update = trpc.products.update.useMutation({ onSuccess: () => { toast.success("Produto atualizado."); resetForm(); void utils.products.list.invalidate(); }, onError: e => toast.error(e.message || "Falha ao atualizar produto.") });

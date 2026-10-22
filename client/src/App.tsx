@@ -139,8 +139,8 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
 
   if (!access.data?.effective[featureKey]) {
     if (featureKey === "timeTracking" && access.data) return <RedirectHome />;
-    // Offline: se temos cache, permite acesso
-    if (!isOnline() && cachedEntitlements?.effective?.[featureKey]) {
+    // Offline: se temos cache de entitlements, permite acesso
+    if (!isOnline() && cachedEntitlements?.effective) {
       return <>{children}</>;
     }
     // Last-resort: if the error message contains login/10001, force redirect

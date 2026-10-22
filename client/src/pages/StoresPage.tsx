@@ -142,7 +142,12 @@ export default function StoresPage() {
           ))}
         </div>
 
-        {!stores.isLoading && !stores.isError && list.length === 0 && (
+        {!isOnline() && list.length === 0 && (
+          <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
+            Sem conexão. Conecte-se online pelo menos uma vez para carregar as lojas.
+          </p>
+        )}
+        {!stores.isLoading && !stores.isError && list.length === 0 && isOnline() && (
           <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center">
             <Store className="mx-auto h-8 w-8 text-slate-500" />
             <p className="mt-3 text-sm text-slate-300">Nenhuma loja encontrada.</p>

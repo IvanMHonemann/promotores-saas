@@ -1,79 +1,32 @@
-import { ArrowRight, CalendarCheck, Camera, MapPinned, Users, Clock, CheckCircle2 } from "lucide-react";
+import { ArrowRight, CalendarCheck, CheckCircle2, ClipboardList, MapPinned, Users, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/BrandLogo";
+
+const features = [
+  { icon: Users, title: "Equipes organizadas", text: "Promotores, supervisores e empresas em uma operação multiequipe." },
+  { icon: MapPinned, title: "Rotas de campo", text: "Distribua lojas, acompanhe visitas e registre a execução em tempo real." },
+  { icon: CalendarCheck, title: "Ponto eletrônico", text: "Entrada, intervalos e saída com localização e histórico auditável." },
+  { icon: ClipboardList, title: "Execução padronizada", text: "Checklists e evidências para melhorar cada visita no ponto de venda." },
+];
 
 export default function LandingPage() {
-  return (
-    <main className="min-h-screen bg-black text-white">
-      {/* Header */}
-      <header className="border-b border-white/10">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-          <img src="/gondup-logo.png" alt="GONDUP" className="h-16" />
-          <div className="flex gap-4">
-            <button className="text-sm text-white/70 hover:text-white" onClick={() => window.location.href = "/login"}>Entrar</button>
-            <Button className="bg-emerald-500 text-black hover:bg-emerald-400" onClick={() => window.location.href = "/cadastro"}>Começar</Button>
+  return <main className="min-h-screen overflow-hidden bg-[#07111f] text-white">
+    <section className="relative border-b border-white/10">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_10%,rgba(20,184,166,.25),transparent_32%),radial-gradient(circle_at_15%_70%,rgba(59,130,246,.2),transparent_35%)]" />
+      <div className="relative mx-auto max-w-6xl px-5 py-6 sm:px-8">
+        <nav className="flex items-center justify-between"><BrandLogo variant="dark" height={42} /><Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10" onClick={() => window.location.href = "/login"}>Entrar</Button></nav>
+        <div className="grid gap-12 pb-20 pt-16 lg:grid-cols-[1.1fr_.9fr] lg:items-center lg:py-24">
+          <div><span className="inline-flex items-center gap-2 rounded-full border border-teal-300/30 bg-teal-300/10 px-3 py-1 text-sm font-semibold text-teal-200"><Zap className="h-4 w-4"/> Operação de campo em um só lugar</span>
+            <h1 className="mt-6 max-w-3xl text-5xl font-black leading-[1.04] tracking-tight sm:text-7xl">Mais presença no campo. <span className="text-teal-300">Mais controle</span> na gestão.</h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">A GONDUP conecta agências, supervisores e promotores para transformar roteiros em execução mensurável.</p>
+            <div className="mt-8 flex flex-wrap gap-3"><Button className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={() => window.location.href = "/cadastro"}>Criar ambiente <ArrowRight className="ml-2 h-4 w-4"/></Button><Button variant="outline" className="border-white/20 bg-white/5 px-6 text-white hover:bg-white/10" onClick={() => document.getElementById("recursos")?.scrollIntoView({behavior:"smooth"})}>Conhecer recursos</Button></div>
+            <p className="mt-5 text-sm text-slate-400">Da gôndola ao trade. Seu próximo upgrade.</p>
           </div>
+          <div className="rounded-[2rem] border border-white/10 bg-white/[.06] p-5 shadow-2xl shadow-teal-950/40"><div className="rounded-3xl bg-slate-950/80 p-5"><div className="flex items-center justify-between"><div><p className="text-sm text-slate-400">Visão da operação</p><p className="mt-1 text-3xl font-black">Hoje, em campo</p></div><CheckCircle2 className="h-9 w-9 text-teal-300"/></div><div className="mt-6 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-white/5 p-4"><p className="text-sm text-slate-400">Visitas planejadas</p><p className="mt-1 text-3xl font-bold">128</p></div><div className="rounded-2xl bg-white/5 p-4"><p className="text-sm text-slate-400">Promotores ativos</p><p className="mt-1 text-3xl font-bold">24</p></div></div><div className="mt-4 rounded-2xl border border-teal-300/20 bg-teal-300/10 p-4"><p className="font-semibold text-teal-200">Execução acompanhada</p><p className="mt-1 text-sm text-slate-300">Rotas, jornada e evidências em uma visão clara para sua equipe.</p></div></div></div>
         </div>
-      </header>
-
-      {/* Hero */}
-      <section className="mx-auto max-w-4xl px-6 py-24 text-center">
-        <img src="/gondup-logo.png" alt="GONDUP" className="mx-auto h-28 sm:h-36" />
-        <p className="mt-6 text-2xl font-medium text-white">
-          Da gôndola ao trade. <span className="text-emerald-400">Seu próximo upgrade.</span>
-        </p>
-        <h1 className="mt-10 text-4xl font-bold leading-tight sm:text-5xl">
-          Controle de ponto, roteiros e evidências para equipes de campo
-        </h1>
-        <p className="mx-auto mt-6 max-w-2xl text-lg text-white/60">
-          A GONDUP ajuda agências e indústrias a gerenciar promotores, acompanhar visitas e registrar a execução no ponto de venda.
-        </p>
-        <div className="mt-10 flex justify-center gap-4">
-          <Button className="h-12 bg-emerald-500 px-6 text-black hover:bg-emerald-400" onClick={() => window.location.href = "/cadastro"}>
-            Criar ambiente <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-          <Button variant="outline" className="h-12 border-white/20 px-6 text-white hover:bg-white/10" onClick={() => window.location.href = "/login"}>
-            Já tenho conta
-          </Button>
-        </div>
-      </section>
-
-      {/* Recursos */}
-      <section className="border-t border-white/10">
-        <div className="mx-auto max-w-5xl px-6 py-20">
-          <h2 className="text-center text-2xl font-bold">O que a GONDUP faz</h2>
-          <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { icon: Clock, title: "Ponto eletrônico", text: "Entrada, intervalo e saída com localização. Alerta de batida faltante." },
-              { icon: MapPinned, title: "Roteiros", text: "Programe visitas por dia da semana e distribua lojas para cada promotor." },
-              { icon: Camera, title: "Fotos com evidência", text: "Registre a execução com marca d'água, data e local. Compartilhe no WhatsApp." },
-              { icon: Users, title: "Equipes", text: "Cadastre promotores, defina horários e acompanhe quem está em campo." },
-              { icon: CalendarCheck, title: "Cartão-ponto", text: "Histórico mensal, horas trabalhadas e aprovação de correções." },
-              { icon: CheckCircle2, title: "Painel", text: "Indicadores de jornada, fotos e produtos próximos do vencimento." },
-            ].map(({ icon: Icon, title, text }) => (
-              <div key={title} className="rounded-xl border border-white/10 p-6">
-                <Icon className="h-6 w-6 text-emerald-400" />
-                <h3 className="mt-4 font-semibold">{title}</h3>
-                <p className="mt-2 text-sm text-white/50">{text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="border-t border-white/10">
-        <div className="mx-auto max-w-3xl px-6 py-20 text-center">
-          <h2 className="text-2xl font-bold">Comece agora</h2>
-          <p className="mt-3 text-white/50">Crie o ambiente da sua empresa e organize a operação de campo.</p>
-          <Button className="mt-6 h-12 bg-emerald-500 px-8 text-black hover:bg-emerald-400" onClick={() => window.location.href = "/cadastro"}>
-            Criar ambiente <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
-      </section>
-
-      <footer className="border-t border-white/10 px-6 py-8 text-center text-sm text-white/40">
-        GONDUP · Da gôndola ao trade. Seu próximo upgrade.
-      </footer>
-    </main>
-  );
+      </div>
+    </section>
+    <section id="recursos" className="mx-auto max-w-6xl px-5 py-20 sm:px-8"><p className="text-sm font-bold uppercase tracking-widest text-teal-300">Feito para a rotina real</p><h2 className="mt-3 max-w-3xl text-4xl font-black tracking-tight sm:text-5xl">Da escala à evidência, sem perder o controle.</h2><div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{features.map(({icon:Icon,title,text})=><article key={title} className="rounded-3xl border border-white/10 bg-white/[.05] p-6"><Icon className="h-8 w-8 text-teal-300"/><h3 className="mt-5 text-xl font-bold">{title}</h3><p className="mt-3 text-sm leading-6 text-slate-400">{text}</p></article>)}</div></section>
+    <footer className="border-t border-white/10 px-5 py-8 text-center text-sm text-slate-500">GONDUP · Gestão inteligente de equipes de campo</footer>
+  </main>;
 }

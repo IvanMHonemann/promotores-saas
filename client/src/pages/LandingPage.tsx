@@ -35,7 +35,7 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(16,185,129,.15),transparent_60%)]" />
         <div className="relative">
           <img src="/gondup-logo.png" alt="GONDUP" className="mx-auto h-32 w-auto sm:h-40 lg:h-48" />
-          <p className="mt-6 text-lg text-slate-400 sm:text-xl">Da gôndola ao trade. Seu próximo upgrade.</p>
+          <p className="mt-4 text-xl font-semibold text-white sm:text-2xl">Da gôndola ao trade. <span className="text-emerald-400">Seu próximo upgrade.</span></p>
           <h1 className="mx-auto mt-8 max-w-4xl text-4xl font-black leading-tight tracking-tight sm:text-5xl lg:text-6xl">
             A plataforma que organiza sua <span className="text-emerald-400">operação de campo</span>
           </h1>
@@ -53,18 +53,18 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Stats */}
+      {/* Destaques */}
       <section className="border-y border-white/10 bg-white/[.02]">
-        <div className="mx-auto grid max-w-6xl grid-cols-2 gap-8 px-5 py-12 sm:grid-cols-4 sm:px-8">
+        <div className="mx-auto grid max-w-6xl gap-6 px-5 py-16 sm:grid-cols-3 sm:px-8">
           {[
-            { v: "4", l: "batidas de ponto" },
-            { v: "GPS", l: "em cada foto" },
-            { v: "60", l: "dias de retenção" },
-            { v: "5", l: "dias na lixeira" },
+            { icon: "📍", title: "Localização em tudo", text: "Ponto e fotos com GPS. Saiba onde cada promotor está e onde cada evidência foi registrada." },
+            { icon: "📸", title: "Evidência fotográfica", text: "Fotos com marca d'água, data e local. Compartilhe no WhatsApp ou gere relatório." },
+            { icon: "⚡", title: "Tempo real", text: "Acompanhe quem está em campo, quem bateu ponto e quem tem batida faltante agora." },
           ].map((s) => (
-            <div key={s.l} className="text-center">
-              <p className="text-3xl font-black text-emerald-400 sm:text-4xl">{s.v}</p>
-              <p className="mt-1 text-sm text-slate-400">{s.l}</p>
+            <div key={s.title} className="rounded-2xl border border-white/10 bg-white/[.03] p-6 text-center">
+              <p className="text-4xl">{s.icon}</p>
+              <p className="mt-4 text-lg font-bold">{s.title}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-400">{s.text}</p>
             </div>
           ))}
         </div>

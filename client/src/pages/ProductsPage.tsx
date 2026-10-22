@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
+import { useOfflineQuery } from "@/lib/useOfflineQuery";
 import { toast } from "sonner";
 import { todayInZone, expiryStatus } from "@shared/expiry";
 import { isValidGtin, looksNumeric } from "@shared/barcode";
@@ -50,7 +51,8 @@ export default function ProductsPage() {
   const scannedRef = useRef(false);
   const utils = trpc.useUtils();
   const stores = trpc.operations.stores.list.useQuery(undefined, { staleTime: 60000 });
-  const products = trpc.products.list.useQuery({ search: search.trim() || undefined, expiry, storeId: storeFilter, from: from || undefined, to: to || undefined }, { staleTime: 15000 });
+  const productsQuery = trpc.products.list.useQuery({ search: search.trim() || undefined, expiry, storeId: storeFilter, from: from || undefined, to: to || undefined }, { staleTime: 15000 });
+  const products = useOfflineQuery(productsQuery, "products");
   const expiringProducts = trpc.products.list.useQuery({ expiry: "near" }, { staleTime: 60000 });
   const expiredProducts = trpc.products.list.useQuery({ expiry: "expired" }, { staleTime: 60000 });
   const { run } = useBusy();

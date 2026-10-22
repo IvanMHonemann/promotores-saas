@@ -9,14 +9,15 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useBusy } from "@/components/BusyOverlay";
 import { trpc } from "@/lib/trpc";
+import { useOfflineQuery } from "@/lib/useOfflineQuery";
 
 export default function StoresPage() {
   const [search, setSearch] = useState("");
-  const stores = trpc.storePhotos.listStoresWithStats.useQuery(
+  const storesQuery = trpc.storePhotos.listStoresWithStats.useQuery(
     { search: search.trim() || undefined },
     { staleTime: 15000 },
   );
-
+  const stores = useOfflineQuery(storesQuery, "stores");
   const list = stores.data || [];
 
   const { run } = useBusy();

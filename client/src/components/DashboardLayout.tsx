@@ -5,6 +5,7 @@ import ActingAsBanner from "@/components/ActingAsBanner";
 import MissingPunchAlert from "@/components/MissingPunchAlert";
 import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { SidebarMenuButton, SidebarNav } from "@/components/SidebarNav";
+import { SyncIndicator } from "@/components/SyncIndicator";
 
 type Props = {
   title: string;
@@ -32,6 +33,7 @@ export default function DashboardLayout({ title, description, children, refreshi
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <SyncIndicator />
               {onRefresh && (
                 <Button
                   variant="outline"

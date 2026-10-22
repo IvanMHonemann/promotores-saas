@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bell, Check, CheckCircle2, Clock3, ClipboardList, MapPin, Users, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { useOfflineQuery } from "@/lib/useOfflineQuery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,8 @@ export default function OperationsDashboard() {
   const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
   const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
   const routes = trpc.operations.routes.list.useQuery({ date: today }, { enabled: hasFieldOperations });
-  const weekly = trpc.operations.routes.weekly.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
+  const weeklyQuery = trpc.operations.routes.weekly.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
+  const weekly = useOfflineQuery(weeklyQuery, "routes-weekly");
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { enabled: hasFieldOperations });
   const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });

@@ -220,7 +220,7 @@ export function PunchPanel() {
           <div className="mt-5 flex h-16 items-center justify-center gap-2 rounded-2xl bg-white/5 text-sm text-slate-200">
             <Loader2 className="h-4 w-4 animate-spin" /> Consultando sua jornada...
           </div>
-        ) : shift.isError || history.isError ? (
+        ) : (shift.isError || history.isError) && isOnline() ? (
           <p role="alert" className="mt-5 rounded-2xl border border-rose-300/40 bg-rose-400/15 p-4 text-sm font-semibold text-rose-100">
             Não foi possível consultar sua jornada. Atualize a página e tente novamente.
           </p>

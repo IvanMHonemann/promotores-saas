@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useBusy } from "@/components/BusyOverlay";
 import { trpc } from "@/lib/trpc";
 import { useOfflineQuery } from "@/lib/useOfflineQuery";
+import { isOnline } from "@/lib/offlineCache";
 
 export default function StoresPage() {
   const [search, setSearch] = useState("");
@@ -100,7 +101,7 @@ export default function StoresPage() {
           />
         </div>
 
-        {stores.isLoading && <p className="text-sm text-slate-300">Carregando lojas...</p>}
+        {stores.isLoading && isOnline() && <p className="text-sm text-slate-300">Carregando lojas...</p>}
         {stores.isError && (
           <p className="rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-sm text-rose-100">
             Não foi possível carregar as lojas. {stores.error?.message || "Tente novamente."}

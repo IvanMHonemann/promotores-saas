@@ -215,14 +215,6 @@ function Metric({
           <Icon className={`h-4 w-4 ${tone} sm:h-5 sm:w-5`} />
         </span>
       </div>
-    </div>
-      {checkIn && (
-        <VisitCheckIn
-          {...checkIn}
-          onDone={() => { setCheckIn(null); void visits.refetch(); }}
-          onCancel={() => setCheckIn(null)}
-        />
-      )}
-    </div>
+    </Tag>
   );
 }

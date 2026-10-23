@@ -222,7 +222,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
     reader.readAsDataURL(file);
   };
 
-  const saveShot = async (s: Shot) => {
+  const saveShot = async (s: Shot): Promise<void> => {
     const promoter = user?.name || user?.email || "Promotor";
     const location = s.gps ? await reverseGeocode(s.gps.lat, s.gps.lng) : "Local não disponível";
     const lines = [
@@ -274,7 +274,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
         setSaved((n) => n + 1);
         onCaptured(); // a galeria atrás da câmera já mostra a nova foto
       })
-      .catch((error) => toast.error(error instanceof Error ? error.message : "Não foi possível salvar uma das fotos."))
+      .catch((error) => { toast.error(error instanceof Error ? error.message : "Não foi possível salvar uma das fotos."); })
       .finally(() => setPending((n) => n - 1));
     if (!live) fileRef.current?.click(); // sem câmera ao vivo: abre a câmera do aparelho de novo
   };

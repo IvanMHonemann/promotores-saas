@@ -30,10 +30,10 @@ if ("serviceWorker" in navigator) {
       // Limpa cache antes de recarregar para evitar tela branca
       if ("caches" in window) {
         caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).finally(() => {
-          window.location.reload();
+          (window as any).location.reload();
         });
       } else {
-        window.location.reload();
+        (window as any).location.reload();
       }
     });
   });
@@ -42,7 +42,7 @@ if ("serviceWorker" in navigator) {
 // Android/iOS podem restaurar uma página antiga da memória ao voltar no histórico.
 // Recarregar nessa situação garante que o usuário receba o deployment atual.
 window.addEventListener("pageshow", (event) => {
-  if (event.persisted) window.location.reload();
+  if (event.persisted) (window as any).location.reload();
 });
 
 const queryClient = new QueryClient();

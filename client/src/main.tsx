@@ -6,7 +6,7 @@ import superjson from "superjson";
 import App from "./App";
 import "./index.css";
 
-const FORCE_RELOAD_VERSION = "v10";
+const FORCE_RELOAD_VERSION = "v12";
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     let refreshing = false;
@@ -27,7 +27,14 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (refreshing) return;
       refreshing = true;
-      window.location.reload();
+      // Limpa cache antes de recarregar para evitar tela branca
+      if ("caches" in window) {
+        caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).finally(() => {
+          window.location.reload();
+        });
+      } else {
+        window.location.reload();
+      }
     });
   });
 }

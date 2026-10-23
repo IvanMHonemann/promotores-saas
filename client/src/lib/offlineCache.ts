@@ -24,6 +24,5 @@ export function cacheSet<T>(key: string, data: T) {
   } catch { /* quota */ }
 }
 
-export function isOnline(): boolean {
-  return navigator.onLine;
-}
+/** Rede do aparelho E servidor respondendo (ver lib/connectivity.ts). */
+export { isOnline } from "./connectivity";

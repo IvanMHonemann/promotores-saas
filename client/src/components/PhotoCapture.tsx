@@ -9,16 +9,23 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 
 
+/** Endereço aproximado da foto. Offline ou com sinal fraco, usa as coordenadas (no máximo 4 s de espera). */
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  if (!isOnline()) return coords;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=pt-BR`);
-    if (!res.ok) return "Local não disponível";
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=pt-BR`, { signal: controller.signal });
+    if (!res.ok) return coords;
     const data = await res.json();
     const addr = data.address || {};
     const parts = [addr.road, addr.suburb || addr.neighbourhood, addr.city || addr.town || addr.village, addr.state].filter(Boolean);
-    return parts.slice(0, 3).join(", ") || data.display_name || "Local não disponível";
+    return parts.slice(0, 3).join(", ") || data.display_name || coords;
   } catch {
-    return "Local não disponível";
+    return coords;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -101,6 +108,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>("pending");
   const [saved, setSaved] = useState(0);
   const [pending, setPending] = useState(0);
+  const [offlineSaved, setOfflineSaved] = useState(0); // nesta sessão de câmera
 
   const upload = trpc.storePhotos.uploadAndCreate.useMutation();
 
@@ -156,6 +164,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
     setOpen(true);
     setShot(null);
     setSaved(0);
+    setOfflineSaved(0);
     startGps();
     if (!navigator.mediaDevices?.getUserMedia) {
       setLive(false);
@@ -182,6 +191,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
   };
 
   const closeCamera = () => {
+    if (offlineSaved > 0) toast.info(`${offlineSaved} foto${offlineSaved !== 1 ? "s" : ""} guardada${offlineSaved !== 1 ? "s" : ""} no aparelho. Será${offlineSaved !== 1 ? "ão" : ""} enviada${offlineSaved !== 1 ? "s" : ""} quando a internet voltar.`);
     sessionRef.current += 1;
     stopCamera();
     setOpen(false);
@@ -248,17 +258,22 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
       mimeType: "image/jpeg",
       idempotencyKey,
     };
+    const saveOffline = async () => {
+      // enqueuePhoto lança erro se não houver espaço: aí o usuário vê a falha, não um falso "salva".
+      await enqueuePhoto(payload);
+      setOfflineSaved((n) => n + 1);
+    };
     if (!isOnline()) {
-      enqueuePhoto(payload);
-      toast.info("Foto salva offline. Será enviada ao voltar a conexão.");
+      await saveOffline();
       return;
     }
     try {
       await upload.mutateAsync(payload);
-    } catch {
-      // Se falhar, tenta enfileirar
-      enqueuePhoto(payload);
-      toast.info("Foto salva offline. Será enviada ao voltar a conexão.");
+    } catch (error: any) {
+      const code = error?.data?.code || error?.shape?.data?.code;
+      // Erro de regra do servidor (ex.: permissão): não adianta guardar para depois.
+      if (code && code !== "TOO_MANY_REQUESTS" && code !== "INTERNAL_SERVER_ERROR" && code !== "TIMEOUT") throw error;
+      await saveOffline();
     }
   };
 
@@ -334,7 +349,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
                   {(saved > 0 || pending > 0) && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-white" role="status">
                       {pending > 0 ? <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-300" /> : <Check className="h-3.5 w-3.5 text-emerald-300" />}
-                      {saved} salva{saved !== 1 ? "s" : ""}{pending > 0 ? " · salvando..." : ""}
+                      {saved} salva{saved !== 1 ? "s" : ""}{offlineSaved > 0 ? ` (${offlineSaved} offline)` : ""}{pending > 0 ? " · salvando..." : ""}
                     </span>
                   )}
                 </div>

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "wouter";
 import { AlertTriangle, ClipboardList, Clock3, MapPin } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -29,7 +30,8 @@ export default function PromoterDashboard() {
   const accessQuery = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
   const cachedAccess = cacheGet<any>("entitlements");
   if (accessQuery.data) cacheSet("entitlements", accessQuery.data);
-  const access = { ...accessQuery, data: accessQuery.data ?? (!isOnline() ? cachedAccess : undefined) };
+  // Sem resposta do servidor (offline ou sinal fraco), usa as permissões salvas no aparelho.
+  const access = { ...accessQuery, data: accessQuery.data ?? (!isOnline() || accessQuery.isError ? cachedAccess : undefined) };
   const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
   const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
@@ -212,7 +214,8 @@ function Metric({
   href?: string;
   className?: string;
 }) {
-  const Tag = href ? "a" : "div";
+  // Link do wouter: navega sem recarregar a página (funciona offline).
+  const Tag: any = href ? Link : "div";
   return (
     <Tag href={href} className={`block min-h-[142px] bg-[#0b1021] p-4 transition hover:bg-white/5 sm:min-h-[160px] sm:p-6 ${className}`}>
       <div className="flex h-full items-start justify-between gap-3">

@@ -1,10 +1,13 @@
-import { useState } from "react";
-import { Camera, Pencil, Phone, Plus, Trash2, UserRound, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Camera, CloudOff, Pencil, Phone, Plus, Trash2, UserRound, X } from "lucide-react";
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useBusy } from "@/components/BusyOverlay";
 import { trpc } from "@/lib/trpc";
+import { cacheGet, cacheSet } from "@/lib/offlineCache";
+import { useOnline } from "@/hooks/useOnline";
+import { onPhotoQueueChange, photoCountForStore } from "@/lib/photoQueue";
 import { toast } from "sonner";
 
 export type ClientFilter = "all" | "none" | number;
@@ -26,7 +29,23 @@ type Props = {
 export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilter, onChanged, legacyPhotos }: Props) {
   const utils = trpc.useUtils();
   const { run } = useBusy();
-  const clients = trpc.storeClients.list.useQuery({ storeId }, { staleTime: 10000 });
+  const online = useOnline();
+  const clientsQuery = trpc.storeClients.list.useQuery({ storeId }, { staleTime: 10000 });
+  // Guarda os clientes desta loja no aparelho para tirar fotos sem internet.
+  const cacheKey = `store-clients:${storeId}`;
+  useEffect(() => { if (clientsQuery.data) cacheSet(cacheKey, clientsQuery.data); }, [clientsQuery.data, cacheKey]);
+  const cachedClients = clientsQuery.data ? null : cacheGet<NonNullable<typeof clientsQuery.data>>(cacheKey);
+  const usingSaved = !clientsQuery.data && Boolean(cachedClients);
+  const clients = {
+    data: clientsQuery.data ?? cachedClients ?? undefined,
+    // Offline sem cache: não fica "carregando" para sempre.
+    isLoading: clientsQuery.isLoading && online && !cachedClients,
+    isError: clientsQuery.isError && !cachedClients && online,
+    error: clientsQuery.error,
+  };
+  const [queued, setQueued] = useState(() => photoCountForStore(storeId));
+  useEffect(() => { setQueued(photoCountForStore(storeId)); return onPhotoQueueChange(() => setQueued(photoCountForStore(storeId))); }, [storeId]);
+  const canEdit = online;
   const [form, setForm] = useState<{ id: number | null; open: boolean } & typeof empty>({ id: null, open: false, ...empty });
   const refresh = () => { void utils.storeClients.list.invalidate(); onChanged(); };
   const create = trpc.storeClients.create.useMutation();
@@ -49,14 +68,29 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
     <section className="space-y-3" aria-label="Clientes da loja">
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-lg font-black text-white"><UserRound className="h-5 w-5 text-teal-300" />Clientes desta loja</h3>
-        {!form.open && (
+        {!form.open && canEdit && (
           <Button size="sm" className="bg-teal-400 font-bold text-slate-950 hover:bg-teal-300" onClick={() => setForm({ id: null, open: true, ...empty })}>
             <Plus className="mr-1 h-4 w-4" />Cadastrar cliente
           </Button>
         )}
       </div>
 
-      {form.open && (
+      {(!online || usingSaved) && (
+        <p role="status" className="flex items-start gap-2 rounded-xl border border-amber-300/30 bg-amber-300/10 p-3 text-sm text-amber-100">
+          <CloudOff className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Sem conexão com o servidor. Você pode tirar fotos normalmente: elas ficam guardadas no aparelho e são enviadas quando a internet voltar.
+            {list.length === 0 && " Os clientes desta loja não estão salvos no aparelho; a foto será registrada sem cliente."}
+          </span>
+        </p>
+      )}
+      {queued > 0 && (
+        <p role="status" className="rounded-xl border border-sky-300/30 bg-sky-300/10 p-3 text-sm text-sky-100">
+          {queued} foto{queued !== 1 ? "s" : ""} desta loja aguardando envio.
+        </p>
+      )}
+
+      {form.open && canEdit && (
         <div className="space-y-2 rounded-2xl border border-white/15 bg-slate-800/70 p-4">
           <div className="flex items-center justify-between">
             <p className="font-bold text-white">{form.id ? "Editar cliente" : "Novo cliente"}</p>
@@ -73,9 +107,14 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
       )}
 
       {clients.isLoading && <p className="text-sm text-slate-300">Carregando clientes...</p>}
-      {clients.isError && <p className="rounded-xl border border-rose-300/40 bg-rose-400/15 p-3 text-sm text-rose-100">Não foi possível carregar os clientes. {clients.error.message}</p>}
+      {clients.isError && <p className="rounded-xl border border-rose-300/40 bg-rose-400/15 p-3 text-sm text-rose-100">Não foi possível carregar os clientes. {clients.error?.message}</p>}
 
-      {!clients.isLoading && !clients.isError && list.length === 0 && !form.open && (
+      {/* Offline sem clientes salvos: ainda permite fotografar (foto sem cliente). */}
+      {!online && list.length === 0 && (
+        <PhotoCapture storeId={storeId} storeName={storeName} visitId={visitId} onCaptured={refresh} />
+      )}
+
+      {online && !clients.isLoading && !clients.isError && list.length === 0 && !form.open && (
         <div className="rounded-2xl border border-dashed border-white/25 bg-slate-800/40 p-6 text-center">
           <p className="text-base font-bold text-white">Nenhum cliente cadastrado nesta loja</p>
           <p className="mt-1 text-sm text-slate-300">Cadastre o cliente para tirar as fotos dentro dele.</p>
@@ -94,10 +133,10 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
                   {c.phone && <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" />{c.phone}</span>}
                 </p>
               </button>
-              <div className="flex shrink-0 gap-1">
+              {canEdit && <div className="flex shrink-0 gap-1">
                 <button type="button" aria-label={`Editar ${c.name}`} onClick={() => setForm({ id: c.id, open: true, name: c.name, contactName: c.contactName ?? "", phone: c.phone ?? "", notes: c.notes ?? "" })} className="rounded-full p-2 text-slate-200 hover:bg-white/10"><Pencil className="h-4 w-4" /></button>
                 <button type="button" aria-label={`Remover ${c.name}`} onClick={() => { if (window.confirm(`Remover o cliente ${c.name} desta loja? As fotos já tiradas continuam salvas.`)) setActive.mutate({ storeId, id: c.id, active: false }); }} className="rounded-full p-2 text-rose-200 hover:bg-white/10"><Trash2 className="h-4 w-4" /></button>
-              </div>
+              </div>}
             </div>
             <div className="mt-3">
               <PhotoCapture storeId={storeId} storeName={storeName} storeClientId={c.id} clientName={c.name} visitId={visitId} onCaptured={refresh} />

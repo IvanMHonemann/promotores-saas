@@ -28,6 +28,7 @@ export default function PromoterClockPage() {
   const [justification, setJustification] = useState("");
   const utils = trpc.useUtils();
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 100, date: selectedDate });
+  const missingPunch = trpc.timeTracking.myMissingPunch.useQuery(undefined, { staleTime: 60000 });
   const corrections = trpc.timeTracking.myCorrections.useQuery();
 
   const correction = trpc.timeTracking.requestCorrection.useMutation({
@@ -92,6 +93,16 @@ export default function PromoterClockPage() {
                   className="h-10 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100"
                 />
               </div>
+              {missingPunch.data && (
+                <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4">
+                  <p className="font-bold text-amber-100">Batida faltante detectada</p>
+                  <p className="mt-1 text-sm text-amber-200">
+                    Última marcação: {missingPunch.data.lastLabel} em {new Date(missingPunch.data.lastTime).toLocaleString("pt-BR")}.
+                    Falta registrar: {missingPunch.data.missing}.
+                  </p>
+                  <a href="#correcoes" className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Solicitar correção ao supervisor</a>
+                </div>
+              )}
               <div className="mt-4 space-y-3">
                 {history.isLoading && <p className="text-sm text-slate-300">Carregando marcações...</p>}
                 {!history.isLoading && !history.data?.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-slate-300">Nenhuma marcação neste dia.</p>}

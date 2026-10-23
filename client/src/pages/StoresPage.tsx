@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Camera, MapPin, Plus, Search, Store, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -9,20 +9,32 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useBusy } from "@/components/BusyOverlay";
 import { trpc } from "@/lib/trpc";
-import { useOfflineQuery } from "@/lib/useOfflineQuery";
-import { isOnline, cacheGet } from "@/lib/offlineCache";
+import { cacheGet, cacheSet } from "@/lib/offlineCache";
+import { useOnline } from "@/hooks/useOnline";
 
 export default function StoresPage() {
   const [search, setSearch] = useState("");
+  const online = useOnline();
+  const term = search.trim();
   const storesQuery = trpc.storePhotos.listStoresWithStats.useQuery(
-    { search: search.trim() || undefined },
+    { search: term || undefined },
     { staleTime: 15000 },
   );
-  const stores = useOfflineQuery(storesQuery, "stores");
-  const rawList = stores.data || [];
-  // Offline: usa cache se disponível, senão lista vazia
-  const cachedStores = cacheGet<any[]>("stores");
-  const list = !isOnline() ? (cachedStores || rawList) : rawList;
+  // Guarda a lista completa (sem busca) neste aparelho para abrir sem internet.
+  useEffect(() => { if (storesQuery.data && !term) cacheSet("stores", storesQuery.data); }, [storesQuery.data, term]);
+  const cachedStores = useMemo(() => cacheGet<any[]>("stores"), [storesQuery.data, online]);
+  // Sem resposta da rede, usa a lista salva (filtrada pela busca) em vez de ficar carregando.
+  const fallback = useMemo(() => (cachedStores || []).filter((s) => !term || String(s.name).toLowerCase().includes(term.toLowerCase())), [cachedStores, term]);
+  const list: any[] = storesQuery.data ?? fallback;
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    if (!storesQuery.isLoading) { setTimedOut(false); return; }
+    const t = window.setTimeout(() => setTimedOut(true), 7000);
+    return () => window.clearTimeout(t);
+  }, [storesQuery.isLoading]);
+  const usingSaved = !storesQuery.data && Boolean(cachedStores);
+  const loading = storesQuery.isLoading && online && !timedOut && !cachedStores;
+  const stores = { refetch: storesQuery.refetch, isError: storesQuery.isError && !cachedStores, error: storesQuery.error };
 
   const { run } = useBusy();
   const [formOpen, setFormOpen] = useState(false);
@@ -104,7 +116,12 @@ export default function StoresPage() {
           />
         </div>
 
-        {stores.isLoading && isOnline() && <p className="text-sm text-slate-300">Carregando lojas...</p>}
+        {(!online || usingSaved) && (
+          <p role="status" className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
+            {cachedStores ? "Sem conexão com o servidor: mostrando as lojas salvas neste aparelho. Cadastros e fotos novas exigem internet." : "Sem conexão. Abra a lista de lojas uma vez com internet para ela ficar disponível offline."}
+          </p>
+        )}
+        {loading && <p className="text-sm text-slate-300">Carregando lojas...</p>}
         {stores.isError && (
           <p className="rounded-2xl border border-rose-300/25 bg-rose-300/10 p-4 text-sm text-rose-100">
             Não foi possível carregar as lojas. {stores.error?.message || "Tente novamente."}
@@ -143,12 +160,7 @@ export default function StoresPage() {
           ))}
         </div>
 
-        {!isOnline() && list.length === 0 && (
-          <p className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-            Sem conexão. Conecte-se online pelo menos uma vez para carregar as lojas.
-          </p>
-        )}
-        {!stores.isLoading && !stores.isError && list.length === 0 && isOnline() && (
+        {!loading && !stores.isError && list.length === 0 && online && !usingSaved && (
           <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center">
             <Store className="mx-auto h-8 w-8 text-slate-500" />
             <p className="mt-3 text-sm text-slate-300">Nenhuma loja encontrada.</p>

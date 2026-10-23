@@ -1142,13 +1142,13 @@ export async function updateOperationalRoute(companyId: number, routeId: number,
   }
   // Update visits promoter if changed
   if (data.promoterId) {
-    await database.update(visits).set({ promoterId: data.promoterId }).where(and(eq(visits.routeId, routeId), eq(visits.companyId, companyId)));
+    await database.update(operationalVisits).set({ promoterId: data.promoterId }).where(and(eq(visits.routeId, routeId), eq(visits.companyId, companyId)));
   }
   // Update stores if provided
   if (data.storeIds) {
-    await database.delete(visits).where(and(eq(visits.routeId, routeId), eq(visits.companyId, companyId)));
+    await database.delete(operationalVisits).where(and(eq(visits.routeId, routeId), eq(visits.companyId, companyId)));
     for (const storeId of data.storeIds) {
-      await database.insert(visits).values({ companyId, routeId, storeId, promoterId: data.promoterId || 0, status: "pending" });
+      await database.insert(operationalVisits).values({ companyId, routeId, storeId, promoterId: data.promoterId || 0, status: "pending" });
     }
   }
   return { success: true };
@@ -1158,7 +1158,7 @@ export async function deleteOperationalRoute(companyId: number, routeId: number)
   const database = await getDb();
   if (!database) throw new Error("Database not available");
   // Delete visits first, then route
-  await database.delete(visits).where(and(eq(visits.routeId, routeId), eq(visits.companyId, companyId)));
+  await database.delete(operationalVisits).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, companyId)));
   await database.delete(operationalRoutes).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, companyId)));
   return { success: true };
 }

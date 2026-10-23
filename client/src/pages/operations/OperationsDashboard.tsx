@@ -47,7 +47,7 @@ export default function OperationsDashboard() {
   const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
   const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
   const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
-  const routes = trpc.operations.routes.list.useQuery({ date: today }, { enabled: hasFieldOperations });
+  const routes = trpc.operations.routes.list.useQuery(undefined, { enabled: hasFieldOperations });
   const weeklyQuery = trpc.operations.routes.weekly.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
   const weekly = useOfflineQuery(weeklyQuery, "routes-weekly");
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });

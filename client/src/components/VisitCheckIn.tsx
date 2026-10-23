@@ -21,6 +21,7 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const startVisit = trpc.operations.visits.start.useMutation();
+  const uploadPhoto = trpc.storePhotos.uploadAndCreate.useMutation();
   const completeVisit = trpc.operations.visits.complete.useMutation();
 
   const capture = () => inputRef.current?.click();
@@ -71,6 +72,20 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
       } else {
         await completeVisit.mutateAsync({ id: visitId, latitude: position?.lat, longitude: position?.lng, accuracy: position?.accuracy });
       }
+      // Salva foto da fachada (expira em 14 dias)
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+      await uploadPhoto.mutateAsync({
+        storeId,
+        capturedAt: new Date().toISOString(),
+        latitude: position?.lat,
+        longitude: position?.lng,
+        accuracy: position?.accuracy,
+        locationStatus: position ? "success" : "unavailable",
+        imageBase64: photo,
+        mimeType: "image/jpeg",
+        idempotencyKey: `visit-${visitId}-${action}-${Date.now()}`,
+        notes: `Fachada ${action} - expira ${expiresAt.slice(0, 10)}`,
+      });
       toast.success(`${action === "start" ? "Check-in" : "Check-out"} realizado.`);
       onDone();
     } catch (e) {

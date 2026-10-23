@@ -614,5 +614,24 @@ export const storePhotos = mysqlTable("store_photos", {
   companyIdempotencyUnique: uniqueIndex("store_photos_company_idempotency_unique").on(table.companyId, table.idempotencyKey),
 }));
 
+export const visitPhotos = mysqlTable("visit_photos", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  visitId: int("visitId").notNull(),
+  type: mysqlEnum("type", ["checkin", "checkout"]).notNull(),
+  fileKey: varchar("fileKey", { length: 512 }).notNull(),
+  latitude: double("latitude"),
+  longitude: double("longitude"),
+  address: varchar("address", { length: 255 }),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  visitIdx: index("visit_photos_visit_idx").on(table.visitId),
+  expiresIdx: index("visit_photos_expires_idx").on(table.expiresAt),
+}));
+
+export type VisitPhoto = typeof visitPhotos.$inferSelect;
+export type InsertVisitPhoto = typeof visitPhotos.$inferInsert;
+
 export type StorePhoto = typeof storePhotos.$inferSelect;
 export type InsertStorePhoto = typeof storePhotos.$inferInsert;

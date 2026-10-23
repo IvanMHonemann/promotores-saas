@@ -9,6 +9,7 @@ export async function runScheduledMaintenance() {
     const { runBackupStep } = await import("./backup");
     const backup = await runBackupStep(connection, { budgetMs: Number(process.env.BACKUP_BUDGET_MS || 18000) });
     const [trash] = await connection.query("DELETE FROM trash_items WHERE expiresAt <= UTC_TIMESTAMP()");
+    const [visitPhotos] = await connection.query("DELETE FROM visit_photos WHERE expiresAt <= UTC_TIMESTAMP()");
     const [memberSessions] = await connection.query("DELETE FROM member_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
     const [platformSessions] = await connection.query("DELETE FROM platform_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
     await connection.query("DELETE FROM backup_progress WHERE day < DATE_FORMAT(DATE_SUB(UTC_DATE(), INTERVAL 30 DAY), '%Y-%m-%d')");
@@ -20,7 +21,7 @@ export async function runScheduledMaintenance() {
     } catch (e) {
       console.warn("[maintenance] expire photos failed", e);
     }
-    return { backup, cleaned: { trash: (trash as any).affectedRows, memberSessions: (memberSessions as any).affectedRows, platformSessions: (platformSessions as any).affectedRows, ...retention }, expiredPhotos };
+    return { backup, cleaned: { trash: (trash as any).affectedRows, visitPhotos: (visitPhotos as any).affectedRows, memberSessions: (memberSessions as any).affectedRows, platformSessions: (platformSessions as any).affectedRows, ...retention }, expiredPhotos };
   } finally {
     await connection.end();
   }

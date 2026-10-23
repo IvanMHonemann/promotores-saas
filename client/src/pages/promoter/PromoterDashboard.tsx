@@ -177,14 +177,14 @@ export default function PromoterDashboard() {
                     <Badge variant="outline" className="border-white/20 text-slate-200">{visitStatus[visit.status] || visit.status}</Badge>
                   </div>
                   {visit.status === "pending" && (
-                    <Button className="mt-3 w-full" onClick={() => setCheckIn({ action: "start", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
+                    <Button className="mt-3 w-full bg-teal-500 text-slate-950 hover:bg-teal-400" onClick={() => setCheckIn({ action: "start", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
                       Check-in (foto da fachada)
                     </Button>
                   )}
                   {visit.status === "in_progress" && (
                     <>
                       <VisitTimer startTime={visit.actualStart} />
-                      <Button className="mt-3 w-full" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
+                      <Button className="mt-3 w-full bg-amber-500 text-slate-950 hover:bg-amber-400" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
                         Check-out (foto da fachada)
                       </Button>
                     </>

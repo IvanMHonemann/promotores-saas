@@ -136,7 +136,7 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
         <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile} />
 
         {!photo ? (
-          <Button onClick={capture} className="mt-4 w-full gap-2 bg-teal-500 text-slate-950">
+          <Button onClick={capture} className={`mt-4 w-full gap-2 text-slate-950 ${action === "start" ? "bg-teal-500 hover:bg-teal-400" : "bg-amber-500 hover:bg-amber-400"}`}>
             <Camera className="h-5 w-5" /> Tirar foto da fachada
           </Button>
         ) : (
@@ -144,7 +144,7 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
             <img src={photo} alt="Fachada" className="w-full rounded-xl" />
             <div className="mt-3 flex gap-2">
               <Button onClick={capture} variant="outline" className="flex-1">Refazer</Button>
-              <Button onClick={confirm} disabled={busy} className="flex-1 gap-2 bg-emerald-500 text-white">
+              <Button onClick={confirm} disabled={busy} className={`flex-1 gap-2 text-slate-950 ${action === "start" ? "bg-teal-500 hover:bg-teal-400" : "bg-amber-500 hover:bg-amber-400"}`}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 Confirmar
               </Button>

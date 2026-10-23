@@ -986,6 +986,18 @@ export async function saveWeeklyRouteSchedule(input: { companyId: number; promot
     if (stores.length !== storeIds.length) throw new Error("Uma ou mais lojas não pertencem a esta empresa.");
     await tx.insert(weeklyRouteSchedules).values({ ...input, companyId, storeIds, active: true })
       .onDuplicateKeyUpdate({ set: { name: input.name, storeIds, active: true } });
+    // Remove roteiro materializado de hoje para que seja recriado com as novas lojas
+    const today = new Date().toISOString().slice(0, 10);
+    const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+    if (weekday === input.weekday) {
+      const existing = await tx.select({ id: operationalRoutes.id }).from(operationalRoutes).where(and(
+        eq(operationalRoutes.companyId, companyId), eq(operationalRoutes.promoterId, input.promoterId), eq(operationalRoutes.date, today as any),
+      ));
+      for (const route of existing) {
+        await tx.delete(operationalVisits).where(eq(operationalVisits.routeId, route.id));
+        await tx.delete(operationalRoutes).where(eq(operationalRoutes.id, route.id));
+      }
+    }
     return (await tx.select().from(weeklyRouteSchedules).where(and(
       eq(weeklyRouteSchedules.companyId, companyId), eq(weeklyRouteSchedules.promoterId, input.promoterId), eq(weeklyRouteSchedules.weekday, input.weekday),
     )).limit(1))[0];

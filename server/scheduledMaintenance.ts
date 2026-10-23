@@ -5,6 +5,19 @@ export async function runScheduledMaintenance() {
   if (!url) throw new Error("Database URL is not configured.");
   const connection = await mysql.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 10000 });
   try {
+    // Cria tabela de fotos de visita se não existir
+    await connection.query(`CREATE TABLE IF NOT EXISTS visit_photos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      companyId INT NOT NULL,
+      visitId INT NOT NULL,
+      type ENUM('checkin', 'checkout') NOT NULL,
+      fileKey VARCHAR(512) NOT NULL,
+      latitude DOUBLE,
+      longitude DOUBLE,
+      address VARCHAR(255),
+      expiresAt TIMESTAMP NOT NULL,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
     // Backup em partes, retomável (cabe no limite de tempo da função). Se "complete" vier false, chame o endpoint de novo.
     const { runBackupStep } = await import("./backup");
     const backup = await runBackupStep(connection, { budgetMs: Number(process.env.BACKUP_BUDGET_MS || 18000) });

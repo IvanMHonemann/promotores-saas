@@ -30,14 +30,12 @@ export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdo
         <Button
           variant="outline"
           aria-label="Abrir menu da conta"
-          className={`h-10 gap-2 px-3 ${tone === "light"
+          className={`h-10 w-10 rounded-full p-0 ${tone === "light"
             ? "border-teal-800/20 bg-teal-50 text-teal-900 hover:bg-teal-100 hover:text-teal-950"
             : "border-teal-300/30 bg-teal-300/10 text-teal-100 hover:bg-teal-300/20 hover:text-white"
           }`}
         >
-          <UserRound className="h-4 w-4" />
-          <span>Minha conta</span>
-          <ChevronDown className="h-4 w-4 opacity-70" />
+          <UserRound className="h-5 w-5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64 border-white/10 bg-[#0b1728] text-white shadow-2xl">

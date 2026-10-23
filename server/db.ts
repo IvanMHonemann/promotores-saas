@@ -974,9 +974,32 @@ export async function listWeeklyRouteSchedules(companyId: number) {
     .where(eq(weeklyRouteSchedules.companyId, requireAccountId(companyId)))
     .orderBy(weeklyRouteSchedules.weekday, weeklyRouteSchedules.promoterId);
 }
+
+async function ensureWeeklyRouteSchedulesTable(database: any) {
+  try {
+    await database.execute(`CREATE TABLE IF NOT EXISTS weekly_route_schedules (
+      id int AUTO_INCREMENT NOT NULL,
+      companyId int NOT NULL,
+      promoterId int NOT NULL,
+      weekday int NOT NULL,
+      name varchar(255) NOT NULL,
+      storeIds json NOT NULL,
+      active boolean NOT NULL DEFAULT true,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY weekly_route_schedules_company_idx (companyId),
+      UNIQUE KEY weekly_route_schedules_promoter_day_unique (companyId, promoterId, weekday)
+    )`);
+  } catch (e) {
+    console.warn("[routes] ensure weekly table", e);
+  }
+}
+
 export async function saveWeeklyRouteSchedule(input: { companyId: number; promoterId: number; weekday: number; name: string; storeIds: number[] }) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
+  await ensureWeeklyRouteSchedulesTable(database);
   const companyId = requireAccountId(input.companyId);
   const storeIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
   if (!storeIds.length) throw new Error("Selecione ao menos uma loja.");

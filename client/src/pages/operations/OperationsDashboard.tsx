@@ -68,6 +68,7 @@ export default function OperationsDashboard() {
     onSuccess: async () => {
       toast.success("Roteiro semanal salvo.");
       await utils.operations.routes.weekly.invalidate();
+      await utils.operations.routes.list.invalidate();
     },
     onError: (error) => toast.error(error.message || "Não foi possível salvar o roteiro semanal."),
   });

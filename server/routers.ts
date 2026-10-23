@@ -796,8 +796,17 @@ export const appRouter = router({
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
         const date = input?.date || new Date().toISOString().slice(0, 10);
         const ownerId = scopeMemberId(ctx); // null = administrador (vê tudo)
-        if (ownerId !== null) await db.materializeWeeklyRoutes(ctx.accountId, ownerId, date);
-        // Admin vê todos os roteiros se não especificar data
+        if (ownerId !== null) {
+          await db.materializeWeeklyRoutes(ctx.accountId, ownerId, date);
+        } else {
+          // Administrador: materializa os roteiros semanais do dia para todos os promotores ativos
+          const members = await memberAuth.listMemberAccounts(ctx.accountId);
+          const promoters = members.filter((m: any) => m.role === "promoter" && m.active);
+          for (const p of promoters) {
+            await db.materializeWeeklyRoutes(ctx.accountId, p.id, date);
+          }
+        }
+        // Admin vê todos os roteiros se não especificar data; caso contrário filtra
         const filterDate = ownerId === null && !input?.date ? undefined : (input?.date || date);
         return db.listOperationalRoutes(ctx.accountId, { date: filterDate, promoterId: ownerId ?? input?.promoterId });
       }),

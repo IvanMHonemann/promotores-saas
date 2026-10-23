@@ -395,7 +395,7 @@ function RoutesModule(props: any) {
         </CardContent>
       </Card>}
       <Card>
-        <CardHeader><CardTitle className="text-white">Roteiros de hoje</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-white">Roteiros</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {routesLoading && <p className="text-sm text-slate-300">Carregando roteiros...</p>}
           {routesFailed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar os roteiros. Atualize o painel e tente novamente.</p>}

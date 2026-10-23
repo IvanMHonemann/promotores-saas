@@ -797,7 +797,9 @@ export const appRouter = router({
         const date = input?.date || new Date().toISOString().slice(0, 10);
         const ownerId = scopeMemberId(ctx); // null = administrador (vê tudo)
         if (ownerId !== null) await db.materializeWeeklyRoutes(ctx.accountId, ownerId, date);
-        return db.listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ownerId ?? input?.promoterId });
+        // Admin vê todos os roteiros se não especificar data
+        const filterDate = ownerId === null && !input?.date ? undefined : (input?.date || date);
+        return db.listOperationalRoutes(ctx.accountId, { date: filterDate, promoterId: ownerId ?? input?.promoterId });
       }),
       weekly: commercialFeatureProcedure("fieldOperations").query(({ ctx }) => db.listWeeklyRouteSchedules(ctx.accountId)),
       saveWeekly: companyAdminProcedure.input(z.object({ name: z.string().min(2).max(255), weekday: z.number().int().min(0).max(6), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1) })).mutation(async ({ ctx, input }) => {

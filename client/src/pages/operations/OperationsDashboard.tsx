@@ -55,6 +55,10 @@ export default function OperationsDashboard() {
   const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin && hasTimeTracking });
   const utils = trpc.useUtils();
+  const deleteRoute = trpc.operations.routes.delete.useMutation({
+    onSuccess: () => { toast.success("Roteiro excluído."); void utils.operations.routes.list.invalidate(); },
+    onError: (e) => toast.error(e.message || "Não foi possível excluir."),
+  });
   const saveWeekly = trpc.operations.routes.saveWeekly.useMutation({
     onSuccess: async () => {
       toast.success("Roteiro semanal salvo.");
@@ -389,7 +393,19 @@ function RoutesModule(props: any) {
           {routesLoading && <p className="text-sm text-slate-300">Carregando roteiros...</p>}
           {routesFailed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar os roteiros. Atualize o painel e tente novamente.</p>}
           {!routesLoading && !routesFailed && !routes.length && <p className="text-sm text-slate-300">Nenhum roteiro para hoje.</p>}
-          {routes.map((route: any) => <div key={route.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/40 p-4"><div><p className="font-bold text-slate-100">{route.name}</p><p className="text-sm text-slate-300">Promotor #{route.promoterId}</p></div><Badge variant="outline">{route.status}</Badge></div>)}
+          {routes.map((route: any) => (
+            <div key={route.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-4">
+              <div>
+                <p className="font-bold text-slate-100">{route.name}</p>
+                <p className="text-sm text-slate-300">Promotor #{route.promoterId}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">{route.status}</Badge>
+                <Button size="sm" variant="outline" onClick={() => navigator.share?.({ title: route.name, text: `Roteiro: ${route.name}` }).catch(() => toast.info("Compartilhamento não disponível"))}>Compartilhar</Button>
+                <Button size="sm" variant="outline" className="text-rose-300" onClick={() => { if (confirm("Excluir este roteiro?")) deleteRoute.mutate({ id: route.id }); }}>Excluir</Button>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
     </div>

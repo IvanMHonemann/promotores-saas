@@ -814,6 +814,9 @@ export const appRouter = router({
         const { storeIds, ...route } = input;
         return db.createOperationalRouteWithVisits({ route: { ...route, date: new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" }, storeIds });
       }),
+      delete: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        return db.deleteOperationalRoute(ctx.accountId, input.id);
+      }),
     }),
     visits: router({
       today: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional()).query(async ({ ctx, input }) => {

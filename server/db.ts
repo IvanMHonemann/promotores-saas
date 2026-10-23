@@ -1117,6 +1117,15 @@ export async function createOperationalRoute(input: typeof operationalRoutes.$in
   return rows[0];
 }
 
+export async function deleteOperationalRoute(companyId: number, routeId: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  // Delete visits first, then route
+  await database.delete(visits).where(and(eq(visits.routeId, routeId), eq(visits.companyId, companyId)));
+  await database.delete(operationalRoutes).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, companyId)));
+  return { success: true };
+}
+
 export async function createOperationalRouteWithVisits(input: { route: typeof operationalRoutes.$inferInsert; storeIds: number[] }) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");

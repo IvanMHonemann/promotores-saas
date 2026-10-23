@@ -4,9 +4,15 @@ import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
+import { isOnline, markServerReachable, markServerUnreachable } from "@/lib/connectivity";
 import "./index.css";
 
-const FORCE_RELOAD_VERSION = "v12";
+const FORCE_RELOAD_VERSION = "v13";
+// Tempo máximo de uma chamada à API. Sem isso, com sinal fraco (navigator.onLine
+// ainda true) as telas ficavam em "carregando" para sempre.
+const API_TIMEOUT_MS = 8000;
+// Uploads de foto são maiores: dá mais tempo.
+const API_UPLOAD_TIMEOUT_MS = 45000;
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     let refreshing = false;
@@ -27,14 +33,10 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (refreshing) return;
       refreshing = true;
-      // Limpa cache antes de recarregar para evitar tela branca
-      if ("caches" in window) {
-        caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).finally(() => {
-          (window as any).location.reload();
-        });
-      } else {
-        (window as any).location.reload();
-      }
+      // Não apaga o cache aqui: o novo service worker já removeu as versões antigas
+      // e acabou de salvar o app para uso offline. Apagar tudo deixava o app sem
+      // cópia offline logo após cada atualização.
+      (window as any).location.reload();
     });
   });
 }
@@ -45,7 +47,16 @@ window.addEventListener("pageshow", (event) => {
   if (event.persisted) (window as any).location.reload();
 });
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Offline: não tenta 3x seguidas (cada tentativa esperaria o timeout).
+      retry: (failureCount) => isOnline() && failureCount < 2,
+      networkMode: "always",
+    },
+    mutations: { networkMode: "always" },
+  },
+});
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
@@ -62,7 +73,31 @@ const trpcClient = trpc.createClient({
           const actAs = JSON.parse(localStorage.getItem("promotores-saas-act-as") || "null");
           if (actAs?.id) headers.set("x-act-as-company", String(actAs.id));
         } catch { /* sem modo "acessar como empresa" */ }
-        return globalThis.fetch(input, { ...(init ?? {}), headers, credentials: "include" });
+        const isUpload = String(typeof input === "string" ? input : (input as any)?.url ?? "").includes("uploadAndCreate");
+        const timeoutMs = isUpload ? API_UPLOAD_TIMEOUT_MS : API_TIMEOUT_MS;
+        // Sem rede no aparelho: falha na hora, sem esperar o timeout.
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          return Promise.reject(new TypeError("Sem conexão"));
+        }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(new DOMException("Tempo esgotado", "TimeoutError")), timeoutMs);
+        const outer = init?.signal;
+        if (outer) {
+          if (outer.aborted) controller.abort(outer.reason);
+          else outer.addEventListener("abort", () => controller.abort(outer.reason), { once: true });
+        }
+        return globalThis
+          .fetch(input, { ...(init ?? {}), headers, credentials: "include", signal: controller.signal })
+          .then((response) => {
+            markServerReachable();
+            return response;
+          })
+          .catch((error) => {
+            // Falha de rede ou tempo esgotado (não cancelamento pedido pela tela).
+            if (!outer?.aborted) markServerUnreachable();
+            throw error;
+          })
+          .finally(() => clearTimeout(timer));
       },
     }),
   ],

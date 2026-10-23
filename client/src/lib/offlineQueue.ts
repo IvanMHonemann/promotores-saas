@@ -52,6 +52,4 @@ export function clear() {
   localStorage.removeItem(KEY);
 }
 
-export function isOnline(): boolean {
-  return navigator.onLine;
-}
+export { isOnline } from "./connectivity";

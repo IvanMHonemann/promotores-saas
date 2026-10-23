@@ -113,7 +113,7 @@ export default function StoresPage() {
 
         {(!online || usingSaved) && (
           <p role="status" className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
-            {cachedStores ? "Sem conexão com o servidor: mostrando as lojas salvas neste aparelho. Cadastros e fotos novas exigem internet." : "Sem conexão. Abra a lista de lojas uma vez com internet para ela ficar disponível offline."}
+            {cachedStores ? "Sem conexão com o servidor: mostrando as lojas salvas neste aparelho. Você pode abrir a loja e tirar fotos; elas são enviadas quando a internet voltar. Cadastrar loja exige internet." : "Sem conexão. Abra a lista de lojas uma vez com internet para ela ficar disponível offline."}
           </p>
         )}
         {loading && <p className="text-sm text-slate-300">Carregando lojas...</p>}

@@ -104,9 +104,12 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
   // Cache entitlements for offline
   const cachedEntitlements = cacheGet<any>("entitlements");
   if (accessQuery.data) cacheSet("entitlements", accessQuery.data);
+  // Sem resposta do servidor (offline, sinal fraco ou tempo esgotado), usa a
+  // última permissão salva neste aparelho em vez de bloquear a tela.
+  const serverFailed = !isOnline() || (accessQuery.isError && !isUnauthorizedError(accessQuery.error));
   const access = {
     ...accessQuery,
-    data: accessQuery.data ?? (!isOnline() ? cachedEntitlements : undefined),
+    data: accessQuery.data ?? (serverFailed ? cachedEntitlements : undefined),
   };
 
   useEffect(() => {
@@ -125,7 +128,8 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
   // Dashboard e operações de campo: se o usuário está autenticado,
   // permite o acesso mesmo se a checagem falhar (offline ou erro de rede).
   if ((featureKey === "dashboard" || featureKey === "fieldOperations") && user) {
-    if (access.isLoading && isOnline()) return <LoadingScreen />;
+    // Com permissão salva no aparelho, abre na hora (a checagem online segue em segundo plano).
+    if (access.isLoading && isOnline() && !cachedEntitlements) return <LoadingScreen />;
     if (access.error && isUnauthorizedError(access.error)) return <LoadingScreen />;
     return <>{children}</>;
   }
@@ -142,7 +146,7 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
   if (!access.data?.effective[featureKey]) {
     if (featureKey === "timeTracking" && access.data) return <RedirectHome />;
     // Offline: se temos cache de entitlements, permite acesso
-    if (!isOnline() && cachedEntitlements?.effective) {
+    if (serverFailed && cachedEntitlements?.effective) {
       return <>{children}</>;
     }
     // Last-resort: if the error message contains login/10001, force redirect
@@ -153,7 +157,7 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
       return <LoadingScreen />;
     }
     // Offline sem cache: mostra aviso mas não bloqueia completamente
-    if (!isOnline()) {
+    if (serverFailed) {
       return (
         <main className="flex min-h-screen items-center justify-center bg-slate-950 p-5 text-slate-100">
           <section className="max-w-lg rounded-2xl border border-amber-400/30 bg-slate-900 p-6 text-center">

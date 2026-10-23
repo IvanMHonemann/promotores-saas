@@ -26,14 +26,9 @@ export default function StoresPage() {
   // Sem resposta da rede, usa a lista salva (filtrada pela busca) em vez de ficar carregando.
   const fallback = useMemo(() => (cachedStores || []).filter((s) => !term || String(s.name).toLowerCase().includes(term.toLowerCase())), [cachedStores, term]);
   const list: any[] = storesQuery.data ?? fallback;
-  const [timedOut, setTimedOut] = useState(false);
-  useEffect(() => {
-    if (!storesQuery.isLoading) { setTimedOut(false); return; }
-    const t = window.setTimeout(() => setTimedOut(true), 7000);
-    return () => window.clearTimeout(t);
-  }, [storesQuery.isLoading]);
-  const usingSaved = !storesQuery.data && Boolean(cachedStores);
-  const loading = storesQuery.isLoading && online && !timedOut && !cachedStores;
+  const usingSaved = !storesQuery.data && Boolean(cachedStores?.length);
+  // Offline ou timeout: não mostra loading infinito
+  const loading = storesQuery.isLoading && online && !cachedStores;
   const stores = { refetch: storesQuery.refetch, isError: storesQuery.isError && !cachedStores, error: storesQuery.error };
 
   const { run } = useBusy();

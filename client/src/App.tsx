@@ -121,10 +121,10 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
   if (!user) return <RedirectHome />;
   if (user.role === "platform_admin") return <>{children}</>;
 
-  // Dashboard é a porta de entrada: se o usuário está autenticado no cliente,
-  // permite o acesso mesmo se a checagem de entitlement falhar por rede/sessão.
-  if (featureKey === "dashboard" && user) {
-    if (access.isLoading) return <LoadingScreen />;
+  // Dashboard e operações de campo: se o usuário está autenticado,
+  // permite o acesso mesmo se a checagem falhar (offline ou erro de rede).
+  if ((featureKey === "dashboard" || featureKey === "fieldOperations") && user) {
+    if (access.isLoading && isOnline()) return <LoadingScreen />;
     if (access.error && isUnauthorizedError(access.error)) return <LoadingScreen />;
     return <>{children}</>;
   }

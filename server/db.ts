@@ -1086,8 +1086,9 @@ export async function materializeWeeklyRoutes(companyId: number, promoterId: num
   for (const schedule of schedules) {
     try {
       await database.transaction(async (tx) => {
+        // Não materializa se já existe qualquer roteiro para essa data/promotor (manual ou semanal)
         const existing = await tx.select({ id: operationalRoutes.id }).from(operationalRoutes).where(and(
-          eq(operationalRoutes.companyId, company), eq(operationalRoutes.weeklyScheduleId, schedule.id), eq(operationalRoutes.date, dateString as any),
+          eq(operationalRoutes.companyId, company), eq(operationalRoutes.promoterId, promoterId), eq(operationalRoutes.date, dateString as any),
         )).limit(1);
         if (existing.length) return;
         const storeIds = Array.isArray(schedule.storeIds) ? schedule.storeIds : [];

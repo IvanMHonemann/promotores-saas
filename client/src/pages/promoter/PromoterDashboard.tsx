@@ -181,6 +181,13 @@ export default function PromoterDashboard() {
           </Card>
         </section>}
       </div>
+      {checkIn && (
+        <VisitCheckIn
+          {...checkIn}
+          onDone={() => { setCheckIn(null); void visits.refetch(); }}
+          onCancel={() => setCheckIn(null)}
+        />
+      )}
     </DashboardLayout>
   );
 }

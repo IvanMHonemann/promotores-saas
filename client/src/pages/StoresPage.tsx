@@ -11,6 +11,7 @@ import { useBusy } from "@/components/BusyOverlay";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet } from "@/lib/offlineCache";
 import { useOnline } from "@/hooks/useOnline";
+import { enqueueStore, listStores } from "@/lib/storeQueue";
 
 export default function StoresPage() {
   const [search, setSearch] = useState("");
@@ -25,7 +26,22 @@ export default function StoresPage() {
   const cachedStores = useMemo(() => cacheGet<any[]>("stores"), [storesQuery.data, online]);
   // Sem resposta da rede, usa a lista salva (filtrada pela busca) em vez de ficar carregando.
   const fallback = useMemo(() => (cachedStores || []).filter((s) => !term || String(s.name).toLowerCase().includes(term.toLowerCase())), [cachedStores, term]);
-  const list: any[] = storesQuery.data ?? fallback;
+  const [pendingStores, setPendingStores] = useState(() => listStores());
+  useEffect(() => { setPendingStores(listStores()); }, [online]);
+  const serverList: any[] = storesQuery.data ?? fallback;
+  const pendingDisplay = pendingStores
+    .filter((s) => !term || s.name.toLowerCase().includes(term.toLowerCase()))
+    .map((s) => ({
+      id: s.tempId,
+      name: s.name,
+      city: s.city,
+      state: s.state,
+      address: s.address,
+      photoCount: 0,
+      lastActivity: null,
+      pending: true,
+    }));
+  const list: any[] = [...pendingDisplay, ...serverList];
   const usingSaved = !storesQuery.data && Boolean(cachedStores?.length);
   // Offline ou timeout: não mostra loading infinito
   const loading = storesQuery.isLoading && online && !cachedStores;
@@ -50,8 +66,17 @@ export default function StoresPage() {
     if (name.length < 2) return toast.info("Informe o nome da loja.");
     if (city.length < 2) return toast.info("Informe a cidade.");
     if (state && state.length !== 2) return toast.info("Use a sigla do estado com 2 letras (ex.: SP).");
+    const payload = { name, city, state: state || undefined, address: form.address.trim() || undefined };
+    if (!online) {
+      enqueueStore(payload);
+      setPendingStores(listStores());
+      toast.success("Loja salva offline. Será cadastrada quando a internet voltar.");
+      setForm({ name: "", city: "", state: "", address: "" });
+      setFormOpen(false);
+      return;
+    }
     void run("Cadastrando loja...", () =>
-      createStore.mutateAsync({ name, city, state: state || undefined, address: form.address.trim() || undefined }),
+      createStore.mutateAsync(payload),
     ).catch(() => {});
   };
 
@@ -113,7 +138,9 @@ export default function StoresPage() {
 
         {(!online || usingSaved) && (
           <p role="status" className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
-            {cachedStores ? "Sem conexão com o servidor: mostrando as lojas salvas neste aparelho. Cadastros e fotos novas exigem internet." : "Sem conexão. Abra a lista de lojas uma vez com internet para ela ficar disponível offline."}
+            {cachedStores || pendingStores.length
+              ? "Sem conexão: mostrando lojas salvas neste aparelho. Novos cadastros e fotos ficam na fila e são enviados automaticamente quando a internet voltar."
+              : "Sem conexão. Abra a lista de lojas uma vez com internet para ela ficar disponível offline."}
           </p>
         )}
         {loading && <p className="text-sm text-slate-300">Carregando lojas...</p>}
@@ -125,8 +152,8 @@ export default function StoresPage() {
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((store) => (
-            <Link key={store.id} href={`/lojas/${store.id}`}>
-              <Card className="h-full cursor-pointer border-white/10 bg-slate-900/70 transition hover:-translate-y-0.5 hover:border-teal-300/40 hover:bg-slate-900">
+            <Link key={store.id} href={store.pending ? "#" : `/lojas/${store.id}`} onClick={store.pending ? (e) => e.preventDefault() : undefined}>
+              <Card className={`h-full cursor-pointer border-white/10 bg-slate-900/70 transition hover:-translate-y-0.5 hover:border-teal-300/40 hover:bg-slate-900 ${store.pending ? "opacity-80" : ""}`}>
                 <CardContent className="space-y-3 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -145,9 +172,11 @@ export default function StoresPage() {
                     <p className="line-clamp-2 text-xs leading-5 text-slate-400">{store.address}</p>
                   )}
                   <p className="text-xs text-slate-500">
-                    {store.lastActivity
-                      ? `Última foto em ${new Date(store.lastActivity).toLocaleDateString("pt-BR")}`
-                      : "Nenhuma foto ainda"}
+                    {store.pending
+                      ? "Pendente de sincronização"
+                      : store.lastActivity
+                        ? `Última foto em ${new Date(store.lastActivity).toLocaleDateString("pt-BR")}`
+                        : "Nenhuma foto ainda"}
                   </p>
                 </CardContent>
               </Card>

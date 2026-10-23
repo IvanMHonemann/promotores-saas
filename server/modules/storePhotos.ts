@@ -5,6 +5,7 @@ import { storePhotos, stores } from "../../drizzle/schema";
 import { trashItems } from "../../drizzle/schema.original";
 import { ensureTrashTable, getDb } from "../db";
 import { commercialFeatureProcedure, router } from "../_core/trpc";
+import { checkRateLimit, getClientIp } from "../_core/rateLimit";
 import { auditFromCtx } from "../audit";
 import { ensureStoreClientsSchema } from "../storeClients";
 import { assertPhotoAccess, assertStoreAccess, ensureStoreOwnersTable, scopeMemberId, storeVisibleToMember } from "../storeAccess";
@@ -220,6 +221,11 @@ export const storePhotosRouter = router({
       idempotencyKey: z.string().min(8).max(64),
     }))
     .mutation(async ({ ctx, input }) => {
+      const ip = getClientIp(ctx.req);
+      const limit = checkRateLimit(`${ctx.accountId}:${ip}`, "upload");
+      if (!limit.ok) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
@@ -288,6 +294,11 @@ export const storePhotosRouter = router({
       idempotencyKey: z.string().min(8).max(64),
     }))
     .mutation(async ({ ctx, input }) => {
+      const ip = getClientIp(ctx.req);
+      const limit = checkRateLimit(`${ctx.accountId}:${ip}`, "upload");
+      if (!limit.ok) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 

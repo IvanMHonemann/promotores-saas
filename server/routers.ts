@@ -7,6 +7,7 @@ import { storeClientsRouter } from "./modules/storeClients";
 import { z } from "zod";
 import { parse as parseCookie } from "cookie";
 import { TRPCError } from "@trpc/server";
+import { checkRateLimit, getClientIp } from "./_core/rateLimit";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -130,6 +131,11 @@ export const appRouter = router({
     login: publicProcedure
       .input(z.object({ email: z.string().email(), password: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
+        const ip = getClientIp(ctx.req);
+        const limit = checkRateLimit(ip, "login");
+        if (!limit.ok) {
+          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde um minuto." });
+        }
         const principal = await memberAuth.authenticateMember(input.email, input.password);
         if (!principal) {
           void auditFromCtx(ctx, { action: "login_failed", module: "auth", entityType: "session", description: `Tentativa de login falhou para ${input.email}`, newData: { email: input.email } });

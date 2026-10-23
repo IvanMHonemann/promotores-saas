@@ -142,6 +142,7 @@ export default function OperationsDashboard() {
       )}
       {visibleSection === "routes" && (
         <RoutesModule weekly={weekly.data || []} promoters={promoters.data || []} saveWeekly={saveWeekly}
+          editingRoute={editingRoute} setEditingRoute={setEditingRoute} updateRoute={updateRoute} deleteRoute={deleteRoute}
           isCompanyAdmin={isCompanyAdmin}
           stores={stores.data || []}
           storesLoading={stores.isLoading}
@@ -305,6 +306,7 @@ function RoutesModule(props: any) {
   const {
     isCompanyAdmin, stores = [], storesLoading, storesFailed, storeName, setStoreName, storeCity, setStoreCity,
     storeAddress, setStoreAddress, createStore, routes = [], routesLoading, routesFailed, weekly = [], promoters = [], saveWeekly,
+    editingRoute, setEditingRoute, updateRoute, deleteRoute,
   } = props;
   const [promoterId, setPromoterId] = useState<number | "">("");
   const [weekday, setWeekday] = useState(1);

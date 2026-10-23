@@ -22,6 +22,7 @@ import PromoterDashboard from "./pages/promoter/PromoterDashboard";
 import PromoterClockPage from "./pages/promoter/PromoterClockPage";
 import TimesheetPage from "./pages/admin/TimesheetPage";
 import TimesheetMirrorPage from "./pages/admin/TimesheetMirrorPage";
+import CheckInOutPage from "./pages/admin/CheckInOutPage";
 import OperationsDashboard from "./pages/operations/OperationsDashboard";
 import ProductsPage from "./pages/ProductsPage";
 import TrashPage from "./pages/TrashPage";
@@ -246,6 +247,7 @@ function Router() {
       <Route path="/lixeira"><CommercialProtected><TrashPage /></CommercialProtected></Route>
       <Route path="/ponto"><PromoterProtected><FeatureProtected featureKey="timeTracking"><PromoterClockPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/espelho-ponto"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetMirrorPage /></FeatureProtected></CompanyAdminProtected></Route>
+      <Route path="/check-in-out"><CompanyAdminProtected><FeatureProtected featureKey="fieldOperations"><CheckInOutPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/cartao-ponto"><AdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetPage /></FeatureProtected></AdminProtected></Route>
       {/* Raiz: visitante → landing; autenticado → painel conforme o perfil */}
       <Route path="/"><RootRoute /></Route>

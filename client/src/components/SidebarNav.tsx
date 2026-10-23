@@ -82,7 +82,8 @@ export function SidebarNav() {
           ...(role === "company_admin" && hasFeature("timeTracking") ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: FileText }] : []),
           { href: "/lixeira", label: "Lixeira", icon: Trash2 },
           ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: UsersRound }] : []),
-          ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList }] : []),
+          ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList },
+          { href: "/check-in-out", label: "Check-in / Check-out", icon: Camera }] : []),
         ];
   const close = () => setOpen(false);
   return <>

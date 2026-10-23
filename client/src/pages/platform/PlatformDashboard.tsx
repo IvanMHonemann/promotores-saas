@@ -145,7 +145,7 @@ function CodeScannerView() {
           <span>{scanComplete ? "Varredura concluída" : "Pronto para varredura"}</span>
         </div>
         <div className="space-y-1.5 text-slate-300">
-          <p className="text-emerald-400">[INFO] Sistema inicializado no ambiente Promotores SaaS.</p>
+          <p className="text-emerald-400">[INFO] Sistema inicializado no ambiente GondUp.</p>
           <p>[CHECK] Verificando integridade dos componentes TypeScript e React 19...</p>
           <p>[CHECK] Rotas tRPC e autenticação JWT verificadas com sucesso.</p>
           {scanComplete ? (

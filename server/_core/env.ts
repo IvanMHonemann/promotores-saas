@@ -7,7 +7,7 @@ export const ENV = {
   asaasEnvironment: process.env.ASAAS_ENVIRONMENT ?? "mock",
   asaasApiUrl: process.env.ASAAS_API_URL ?? "https://api.asaas.com/v3",
   resendApiKey: process.env.RESEND_API_KEY ?? "",
-  emailFrom: process.env.EMAIL_FROM ?? "Promotores SaaS <onboarding@resend.dev>",
+  emailFrom: process.env.EMAIL_FROM ?? "GondUp <onboarding@resend.dev>",
   adminNotificationEmail: process.env.ADMIN_NOTIFICATION_EMAIL ?? "ivan.honemann@gmail.com",
   appPublicUrl: process.env.APP_PUBLIC_URL ?? "https://promotores-saas-teste.vercel.app",
 };

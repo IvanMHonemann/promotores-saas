@@ -6,6 +6,7 @@ import MissingPunchAlert from "@/components/MissingPunchAlert";
 import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { SidebarMenuButton, SidebarNav } from "@/components/SidebarNav";
 import { SyncIndicator } from "@/components/SyncIndicator";
+import { BrandLogo } from "@/components/BrandLogo";
 
 type Props = {
   title: string;
@@ -25,9 +26,7 @@ export default function DashboardLayout({ title, description, children, refreshi
             <div className="flex min-w-0 items-center gap-3">
               <SidebarMenuButton />
               <div className="min-w-0">
-                <p className="hidden text-xs font-semibold uppercase tracking-[.18em] text-teal-300 sm:block">
-                  Promotores SaaS · Operação
-                </p>
+                <div className="hidden sm:block"><BrandLogo height={26} /></div>
                 <h1 className="truncate text-2xl font-black tracking-tight sm:mt-1 sm:text-3xl">{title}</h1>
                 <p className="mt-1 hidden text-sm text-slate-300 sm:block">{description}</p>
               </div>

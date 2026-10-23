@@ -15,6 +15,11 @@ type Props = {
   onCancel: () => void;
 };
 
+function toBase64(dataUrl: string): string {
+  const idx = dataUrl.indexOf(",");
+  return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
+}
+
 export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCancel }: Props) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [gps, setGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
@@ -49,11 +54,12 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
     if (!photo) return toast.error("Tire a foto da fachada para continuar.");
     setBusy(true);
     const position = gps || await getGps();
+    const base64 = toBase64(photo);
     const payload = {
       visitId,
       storeId,
       storeName,
-      photoBase64: photo,
+      photoBase64: base64,
       latitude: position?.lat,
       longitude: position?.lng,
       accuracy: position?.accuracy,
@@ -65,16 +71,17 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
       } else {
         await completeVisit.mutateAsync({ id: visitId, latitude: position?.lat, longitude: position?.lng, accuracy: position?.accuracy });
       }
-      // Salva foto da fachada (expira em 14 dias)
+      // Salva foto da fachada vinculada à visita
       try {
         await uploadPhoto.mutateAsync({
           storeId,
+          visitId,
           capturedAt: new Date().toISOString(),
           latitude: position?.lat,
           longitude: position?.lng,
           accuracy: position?.accuracy,
           locationStatus: position ? "success" : "unavailable",
-          imageBase64: photo,
+          imageBase64: base64,
           mimeType: "image/jpeg",
           idempotencyKey: `visit-${visitId}-${action}-${Date.now()}`.slice(0, 64),
         });

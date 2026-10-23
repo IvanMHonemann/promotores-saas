@@ -1117,6 +1117,30 @@ export async function createOperationalRoute(input: typeof operationalRoutes.$in
   return rows[0];
 }
 
+export async function updateOperationalRoute(companyId: number, routeId: number, data: { name?: string; promoterId?: number; date?: string; storeIds?: number[] }) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  const updates: any = {};
+  if (data.name) updates.name = data.name;
+  if (data.promoterId) updates.promoterId = data.promoterId;
+  if (data.date) updates.date = data.date;
+  if (Object.keys(updates).length) {
+    await database.update(operationalRoutes).set(updates).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, companyId)));
+  }
+  // Update visits promoter if changed
+  if (data.promoterId) {
+    await database.update(visits).set({ promoterId: data.promoterId }).where(and(eq(visits.routeId, routeId), eq(visits.companyId, companyId)));
+  }
+  // Update stores if provided
+  if (data.storeIds) {
+    await database.delete(visits).where(and(eq(visits.routeId, routeId), eq(visits.companyId, companyId)));
+    for (const storeId of data.storeIds) {
+      await database.insert(visits).values({ companyId, routeId, storeId, promoterId: data.promoterId || 0, status: "pending" });
+    }
+  }
+  return { success: true };
+}
+
 export async function deleteOperationalRoute(companyId: number, routeId: number) {
   const database = await getDb();
   if (!database) throw new Error("Database not available");

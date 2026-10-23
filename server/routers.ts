@@ -814,6 +814,10 @@ export const appRouter = router({
         const { storeIds, ...route } = input;
         return db.createOperationalRouteWithVisits({ route: { ...route, date: new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" }, storeIds });
       }),
+      update: companyAdminProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().optional(), promoterId: z.number().int().positive().optional(), date: z.string().optional(), storeIds: z.array(z.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        return db.updateOperationalRoute(ctx.accountId, id, data);
+      }),
       delete: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
         return db.deleteOperationalRoute(ctx.accountId, input.id);
       }),

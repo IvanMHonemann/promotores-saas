@@ -55,6 +55,11 @@ export default function OperationsDashboard() {
   const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin && hasTimeTracking });
   const utils = trpc.useUtils();
+  const [editingRoute, setEditingRoute] = useState<any>(null);
+  const updateRoute = trpc.operations.routes.update.useMutation({
+    onSuccess: () => { toast.success("Roteiro atualizado."); setEditingRoute(null); void utils.operations.routes.list.invalidate(); },
+    onError: (e) => toast.error(e.message || "Não foi possível atualizar."),
+  });
   const deleteRoute = trpc.operations.routes.delete.useMutation({
     onSuccess: () => { toast.success("Roteiro excluído."); void utils.operations.routes.list.invalidate(); },
     onError: (e) => toast.error(e.message || "Não foi possível excluir."),
@@ -402,12 +407,38 @@ function RoutesModule(props: any) {
               <div className="flex items-center gap-2">
                 <Badge variant="outline">{route.status}</Badge>
                 <Button size="sm" variant="outline" onClick={() => navigator.share?.({ title: route.name, text: `Roteiro: ${route.name}` }).catch(() => toast.info("Compartilhamento não disponível"))}>Compartilhar</Button>
+                <Button size="sm" variant="outline" onClick={() => setEditingRoute(route)}>Editar</Button>
                 <Button size="sm" variant="outline" className="text-rose-300" onClick={() => { if (confirm("Excluir este roteiro?")) deleteRoute.mutate({ id: route.id }); }}>Excluir</Button>
               </div>
             </div>
           ))}
         </CardContent>
       </Card>
+      {editingRoute && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 p-5">
+            <h3 className="text-lg font-bold text-white">Editar roteiro</h3>
+            <div className="mt-4 space-y-3">
+              <input
+                className="w-full rounded-md border border-white/20 bg-slate-950 px-3 py-2 text-white"
+                value={editingRoute.name}
+                onChange={(e) => setEditingRoute({ ...editingRoute, name: e.target.value })}
+                placeholder="Nome do roteiro"
+              />
+              <input
+                type="date"
+                className="w-full rounded-md border border-white/20 bg-slate-950 px-3 py-2 text-white"
+                value={editingRoute.date?.slice(0, 10) || ""}
+                onChange={(e) => setEditingRoute({ ...editingRoute, date: e.target.value })}
+              />
+              <Button onClick={() => updateRoute.mutate({ id: editingRoute.id, name: editingRoute.name, date: editingRoute.date })} className="w-full bg-teal-500 text-slate-950">
+                Salvar
+              </Button>
+              <Button variant="ghost" onClick={() => setEditingRoute(null)} className="w-full text-slate-400">Cancelar</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

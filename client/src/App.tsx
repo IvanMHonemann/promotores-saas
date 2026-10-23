@@ -35,6 +35,7 @@ import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
+import { usePhotoSync } from "@/hooks/usePhotoSync";
 import type { EntitlementKey } from "@shared/entitlements";
 import { useEffect } from "react";
 
@@ -269,6 +270,7 @@ function Router() {
 }
 
 function App() {
+  usePhotoSync();
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">

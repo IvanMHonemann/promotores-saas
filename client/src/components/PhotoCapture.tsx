@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { Camera, MapPin, RotateCcw, Check, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
+import { enqueuePhoto } from "@/lib/photoQueue";
+import { isOnline } from "@/lib/offlineCache";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -246,11 +248,17 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
       mimeType: "image/jpeg",
       idempotencyKey,
     };
+    if (!isOnline()) {
+      enqueuePhoto(payload);
+      toast.info("Foto salva offline. Será enviada ao voltar a conexão.");
+      return;
+    }
     try {
       await upload.mutateAsync(payload);
     } catch {
-      await new Promise((r) => setTimeout(r, 1500));
-      await upload.mutateAsync(payload); // 2ª tentativa (a mesma chave impede duplicar)
+      // Se falhar, tenta enfileirar
+      enqueuePhoto(payload);
+      toast.info("Foto salva offline. Será enviada ao voltar a conexão.");
     }
   };
 

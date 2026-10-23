@@ -368,11 +368,12 @@ export default function StoreGalleryPage() {
 
         {!online && (
           <p role="status" className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
-            Sem conexão. As fotos e os clientes desta loja só aparecem, e novas fotos só podem ser tiradas, quando houver internet (a foto é enviada na hora).
+            Sem conexão: as fotos já enviadas aparecem quando a internet voltar. Novas fotos podem ser tiradas e ficam guardadas no aparelho até o envio.
           </p>
         )}
-        {online && store && (
-          <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />
+        {/* Offline o painel continua visível: a câmera guarda a foto na fila do aparelho. */}
+        {(store || (!online && Number.isFinite(storeId) && storeId > 0)) && (
+          <StoreClientsPanel storeId={storeId} storeName={store?.name || "Loja"} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { if (online) { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); } }} legacyPhotos={legacyPhotos} />
         )}
 
         <section className="rounded-2xl border border-white/15 bg-slate-800/70 p-4 shadow-lg shadow-black/20">
@@ -420,7 +421,7 @@ export default function StoreGalleryPage() {
         </section>
 
         {photos.isLoading && online && <p className="text-sm text-slate-200">Carregando fotos...</p>}
-        {photos.isError && (
+        {photos.isError && online && (
           <p className="rounded-xl border border-rose-300/40 bg-rose-400/15 p-3 text-sm text-rose-100">
             Não foi possível carregar a galeria. Puxe para atualizar ou tente novamente.
           </p>

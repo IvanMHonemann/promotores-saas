@@ -5,6 +5,8 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { StoreClientsPanel, type ClientFilter } from "@/components/StoreClientsPanel";
 import { trpc } from "@/lib/trpc";
+import { cacheGet } from "@/lib/offlineCache";
+import { useOnline } from "@/hooks/useOnline";
 import { toast } from "sonner";
 import { useBusy } from "@/components/BusyOverlay";
 import { buildZip } from "@/lib/zip";
@@ -164,7 +166,9 @@ export default function StoreGalleryPage() {
   const { run } = useBusy();
 
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { staleTime: 30000 });
-  const store = stores.data?.find((s) => s.id === storeId);
+  const online = useOnline();
+  // Sem resposta da rede, usa a lista de lojas salva neste aparelho.
+  const store = stores.data?.find((s) => s.id === storeId) ?? cacheGet<any[]>("stores")?.find((s) => s.id === storeId);
 
   const today = new Date().toISOString().slice(0, 10);
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000 });
@@ -345,7 +349,7 @@ export default function StoreGalleryPage() {
   return (
     <DashboardLayout
       title={store?.name || "Galeria da loja"}
-      description={store ? `${store.city}${store.state ? ` · ${store.state}` : ""}` : "Carregando..."}
+      description={store ? `${store.city}${store.state ? ` · ${store.state}` : ""}` : online ? "Carregando..." : "Loja não disponível offline"}
       onRefresh={() => void photos.refetch()}
     >
       <div className={`space-y-5 ${selectMode ? "pb-32" : ""}`}>
@@ -362,7 +366,12 @@ export default function StoreGalleryPage() {
           </div>
         </div>
 
-        {store && (
+        {!online && (
+          <p role="status" className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
+            Sem conexão. As fotos e os clientes desta loja só aparecem, e novas fotos só podem ser tiradas, quando houver internet (a foto é enviada na hora).
+          </p>
+        )}
+        {online && store && (
           <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />
         )}
 
@@ -410,7 +419,7 @@ export default function StoreGalleryPage() {
           </details>
         </section>
 
-        {photos.isLoading && <p className="text-sm text-slate-200">Carregando fotos...</p>}
+        {photos.isLoading && online && <p className="text-sm text-slate-200">Carregando fotos...</p>}
         {photos.isError && (
           <p className="rounded-xl border border-rose-300/40 bg-rose-400/15 p-3 text-sm text-rose-100">
             Não foi possível carregar a galeria. Puxe para atualizar ou tente novamente.
@@ -451,7 +460,7 @@ export default function StoreGalleryPage() {
           );
         })}
 
-        {!photos.isLoading && !photos.isError && allPhotos.length === 0 && (
+        {online && !photos.isLoading && !photos.isError && allPhotos.length === 0 && (
           <div className="rounded-2xl border border-dashed border-white/25 bg-slate-800/40 p-8 text-center">
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-teal-400/20 text-teal-300">
               <Camera className="h-6 w-6" />

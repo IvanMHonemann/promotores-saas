@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X } from "lucide-react";
+import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useInstallPrompt } from "@/pwa/hooks";
 import { Download } from "lucide-react";

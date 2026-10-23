@@ -28,7 +28,7 @@ export default function CheckInOutPage() {
         {!visits.isLoading && !visits.data?.length && <p className="text-sm text-slate-300">Nenhuma visita nesta data.</p>}
 
         <div className="space-y-3">
-          {visits.data?.map(({ visit, store, promoter }) => (
+          {visits.data?.map(({ visit, store }) => (
             <Card key={visit.id} className="border-white/10 bg-slate-900/50">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between text-base text-white">
@@ -38,7 +38,7 @@ export default function CheckInOutPage() {
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <p className="flex items-center gap-2 text-slate-300">
-                  <User className="h-4 w-4 text-teal-300" /> {promoter?.userName || "Promotor"}
+                  <User className="h-4 w-4 text-teal-300" /> "Promotor"
                 </p>
                 <p className="flex items-center gap-2 text-slate-300">
                   <MapPin className="h-4 w-4 text-teal-300" /> {store.address || store.city}{store.state ? ` — ${store.state}` : ""}

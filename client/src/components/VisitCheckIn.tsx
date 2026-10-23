@@ -59,13 +59,6 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
       accuracy: position?.accuracy,
     };
 
-    if (!isOnline()) {
-      enqueueVisit({ action, ...payload });
-      toast.success(`${action === "start" ? "Check-in" : "Check-out"} salvo offline.`);
-      onDone();
-      return;
-    }
-
     try {
       if (action === "start") {
         await startVisit.mutateAsync({ id: visitId, latitude: position?.lat, longitude: position?.lng, accuracy: position?.accuracy });
@@ -73,19 +66,21 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
         await completeVisit.mutateAsync({ id: visitId, latitude: position?.lat, longitude: position?.lng, accuracy: position?.accuracy });
       }
       // Salva foto da fachada (expira em 14 dias)
-      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
-      await uploadPhoto.mutateAsync({
-        storeId,
-        capturedAt: new Date().toISOString(),
-        latitude: position?.lat,
-        longitude: position?.lng,
-        accuracy: position?.accuracy,
-        locationStatus: position ? "success" : "unavailable",
-        imageBase64: photo,
-        mimeType: "image/jpeg",
-        idempotencyKey: `visit-${visitId}-${action}-${Date.now()}`,
-        notes: `Fachada ${action} - expira ${expiresAt.slice(0, 10)}`,
-      });
+      try {
+        await uploadPhoto.mutateAsync({
+          storeId,
+          capturedAt: new Date().toISOString(),
+          latitude: position?.lat,
+          longitude: position?.lng,
+          accuracy: position?.accuracy,
+          locationStatus: position ? "success" : "unavailable",
+          imageBase64: photo,
+          mimeType: "image/jpeg",
+          idempotencyKey: `visit-${visitId}-${action}-${Date.now()}`.slice(0, 64),
+        });
+      } catch (photoErr) {
+        console.warn("Foto não enviada", photoErr);
+      }
       toast.success(`${action === "start" ? "Check-in" : "Check-out"} realizado.`);
       onDone();
     } catch (e) {

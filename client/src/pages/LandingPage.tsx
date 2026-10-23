@@ -149,7 +149,7 @@ export default function LandingPage() {
             )}
           </nav>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" className="text-slate-200 hover:bg-white/8 hover:text-white" onClick={() => navigate("/login")}>
+            <Button variant="outline" className="border-teal-400/50 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20 hover:text-white" onClick={() => navigate("/login")}>
               Entrar
             </Button>
             <Button className="bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/cadastro")}>

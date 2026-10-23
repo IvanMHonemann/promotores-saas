@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { Cloud, CloudOff, Loader2 } from "lucide-react";
 import { list as listQueue } from "@/lib/offlineQueue";
 import { photoCount } from "@/lib/photoQueue";
+import { storeCount } from "@/lib/storeQueue";
+import { clientCount } from "@/lib/clientQueue";
+import { visitCount } from "@/lib/visitQueue";
 import { isOnline } from "@/lib/offlineCache";
 
 /**
@@ -16,7 +19,7 @@ export function SyncIndicator() {
   useEffect(() => {
     const update = () => {
       setOnline(isOnline());
-      setPending(listQueue().length + photoCount());
+      setPending(listQueue().length + photoCount() + storeCount() + clientCount() + visitCount());
     };
     update();
     const interval = setInterval(update, 2000);

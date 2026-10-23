@@ -171,9 +171,12 @@ export default function PromoterDashboard() {
                     </Button>
                   )}
                   {visit.status === "in_progress" && (
-                    <Button className="mt-3 w-full" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
-                      Check-out (foto da fachada)
-                    </Button>
+                    <>
+                      <VisitTimer startTime={visit.actualStart} />
+                      <Button className="mt-3 w-full" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
+                        Check-out (foto da fachada)
+                      </Button>
+                    </>
                   )}
                 </div>
               ))}
@@ -223,5 +226,28 @@ function Metric({
         </span>
       </div>
     </Tag>
+  );
+}
+
+function VisitTimer({ startTime }: { startTime: string | Date | null }) {
+  const [elapsed, setElapsed] = useState("");
+  useEffect(() => {
+    if (!startTime) return;
+    const start = new Date(startTime).getTime();
+    const tick = () => {
+      const diff = Date.now() - start;
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      setElapsed(`${mins}:${secs.toString().padStart(2, "0")}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [startTime]);
+  if (!startTime) return null;
+  return (
+    <p className="mt-2 text-sm font-semibold text-amber-300">
+      Tempo na loja: {elapsed}
+    </p>
   );
 }

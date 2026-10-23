@@ -1136,19 +1136,17 @@ export async function updateOperationalRoute(companyId: number, routeId: number,
   const updates: any = {};
   if (data.name) updates.name = data.name;
   if (data.promoterId) updates.promoterId = data.promoterId;
-  if (data.date) updates.date = data.date;
+  if (data.date) updates.date = data.date.slice(0, 10);
   if (Object.keys(updates).length) {
-    await database.update(operationalRoutes).set(updates).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, companyId)));
+    await database.update(operationalRoutes).set(updates).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, requireAccountId(companyId))));
   }
-  // Update visits promoter if changed
   if (data.promoterId) {
-    await database.update(operationalVisits).set({ promoterId: data.promoterId }).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, companyId)));
+    await database.update(operationalVisits).set({ promoterId: data.promoterId }).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, requireAccountId(companyId))));
   }
-  // Update stores if provided
-  if (data.storeIds) {
-    await database.delete(operationalVisits).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, companyId)));
+  if (data.storeIds && data.storeIds.length) {
+    await database.delete(operationalVisits).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, requireAccountId(companyId))));
     for (const storeId of data.storeIds) {
-      await database.insert(operationalVisits).values({ companyId, routeId, storeId, promoterId: data.promoterId || 0, status: "pending" });
+      await database.insert(operationalVisits).values({ companyId: requireAccountId(companyId), routeId, storeId, promoterId: data.promoterId || 0, status: "pending" });
     }
   }
   return { success: true };

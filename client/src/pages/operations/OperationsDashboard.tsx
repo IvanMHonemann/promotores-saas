@@ -433,7 +433,7 @@ function RoutesModule(props: any) {
                 value={editingRoute.date?.slice(0, 10) || ""}
                 onChange={(e) => setEditingRoute({ ...editingRoute, date: e.target.value })}
               />
-              <Button onClick={() => updateRoute.mutate({ id: editingRoute.id, name: editingRoute.name, date: editingRoute.date })} className="w-full bg-teal-500 text-slate-950">
+              <Button onClick={() => updateRoute.mutate({ id: editingRoute.id, name: editingRoute.name, date: editingRoute.date?.slice(0, 10) })} className="w-full bg-teal-500 text-slate-950">
                 Salvar
               </Button>
               <Button variant="ghost" onClick={() => setEditingRoute(null)} className="w-full text-slate-400">Cancelar</Button>

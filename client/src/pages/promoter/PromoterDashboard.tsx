@@ -33,7 +33,7 @@ export default function PromoterDashboard() {
   const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
   const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
-  const visits = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations });
+  const visits = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations, staleTime: 0, refetchOnWindowFocus: true });
   const utils = trpc.useUtils();
   const rows = hasFieldOperations ? visits.data || [] : [];
   const alertsQuery = trpc.inventoryAlerts.useQuery({ daysAhead: 30 }, { staleTime: 60000 });

@@ -103,10 +103,10 @@ export default function PromoterDashboard() {
         )}
 
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20 sm:grid-cols-4">
-          <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-teal-300" />
-          <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-sky-300" />
-          <Metric label="Fotos" detail="Registradas" value={photosToday} icon={ClipboardList} tone="text-emerald-300" />
-          <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" />
+          <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-teal-300" href="/lojas" />
+          <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-sky-300" href="/ponto" />
+          <Metric label="Fotos" detail="Registradas" value={photosToday} icon={ClipboardList} tone="text-emerald-300" href="/lojas" />
+          <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" href="/produtos" />
         </div>
 
         <section className="rounded-2xl border-2 border-amber-400/40 bg-amber-400/10 p-4">
@@ -188,6 +188,7 @@ function Metric({
   value,
   icon: Icon,
   tone,
+  href,
   className = "",
 }: {
   label: string;
@@ -195,10 +196,12 @@ function Metric({
   value: number;
   icon: LucideIcon;
   tone: string;
+  href?: string;
   className?: string;
 }) {
+  const Tag = href ? "a" : "div";
   return (
-    <div className={`min-h-[142px] bg-[#0b1021] p-4 sm:min-h-[160px] sm:p-6 ${className}`}>
+    <Tag href={href} className={`block min-h-[142px] bg-[#0b1021] p-4 transition hover:bg-white/5 sm:min-h-[160px] sm:p-6 ${className}`}>
       <div className="flex h-full items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col self-stretch">
           <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300 sm:text-xs sm:tracking-[.14em]">{label}</p>

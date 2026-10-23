@@ -1,0 +1,116 @@
+import { useRef, useState } from "react";
+import { Camera, Check, X, MapPin, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { enqueueVisit } from "@/lib/visitQueue";
+import { isOnline } from "@/lib/offlineCache";
+import { trpc } from "@/lib/trpc";
+
+type Props = {
+  action: "start" | "complete";
+  visitId: number;
+  storeId: number;
+  storeName: string;
+  onDone: () => void;
+  onCancel: () => void;
+};
+
+export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCancel }: Props) {
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [gps, setGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const startVisit = trpc.operations.visits.start.useMutation();
+  const completeVisit = trpc.operations.visits.complete.useMutation();
+
+  const capture = () => inputRef.current?.click();
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPhoto(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const getGps = async () => {
+    return new Promise<{ lat: number; lng: number; accuracy: number } | null>((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+  };
+
+  const confirm = async () => {
+    if (!photo) return toast.error("Tire a foto da fachada para continuar.");
+    setBusy(true);
+    const position = gps || await getGps();
+    const payload = {
+      visitId,
+      storeId,
+      storeName,
+      photoBase64: photo,
+      latitude: position?.lat,
+      longitude: position?.lng,
+      accuracy: position?.accuracy,
+    };
+
+    if (!isOnline()) {
+      enqueueVisit({ action, ...payload });
+      toast.success(`${action === "start" ? "Check-in" : "Check-out"} salvo offline.`);
+      onDone();
+      return;
+    }
+
+    try {
+      if (action === "start") {
+        await startVisit.mutateAsync({ id: visitId, latitude: position?.lat, longitude: position?.lng, accuracy: position?.accuracy });
+      } else {
+        await completeVisit.mutateAsync({ id: visitId, latitude: position?.lat, longitude: position?.lng, accuracy: position?.accuracy });
+      }
+      toast.success(`${action === "start" ? "Check-in" : "Check-out"} realizado.`);
+      onDone();
+    } catch (e) {
+      enqueueVisit({ action, ...payload });
+      toast.info("Salvo offline. Será sincronizado ao voltar a conexão.");
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-slate-900 p-5">
+        <h2 className="text-lg font-bold text-white">{action === "start" ? "Check-in" : "Check-out"} — {storeName}</h2>
+        <p className="mt-1 text-sm text-slate-400">Tire uma foto da fachada da loja para confirmar.</p>
+
+        <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile} />
+
+        {!photo ? (
+          <Button onClick={capture} className="mt-4 w-full gap-2 bg-teal-500 text-slate-950">
+            <Camera className="h-5 w-5" /> Tirar foto da fachada
+          </Button>
+        ) : (
+          <div className="mt-4">
+            <img src={photo} alt="Fachada" className="w-full rounded-xl" />
+            <div className="mt-3 flex gap-2">
+              <Button onClick={capture} variant="outline" className="flex-1">Refazer</Button>
+              <Button onClick={confirm} disabled={busy} className="flex-1 gap-2 bg-emerald-500 text-white">
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                Confirmar
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <Button onClick={onCancel} variant="ghost" className="mt-3 w-full text-slate-400">
+          <X className="mr-2 h-4 w-4" /> Cancelar
+        </Button>
+      </div>
+    </div>
+  );
+}

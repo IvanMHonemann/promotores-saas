@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { AlertTriangle, ClipboardList, Clock3, MapPin } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
 import { useOfflineQuery } from "@/lib/useOfflineQuery";
+import { VisitCheckIn } from "@/components/VisitCheckIn";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +21,7 @@ const visitStatus: Record<string, string> = {
 };
 
 export default function PromoterDashboard() {
+  const [checkIn, setCheckIn] = useState<{ action: "start" | "complete"; visitId: number; storeId: number; storeName: string } | null>(null);
   const { user } = useAuth();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const todayParts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
@@ -163,13 +166,13 @@ export default function PromoterDashboard() {
                     <Badge variant="outline" className="border-white/20 text-slate-200">{visitStatus[visit.status] || visit.status}</Badge>
                   </div>
                   {visit.status === "pending" && (
-                    <Button className="mt-3 w-full" onClick={() => void actOnVisit(visit.id, "start")} disabled={!canManageVisits}>
-                      {startVisit.isPending ? "Iniciando..." : "Iniciar visita com GPS"}
+                    <Button className="mt-3 w-full" onClick={() => setCheckIn({ action: "start", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
+                      Check-in (foto da fachada)
                     </Button>
                   )}
                   {visit.status === "in_progress" && (
-                    <Button className="mt-3 w-full" onClick={() => void actOnVisit(visit.id, "complete")} disabled={!canManageVisits}>
-                      {completeVisit.isPending ? "Concluindo..." : "Concluir visita"}
+                    <Button className="mt-3 w-full" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
+                      Check-out (foto da fachada)
                     </Button>
                   )}
                 </div>
@@ -212,6 +215,14 @@ function Metric({
           <Icon className={`h-4 w-4 ${tone} sm:h-5 sm:w-5`} />
         </span>
       </div>
+    </div>
+      {checkIn && (
+        <VisitCheckIn
+          {...checkIn}
+          onDone={() => { setCheckIn(null); void visits.refetch(); }}
+          onCancel={() => setCheckIn(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, ClipboardList, Clock3, MapPin } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -33,7 +33,17 @@ export default function PromoterDashboard() {
   const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
   const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
-  const visits = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations, staleTime: 0, refetchOnWindowFocus: true });
+  const visitsQuery = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations, staleTime: 0, refetchOnWindowFocus: true });
+  useEffect(() => {
+    if (visitsQuery.data) cacheSet(`visits-today-${today}`, visitsQuery.data);
+  }, [visitsQuery.data, today]);
+  const cachedVisits = cacheGet<any[]>(`visits-today-${today}`);
+  const visits = {
+    ...visitsQuery,
+    data: visitsQuery.data ?? (!isOnline() ? cachedVisits : undefined),
+    isLoading: visitsQuery.isLoading && isOnline() && !cachedVisits,
+    error: visitsQuery.error && !cachedVisits ? visitsQuery.error : null,
+  };
   const utils = trpc.useUtils();
   const rows = hasFieldOperations ? visits.data || [] : [];
   const alertsQuery = trpc.inventoryAlerts.useQuery({ daysAhead: 30 }, { staleTime: 60000 });
@@ -153,6 +163,7 @@ export default function PromoterDashboard() {
               {visits.isLoading && <p className="text-sm text-slate-300">Carregando visitas...</p>}
               {visits.error && <p className="text-sm font-semibold text-rose-200">Não foi possível carregar o roteiro. Tente atualizar o painel.</p>}
               {!visits.isLoading && !visits.error && !rows.length && <p className="text-sm text-slate-300">Nenhuma visita planejada para hoje.</p>}
+              {!isOnline() && rows.length > 0 && <p className="text-xs text-amber-200">Roteiro salvo neste aparelho (offline).</p>}
               {rows.map(({ visit, store }) => (
                 <div key={visit.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">

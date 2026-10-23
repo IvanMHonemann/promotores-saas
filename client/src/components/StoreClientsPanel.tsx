@@ -7,6 +7,7 @@ import { useBusy } from "@/components/BusyOverlay";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet } from "@/lib/offlineCache";
 import { useOnline } from "@/hooks/useOnline";
+import { enqueueClient, listClients } from "@/lib/clientQueue";
 import { toast } from "sonner";
 
 export type ClientFilter = "all" | "none" | number;
@@ -31,13 +32,28 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
   const online = useOnline();
   const clients = trpc.storeClients.list.useQuery({ storeId }, { staleTime: 10000 });
   const [form, setForm] = useState<{ id: number | null; open: boolean } & typeof empty>({ id: null, open: false, ...empty });
+  const [pendingClients, setPendingClients] = useState(() => listClients().filter((c) => c.storeId === storeId || String(c.storeId) === String(storeId)));
 
   useEffect(() => {
     if (clients.data) cacheSet(`clients-${storeId}`, clients.data);
   }, [clients.data, storeId]);
 
+  useEffect(() => {
+    setPendingClients(listClients().filter((c) => c.storeId === storeId || String(c.storeId) === String(storeId)));
+  }, [online, storeId]);
+
   const cached = useMemo(() => cacheGet<any[]>(`clients-${storeId}`) || [], [storeId, clients.data, online]);
-  const list = clients.data ?? (!online ? cached : []);
+  const serverList = clients.data ?? (!online ? cached : []);
+  const pendingDisplay = pendingClients.map((c) => ({
+    id: c.tempId,
+    name: c.name,
+    contactName: c.contactName,
+    phone: c.phone,
+    notes: c.notes,
+    photoCount: 0,
+    pending: true,
+  }));
+  const list = [...pendingDisplay, ...serverList];
 
   const refresh = () => { void utils.storeClients.list.invalidate(); onChanged(); };
   const create = trpc.storeClients.create.useMutation();
@@ -49,6 +65,13 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
     const name = form.name.trim();
     if (name.length < 2) return toast.info("Informe o nome do cliente.");
     const data = { storeId, name, contactName: form.contactName.trim() || undefined, phone: form.phone.trim() || undefined, notes: form.notes.trim() || undefined };
+    if (!online && !form.id) {
+      enqueueClient(data);
+      setPendingClients(listClients().filter((c) => c.storeId === storeId || String(c.storeId) === String(storeId)));
+      toast.success("Cliente salvo offline. Será cadastrado quando a internet voltar.");
+      close();
+      return;
+    }
     const job = form.id ? update.mutateAsync({ ...data, id: form.id }) : create.mutateAsync(data);
     void run(form.id ? "Salvando cliente..." : "Cadastrando cliente...", () => job)
       .then(() => { toast.success(form.id ? "Cliente atualizado." : "Cliente cadastrado. Já pode tirar as fotos dentro dele."); close(); refresh(); })
@@ -59,7 +82,7 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
     <section className="space-y-3" aria-label="Clientes da loja">
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 text-lg font-black text-white"><UserRound className="h-5 w-5 text-teal-300" />Clientes desta loja</h3>
-        {!form.open && online && (
+        {!form.open && (
           <Button size="sm" className="bg-teal-400 font-bold text-slate-950 hover:bg-teal-300" onClick={() => setForm({ id: null, open: true, ...empty })}>
             <Plus className="mr-1 h-4 w-4" />Cadastrar cliente
           </Button>
@@ -101,31 +124,33 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
         {list.map((c) => (
           <div key={c.id} className={`rounded-2xl border p-4 ${filter === c.id ? "border-teal-300/60 bg-teal-300/5" : "border-white/15 bg-slate-800/70"}`}>
             <div className="flex items-start justify-between gap-3">
-              <button type="button" className="min-w-0 text-left" onClick={() => onFilter(filter === c.id ? "all" : c.id)} aria-pressed={filter === c.id}>
-                <p className="truncate text-base font-bold text-white">{c.name}</p>
+              <button type="button" className="min-w-0 text-left" onClick={() => !c.pending && onFilter(filter === c.id ? "all" : c.id)} aria-pressed={filter === c.id} disabled={c.pending}>
+                <p className="truncate text-base font-bold text-white">{c.name}{c.pending ? " (pendente)" : ""}</p>
                 <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-slate-300">
-                  <span className="inline-flex items-center gap-1"><Camera className="h-3 w-3 text-teal-300" />{c.photoCount} foto{c.photoCount !== 1 ? "s" : ""}</span>
+                  <span className="inline-flex items-center gap-1"><Camera className="h-3 w-3 text-teal-300" />{c.photoCount || 0} foto{c.photoCount !== 1 ? "s" : ""}</span>
                   {c.contactName && <span>{c.contactName}</span>}
                   {c.phone && <span className="inline-flex items-center gap-1"><Phone className="h-3 w-3" />{c.phone}</span>}
                 </p>
               </button>
-              {online && (
+              {online && !c.pending && (
                 <div className="flex shrink-0 gap-1">
                   <button type="button" aria-label={`Editar ${c.name}`} onClick={() => setForm({ id: c.id, open: true, name: c.name, contactName: c.contactName ?? "", phone: c.phone ?? "", notes: c.notes ?? "" })} className="rounded-full p-2 text-slate-200 hover:bg-white/10"><Pencil className="h-4 w-4" /></button>
                   <button type="button" aria-label={`Remover ${c.name}`} onClick={() => { if (window.confirm(`Remover o cliente ${c.name} desta loja? As fotos já tiradas continuam salvas.`)) setActive.mutate({ storeId, id: c.id, active: false }); }} className="rounded-full p-2 text-rose-200 hover:bg-white/10"><Trash2 className="h-4 w-4" /></button>
                 </div>
               )}
             </div>
-            <div className="mt-3">
-              <PhotoCapture storeId={storeId} storeName={storeName} storeClientId={c.id} clientName={c.name} visitId={visitId} onCaptured={refresh} />
-            </div>
+            {!c.pending && (
+              <div className="mt-3">
+                <PhotoCapture storeId={storeId} storeName={storeName} storeClientId={c.id} clientName={c.name} visitId={visitId} onCaptured={refresh} />
+              </div>
+            )}
           </div>
         ))}
       </div>
 
       {(list.length > 0 || legacyPhotos > 0) && (
         <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar fotos por cliente">
-          {([["all", "Todos os clientes"], ...list.map((c) => [c.id, c.name] as [number, string]), ...(legacyPhotos > 0 ? [["none", `Sem cliente (${legacyPhotos})`] as ["none", string]] : [])] as Array<[ClientFilter, string]>).map(([id, label]) => (
+          {([["all", "Todos os clientes"], ...list.filter((c) => !c.pending).map((c) => [c.id, c.name] as [number, string]), ...(legacyPhotos > 0 ? [["none", `Sem cliente (${legacyPhotos})`] as ["none", string]] : [])] as Array<[ClientFilter, string]>).map(([id, label]) => (
             <button key={String(id)} type="button" aria-pressed={filter === id} onClick={() => onFilter(id)} className={`rounded-full px-3.5 py-1.5 text-sm font-semibold ${filter === id ? "bg-teal-400 text-slate-950" : "bg-slate-700 text-slate-100 hover:bg-slate-600"}`}>{label}</button>
           ))}
         </div>

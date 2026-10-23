@@ -37,6 +37,9 @@ import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
 import { usePhotoSync } from "@/hooks/usePhotoSync";
+import { useStoreSync } from "@/hooks/useStoreSync";
+import { useClientSync } from "@/hooks/useClientSync";
+import { useVisitSync } from "@/hooks/useVisitSync";
 import type { EntitlementKey } from "@shared/entitlements";
 import { useEffect } from "react";
 
@@ -273,6 +276,9 @@ function Router() {
 
 function App() {
   usePhotoSync();
+  useStoreSync();
+  useClientSync();
+  useVisitSync();
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">

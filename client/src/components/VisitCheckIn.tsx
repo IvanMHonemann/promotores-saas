@@ -20,6 +20,32 @@ function toBase64(dataUrl: string): string {
   return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
 }
 
+/** Resize and compress a data-URL image so the upload is fast on mobile. */
+async function compressImage(dataUrl: string, maxWidth = 1280, quality = 0.72): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCancel }: Props) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [gps, setGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
@@ -54,7 +80,9 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
     if (!photo) return toast.error("Tire a foto da fachada para continuar.");
     setBusy(true);
     const position = gps || await getGps();
-    const base64 = toBase64(photo);
+    // Compress before upload — full camera images are multi-MB and slow on mobile
+    const compressed = await compressImage(photo);
+    const base64 = toBase64(compressed);
     const payload = {
       visitId,
       storeId,

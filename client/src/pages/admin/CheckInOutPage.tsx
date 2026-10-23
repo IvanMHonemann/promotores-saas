@@ -38,10 +38,22 @@ function PhotoThumb({ photoId, label }: { photoId: number; label: string }) {
 }
 
 function VisitPhotos({ storeId, visitId, startTime, endTime }: { storeId: number; visitId: number; startTime?: string | Date | null; endTime?: string | Date | null }) {
-  const day = startTime ? new Date(startTime).toISOString().slice(0, 10) : endTime ? new Date(endTime).toISOString().slice(0, 10) : undefined;
+  // Full day range in America/Sao_Paulo so the query does not truncate at UTC midnight
+  const ref = startTime || endTime;
+  let from: string | undefined;
+  let to: string | undefined;
+  if (ref) {
+    const d = new Date(ref);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    from = `${y}-${m}-${day}T00:00:00-03:00`;
+    to = `${y}-${m}-${day}T23:59:59-03:00`;
+  }
+
   const photos = trpc.storePhotos.listByStore.useQuery(
-    { storeId, from: day, to: day },
-    { enabled: Boolean(storeId && day), staleTime: 30000 },
+    { storeId, from, to },
+    { enabled: Boolean(storeId && from), staleTime: 30000 },
   );
 
   const list = photos.data || [];

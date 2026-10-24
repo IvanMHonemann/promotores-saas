@@ -1,6 +1,6 @@
 /**
  * Fila offline de check-in/check-out de visitas.
- * Guarda a ação e a foto da fachada para sincronizar depois.
+ * Suporta tanto o fluxo antigo (base64) quanto o novo (blob → base64 quando offline).
  */
 
 const KEY = "gondup:visit-queue";
@@ -11,7 +11,8 @@ export type QueuedVisit = {
   visitId: number;
   storeId: number;
   storeName: string;
-  photoBase64: string;
+  photoBase64: string;           // sempre base64 para persistir no localStorage
+  mimeType: string;
   latitude?: number;
   longitude?: number;
   accuracy?: number;
@@ -37,7 +38,11 @@ function save(items: QueuedVisit[]) {
 }
 
 export function enqueueVisit(item: Omit<QueuedVisit, "id" | "queuedAt">): QueuedVisit {
-  const entry: QueuedVisit = { ...item, id: crypto.randomUUID(), queuedAt: new Date().toISOString() };
+  const entry: QueuedVisit = {
+    ...item,
+    id: crypto.randomUUID(),
+    queuedAt: new Date().toISOString(),
+  };
   const items = load();
   items.push(entry);
   save(items);
@@ -54,4 +59,18 @@ export function removeVisit(id: string) {
 
 export function visitCount(): number {
   return load().length;
+}
+
+/** Converte Blob para base64 (usado apenas no modo offline) */
+export async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(",")[1] || result;
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }

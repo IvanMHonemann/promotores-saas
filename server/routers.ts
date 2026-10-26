@@ -484,10 +484,15 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "settings_change", module: "users", entityType: "user_permissions", entityId: target.id, entityLabel: target.userName, description: `Permissões de módulos atualizadas para ${target.userName}`, oldData: before.effective, newData: after.effective });
       return { success: true as const };
     }),
-    create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole })).mutation(async ({ ctx, input }) => {
+    create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole, storeIds: z.array(z.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
       try {
         await planLimits.assertUserLimit(ctx.accountId);
-        const created = await memberAuth.createCompanyUser({ ...input, companyId: ctx.accountId });
+        const { storeIds, ...userInput } = input;
+        const created = await memberAuth.createCompanyUser({ ...userInput, companyId: ctx.accountId });
+        if (input.role === "promoter" && storeIds && storeIds.length > 0) {
+          const database = await db.getDb();
+          await setPromoterStoreAssignments(database, ctx.accountId, created.accountId, storeIds);
+        }
         void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usuário criado: ${input.userName} (${input.role})`, newData: { userName: input.userName, email: input.email, role: input.role, id: created.accountId } });
         void (async () => {
           try {

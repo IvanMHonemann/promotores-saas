@@ -45,7 +45,17 @@ window.addEventListener("pageshow", (event) => {
   if (event.persisted) (window as any).location.reload();
 });
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Evita refetch desnecessário ao montar/focar: dados ficam válidos por 30s
+      // e são recarregados automaticamente em mutações via invalidação do tRPC.
+      staleTime: 30_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({

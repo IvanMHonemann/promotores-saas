@@ -55,6 +55,32 @@ export async function getPool() {
   return _pool;
 }
 
+let ownerScopeReady = false;
+let ownerScopePromise: Promise<void> | null = null;
+/** Adiciona colunas de dono se ainda não existirem (TiDB). */
+export async function ensureOwnerScopeColumns() {
+  if (ownerScopeReady) return;
+  // Deduplica execuções concorrentes: as 4 ALTERs rodam uma única vez por processo,
+  // mesmo com muitas requisições simultâneas nas rotas hot.
+  if (ownerScopePromise) return ownerScopePromise;
+  ownerScopePromise = (async () => {
+    const pool = await getPool();
+    if (!pool) return;
+    try {
+      await pool.query("ALTER TABLE `clients` ADD COLUMN `createdByUserId` int NULL").catch(() => undefined);
+      await pool.query("ALTER TABLE `service_orders` ADD COLUMN `createdByUserId` int NULL").catch(() => undefined);
+      await pool.query("ALTER TABLE `extinguishers` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => undefined);
+      await pool.query("ALTER TABLE `clients` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => undefined);
+    } catch (err) {
+      console.warn("[db] ensureOwnerScopeColumns", err);
+    } finally {
+      ownerScopeReady = true; // evita loop/retry em cada request
+      ownerScopePromise = null;
+    }
+  })();
+  return ownerScopePromise;
+}
+
 export async function getDb() {
   const databaseUrl = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!databaseUrl) {

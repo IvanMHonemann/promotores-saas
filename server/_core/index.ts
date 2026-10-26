@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express, { type Express } from "express";
+import compression from "compression";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -34,6 +35,8 @@ export async function createApp(): Promise<Express> {
   const app = express();
   // Required behind reverse proxies so req.protocol and secure cookies work on HTTPS.
   app.set("trust proxy", 1);
+  // Gzip/deflate para HTML, JS/CSS e respostas JSON (reduz ~70% do tráfego).
+  app.use(compression());
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 

@@ -945,18 +945,23 @@ async function getPool() {
 }
 async function ensureOwnerScopeColumns() {
   if (ownerScopeReady) return;
-  const pool = await getPool();
-  if (!pool) return;
-  try {
-    await pool.query("ALTER TABLE `clients` ADD COLUMN `createdByUserId` int NULL").catch(() => void 0);
-    await pool.query("ALTER TABLE `service_orders` ADD COLUMN `createdByUserId` int NULL").catch(() => void 0);
-    await pool.query("ALTER TABLE `extinguishers` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => void 0);
-    await pool.query("ALTER TABLE `clients` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => void 0);
-    ownerScopeReady = true;
-  } catch (err) {
-    console.warn("[db] ensureOwnerScopeColumns", err);
-    ownerScopeReady = true;
-  }
+  if (ownerScopePromise) return ownerScopePromise;
+  ownerScopePromise = (async () => {
+    const pool = await getPool();
+    if (!pool) return;
+    try {
+      await pool.query("ALTER TABLE `clients` ADD COLUMN `createdByUserId` int NULL").catch(() => void 0);
+      await pool.query("ALTER TABLE `service_orders` ADD COLUMN `createdByUserId` int NULL").catch(() => void 0);
+      await pool.query("ALTER TABLE `extinguishers` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => void 0);
+      await pool.query("ALTER TABLE `clients` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => void 0);
+    } catch (err) {
+      console.warn("[db] ensureOwnerScopeColumns", err);
+    } finally {
+      ownerScopeReady = true;
+      ownerScopePromise = null;
+    }
+  })();
+  return ownerScopePromise;
 }
 async function getDb() {
   const databaseUrl = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -2187,7 +2192,7 @@ async function updateOperationalVisit(companyId, id, data) {
   const rows = await database.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq(visits.storeId, stores.id)).where(and(eq(visits.id, id), eq(visits.companyId, companyId))).limit(1);
   return rows[0];
 }
-var _db, _dbUrl, _pool, ownerScopeReady;
+var _db, _dbUrl, _pool, ownerScopeReady, ownerScopePromise;
 var init_db = __esm({
   "server/db.ts"() {
     "use strict";
@@ -2200,6 +2205,7 @@ var init_db = __esm({
     _dbUrl = null;
     _pool = null;
     ownerScopeReady = false;
+    ownerScopePromise = null;
   }
 });
 
@@ -2661,6 +2667,7 @@ var init_email = __esm({
 
 // server/vercel-entry.ts
 import express from "express";
+import compression from "compression";
 import fs2 from "fs";
 import path2 from "path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -5033,6 +5040,7 @@ import crypto3 from "node:crypto";
 async function createApp() {
   const app = express();
   app.set("trust proxy", 1);
+  app.use(compression());
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
@@ -5089,6 +5097,8 @@ async function createApp() {
   const distPath = path2.resolve(process.cwd(), "dist", "public");
   if (fs2.existsSync(distPath)) {
     app.use(express.static(distPath, {
+      maxAge: "1y",
+      immutable: true,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith("index.html") || filePath.endsWith("sw.js")) {
           res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");

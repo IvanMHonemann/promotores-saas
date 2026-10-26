@@ -1,26 +1,29 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import LandingPage from "./pages/LandingPage";
-import AdminUsersPage from "./pages/AdminUsersPage";
-import AdminAssinaturasPage from "./pages/AdminAssinaturasPage";
-import PlansPage from "./pages/PlansPage";
-import PublicPlansPage from "./pages/PublicPlansPage";
-import SignupPage from "./pages/SignupPage";
-import LoginPage from "./pages/LoginPage";
-import UpgradePlanPage from "./pages/UpgradePlanPage";
-import MySubscriptionPage from "./pages/MySubscriptionPage";
-import PaymentHistoryPage from "./pages/PaymentHistoryPage";
-import MyAccountPage from "./pages/MyAccountPage";
-import AuditPage from "./pages/AuditPage";
-import PromoterDashboard from "./pages/promoter/PromoterDashboard";
-import PromoterClockPage from "./pages/promoter/PromoterClockPage";
-import OperationsDashboard from "./pages/operations/OperationsDashboard";
-import PlatformDashboard from "./pages/platform/PlatformDashboard";
 import { PwaStatusBar } from "./components/PwaStatusBar";
+
+// Code-splitting: cada página vira um chunk carregado sob demanda.
+const LandingPage = lazy(() => import("./pages/LandingPage"));
+const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
+const AdminAssinaturasPage = lazy(() => import("./pages/AdminAssinaturasPage"));
+const PlansPage = lazy(() => import("./pages/PlansPage"));
+const PublicPlansPage = lazy(() => import("./pages/PublicPlansPage"));
+const SignupPage = lazy(() => import("./pages/SignupPage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const UpgradePlanPage = lazy(() => import("./pages/UpgradePlanPage"));
+const MySubscriptionPage = lazy(() => import("./pages/MySubscriptionPage"));
+const PaymentHistoryPage = lazy(() => import("./pages/PaymentHistoryPage"));
+const MyAccountPage = lazy(() => import("./pages/MyAccountPage"));
+const AuditPage = lazy(() => import("./pages/AuditPage"));
+const PromoterDashboard = lazy(() => import("./pages/promoter/PromoterDashboard"));
+const PromoterClockPage = lazy(() => import("./pages/promoter/PromoterClockPage"));
+const OperationsDashboard = lazy(() => import("./pages/operations/OperationsDashboard"));
+const PlatformDashboard = lazy(() => import("./pages/platform/PlatformDashboard"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -114,7 +117,9 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <PwaStatusBar />
-          <Router />
+          <Suspense fallback={<LoadingScreen />}>
+            <Router />
+          </Suspense>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

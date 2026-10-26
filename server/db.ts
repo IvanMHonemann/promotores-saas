@@ -72,21 +72,29 @@ export async function getPool() {
 }
 
 let ownerScopeReady = false;
+let ownerScopePromise: Promise<void> | null = null;
 /** Adiciona colunas de dono se ainda não existirem (TiDB). */
 export async function ensureOwnerScopeColumns() {
   if (ownerScopeReady) return;
-  const pool = await getPool();
-  if (!pool) return;
-  try {
-    await pool.query("ALTER TABLE `clients` ADD COLUMN `createdByUserId` int NULL").catch(() => undefined);
-    await pool.query("ALTER TABLE `service_orders` ADD COLUMN `createdByUserId` int NULL").catch(() => undefined);
-    await pool.query("ALTER TABLE `extinguishers` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => undefined);
-    await pool.query("ALTER TABLE `clients` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => undefined);
-    ownerScopeReady = true;
-  } catch (err) {
-    console.warn("[db] ensureOwnerScopeColumns", err);
-    ownerScopeReady = true; // evita loop
-  }
+  // Deduplica execuções concorrentes: as 4 ALTERs rodam uma única vez por processo,
+  // mesmo com muitas requisições simultâneas nas rotas hot.
+  if (ownerScopePromise) return ownerScopePromise;
+  ownerScopePromise = (async () => {
+    const pool = await getPool();
+    if (!pool) return;
+    try {
+      await pool.query("ALTER TABLE `clients` ADD COLUMN `createdByUserId` int NULL").catch(() => undefined);
+      await pool.query("ALTER TABLE `service_orders` ADD COLUMN `createdByUserId` int NULL").catch(() => undefined);
+      await pool.query("ALTER TABLE `extinguishers` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => undefined);
+      await pool.query("ALTER TABLE `clients` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => undefined);
+    } catch (err) {
+      console.warn("[db] ensureOwnerScopeColumns", err);
+    } finally {
+      ownerScopeReady = true; // evita loop/retry em cada request
+      ownerScopePromise = null;
+    }
+  })();
+  return ownerScopePromise;
 }
 
 export async function getDb() {

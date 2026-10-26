@@ -127,9 +127,17 @@ export function PunchPanel() {
 
   const closed = lastType === "clock_out";
   const onBreak = lastType === "break_start";
-  const primary: Action = !lastType || closed ? ACTIONS.clock_in : lastType === "clock_in" ? ACTIONS.break_start : onBreak ? ACTIONS.break_end : ACTIONS.break_start;
-  // O servidor permite encerrar sem intervalo e depois de voltar dele.
-  const canFinish = lastType === "clock_in" || lastType === "break_end";
+  // Depois da volta do intervalo a ação principal é a saída (fim da jornada).
+  const primary: Action = !lastType || closed
+    ? ACTIONS.clock_in
+    : lastType === "clock_in"
+      ? ACTIONS.break_start
+      : onBreak
+        ? ACTIONS.break_end
+        : ACTIONS.clock_out;
+  // Saída secundária só antes do intervalo (permite encerrar sem bater intervalo).
+  // Após break_end a saída já é o botão principal.
+  const canFinish = lastType === "clock_in";
 
   // Tempo trabalhado: entrada → intervalo, e retorno → saída (ou agora, se ainda aberta).
   const workedMs = useMemo(() => {

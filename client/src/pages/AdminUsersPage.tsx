@@ -43,6 +43,7 @@ export default function AdminUsersPage() {
   const [workStartDraft, setWorkStartDraft] = useState("");
   const [workEndDraft, setWorkEndDraft] = useState("");
   const [weeklyDraft, setWeeklyDraft] = useState<Record<number, number[]>>({});
+  const [assignedStoreIds, setAssignedStoreIds] = useState<number[]>([]);
   const [permissionsDraft, setPermissionsDraft] = useState<Record<EntitlementKey, PermissionMode>>(
     Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, "inherit"])) as Record<EntitlementKey, PermissionMode>,
   );
@@ -54,6 +55,7 @@ export default function AdminUsersPage() {
   const hasFieldOperations = Boolean(entitlementsQuery.data?.effective.fieldOperations);
   const promoterStoresQuery = trpc.operations.stores.list.useQuery(undefined, { enabled: isCompanyAdmin && editingPromoterId !== null && hasFieldOperations });
   const promoterWeeklyRoutesQuery = trpc.operations.routes.weekly.useQuery(undefined, { enabled: isCompanyAdmin && editingPromoterId !== null && hasFieldOperations });
+  const promoterAssignedStoresQuery = trpc.companyUsers.getPromoterStores.useQuery({ id: editingPromoterId! }, { enabled: isCompanyAdmin && editingPromoterId !== null });
   const permissionsQuery = trpc.companyUsers.permissions.useQuery({ id: permissionsUserId ?? 0 }, { enabled: isCompanyAdmin && permissionsUserId !== null });
   const createCompanyMutation = trpc.platform.companies.create.useMutation({ onSuccess: (data) => { toast.success(`Empresa criada. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setCompanyName(""); setUserName(""); setEmail(""); setPassword(""); utils.platform.companies.list.invalidate(); utils.platform.users.invalidate(); }, onError: (error) => toast.error(error.message) });
   const createUserMutation = trpc.companyUsers.create.useMutation({ onSuccess: (data) => { toast.success(`Usuário criado. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setUserName(""); setEmail(""); setPassword(""); setRole("promoter"); utils.companyUsers.list.invalidate(); }, onError: (error) => toast.error(error.message) });
@@ -88,6 +90,9 @@ export default function AdminUsersPage() {
       const routes = promoterWeeklyRoutesQuery.data.filter((item: any) => item.promoterId === editingPromoterId && item.active);
       setWeeklyDraft(Object.fromEntries(routes.map((item: any) => [item.weekday, item.storeIds || []])));
     }
+    if (promoterAssignedStoresQuery.data) {
+      setAssignedStoreIds(promoterAssignedStoresQuery.data);
+    }
   }, [editingPromoterId, promoterWeeklyRoutesQuery.data]);
 
   if (!canManage) return <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6"><Card className="max-w-md"><CardContent className="p-6 text-center"><p className="font-bold text-slate-900">Acesso restrito ao administrador da empresa.</p><Button className="mt-4" onClick={() => navigate("/")}>Voltar ao painel</Button></CardContent></Card></div>;
@@ -96,6 +101,7 @@ export default function AdminUsersPage() {
   const handleOwnPassword = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); ownPasswordMutation.mutate({ currentPassword, newPassword: newOwnPassword }); };
   const openPromoterEditor = (account: any) => {
     setPromoterNameDraft(account.userName || "");
+    setAssignedStoreIds([]); // will be loaded by query
     setPromoterEmailDraft(account.email || "");
     setEmployeeCodeDraft(account.employeeCode || "");
     setWorkStartDraft(account.workStartTime || "");
@@ -144,6 +150,7 @@ export default function AdminUsersPage() {
       workStartTime: workStartDraft || null,
       workEndTime: workEndDraft || null,
       weeklyRoutes,
+      storeIds: assignedStoreIds,
     });
   };
   const deletePromoter = (account: any) => {
@@ -198,6 +205,7 @@ export default function AdminUsersPage() {
         workStart={workStartDraft} setWorkStart={setWorkStartDraft}
         workEnd={workEndDraft} setWorkEnd={setWorkEndDraft}
         weeklyDraft={weeklyDraft} toggleWeeklyStore={toggleWeeklyStore}
+        assignedStoreIds={assignedStoreIds} setAssignedStoreIds={setAssignedStoreIds}
         hasFieldOperations={hasFieldOperations}
         stores={promoterStoresQuery.data || []}
         storesLoading={promoterStoresQuery.isLoading || promoterWeeklyRoutesQuery.isLoading}
@@ -296,7 +304,7 @@ function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactiv
 }
 
 
-function PromoterEditDialog({ open, onOpenChange, account, promoterName, setPromoterName, promoterEmail, setPromoterEmail, employeeCode, setEmployeeCode, workStart, setWorkStart, workEnd, setWorkEnd, weeklyDraft, toggleWeeklyStore, hasFieldOperations, stores, storesLoading, storesError, saving, onGenerateCode, onSave }: any) {
+function PromoterEditDialog({ open, onOpenChange, account, promoterName, setPromoterName, promoterEmail, setPromoterEmail, employeeCode, setEmployeeCode, workStart, setWorkStart, workEnd, setWorkEnd, weeklyDraft, toggleWeeklyStore, assignedStoreIds, setAssignedStoreIds, hasFieldOperations, stores, storesLoading, storesError, saving, onGenerateCode, onSave }: any) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="saas-page max-h-[92vh] max-w-4xl overflow-y-auto border-white/10 bg-[#0b1728] text-slate-100 [&_.bg-slate-50]:bg-white/5 [&_.border-slate-200]:border-white/10 [&_.text-slate-500]:text-slate-400 [&_.text-slate-700]:text-slate-300 [&_.text-slate-900]:text-white">
@@ -329,6 +337,23 @@ function PromoterEditDialog({ open, onOpenChange, account, promoterName, setProm
 
           <section className="space-y-3">
             <div>
+          <section className="space-y-4 rounded-xl border border-slate-200 p-4">
+            <h3 className="flex items-center gap-2 font-bold text-slate-900"><Building2 className="h-4 w-4 text-teal-600" />Lojas atribuídas</h3>
+            <p className="text-sm text-slate-500">Selecione as lojas que este promotor poderá acessar na tela de fotos. A atribuição é opcional — o cadastro pode ser concluído sem lojas.</p>
+            {storesLoading ? <p className="text-sm text-slate-500">Carregando lojas...</p> : !stores.length ? <p className="text-sm text-slate-500">Nenhuma loja cadastrada ainda.</p> : (
+              <div className="grid max-h-60 gap-1 overflow-y-auto sm:grid-cols-2">
+                {stores.map((store: any) => (
+                  <label key={store.id} className="flex cursor-pointer items-start gap-2 rounded-lg p-2 text-sm text-slate-700 hover:bg-white">
+                    <input type="checkbox" className="mt-1 accent-teal-600" checked={assignedStoreIds?.includes(store.id)} onChange={(e) => {
+                      setAssignedStoreIds((prev: number[]) => e.target.checked ? [...(prev || []), store.id] : (prev || []).filter((id: number) => id !== store.id));
+                    }} />
+                    <span className="min-w-0"><span className="block font-medium">{store.name}</span><span className="text-xs text-slate-500">{store.city}{store.state ? ` — ${store.state}` : ""}</span></span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="space-y-4 rounded-xl border border-slate-200 p-4">
               <h3 className="flex items-center gap-2 font-bold text-slate-900"><CalendarDays className="h-4 w-4 text-teal-600" />Roteiro semanal fixo</h3>
               <p className="mt-1 text-sm text-slate-500">Escolha as lojas de cada dia. O roteiro do dia será exibido automaticamente no painel inicial do promotor.</p>
             </div>

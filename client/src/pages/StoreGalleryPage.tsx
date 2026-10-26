@@ -156,7 +156,8 @@ function PhotoThumb({ photoId, selected, selectMode, hasGps, time, onToggle, onE
 
 export default function StoreGalleryPage() {
   const params = useParams<{ storeId: string }>();
-  const storeId = Number(params.storeId);
+  const isNoStore = params.storeId === "none";
+  const storeId = isNoStore ? 0 : Number(params.storeId);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
@@ -176,8 +177,8 @@ export default function StoreGalleryPage() {
   const activeVisit = visits.data?.find((v: any) => v.visit?.status === "in_progress" && v.store?.id === storeId);
 
   const photos = trpc.storePhotos.listByStore.useQuery(
-    { storeId, from: from || undefined, to: to || undefined, storeClientId: typeof clientFilter === "number" ? clientFilter : undefined, withoutClient: clientFilter === "none" ? true : undefined },
-    { enabled: Number.isFinite(storeId) && storeId > 0, staleTime: 10000 },
+    { storeId: isNoStore ? undefined : storeId, from: from || undefined, to: to || undefined, storeClientId: typeof clientFilter === "number" ? clientFilter : undefined, withoutClient: clientFilter === "none" ? true : undefined },
+    { enabled: isNoStore || (Number.isFinite(storeId) && storeId > 0), staleTime: 10000 },
   );
 
   // Cache the full list (no filters) for offline viewing.
@@ -385,7 +386,7 @@ export default function StoreGalleryPage() {
           </p>
         )}
         {store && (
-          <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />
+{!isNoStore           <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />          <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} /> store           <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />          <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} /> <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />} 
         )}
 
         <section className="rounded-2xl border border-white/15 bg-slate-800/70 p-4 shadow-lg shadow-black/20">

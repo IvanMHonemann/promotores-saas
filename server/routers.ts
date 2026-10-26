@@ -19,7 +19,7 @@ import * as memberAuth from "./memberAuth";
 import * as emailService from "./email";
 import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory, listPromoterActivities } from "./audit";
 import { reverseGeocodeAddress } from "./geocoding";
-import { scopeMemberId, assertStoreAccess } from "./storeAccess";
+import { scopeMemberId, assertStoreAccess, setPromoterStoreAssignments, getPromoterStoreAssignments } from "./storeAccess";
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 import { runPersistentGemini } from "./aiGithubService";
@@ -484,10 +484,15 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "settings_change", module: "users", entityType: "user_permissions", entityId: target.id, entityLabel: target.userName, description: `Permissões de módulos atualizadas para ${target.userName}`, oldData: before.effective, newData: after.effective });
       return { success: true as const };
     }),
-    create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole })).mutation(async ({ ctx, input }) => {
+    create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole, storeIds: z.array(z.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
       try {
         await planLimits.assertUserLimit(ctx.accountId);
-        const created = await memberAuth.createCompanyUser({ ...input, companyId: ctx.accountId });
+        const { storeIds, ...userInput } = input;
+        const created = await memberAuth.createCompanyUser({ ...userInput, companyId: ctx.accountId });
+        if (input.role === "promoter" && storeIds && storeIds.length > 0) {
+          const database = await db.getDb();
+          await setPromoterStoreAssignments(database, ctx.accountId, created.accountId, storeIds);
+        }
         void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usuário criado: ${input.userName} (${input.role})`, newData: { userName: input.userName, email: input.email, role: input.role, id: created.accountId } });
         void (async () => {
           try {
@@ -521,6 +526,10 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "users", entityType: "user", entityId: input.id, entityLabel: afterUser?.userName || beforeUser?.userName || `#${input.id}`, description: `Usuário atualizado: ${afterUser?.userName || input.id}`, oldData: userDiff.oldData, newData: userDiff.newData });
       return { success: true } as const;
     }),
+    getPromoterStores: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      const database = await db.getDb();
+      return getPromoterStoreAssignments(database, ctx.accountId, input.id);
+    }),
     updatePromoterManagement: companyAdminFeatureProcedure("teamManagement").input(z.object({
       id: z.number().int().positive(),
       userName: z.string().trim().min(2).max(255),
@@ -529,6 +538,7 @@ export const appRouter = router({
       workStartTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
       workEndTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
       weeklyRoutes: z.array(z.object({ weekday: z.number().int().min(0).max(6), storeIds: z.array(z.number().int().positive()).min(1) })).max(7).optional(),
+      storeIds: z.array(z.number().int().positive()).optional(),
     })).mutation(async ({ ctx, input }) => {
       if (input.workStartTime && input.workEndTime && input.workEndTime <= input.workStartTime) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao início." });
@@ -547,6 +557,10 @@ export const appRouter = router({
           workEndTime: input.workEndTime,
           weeklyRoutes: input.weeklyRoutes,
         });
+        if (input.storeIds !== undefined) {
+          const database = await db.getDb();
+          await setPromoterStoreAssignments(database, ctx.accountId, input.id, input.storeIds);
+        }
       } catch (error: any) {
         if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail ou matrícula já está em uso." });
         if (error?.message?.includes("não pertence") || error?.message?.includes("inativas") || error?.message?.includes("programação") || error?.message?.includes("dia programado")) {
@@ -788,7 +802,7 @@ export const appRouter = router({
     stores: router({
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ search: z.string().optional() }).optional()).query(({ ctx, input }) => db.listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
       create: commercialFeatureProcedure("fieldOperations").input(z.object({ name: z.string().min(2), city: z.string().min(2), address: z.string().optional(), state: z.string().length(2).optional(), cep: z.string().optional(), code: z.string().optional(), latitude: z.number().optional(), longitude: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
-        // Todo usuário da empresa pode cadastrar lojas; a loja fica visível a quem a cadastrou (e ao administrador).
+        if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
         return db.createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
       }),
     }),

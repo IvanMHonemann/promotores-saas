@@ -293,7 +293,7 @@ export const visits = mysqlTable("visits", {
   id: int("id").autoincrement().primaryKey(),
   companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
   routeId: int("routeId").references(() => routes.id, { onDelete: "cascade" }),
-  storeId: int("storeId").notNull().references(() => stores.id, { onDelete: "restrict" }),
+  storeId: int("storeId").references(() => stores.id, { onDelete: "set null" }),
   promoterId: int("promoterId").notNull().references(() => memberAccounts.id, { onDelete: "restrict" }),
   plannedStart: timestamp("plannedStart"),
   plannedEnd: timestamp("plannedEnd"),
@@ -590,7 +590,7 @@ export type InsertSystemSetting = typeof systemSettings.$inferInsert;
 export const storePhotos = mysqlTable("store_photos", {
   id: int("id").autoincrement().primaryKey(),
   companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
-  storeId: int("storeId").notNull().references(() => stores.id, { onDelete: "restrict" }),
+  storeId: int("storeId").references(() => stores.id, { onDelete: "set null" }),
   promoterId: int("promoterId").notNull().references(() => memberAccounts.id, { onDelete: "restrict" }),
   visitId: int("visitId").references(() => visits.id, { onDelete: "set null" }),
   capturedAt: timestamp("capturedAt").notNull(),

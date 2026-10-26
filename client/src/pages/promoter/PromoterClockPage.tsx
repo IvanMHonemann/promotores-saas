@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, CalendarDays, CheckCircle2, MapPin, Plus, Send, ShieldCheck } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, MapPin, Plus, Send, ShieldCheck, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,7 @@ export default function PromoterClockPage() {
   const [correctTime, setCorrectTime] = useState("");
   const [justification, setJustification] = useState("");
   const [missingTimes, setMissingTimes] = useState<Partial<Record<EventType, string>>>({});
+  const [hideMissingAlert, setHideMissingAlert] = useState(false);
   const utils = trpc.useUtils();
 
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 100, date: selectedDate });
@@ -144,14 +145,22 @@ export default function PromoterClockPage() {
                   className="h-10 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100"
                 />
               </div>
-              {missingPunch.data && (
-                <div className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4">
+              {missingPunch.data && !hideMissingAlert && (
+                <div className="relative mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 pr-14">
                   <p className="font-bold text-amber-100">Batida faltante detectada</p>
                   <p className="mt-1 text-sm text-amber-200">
                     Última marcação: {missingPunch.data.lastLabel} em {new Date(missingPunch.data.lastTime).toLocaleString("pt-BR")}.
                     Falta registrar: {missingPunch.data.missing}.
                   </p>
                   <a href="#correcoes" className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Corrigir agora</a>
+                  <button
+                    type="button"
+                    onClick={() => setHideMissingAlert(true)}
+                    aria-label="Fechar alerta"
+                    className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-lg border border-amber-200/40 bg-amber-400/20 text-amber-50 transition hover:bg-amber-400/40"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
                 </div>
               )}
               <div className="mt-4 space-y-3">

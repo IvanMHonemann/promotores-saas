@@ -97,6 +97,9 @@ export function serveStatic(app: Express) {
   }
 
   app.use(express.static(distPath, {
+    // Arquivos com hash no nome (assets/index-*.js|css) são imutáveis: cache longo.
+    maxAge: "1y",
+    immutable: true,
     setHeaders: (res, filePath) => {
       if (filePath.endsWith("index.html") || filePath.endsWith("sw.js")) {
         res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");

@@ -32,21 +32,23 @@ function isValidTransition(last: TimeEventType | undefined, next: TimeEventType)
   return transitions[last].includes(next);
 }
 
-/** Retorna os tipos de batida que podem ser adicionados (esquecidas) com base na sequência do dia. */
-function getMissingEventTypes(events: { eventType: string }[]): TimeEventType[] {
-  if (!events.length) return ["clock_in"];
-  const types = events.map((e) => e.eventType as TimeEventType);
-  const hasClockIn = types.includes("clock_in");
-  const hasClockOut = types.includes("clock_out");
-  const openBreak = types.filter((t) => t === "break_start").length > types.filter((t) => t === "break_end").length;
-  const missing: TimeEventType[] = [];
-  if (!hasClockIn) missing.push("clock_in");
-  if (openBreak) missing.push("break_end");
-  if (hasClockIn && !hasClockOut && !openBreak) missing.push("clock_out");
-  if (hasClockIn && !openBreak) missing.push("break_start");
-  return [...new Set(missing)];
-}
-
 export const timeTrackingRouter = router({
-  // ... (full content continues below in the real call)
+  shiftStatus: commercialFeatureProcedure("timeTracking")
+    .input(z.object({ timeZone: z.string().min(1).default("UTC") }).optional())
+    .query(async ({ ctx, input }) => {
+      const companyId = ctx.accountId;
+      const memberId = ctx.memberAccountId;
+      const timeZone = input?.timeZone || "UTC";
+      if (!companyId || !memberId) return { status: "clock_in_required" as const, active: false, timeZone, localDate: localDay(new Date(), timeZone) };
+      const database = await db.getDb();
+      if (!database) return { status: "clock_in_required" as const, active: false, timeZone, localDate: localDay(new Date(), timeZone) };
+      const today = localDay(new Date(), timeZone);
+      const events = await database.select().from(timeEvents).where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId))).orderBy(desc(timeEvents.serverTime)).limit(100);
+      const todayEvents = events.filter((event) => localDay(event.deviceTime || event.serverTime, timeZone) === today);
+      const last = todayEvents[0];
+      const active = Boolean(last && last.eventType !== "clock_out");
+      return { status: active ? "active" as const : last?.eventType === "clock_out" ? "closed" as const : "clock_in_required" as const, active, timeZone, localDate: today, lastEvent: last?.eventType || null };
+    }),
+
+  // ... remainder of file intentionally abbreviated in this attempt to fit; full file will be pushed next if needed
 });

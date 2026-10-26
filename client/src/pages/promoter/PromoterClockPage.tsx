@@ -19,78 +19,88 @@ const labels: Record<EventType, string> = {
   clock_out: "Saída",
 };
 
-const allTypes: EventType[] = ["clock_in", "break_start", "break_end", "clock_out"];
+const order: EventType[] = ["clock_in", "break_start", "break_end", "clock_out"];
 
 export default function PromoterClockPage() {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const today = localDayKey(new Date(), timeZone);
   const [selectedDate, setSelectedDate] = useState(today);
-  const [mode, setMode] = useState<"correct" | "add">("correct");
+  const [mode, setMode] = useState<"add" | "correct">("add");
   const [selectedEventId, setSelectedEventId] = useState("");
-  const [selectedMissingType, setSelectedMissingType] = useState<EventType | "">("");
-  const [requestedTime, setRequestedTime] = useState("");
+  const [correctTime, setCorrectTime] = useState("");
   const [justification, setJustification] = useState("");
+  const [missingTimes, setMissingTimes] = useState<Partial<Record<EventType, string>>>({});
   const utils = trpc.useUtils();
+
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 100, date: selectedDate });
   const missingPunch = trpc.timeTracking.myMissingPunch.useQuery(undefined, { staleTime: 60000 });
   const corrections = trpc.timeTracking.myCorrections.useQuery();
 
-  const missingTypes = useMemo(() => {
-    const events = history.data ?? [];
-    if (!events.length) return ["clock_in"] as EventType[];
-    const types = events.map((e) => e.eventType as EventType);
-    const hasIn = types.includes("clock_in");
-    const hasOut = types.includes("clock_out");
-    const starts = types.filter((t) => t === "break_start").length;
-    const ends = types.filter((t) => t === "break_end").length;
-    const openBreak = starts > ends;
+  const events = history.data ?? [];
+  const typesPresent = new Set(events.map((e) => e.eventType as EventType));
+
+  const missingList = useMemo(() => {
     const result: EventType[] = [];
-    if (!hasIn) result.push("clock_in");
-    if (openBreak) result.push("break_end");
-    if (hasIn && !hasOut && !openBreak) result.push("clock_out");
-    if (hasIn && !openBreak && !result.includes("break_start")) result.push("break_start");
-    if (hasIn && openBreak && !result.includes("break_end")) result.push("break_end");
-    return result.length ? result : allTypes;
-  }, [history.data]);
+    if (!typesPresent.has("clock_in")) result.push("clock_in");
+    const starts = events.filter((e) => e.eventType === "break_start").length;
+    const ends = events.filter((e) => e.eventType === "break_end").length;
+    if (starts > ends) result.push("break_end");
+    else if (typesPresent.has("clock_in") && !typesPresent.has("break_start")) result.push("break_start");
+    if (typesPresent.has("clock_in") && !typesPresent.has("clock_out") && starts <= ends) result.push("clock_out");
+    if (typesPresent.has("clock_in") && !typesPresent.has("break_start") && !result.includes("break_start")) result.push("break_start");
+    if (typesPresent.has("clock_in") && !typesPresent.has("break_end") && !result.includes("break_end")) result.push("break_end");
+    return [...new Set(result)].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  }, [events, typesPresent]);
 
   const correction = trpc.timeTracking.requestCorrection.useMutation({
     onSuccess: () => {
-      toast.success("Pedido enviado ao administrador da empresa");
+      toast.success("Pedido enviado ao administrador");
       setSelectedEventId("");
-      setSelectedMissingType("");
-      setRequestedTime("");
+      setCorrectTime("");
       setJustification("");
+      setMissingTimes({});
       void utils.timeTracking.myCorrections.invalidate();
       void utils.timeTracking.myHistory.invalidate();
     },
     onError: (error) => toast.error(error.message || "Não foi possível enviar o pedido"),
   });
 
-  const submitCorrection = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!requestedTime || justification.trim().length < 10) return;
-    const isoTime = new Date(`${selectedDate}T${requestedTime}:00`).toISOString();
-
-    if (mode === "correct") {
-      const eventId = Number(selectedEventId);
-      if (!eventId) return;
-      const original = history.data?.find((item) => item.id === eventId);
-      if (!original) return;
-      correction.mutate({
-        timeEventId: eventId,
-        requestedType: original.eventType as EventType,
-        requestedTime: isoTime,
-        justification: justification.trim(),
-      });
-    } else {
-      if (!selectedMissingType) return;
-      correction.mutate({
+  const submitAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const reason = justification.trim();
+    if (reason.length < 5) {
+      toast.error("Escreva pelo menos 5 caracteres na justificativa");
+      return;
+    }
+    const toSend = missingList.filter((t) => missingTimes[t]);
+    if (!toSend.length) {
+      toast.error("Informe o horário de pelo menos uma batida faltante");
+      return;
+    }
+    for (const type of toSend) {
+      const time = missingTimes[type]!;
+      await correction.mutateAsync({
         timeEventId: null,
-        requestedType: selectedMissingType,
-        requestedTime: isoTime,
-        justification: justification.trim(),
+        requestedType: type,
+        requestedTime: new Date(`${selectedDate}T${time}:00`).toISOString(),
+        justification: reason,
       });
     }
+    toast.success(`${toSend.length} pedido(s) enviado(s)`);
+  };
+
+  const submitCorrect = (e: React.FormEvent) => {
+    e.preventDefault();
+    const eventId = Number(selectedEventId);
+    if (!eventId || !correctTime || justification.trim().length < 5) return;
+    const original = events.find((item) => item.id === eventId);
+    if (!original) return;
+    correction.mutate({
+      timeEventId: eventId,
+      requestedType: original.eventType as EventType,
+      requestedTime: new Date(`${selectedDate}T${correctTime}:00`).toISOString(),
+      justification: justification.trim(),
+    });
   };
 
   useEffect(() => {
@@ -102,7 +112,8 @@ export default function PromoterClockPage() {
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
-  const selectedEvent = history.data?.find((item) => String(item.id) === selectedEventId);
+  const selectedEvent = events.find((item) => String(item.id) === selectedEventId);
+  const canSubmitAdd = missingList.some((t) => missingTimes[t]) && justification.trim().length >= 5 && !correction.isPending;
 
   return (
     <DashboardLayout title="Cartão ponto" description="Histórico, localização e pedidos de correção.">
@@ -128,7 +139,7 @@ export default function PromoterClockPage() {
                   onChange={(event) => {
                     setSelectedDate(event.target.value);
                     setSelectedEventId("");
-                    setSelectedMissingType("");
+                    setMissingTimes({});
                   }}
                   className="h-10 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100"
                 />
@@ -140,13 +151,13 @@ export default function PromoterClockPage() {
                     Última marcação: {missingPunch.data.lastLabel} em {new Date(missingPunch.data.lastTime).toLocaleString("pt-BR")}.
                     Falta registrar: {missingPunch.data.missing}.
                   </p>
-                  <a href="#correcoes" className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Solicitar correção ou inclusão ao supervisor</a>
+                  <a href="#correcoes" className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Corrigir agora</a>
                 </div>
               )}
               <div className="mt-4 space-y-3">
                 {history.isLoading && <p className="text-sm text-slate-300">Carregando marcações...</p>}
-                {!history.isLoading && !history.data?.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-slate-300">Nenhuma marcação neste dia.</p>}
-                {history.data?.map((event) => (
+                {!history.isLoading && !events.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-slate-300">Nenhuma marcação neste dia.</p>}
+                {events.map((event) => (
                   <div key={event.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -178,110 +189,96 @@ export default function PromoterClockPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="mb-4 flex gap-2">
-                <Button type="button" variant={mode === "correct" ? "default" : "outline"} size="sm" onClick={() => setMode("correct")}>
-                  Corrigir batida existente
+              <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button type="button" variant={mode === "add" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMode("add")}>
+                  <Plus className="mr-1 h-4 w-4" /> Incluir batidas esquecidas
                 </Button>
-                <Button type="button" variant={mode === "add" ? "default" : "outline"} size="sm" onClick={() => setMode("add")}>
-                  <Plus className="mr-1 h-4 w-4" /> Incluir batida esquecida
+                <Button type="button" variant={mode === "correct" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMode("correct")}>
+                  Corrigir batida existente
                 </Button>
               </div>
 
-              <form onSubmit={submitCorrection} className="space-y-4">
-                {mode === "correct" ? (
-                  <>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="space-y-2 text-sm font-semibold text-slate-200">
-                        Marcação
-                        <input
-                          required
-                          readOnly
-                          value={selectedEvent ? `${labels[selectedEvent.eventType as EventType]} · ${new Date(selectedEvent.deviceTime || selectedEvent.serverTime).toLocaleTimeString("pt-BR")}` : ""}
-                          className="mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 font-normal text-slate-100 placeholder:text-slate-400"
-                          placeholder="Toque em uma marcação abaixo"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm font-semibold text-slate-200">
-                        Horário correto
-                        <input
-                          required
-                          type="time"
-                          value={requestedTime}
-                          onChange={(event) => setRequestedTime(event.target.value)}
-                          className="mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 font-normal text-slate-100"
-                        />
-                      </label>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {history.data?.map((event) => (
-                        <Button
-                          key={event.id}
-                          type="button"
-                          variant={selectedEventId === String(event.id) ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setSelectedEventId(String(event.id))}
-                        >
-                          {labels[event.eventType as EventType]} · {new Date(event.deviceTime || event.serverTime).toLocaleTimeString("pt-BR")}
-                        </Button>
+              {mode === "add" ? (
+                <form onSubmit={submitAdd} className="space-y-4">
+                  {missingList.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Nenhuma batida faltante detectada neste dia.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-sm font-semibold text-slate-200">Batidas faltantes detectadas — informe o horário de cada uma:</p>
+                      {missingList.map((type) => (
+                        <div key={type} className="flex flex-col gap-2 rounded-xl border border-white/10 bg-slate-950/40 p-3 sm:flex-row sm:items-center">
+                          <span className="min-w-0 flex-1 text-sm font-semibold text-slate-100">{labels[type]}</span>
+                          <input
+                            type="time"
+                            value={missingTimes[type] || ""}
+                            onChange={(e) => setMissingTimes((prev) => ({ ...prev, [type]: e.target.value }))}
+                            className="h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100 sm:w-36"
+                          />
+                        </div>
                       ))}
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="space-y-2 text-sm font-semibold text-slate-200">
-                        Tipo da batida faltante
-                        <select
-                          required
-                          value={selectedMissingType}
-                          onChange={(e) => setSelectedMissingType(e.target.value as EventType)}
-                          className="mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 font-normal text-slate-100"
-                        >
-                          <option value="">Selecione...</option>
-                          {missingTypes.map((t) => (
-                            <option key={t} value={t}>{labels[t]}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="space-y-2 text-sm font-semibold text-slate-200">
-                        Horário da batida
-                        <input
-                          required
-                          type="time"
-                          value={requestedTime}
-                          onChange={(event) => setRequestedTime(event.target.value)}
-                          className="mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 font-normal text-slate-100"
-                        />
-                      </label>
-                    </div>
-                    <p className="text-xs text-slate-400">
-                      Batidas sugeridas com base no dia selecionado. O supervisor irá analisar e aprovar a inclusão.
-                    </p>
-                  </>
-                )}
+                  )}
 
-                <textarea
-                  required
-                  minLength={10}
-                  value={justification}
-                  onChange={(event) => setJustification(event.target.value)}
-                  placeholder={mode === "add" ? "Explique por que a batida foi esquecida (mínimo de 10 caracteres)" : "Explique o motivo da correção (mínimo de 10 caracteres)"}
-                  className="min-h-24 w-full rounded-xl border border-white/15 bg-slate-950/60 p-3 text-sm text-slate-100 placeholder:text-slate-400"
-                />
-                <Button
-                  type="submit"
-                  disabled={
-                    correction.isPending ||
-                    !requestedTime ||
-                    justification.trim().length < 10 ||
-                    (mode === "correct" && !selectedEventId) ||
-                    (mode === "add" && !selectedMissingType)
-                  }
-                  className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:opacity-100 disabled:bg-slate-700 disabled:text-slate-400"
-                >
-                  <Send className="mr-2 h-4 w-4" /> {correction.isPending ? "Enviando..." : mode === "add" ? "Enviar pedido de inclusão" : "Enviar pedido ao administrador"}
-                </Button>
-              </form>
+                  <textarea
+                    required
+                    minLength={5}
+                    value={justification}
+                    onChange={(e) => setJustification(e.target.value)}
+                    placeholder="Justificativa (mínimo 5 caracteres). Ex: Esqueci de bater o intervalo"
+                    className="min-h-20 w-full rounded-xl border border-white/15 bg-slate-950/60 p-3 text-sm text-slate-100 placeholder:text-slate-400"
+                  />
+                  <p className="text-xs text-slate-400">{justification.trim().length}/5 caracteres</p>
+
+                  <Button
+                    type="submit"
+                    disabled={!canSubmitAdd}
+                    className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400"
+                  >
+                    <Send className="mr-2 h-4 w-4" /> {correction.isPending ? "Enviando..." : "Enviar pedido de inclusão"}
+                  </Button>
+                </form>
+              ) : (
+                <form onSubmit={submitCorrect} className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    {events.map((event) => (
+                      <Button
+                        key={event.id}
+                        type="button"
+                        variant={selectedEventId === String(event.id) ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setSelectedEventId(String(event.id))}
+                      >
+                        {labels[event.eventType as EventType]} · {new Date(event.deviceTime || event.serverTime).toLocaleTimeString("pt-BR")}
+                      </Button>
+                    ))}
+                  </div>
+                  <label className="block space-y-2 text-sm font-semibold text-slate-200">
+                    Horário correto
+                    <input
+                      required
+                      type="time"
+                      value={correctTime}
+                      onChange={(e) => setCorrectTime(e.target.value)}
+                      className="h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 font-normal text-slate-100"
+                    />
+                  </label>
+                  <textarea
+                    required
+                    minLength={5}
+                    value={justification}
+                    onChange={(e) => setJustification(e.target.value)}
+                    placeholder="Motivo da correção (mínimo 5 caracteres)"
+                    className="min-h-20 w-full rounded-xl border border-white/15 bg-slate-950/60 p-3 text-sm text-slate-100 placeholder:text-slate-400"
+                  />
+                  <Button
+                    type="submit"
+                    disabled={correction.isPending || !selectedEventId || !correctTime || justification.trim().length < 5}
+                    className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400"
+                  >
+                    <Send className="mr-2 h-4 w-4" /> {correction.isPending ? "Enviando..." : "Enviar pedido de correção"}
+                  </Button>
+                </form>
+              )}
 
               <div className="mt-6 border-t border-white/10 pt-4">
                 <p className="mb-3 font-bold text-slate-100">Meus pedidos recentes</p>

@@ -8,6 +8,18 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// shared/const.ts
+var MEMBER_COOKIE_NAME, ONE_YEAR_MS, UNAUTHED_ERR_MSG, NOT_ADMIN_ERR_MSG;
+var init_const = __esm({
+  "shared/const.ts"() {
+    "use strict";
+    MEMBER_COOKIE_NAME = "member_session_id";
+    ONE_YEAR_MS = 1e3 * 60 * 60 * 24 * 365;
+    UNAUTHED_ERR_MSG = "Please login (10001)";
+    NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
+  }
+});
+
 // drizzle/schema.original.ts
 import { boolean, date, decimal, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 var users, companies, platformAdmins, memberAccounts, memberSessions, platformSessions, clients, extinguishers, serviceOrders, serviceOrderItems, trashItems, systemSettings, subscriptionPlans, companySubscriptions, payments, paymentEvents, auditLogs;
@@ -180,7 +192,10 @@ var init_schema_original = __esm({
       label: varchar("label", { length: 255 }).notNull(),
       snapshot: text("snapshot").notNull(),
       deletedAt: timestamp("deletedAt").defaultNow().notNull(),
-      expiresAt: timestamp("expiresAt").notNull()
+      expiresAt: timestamp("expiresAt").notNull(),
+      deletedByMemberId: int("deletedByMemberId"),
+      deletedByName: varchar("deletedByName", { length: 255 }),
+      ownerMemberId: int("ownerMemberId")
     }, (table) => ({
       accountExpiryIdx: index("trash_items_account_expiry_idx").on(table.accountId, table.expiresAt),
       accountDeletedIdx: index("trash_items_account_deleted_idx").on(table.accountId, table.deletedAt)
@@ -325,6 +340,7 @@ __export(schema_exports, {
   promoterProfiles: () => promoterProfiles,
   retailChains: () => retailChains,
   routes: () => routes,
+  storePhotos: () => storePhotos,
   stores: () => stores,
   subscriptionPlanFeatures: () => subscriptionPlanFeatures,
   subscriptionPlans: () => subscriptionPlans2,
@@ -333,11 +349,12 @@ __export(schema_exports, {
   timeCorrectionRequests: () => timeCorrectionRequests,
   timeEvents: () => timeEvents,
   users: () => users2,
+  visitPhotos: () => visitPhotos,
   visits: () => visits,
   weeklyRouteSchedules: () => weeklyRouteSchedules
 });
 import { boolean as boolean2, date as date2, decimal as decimal2, index as index2, int as int2, json, mysqlEnum as mysqlEnum2, mysqlTable as mysqlTable2, text as text2, timestamp as timestamp2, uniqueIndex as uniqueIndex2, varchar as varchar2, double } from "drizzle-orm/mysql-core";
-var users2, companies2, platformAdmins2, memberAccounts2, promoterProfiles, memberSessions2, platformSessions2, clients2, brands, retailChains, stores, teams, routes, weeklyRouteSchedules, inventoryProducts, visits, timeEvents, timeCorrectionRequests, checklists, checklistQuestions, checklistResponses, evidences, auditLogs2, subscriptionPlans2, subscriptionPlanFeatures, companyFeatureOverrides, memberFeaturePermissions, companySubscriptions2, systemSettings2;
+var users2, companies2, platformAdmins2, memberAccounts2, promoterProfiles, memberSessions2, platformSessions2, clients2, brands, retailChains, stores, teams, routes, weeklyRouteSchedules, inventoryProducts, visits, timeEvents, timeCorrectionRequests, checklists, checklistQuestions, checklistResponses, evidences, auditLogs2, subscriptionPlans2, subscriptionPlanFeatures, companyFeatureOverrides, memberFeaturePermissions, companySubscriptions2, systemSettings2, storePhotos, visitPhotos;
 var init_schema = __esm({
   "drizzle/schema.ts"() {
     "use strict";
@@ -550,6 +567,7 @@ var init_schema = __esm({
       quantity: int2("quantity").notNull().default(0),
       expirationDate: date2("expirationDate").notNull(),
       price: decimal2("price", { precision: 12, scale: 2 }).notNull().default("0.00"),
+      storeId: int2("storeId"),
       createdByMemberId: int2("createdByMemberId"),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
@@ -562,7 +580,7 @@ var init_schema = __esm({
       id: int2("id").autoincrement().primaryKey(),
       companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
       routeId: int2("routeId").references(() => routes.id, { onDelete: "cascade" }),
-      storeId: int2("storeId").notNull().references(() => stores.id, { onDelete: "restrict" }),
+      storeId: int2("storeId").references(() => stores.id, { onDelete: "set null" }),
       promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
       plannedStart: timestamp2("plannedStart"),
       plannedEnd: timestamp2("plannedEnd"),
@@ -788,6 +806,174 @@ var init_schema = __esm({
       accountKeyUnique: uniqueIndex2("system_settings_company_key_unique").on(table.companyId, table.settingKey),
       companyIdx: index2("system_settings_company_idx").on(table.companyId)
     }));
+    storePhotos = mysqlTable2("store_photos", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull().references(() => companies2.id, { onDelete: "restrict" }),
+      storeId: int2("storeId").references(() => stores.id, { onDelete: "set null" }),
+      promoterId: int2("promoterId").notNull().references(() => memberAccounts2.id, { onDelete: "restrict" }),
+      visitId: int2("visitId").references(() => visits.id, { onDelete: "set null" }),
+      capturedAt: timestamp2("capturedAt").notNull(),
+      latitude: double("latitude"),
+      longitude: double("longitude"),
+      accuracy: double("accuracy"),
+      locationStatus: mysqlEnum2("locationStatus", ["success", "permission_denied", "unavailable", "timeout", "error"]).default("unavailable"),
+      fileKey: varchar2("fileKey", { length: 512 }).notNull(),
+      thumbnailKey: varchar2("thumbnailKey", { length: 512 }),
+      mimeType: varchar2("mimeType", { length: 100 }),
+      fileSize: int2("fileSize"),
+      idempotencyKey: varchar2("idempotencyKey", { length: 64 }),
+      uploadStatus: mysqlEnum2("uploadStatus", ["pending", "uploaded", "failed"]).default("pending").notNull(),
+      expiresAt: timestamp2("expiresAt").notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull(),
+      updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
+    }, (table) => ({
+      companyStoreDateIdx: index2("store_photos_company_store_date_idx").on(table.companyId, table.storeId, table.capturedAt),
+      companyPromoterIdx: index2("store_photos_company_promoter_idx").on(table.companyId, table.promoterId),
+      expiresIdx: index2("store_photos_expires_idx").on(table.expiresAt),
+      companyIdempotencyUnique: uniqueIndex2("store_photos_company_idempotency_unique").on(table.companyId, table.idempotencyKey)
+    }));
+    visitPhotos = mysqlTable2("visit_photos", {
+      id: int2("id").autoincrement().primaryKey(),
+      companyId: int2("companyId").notNull(),
+      visitId: int2("visitId").notNull(),
+      type: mysqlEnum2("type", ["checkin", "checkout"]).notNull(),
+      fileKey: varchar2("fileKey", { length: 512 }).notNull(),
+      latitude: double("latitude"),
+      longitude: double("longitude"),
+      address: varchar2("address", { length: 255 }),
+      expiresAt: timestamp2("expiresAt").notNull(),
+      createdAt: timestamp2("createdAt").defaultNow().notNull()
+    }, (table) => ({
+      visitIdx: index2("visit_photos_visit_idx").on(table.visitId),
+      expiresIdx: index2("visit_photos_expires_idx").on(table.expiresAt)
+    }));
+  }
+});
+
+// server/storeAccess.ts
+import { and, eq, sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+function isCompanyAdmin(ctx) {
+  return ctx.user.role === "company_admin";
+}
+function isSupervisor(ctx) {
+  return ctx.user.role === "supervisor";
+}
+function hasFullStoreAccess(ctx) {
+  return isCompanyAdmin(ctx) || isSupervisor(ctx);
+}
+function scopeMemberId(ctx) {
+  if (hasFullStoreAccess(ctx)) return null;
+  if (!ctx.memberAccountId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Seu usu\xE1rio n\xE3o est\xE1 vinculado a um perfil de campo." });
+  }
+  return ctx.memberAccountId;
+}
+function ensureStoreOwnersTable(db) {
+  if (storeOwnersReady) return storeOwnersReady;
+  storeOwnersReady = db.execute(`CREATE TABLE IF NOT EXISTS store_owners (
+      storeId int NOT NULL,
+      companyId int NOT NULL,
+      memberAccountId int NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (storeId),
+      KEY store_owners_company_member_idx (companyId, memberAccountId)
+    )`).then(() => void 0).catch((error) => {
+    storeOwnersReady = null;
+    throw error;
+  });
+  return storeOwnersReady;
+}
+function ensurePromoterStoreAssignmentsTable(db) {
+  if (promoterAssignmentsReady) return promoterAssignmentsReady;
+  promoterAssignmentsReady = db.execute(`CREATE TABLE IF NOT EXISTS promoter_store_assignments (
+      id int AUTO_INCREMENT NOT NULL,
+      companyId int NOT NULL,
+      promoterId int NOT NULL,
+      storeId int NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY promoter_store_unique (promoterId, storeId),
+      KEY promoter_store_company_promoter_idx (companyId, promoterId),
+      KEY promoter_store_company_store_idx (companyId, storeId)
+    )`).then(() => void 0).catch((error) => {
+    promoterAssignmentsReady = null;
+    throw error;
+  });
+  return promoterAssignmentsReady;
+}
+function storeAssignedToPromoter(storeIdColumn, promoterId) {
+  return sql`EXISTS (SELECT 1 FROM promoter_store_assignments psa WHERE psa.storeId = ${storeIdColumn} AND psa.promoterId = ${promoterId})`;
+}
+function storeVisibleToMember(storeIdColumn, memberId) {
+  return storeAssignedToPromoter(storeIdColumn, memberId);
+}
+async function recordStoreOwner(db, input) {
+  await ensureStoreOwnersTable(db);
+  await db.execute(sql`INSERT IGNORE INTO store_owners (storeId, companyId, memberAccountId) VALUES (${input.storeId}, ${input.companyId}, ${input.memberAccountId})`);
+}
+async function setPromoterStoreAssignments(db, companyId, promoterId, storeIds) {
+  await ensurePromoterStoreAssignmentsTable(db);
+  const unique = [...new Set(storeIds.filter((id2) => Number.isInteger(id2) && id2 > 0))];
+  await db.execute(sql`DELETE FROM promoter_store_assignments WHERE companyId = ${companyId} AND promoterId = ${promoterId}`);
+  if (unique.length === 0) return;
+  const valid = await db.execute(sql`SELECT id FROM stores WHERE companyId = ${companyId} AND active = 1 AND id IN (${sql.join(unique.map((id2) => sql`${id2}`), sql`, `)})`);
+  const validIds = (Array.isArray(valid?.[0]) ? valid[0] : Array.isArray(valid) ? valid : valid?.rows ?? []).map((r) => Number(r.id));
+  if (validIds.length !== unique.length) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Uma ou mais lojas n\xE3o pertencem a esta empresa ou est\xE3o inativas." });
+  }
+  for (const storeId of validIds) {
+    await db.execute(sql`INSERT IGNORE INTO promoter_store_assignments (companyId, promoterId, storeId) VALUES (${companyId}, ${promoterId}, ${storeId})`);
+  }
+}
+async function getPromoterStoreAssignments(db, companyId, promoterId) {
+  await ensurePromoterStoreAssignmentsTable(db);
+  const res = await db.execute(sql`SELECT storeId FROM promoter_store_assignments WHERE companyId = ${companyId} AND promoterId = ${promoterId}`);
+  const rows2 = Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [];
+  return rows2.map((r) => Number(r.storeId));
+}
+async function assertStoreAccess(db, ctx, storeId) {
+  const memberId = scopeMemberId(ctx);
+  const conditions = [eq(stores.id, storeId), eq(stores.companyId, ctx.accountId)];
+  if (memberId !== null) {
+    await ensurePromoterStoreAssignmentsTable(db);
+    conditions.push(storeAssignedToPromoter(stores.id, memberId));
+  }
+  const [store] = await db.select().from(stores).where(and(...conditions)).limit(1);
+  if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+  return store;
+}
+function assertPhotoAccess(ctx, photo) {
+  const memberId = scopeMemberId(ctx);
+  if (memberId !== null && photo.promoterId !== memberId) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+  }
+}
+var storeOwnersReady, promoterAssignmentsReady;
+var init_storeAccess = __esm({
+  "server/storeAccess.ts"() {
+    "use strict";
+    init_schema();
+    storeOwnersReady = null;
+    promoterAssignmentsReady = null;
+  }
+});
+
+// shared/expiry.ts
+function todayInZone(now = /* @__PURE__ */ new Date(), timeZone = "America/Sao_Paulo") {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  return parts;
+}
+function dayNumber(iso) {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 864e5);
+}
+function addDays(iso, days) {
+  return new Date((dayNumber(iso) + days) * 864e5).toISOString().slice(0, 10);
+}
+var init_expiry = __esm({
+  "shared/expiry.ts"() {
+    "use strict";
   }
 });
 
@@ -797,7 +983,7 @@ function resolveEntitlements(input) {
   const roleCeiling = new Set(ROLE_FEATURE_CEILING[input.role]);
   const roleDefaults = new Set(ROLE_FEATURE_DEFAULTS[input.role]);
   return Object.fromEntries(ENTITLEMENT_KEYS.map((key) => {
-    const companyEnabled = input.companyOverrides?.[key] ?? plan.has(key);
+    const companyEnabled = key === "dashboard" ? true : input.companyOverrides?.[key] ?? plan.has(key);
     const mode = input.memberOverrides?.[key] ?? "inherit";
     const requested = mode === "allow" ? true : mode === "deny" ? false : roleDefaults.has(key);
     return [key, Boolean(companyEnabled && roleCeiling.has(key) && requested)];
@@ -811,7 +997,6 @@ var init_entitlements = __esm({
       "dashboard",
       "clients",
       "pointsOfSale",
-      "serviceOrders",
       "alerts",
       "timeTracking",
       "fieldOperations",
@@ -821,16 +1006,15 @@ var init_entitlements = __esm({
       "offline"
     ];
     PLAN_FEATURES = {
-      start: ["dashboard", "clients", "pointsOfSale", "serviceOrders", "alerts"],
-      profissional: ["dashboard", "clients", "pointsOfSale", "serviceOrders", "alerts", "timeTracking", "fieldOperations", "reports", "teamManagement"],
-      empresarial: ["dashboard", "clients", "pointsOfSale", "serviceOrders", "alerts", "timeTracking", "fieldOperations", "reports", "teamManagement", "backup", "offline"]
+      start: ["dashboard", "clients", "pointsOfSale", "alerts"],
+      profissional: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "reports", "teamManagement"],
+      empresarial: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "reports", "teamManagement", "backup", "offline"]
     };
     ALL_FEATURES = [...ENTITLEMENT_KEYS];
     SUPERVISOR_CEILING = [
       "dashboard",
       "clients",
       "pointsOfSale",
-      "serviceOrders",
       "alerts",
       "timeTracking",
       "fieldOperations",
@@ -845,30 +1029,92 @@ var init_entitlements = __esm({
     };
     ROLE_FEATURE_DEFAULTS = {
       company_admin: ALL_FEATURES,
-      supervisor: ["dashboard", "clients", "pointsOfSale", "serviceOrders", "alerts", "timeTracking", "fieldOperations"],
+      supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations"],
       promoter: ["dashboard", "timeTracking", "fieldOperations"]
     };
   }
 });
 
-// server/_core/env.ts
-var ENV;
-var init_env = __esm({
-  "server/_core/env.ts"() {
+// server/storage.ts
+var storage_exports = {};
+__export(storage_exports, {
+  storageDelete: () => storageDelete,
+  storageGet: () => storageGet,
+  storageGetSignedUrl: () => storageGetSignedUrl,
+  storagePut: () => storagePut,
+  storageRead: () => storageRead
+});
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import crypto from "node:crypto";
+function normalizeKey(relKey) {
+  return relKey.replace(/^\/+/, "");
+}
+function appendHashSuffix(relKey) {
+  const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  const lastDot = relKey.lastIndexOf(".");
+  if (lastDot === -1) return `${relKey}_${hash}`;
+  return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
+}
+function getS3Client() {
+  const bucket = process.env.S3_BUCKET;
+  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+  if (!bucket || !accessKeyId || !secretAccessKey) return null;
+  const rawRegion = process.env.S3_REGION || "us-east-1";
+  const region = rawRegion === "auto" ? "us-east-1" : rawRegion;
+  const endpoint = process.env.S3_ENDPOINT || void 0;
+  const client = new S3Client({
+    region,
+    endpoint,
+    forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true" || Boolean(endpoint && endpoint.includes("r2.cloudflarestorage.com")),
+    credentials: { accessKeyId, secretAccessKey }
+  });
+  return { bucket, client, publicBaseUrl: process.env.S3_PUBLIC_BASE_URL?.replace(/\/+$/, "") };
+}
+async function storagePut(relKey, data, contentType = "application/octet-stream") {
+  const key = appendHashSuffix(normalizeKey(relKey));
+  const s3 = getS3Client();
+  if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
+  const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  await s3.client.send(new PutObjectCommand({ Bucket: s3.bucket, Key: key, Body: body, ContentType: contentType }));
+  const url = s3.publicBaseUrl ? `${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}` : await getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
+  return { key, url };
+}
+async function storageGet(relKey) {
+  const key = normalizeKey(relKey);
+  return { key, url: await storageGetSignedUrl(key) };
+}
+async function storageGetSignedUrl(relKey) {
+  const key = normalizeKey(relKey);
+  const s3 = getS3Client();
+  if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
+  if (s3.publicBaseUrl) return `${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  return getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
+}
+async function storageRead(relKey) {
+  const key = normalizeKey(relKey);
+  const s3 = getS3Client();
+  if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
+  const result = await s3.client.send(new GetObjectCommand({ Bucket: s3.bucket, Key: key }));
+  if (!result.Body) throw new Error("Storage returned an empty image.");
+  const bytes = await result.Body.transformToByteArray();
+  return { data: Buffer.from(bytes), contentType: result.ContentType };
+}
+async function storageDelete(relKey) {
+  const key = normalizeKey(relKey);
+  const s3 = getS3Client();
+  if (!s3) return false;
+  try {
+    await s3.client.send(new DeleteObjectCommand({ Bucket: s3.bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+var init_storage = __esm({
+  "server/storage.ts"() {
     "use strict";
-    ENV = {
-      cookieSecret: process.env.JWT_SECRET ?? "",
-      databaseUrl: process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL ?? "",
-      isProduction: process.env.NODE_ENV === "production",
-      scheduleSecret: process.env.SCHEDULE_SECRET ?? "",
-      alertWebhookUrl: process.env.ALERT_WEBHOOK_URL ?? "",
-      asaasEnvironment: process.env.ASAAS_ENVIRONMENT ?? "mock",
-      asaasApiUrl: process.env.ASAAS_API_URL ?? "https://api.asaas.com/v3",
-      resendApiKey: process.env.RESEND_API_KEY ?? "",
-      emailFrom: process.env.EMAIL_FROM ?? "Extinfy <onboarding@resend.dev>",
-      adminNotificationEmail: process.env.ADMIN_NOTIFICATION_EMAIL ?? "ivan.honemann@gmail.com",
-      appPublicUrl: process.env.APP_PUBLIC_URL ?? "https://gestao-de-extintores-teste.vercel.app"
-    };
   }
 });
 
@@ -876,59 +1122,31 @@ var init_env = __esm({
 var db_exports = {};
 __export(db_exports, {
   applyMockCheckout: () => applyMockCheckout,
-  backfillExtinguisherPublicTokens: () => backfillExtinguisherPublicTokens,
-  buildExtinguisherPublicUrl: () => buildExtinguisherPublicUrl,
   cleanupExpiredData: () => cleanupExpiredData,
-  createClient: () => createClient,
   createCompany: () => createCompany,
   createCompanySubscription: () => createCompanySubscription,
-  createExtinguisher: () => createExtinguisher,
   createInventoryProduct: () => createInventoryProduct,
   createOperationalRoute: () => createOperationalRoute,
   createOperationalRouteWithVisits: () => createOperationalRouteWithVisits,
   createOperationalStore: () => createOperationalStore,
   createPaymentRecord: () => createPaymentRecord,
-  createServiceOrder: () => createServiceOrder,
   createSubscriptionPlan: () => createSubscriptionPlan,
-  deleteClient: () => deleteClient,
-  deleteExtinguisher: () => deleteExtinguisher,
   deleteInventoryProduct: () => deleteInventoryProduct,
   deleteInventoryProducts: () => deleteInventoryProducts,
-  deleteServiceOrder: () => deleteServiceOrder,
-  ensureExtinguisherPublicToken: () => ensureExtinguisherPublicToken,
+  deleteOperationalRoute: () => deleteOperationalRoute,
+  ensureInventoryProductsSchema: () => ensureInventoryProductsSchema,
   ensureOwnerScopeColumns: () => ensureOwnerScopeColumns,
   ensureSeedPlans: () => ensureSeedPlans,
+  ensureTrashTable: () => ensureTrashTable,
   findPaymentEventByEventId: () => findPaymentEventByEventId,
-  generateExtinguisherPublicToken: () => generateExtinguisherPublicToken,
-  getClientById: () => getClientById,
-  getClients: () => getClients,
-  getClientsPage: () => getClientsPage,
   getCompanyById: () => getCompanyById,
   getCompanyFeatureOverrides: () => getCompanyFeatureOverrides,
-  getDashboardStats: () => getDashboardStats,
   getDb: () => getDb,
-  getDistinctCities: () => getDistinctCities,
-  getExpiringExtinguishers: () => getExpiringExtinguishers,
-  getExpiringExtinguishersPage: () => getExpiringExtinguishersPage,
   getExpiringInventoryProducts: () => getExpiringInventoryProducts,
-  getExtinguisherById: () => getExtinguisherById,
-  getExtinguishers: () => getExtinguishers,
-  getExtinguishersByClient: () => getExtinguishersByClient,
-  getExtinguishersPage: () => getExtinguishersPage,
+  getInventoryProduct: () => getInventoryProduct,
   getLatestCompanySubscription: () => getLatestCompanySubscription,
   getMemberFeatureModes: () => getMemberFeatureModes,
-  getNextOrderNumber: () => getNextOrderNumber,
-  getOfflineSnapshot: () => getOfflineSnapshot,
-  getPlatformClients: () => getPlatformClients,
-  getPlatformDashboardStats: () => getPlatformDashboardStats,
-  getPlatformExtinguishers: () => getPlatformExtinguishers,
-  getPlatformOrders: () => getPlatformOrders,
   getPool: () => getPool,
-  getPublicExtinguisherByToken: () => getPublicExtinguisherByToken,
-  getServiceOrderById: () => getServiceOrderById,
-  getServiceOrderHistory: () => getServiceOrderHistory,
-  getServiceOrders: () => getServiceOrders,
-  getServiceOrdersPage: () => getServiceOrdersPage,
   getSetting: () => getSetting,
   getSubscriptionPlanById: () => getSubscriptionPlanById,
   getSubscriptionStats: () => getSubscriptionStats,
@@ -954,29 +1172,19 @@ __export(db_exports, {
   restoreTrashItem: () => restoreTrashItem,
   saveWeeklyRouteSchedule: () => saveWeeklyRouteSchedule,
   setSetting: () => setSetting,
-  updateClient: () => updateClient,
   updateCompany: () => updateCompany,
   updateCompanySubscription: () => updateCompanySubscription,
   updateCompanySubscriptionFields: () => updateCompanySubscriptionFields,
-  updateExtinguisher: () => updateExtinguisher,
   updateInventoryProduct: () => updateInventoryProduct,
+  updateOperationalRoute: () => updateOperationalRoute,
   updateOperationalVisit: () => updateOperationalVisit,
   updatePromoterManagement: () => updatePromoterManagement,
-  updateServiceOrder: () => updateServiceOrder,
   updateSubscriptionPlan: () => updateSubscriptionPlan,
   upsertUser: () => upsertUser
 });
-import { and, desc, eq, inArray, isNull, like, or, sql } from "drizzle-orm";
+import { and as and2, desc, eq as eq2, inArray, isNull, like, or, sql as sql2 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
-import { nanoid } from "nanoid";
-function generateExtinguisherPublicToken() {
-  return nanoid(21);
-}
-function buildExtinguisherPublicUrl(token) {
-  const base = (ENV.appPublicUrl || "").replace(/\/$/, "");
-  return `${base}/e/${token}`;
-}
 function monitoredPool(pool) {
   const slowQueryMs = Number(process.env.DB_SLOW_QUERY_MS || 1e3);
   return new Proxy(pool, {
@@ -1001,18 +1209,23 @@ async function getPool() {
 }
 async function ensureOwnerScopeColumns() {
   if (ownerScopeReady) return;
-  const pool = await getPool();
-  if (!pool) return;
-  try {
-    await pool.query("ALTER TABLE `clients` ADD COLUMN `createdByUserId` int NULL").catch(() => void 0);
-    await pool.query("ALTER TABLE `service_orders` ADD COLUMN `createdByUserId` int NULL").catch(() => void 0);
-    await pool.query("ALTER TABLE `extinguishers` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => void 0);
-    await pool.query("ALTER TABLE `clients` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => void 0);
-    ownerScopeReady = true;
-  } catch (err) {
-    console.warn("[db] ensureOwnerScopeColumns", err);
-    ownerScopeReady = true;
-  }
+  if (ownerScopePromise) return ownerScopePromise;
+  ownerScopePromise = (async () => {
+    const pool = await getPool();
+    if (!pool) return;
+    try {
+      await pool.query("ALTER TABLE `clients` ADD COLUMN `createdByUserId` int NULL").catch(() => void 0);
+      await pool.query("ALTER TABLE `service_orders` ADD COLUMN `createdByUserId` int NULL").catch(() => void 0);
+      await pool.query("ALTER TABLE `extinguishers` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => void 0);
+      await pool.query("ALTER TABLE `clients` ADD COLUMN `stockQuantity` int NOT NULL DEFAULT 1").catch(() => void 0);
+    } catch (err) {
+      console.warn("[db] ensureOwnerScopeColumns", err);
+    } finally {
+      ownerScopeReady = true;
+      ownerScopePromise = null;
+    }
+  })();
+  return ownerScopePromise;
 }
 async function getDb() {
   const databaseUrl = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -1059,14 +1272,6 @@ function requireAccountId(accountId) {
   if (typeof accountId !== "number" || !Number.isInteger(accountId) || accountId <= 0) throw new Error("Tenant comercial obrigat\xF3rio");
   return accountId;
 }
-function pageArgs(page = 1, pageSize = 25) {
-  const safePageSize = Math.min(100, Math.max(1, Math.trunc(pageSize || 25)));
-  const safePage = Math.max(1, Math.trunc(page || 1));
-  return { page: safePage, pageSize: safePageSize, offset: (safePage - 1) * safePageSize };
-}
-function pageResult(items, total, page, pageSize) {
-  return { items, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
-}
 async function upsertUser(user) {
   if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
@@ -1095,7 +1300,7 @@ async function upsertUser(user) {
 async function getUserByOpenId(openId) {
   const db = await getDb();
   if (!db) return void 0;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db.select().from(users).where(eq2(users.openId, openId)).limit(1);
   return result[0];
 }
 async function listCompanies() {
@@ -1103,44 +1308,10 @@ async function listCompanies() {
   if (!db) return [];
   return await db.select().from(companies).orderBy(companies.name);
 }
-async function getPlatformDashboardStats(companyId, options = {}) {
-  const tenant = requireAccountId(companyId);
-  const db = await getDb();
-  if (!db) return { totalClients: 0, totalCities: 0, totalExtinguishers: 0, nearExpirationCount: 0, expiredCount: 0, totalOrders: 0, alertDaysConfig: 30 };
-  const daysAhead = parseInt(await getSetting("alert_days_ahead", tenant, "30"), 10) || 30;
-  const clientConditions = [eq(clients.accountId, tenant)];
-  if (options.city && options.city !== "TODAS") clientConditions.push(eq(clients.city, options.city));
-  const clientWhere = and(...clientConditions);
-  const extinguisherConditions = [eq(extinguishers.accountId, tenant), eq(clients.accountId, tenant)];
-  if (options.city && options.city !== "TODAS") extinguisherConditions.push(eq(clients.city, options.city));
-  const extinguisherWhere = and(...extinguisherConditions);
-  const orderConditions = [eq(serviceOrders.accountId, tenant), eq(clients.accountId, tenant)];
-  if (options.city && options.city !== "TODAS") orderConditions.push(eq(clients.city, options.city));
-  if (options.from) orderConditions.push(sql`${serviceOrders.orderDate} >= ${options.from}`);
-  if (options.to) orderConditions.push(sql`${serviceOrders.orderDate} <= ${options.to}`);
-  const orderWhere = and(...orderConditions);
-  const [clientCountRows, cityCountRows, extinguisherCountRows, expiredRows, nearRows, orderCountRows] = await Promise.all([
-    db.select({ total: sql`count(*)` }).from(clients).where(clientWhere),
-    db.select({ total: sql`count(distinct ${clients.city})` }).from(clients).where(clientWhere),
-    db.select({ total: sql`count(*)` }).from(extinguishers).innerJoin(clients, eq(extinguishers.clientId, clients.id)).where(extinguisherWhere),
-    db.select({ total: sql`count(*)` }).from(extinguishers).innerJoin(clients, eq(extinguishers.clientId, clients.id)).where(and(extinguisherWhere, sql`${extinguishers.expirationDate} < CURRENT_DATE()`)),
-    db.select({ total: sql`count(*)` }).from(extinguishers).innerJoin(clients, eq(extinguishers.clientId, clients.id)).where(and(extinguisherWhere, sql`${extinguishers.expirationDate} >= CURRENT_DATE() AND ${extinguishers.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${daysAhead} DAY)`)),
-    db.select({ total: sql`count(*)` }).from(serviceOrders).innerJoin(clients, eq(serviceOrders.clientId, clients.id)).where(orderWhere)
-  ]);
-  return {
-    totalClients: Number(clientCountRows[0]?.total || 0),
-    totalCities: Number(cityCountRows[0]?.total || 0),
-    totalExtinguishers: Number(extinguisherCountRows[0]?.total || 0),
-    nearExpirationCount: Number(nearRows[0]?.total || 0),
-    expiredCount: Number(expiredRows[0]?.total || 0),
-    totalOrders: Number(orderCountRows[0]?.total || 0),
-    alertDaysConfig: daysAhead
-  };
-}
-async function getCompanyById(id) {
+async function getCompanyById(id2) {
   const db = await getDb();
   if (!db) return void 0;
-  const result = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
+  const result = await db.select().from(companies).where(eq2(companies.id, id2)).limit(1);
   return result[0];
 }
 async function createCompany(name) {
@@ -1149,483 +1320,82 @@ async function createCompany(name) {
   const result = await db.insert(companies).values({ name: name.trim(), active: true });
   return Number(result[0].insertId);
 }
-async function updateCompany(id, data) {
+async function updateCompany(id2, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  await db.update(companies).set({ ...data, name: data.name?.trim() }).where(eq(companies.id, id));
+  await db.update(companies).set({ ...data, name: data.name?.trim() }).where(eq2(companies.id, id2));
 }
-async function getPlatformClients(companyId) {
-  const db = await getDb();
-  if (!db) return [];
-  return companyId ? await db.select().from(clients).where(eq(clients.accountId, companyId)).orderBy(desc(clients.createdAt)) : await db.select().from(clients).orderBy(desc(clients.createdAt));
-}
-async function getPlatformExtinguishers(companyId) {
-  const db = await getDb();
-  if (!db) return [];
-  return companyId ? await db.select().from(extinguishers).where(eq(extinguishers.accountId, companyId)).orderBy(extinguishers.expirationDate) : await db.select().from(extinguishers).orderBy(extinguishers.expirationDate);
-}
-async function getPlatformOrders(companyId) {
-  const db = await getDb();
-  if (!db) return [];
-  const query = db.select({ order: serviceOrders, client: clients }).from(serviceOrders).innerJoin(clients, eq(serviceOrders.clientId, clients.id));
-  return companyId ? await query.where(eq(serviceOrders.accountId, companyId)).orderBy(desc(serviceOrders.createdAt)) : await query.orderBy(desc(serviceOrders.createdAt));
-}
-async function getClientsPage(accountId, options = {}) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) return pageResult([], 0, 1, 25);
-  const { page, pageSize, offset } = pageArgs(options.page, options.pageSize);
-  const search = options.search?.trim();
-  const conditions = [eq(clients.accountId, tenant)];
-  if (options.city && options.city !== "TODAS") conditions.push(eq(clients.city, options.city));
-  if (options.ownerUserId != null) conditions.push(eq(clients.createdByUserId, options.ownerUserId));
-  if (search) conditions.push(or(like(clients.companyName, `%${search}%`), like(clients.cnpj, `%${search}%`), like(clients.contactName, `%${search}%`)));
-  const where = and(...conditions);
-  const [items, totalRows] = await Promise.all([
-    db.select().from(clients).where(where).orderBy(desc(clients.createdAt), desc(clients.id)).limit(pageSize).offset(offset),
-    db.select({ total: sql`count(*)` }).from(clients).where(where)
-  ]);
-  return pageResult(items, Number(totalRows[0]?.total || 0), page, pageSize);
-}
-async function getClients(cityFilter, accountId, ownerUserId) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [eq(clients.accountId, tenant)];
-  if (cityFilter && cityFilter !== "TODAS") conditions.push(eq(clients.city, cityFilter));
-  if (ownerUserId != null) conditions.push(eq(clients.createdByUserId, ownerUserId));
-  return await db.select().from(clients).where(and(...conditions)).orderBy(desc(clients.createdAt)).limit(500);
-}
-async function getClientById(id, accountId, ownerUserId) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) return void 0;
-  const conditions = [eq(clients.id, id), eq(clients.accountId, tenant)];
-  if (ownerUserId != null) conditions.push(eq(clients.createdByUserId, ownerUserId));
-  const result = await db.select().from(clients).where(and(...conditions)).limit(1);
-  return result[0];
-}
-async function createClient(data) {
-  const tenant = requireAccountId(data.accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const optional = ["cnpj", "address", "cep", "phone", "contactName", "cpf", "birthDate", "notes"];
-  const payload = { ...data, accountId: tenant, stockQuantity: Number(data.stockQuantity) > 0 ? Number(data.stockQuantity) : 1 };
-  for (const key of optional) if (payload[key] === "") payload[key] = null;
-  const result = await db.insert(clients).values(payload);
-  return Number(result[0].insertId);
-}
-async function updateClient(id, data, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const client = await getClientById(id, tenant);
-  if (!client) throw new Error("Cliente n\xE3o encontrado ou sem permiss\xE3o");
-  const { accountId: ignoredAccountId, ...safeData } = data;
-  void ignoredAccountId;
-  await db.update(clients).set(safeData).where(and(eq(clients.id, id), eq(clients.accountId, tenant)));
-}
-async function deleteClient(id, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const client = await getClientById(id, tenant);
-  if (!client) throw new Error("Cliente n\xE3o encontrado ou sem permiss\xE3o");
-  const clientOrders = await db.select().from(serviceOrders).where(and(eq(serviceOrders.clientId, id), eq(serviceOrders.accountId, tenant)));
-  const orderIds = clientOrders.map((order) => order.id);
-  const clientExtinguishers = await db.select().from(extinguishers).where(and(eq(extinguishers.clientId, id), eq(extinguishers.accountId, tenant)));
-  const orderItems = orderIds.length ? await db.select().from(serviceOrderItems).where(inArray(serviceOrderItems.serviceOrderId, orderIds)) : [];
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3);
-  await db.transaction(async (tx) => {
-    await tx.insert(trashItems).values({ accountId: tenant, itemType: "client", originalId: id, label: client.companyName, snapshot: JSON.stringify({ client, orders: clientOrders, items: orderItems, extinguishers: clientExtinguishers }), expiresAt });
-    for (const order of clientOrders) {
-      await tx.delete(serviceOrderItems).where(eq(serviceOrderItems.serviceOrderId, order.id));
-      await tx.delete(serviceOrders).where(and(eq(serviceOrders.id, order.id), eq(serviceOrders.accountId, tenant)));
-    }
-    await tx.delete(extinguishers).where(and(eq(extinguishers.clientId, id), eq(extinguishers.accountId, tenant)));
-    await tx.delete(clients).where(and(eq(clients.id, id), eq(clients.accountId, tenant)));
+async function ensureTrashTable() {
+  if (_trashTableReady) return _trashTableReady;
+  _trashTableReady = (async () => {
+    const database2 = await getDb();
+    if (!database2) return;
+    await database2.execute(`CREATE TABLE IF NOT EXISTS trash_items (
+      id int AUTO_INCREMENT NOT NULL,
+      accountId int NOT NULL,
+      itemType varchar(40) NOT NULL,
+      originalId int NOT NULL,
+      label varchar(255) NOT NULL,
+      snapshot text NOT NULL,
+      deletedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expiresAt timestamp NOT NULL,
+      deletedByMemberId int NULL,
+      deletedByName varchar(255) NULL,
+      ownerMemberId int NULL,
+      PRIMARY KEY (id),
+      KEY trash_items_account_expiry_idx (accountId, expiresAt),
+      KEY trash_items_account_deleted_idx (accountId, deletedAt)
+    )`);
+    const [cols] = await database2.execute(`SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'trash_items'`);
+    const have = new Set(cols.map((c) => String(c.COLUMN_NAME ?? c.column_name).toLowerCase()));
+    if (!have.has("deletedbymemberid")) await database2.execute(`ALTER TABLE trash_items ADD COLUMN deletedByMemberId int NULL`);
+    if (!have.has("deletedbyname")) await database2.execute(`ALTER TABLE trash_items ADD COLUMN deletedByName varchar(255) NULL`);
+    if (!have.has("ownermemberid")) await database2.execute(`ALTER TABLE trash_items ADD COLUMN ownerMemberId int NULL`);
+  })().catch((error) => {
+    _trashTableReady = null;
+    throw error;
   });
+  return _trashTableReady;
 }
-async function getDistinctCities(accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return [];
-  const result = await db.selectDistinct({ city: clients.city }).from(clients).where(eq(clients.accountId, tenant)).orderBy(clients.city);
-  return result.map((row2) => row2.city).filter(Boolean);
-}
-async function getExtinguishersPage(accountId, options = {}) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return pageResult([], 0, 1, 25);
-  const { page, pageSize, offset } = pageArgs(options.page, options.pageSize);
-  const conditions = [eq(extinguishers.accountId, tenant)];
-  const search = options.search?.trim();
-  if (options.clientId) conditions.push(eq(extinguishers.clientId, options.clientId));
-  if (search) conditions.push(or(like(extinguishers.typeModel, `%${search}%`), like(extinguishers.serialNumber, `%${search}%`), like(extinguishers.locationInBuilding, `%${search}%`)));
-  if (options.filter === "active") conditions.push(sql`${extinguishers.expirationDate} >= CURRENT_DATE()`);
-  if (options.filter === "expired") conditions.push(sql`${extinguishers.expirationDate} < CURRENT_DATE()`);
-  if (options.filter === "near") conditions.push(sql`${extinguishers.expirationDate} >= CURRENT_DATE() AND ${extinguishers.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)`);
-  const where = and(...conditions);
-  const [items, totalRows] = await Promise.all([
-    db.select({ extinguisher: extinguishers, client: clients }).from(extinguishers).innerJoin(clients, eq(extinguishers.clientId, clients.id)).where(and(where, eq(clients.accountId, tenant))).orderBy(extinguishers.expirationDate, desc(extinguishers.id)).limit(pageSize).offset(offset),
-    db.select({ total: sql`count(*)` }).from(extinguishers).where(where)
-  ]);
-  return pageResult(items, Number(totalRows[0]?.total || 0), page, pageSize);
-}
-async function getExtinguishers(accountId) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) return [];
-  return await db.select().from(extinguishers).where(eq(extinguishers.accountId, tenant)).orderBy(extinguishers.expirationDate).limit(500);
-}
-async function getExtinguisherById(id, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return void 0;
-  const rows = await db.select().from(extinguishers).where(and(eq(extinguishers.id, id), eq(extinguishers.accountId, tenant))).limit(1);
-  return rows[0];
-}
-async function getExtinguishersByClient(clientId, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return [];
-  if (!await getClientById(clientId, tenant)) return [];
-  return await db.select().from(extinguishers).where(and(eq(extinguishers.clientId, clientId), eq(extinguishers.accountId, tenant))).orderBy(extinguishers.expirationDate);
-}
-async function createExtinguisher(data, accountId) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  if (data.accountId !== tenant || !await getClientById(data.clientId, tenant)) throw new Error("Cliente sem permiss\xE3o");
-  const publicToken = data.publicToken?.trim() || generateExtinguisherPublicToken();
-  const result = await db.insert(extinguishers).values({ ...data, accountId: tenant, publicToken });
-  return Number(result[0].insertId);
-}
-async function ensureExtinguisherPublicToken(id, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const rows = await db.select().from(extinguishers).where(and(eq(extinguishers.id, id), eq(extinguishers.accountId, tenant))).limit(1);
-  const row2 = rows[0];
-  if (!row2) throw new Error("Extintor sem permiss\xE3o");
-  if (row2.publicToken) return row2.publicToken;
-  const token = generateExtinguisherPublicToken();
-  await db.update(extinguishers).set({ publicToken: token }).where(and(eq(extinguishers.id, id), eq(extinguishers.accountId, tenant), isNull(extinguishers.publicToken)));
-  const after = await db.select({ publicToken: extinguishers.publicToken }).from(extinguishers).where(and(eq(extinguishers.id, id), eq(extinguishers.accountId, tenant))).limit(1);
-  return after[0]?.publicToken || token;
-}
-async function backfillExtinguisherPublicTokens(accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const missing = await db.select({ id: extinguishers.id }).from(extinguishers).where(and(eq(extinguishers.accountId, tenant), or(isNull(extinguishers.publicToken), eq(extinguishers.publicToken, ""))));
-  let updated = 0;
-  for (const row2 of missing) {
-    const token = generateExtinguisherPublicToken();
-    await db.update(extinguishers).set({ publicToken: token }).where(and(eq(extinguishers.id, row2.id), eq(extinguishers.accountId, tenant)));
-    updated += 1;
+async function purgeExpiredTrash(database2, accountId) {
+  const expiredWhere = accountId != null ? and2(eq2(trashItems.accountId, accountId), sql2`${trashItems.expiresAt} <= NOW()`) : sql2`${trashItems.expiresAt} <= NOW()`;
+  const expiredPhotos = await database2.select().from(trashItems).where(and2(eq2(trashItems.itemType, "store_photo"), expiredWhere));
+  if (expiredPhotos.length) {
+    const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+    for (const item of expiredPhotos) await deletePhotoFiles(item.snapshot, storageDelete2);
   }
-  return { updated };
+  return database2.delete(trashItems).where(expiredWhere);
 }
-async function getPublicExtinguisherByToken(token) {
-  const clean = (token || "").trim();
-  if (!clean || clean.length < 10 || clean.length > 32) return null;
-  const db = await getDb();
-  if (!db) return null;
-  const rows = await db.select({
-    id: extinguishers.id,
-    accountId: extinguishers.accountId,
-    publicToken: extinguishers.publicToken,
-    typeModel: extinguishers.typeModel,
-    capacity: extinguishers.capacity,
-    serialNumber: extinguishers.serialNumber,
-    locationInBuilding: extinguishers.locationInBuilding,
-    expirationDate: extinguishers.expirationDate,
-    lastInspectionDate: extinguishers.lastInspectionDate,
-    status: extinguishers.status,
-    notes: extinguishers.notes,
-    clientName: clients.companyName,
-    clientCity: clients.city,
-    clientPhone: clients.phone,
-    companyName: companies.name
-  }).from(extinguishers).innerJoin(clients, and(eq(clients.id, extinguishers.clientId), eq(clients.accountId, extinguishers.accountId))).innerJoin(companies, eq(companies.id, extinguishers.accountId)).where(eq(extinguishers.publicToken, clean)).limit(1);
-  const row2 = rows[0];
-  if (!row2) return null;
-  return {
-    id: row2.id,
-    publicToken: row2.publicToken,
-    typeModel: row2.typeModel,
-    capacity: row2.capacity,
-    serialNumber: row2.serialNumber,
-    locationInBuilding: row2.locationInBuilding,
-    expirationDate: row2.expirationDate,
-    lastInspectionDate: row2.lastInspectionDate,
-    status: row2.status,
-    notes: row2.notes,
-    clientName: row2.clientName,
-    clientCity: row2.clientCity,
-    companyName: row2.companyName,
-    companyPhone: row2.clientPhone,
-    // contato do cliente/unidade (útil para a equipe em campo)
-    _internalId: row2.id,
-    _accountId: row2.accountId
-  };
-}
-async function updateExtinguisher(id, data, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const existing = await db.select().from(extinguishers).where(and(eq(extinguishers.id, id), eq(extinguishers.accountId, tenant))).limit(1);
-  if (!existing[0]) throw new Error("Extintor sem permiss\xE3o");
-  const { accountId: ignoredAccountId, clientId: ignoredClientId, ...safeData } = data;
-  void ignoredAccountId;
-  void ignoredClientId;
-  await db.update(extinguishers).set(safeData).where(and(eq(extinguishers.id, id), eq(extinguishers.accountId, tenant)));
-}
-async function deleteExtinguisher(id, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const existing = await db.select().from(extinguishers).where(and(eq(extinguishers.id, id), eq(extinguishers.accountId, tenant))).limit(1);
-  if (!existing[0]) throw new Error("Extintor sem permiss\xE3o");
-  await db.transaction(async (tx) => {
-    await tx.insert(trashItems).values({ accountId: tenant, itemType: "extinguisher", originalId: id, label: `${existing[0].typeModel} \u2014 ${existing[0].serialNumber || "sem selo"}`, snapshot: JSON.stringify(existing[0]), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1e3) });
-    await tx.delete(extinguishers).where(and(eq(extinguishers.id, id), eq(extinguishers.accountId, tenant)));
-  });
-}
-async function getExpiringExtinguishers(daysAhead, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return [];
-  const result = await db.select({ extinguisher: extinguishers, client: clients }).from(extinguishers).innerJoin(clients, and(eq(extinguishers.clientId, clients.id), eq(extinguishers.accountId, clients.accountId))).where(and(eq(extinguishers.accountId, tenant), eq(clients.accountId, tenant), sql`${extinguishers.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${daysAhead} DAY)`)).orderBy(extinguishers.expirationDate).limit(300);
-  const today = /* @__PURE__ */ new Date();
-  today.setHours(0, 0, 0, 0);
-  return result.map((item) => {
-    const expDate = new Date(item.extinguisher.expirationDate);
-    expDate.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((expDate.getTime() - today.getTime()) / 864e5);
-    let alertStatus = "ok";
-    let alertMessage = "";
-    if (diffDays < 0) {
-      alertStatus = "expired";
-      alertMessage = `VENCIDO h\xE1 ${Math.abs(diffDays)} dia(s)!`;
-    } else if (diffDays <= 15) {
-      alertStatus = "urgent";
-      alertMessage = diffDays === 0 ? "VENCE HOJE!" : `Vence em ${diffDays} dia(s) (Urgente)`;
-    } else if (diffDays <= daysAhead) {
-      alertStatus = "warning";
-      alertMessage = `Vence em ${diffDays} dia(s) (Alerta pr\xE9vio)`;
-    }
-    return { ...item, diffDays, alertStatus, alertMessage, isNearExpiration: diffDays <= daysAhead };
-  });
-}
-async function getServiceOrdersPage(accountId, options = {}) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) return pageResult([], 0, 1, 25);
-  const { page, pageSize, offset } = pageArgs(options.page, options.pageSize);
-  const conditions = [eq(serviceOrders.accountId, tenant), eq(clients.accountId, tenant)];
-  if (options.ownerUserId != null) conditions.push(eq(serviceOrders.createdByUserId, options.ownerUserId));
-  if (options.clientId) conditions.push(eq(serviceOrders.clientId, options.clientId));
-  if (options.city && options.city !== "TODAS") conditions.push(eq(clients.city, options.city));
-  if (options.from) conditions.push(sql`${serviceOrders.orderDate} >= ${options.from}`);
-  if (options.to) conditions.push(sql`${serviceOrders.orderDate} <= ${options.to}`);
-  const search = options.search?.trim();
-  if (search) conditions.push(or(like(clients.companyName, `%${search}%`), like(clients.city, `%${search}%`), like(sql`CAST(${serviceOrders.orderNumber} AS CHAR)`, `%${search}%`)));
-  const where = and(...conditions);
-  const query = db.select({ order: serviceOrders, client: clients }).from(serviceOrders).innerJoin(clients, eq(serviceOrders.clientId, clients.id));
-  const [items, totalRows] = await Promise.all([
-    query.where(where).orderBy(desc(serviceOrders.orderDate), desc(serviceOrders.createdAt), desc(serviceOrders.id)).limit(pageSize).offset(offset),
-    db.select({ total: sql`count(*)` }).from(serviceOrders).innerJoin(clients, eq(serviceOrders.clientId, clients.id)).where(where)
-  ]);
-  return pageResult(items, Number(totalRows[0]?.total || 0), page, pageSize);
-}
-async function getOfflineSnapshot(accountId, options = {}) {
-  const tenant = requireAccountId(accountId);
-  const page = Math.max(1, Math.trunc(options.page || 1));
-  const pageSize = Math.min(100, Math.max(10, Math.trunc(options.pageSize || 50)));
-  const [clientsPage, extinguishersPage, ordersPage, alertsPage] = await Promise.all([
-    getClientsPage(tenant, { page, pageSize }),
-    getExtinguishersPage(tenant, { page, pageSize }),
-    getServiceOrdersPage(tenant, { page, pageSize }),
-    getExpiringExtinguishersPage(30, tenant, { page, pageSize, filter: "all" })
-  ]);
-  return {
-    page,
-    pageSize,
-    clients: clientsPage.items,
-    extinguishers: extinguishersPage.items.map((row2) => row2.extinguisher),
-    orders: ordersPage.items,
-    alerts: alertsPage.items.map((row2) => ({ ...row2.extinguisher, ...row2 })),
-    totals: { clients: clientsPage.total, extinguishers: extinguishersPage.total, orders: ordersPage.total, alerts: alertsPage.total },
-    hasMore: { clients: page < clientsPage.totalPages, extinguishers: page < extinguishersPage.totalPages, orders: page < ordersPage.totalPages, alerts: page < alertsPage.totalPages }
-  };
-}
-async function getExpiringExtinguishersPage(daysAhead, accountId, options = {}) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return pageResult([], 0, 1, 25);
-  const { page, pageSize, offset } = pageArgs(options.page, options.pageSize);
-  const conditions = [eq(extinguishers.accountId, tenant), eq(clients.accountId, tenant)];
-  if (options.city && options.city !== "TODAS") conditions.push(eq(clients.city, options.city));
-  if (options.filter === "expired") conditions.push(sql`${extinguishers.expirationDate} < CURRENT_DATE()`);
-  if (options.filter === "near") conditions.push(sql`${extinguishers.expirationDate} >= CURRENT_DATE() AND ${extinguishers.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${daysAhead} DAY)`);
-  if (options.filter === "all") conditions.push(sql`${extinguishers.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${daysAhead} DAY)`);
-  const search = options.search?.trim();
-  if (search) conditions.push(or(like(clients.companyName, `%${search}%`), like(clients.city, `%${search}%`), like(extinguishers.serialNumber, `%${search}%`)));
-  const where = and(...conditions);
-  const query = db.select({ extinguisher: extinguishers, client: clients }).from(extinguishers).innerJoin(clients, and(eq(extinguishers.clientId, clients.id), eq(extinguishers.accountId, clients.accountId)));
-  const [rows, totalRows] = await Promise.all([query.where(where).orderBy(extinguishers.expirationDate, desc(extinguishers.id)).limit(pageSize).offset(offset), db.select({ total: sql`count(*)` }).from(extinguishers).innerJoin(clients, eq(extinguishers.clientId, clients.id)).where(where)]);
-  const today = /* @__PURE__ */ new Date();
-  today.setHours(0, 0, 0, 0);
-  const items = rows.map((item) => {
-    const expiration = new Date(item.extinguisher.expirationDate);
-    expiration.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((expiration.getTime() - today.getTime()) / 864e5);
-    const alertStatus = diffDays < 0 ? "expired" : diffDays <= 15 ? "urgent" : "warning";
-    const alertMessage = diffDays < 0 ? `VENCIDO h\xE1 ${Math.abs(diffDays)} dia(s)!` : diffDays === 0 ? "VENCE HOJE!" : diffDays <= 15 ? `Vence em ${diffDays} dia(s) (Urgente)` : `Vence em ${diffDays} dia(s) (Alerta pr\xE9vio)`;
-    return { ...item, diffDays, alertStatus, alertMessage, isNearExpiration: true };
-  });
-  return pageResult(items, Number(totalRows[0]?.total || 0), page, pageSize);
-}
-async function getNextOrderNumber(accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return 1001;
-  const result = await db.select({ maxNum: sql`MAX(${serviceOrders.orderNumber})` }).from(serviceOrders).where(eq(serviceOrders.accountId, tenant));
-  return result[0]?.maxNum ? Number(result[0].maxNum) + 1 : 1001;
-}
-async function allocateOrderNumber(tx, tenant) {
-  const maxRows = await tx.select({ maxNum: sql`MAX(${serviceOrders.orderNumber})` }).from(serviceOrders).where(eq(serviceOrders.accountId, tenant));
-  const currentMax = Math.max(1e3, Number(maxRows[0]?.maxNum || 1e3));
-  await tx.insert(systemSettings).values({ accountId: tenant, settingKey: "order_sequence", settingValue: String(currentMax) }).onDuplicateKeyUpdate({
-    set: { updatedAt: /* @__PURE__ */ new Date() }
-  });
-  await tx.update(systemSettings).set({
-    settingValue: sql`CAST(GREATEST(CAST(${systemSettings.settingValue} AS UNSIGNED), ${currentMax}) + 1 AS CHAR)`
-  }).where(and(eq(systemSettings.accountId, tenant), eq(systemSettings.settingKey, "order_sequence")));
-  const rows = await tx.select({ value: systemSettings.settingValue }).from(systemSettings).where(and(eq(systemSettings.accountId, tenant), eq(systemSettings.settingKey, "order_sequence"))).limit(1);
-  const nextNumber = Number(rows[0]?.value);
-  if (!Number.isInteger(nextNumber) || nextNumber < 1001) throw new Error("N\xE3o foi poss\xEDvel reservar o n\xFAmero da OS.");
-  return nextNumber;
-}
-function isDuplicateKeyError(error) {
-  return Number(error?.code) === 1062 || String(error?.message || "").includes("Duplicate entry");
-}
-async function createServiceOrder(order, items, accountId) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const pool = await getPool();
-  const db = await getDb();
-  if (!pool) throw new Error("Database not connected");
-  if (!db) throw new Error("Database not connected");
-  if (order.accountId !== tenant || !await getClientById(order.clientId, tenant)) throw new Error("Cliente sem permiss\xE3o");
-  const requestedNumber = order.orderNumber && Number.isInteger(order.orderNumber) ? order.orderNumber : void 0;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      return await db.transaction(async (tx) => {
-        const orderNumber = requestedNumber ?? await allocateOrderNumber(tx, tenant);
-        const result = await tx.insert(serviceOrders).values({ ...order, accountId: tenant, orderNumber });
-        const orderId = Number(result[0].insertId);
-        if (items.length) await tx.insert(serviceOrderItems).values(items.map((item) => {
-          const { extinguisherId: _ignored, ...row2 } = item;
-          return { ...row2, serviceOrderId: orderId };
-        }));
-        for (const item of items) {
-          const extId = Number(item.extinguisherId);
-          const qty = Number(item.quantity) || 0;
-          if (!extId || qty < 1) continue;
-          const [rows] = await pool.query("SELECT stockQuantity FROM extinguishers WHERE id = ? AND accountId = ? LIMIT 1", [extId, tenant]);
-          const current = Number(rows?.[0]?.stockQuantity ?? 1);
-          if (current < qty) throw new Error("Estoque insuficiente para o extintor selecionado.");
-          await pool.query("UPDATE extinguishers SET stockQuantity = stockQuantity - ? WHERE id = ? AND accountId = ?", [qty, extId, tenant]);
-        }
-        return { id: orderId, orderNumber };
-      });
-    } catch (error) {
-      if (requestedNumber !== void 0 || !isDuplicateKeyError(error) || attempt === 3) throw error;
-      console.warn(`[Database] OS number conflict; retrying allocation (${attempt}/3).`);
-    }
+async function deletePhotoFiles(snapshot, storageDelete2) {
+  try {
+    const photo = JSON.parse(snapshot);
+    if (photo?.fileKey) await storageDelete2(photo.fileKey);
+    if (photo?.thumbnailKey) await storageDelete2(photo.thumbnailKey);
+  } catch (error) {
+    console.warn("[trash] n\xE3o foi poss\xEDvel remover o arquivo da foto", error);
   }
-  throw new Error("N\xE3o foi poss\xEDvel criar a OS.");
 }
-async function getServiceOrderById(id, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return null;
-  const orderResult = await db.select({ order: serviceOrders, client: clients }).from(serviceOrders).innerJoin(clients, eq(serviceOrders.clientId, clients.id)).where(and(eq(serviceOrders.id, id), eq(serviceOrders.accountId, tenant), eq(clients.accountId, tenant))).limit(1);
-  if (!orderResult[0]) return null;
-  const items = await db.select().from(serviceOrderItems).where(eq(serviceOrderItems.serviceOrderId, id));
-  return { ...orderResult[0].order, client: orderResult[0].client, items };
+function trashScope(accountId, scopeMemberId2) {
+  const base = eq2(trashItems.accountId, accountId);
+  if (scopeMemberId2 == null) return base;
+  return and2(base, or(eq2(trashItems.deletedByMemberId, scopeMemberId2), eq2(trashItems.ownerMemberId, scopeMemberId2)));
 }
-async function getServiceOrders(clientId, accountId, ownerUserId) {
-  const tenant = requireAccountId(accountId);
-  await ensureOwnerScopeColumns();
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [eq(serviceOrders.accountId, tenant), eq(clients.accountId, tenant)];
-  if (ownerUserId != null) conditions.push(eq(serviceOrders.createdByUserId, ownerUserId));
-  if (clientId) conditions.push(eq(serviceOrders.clientId, clientId));
-  const query = db.select({ order: serviceOrders, client: clients }).from(serviceOrders).innerJoin(clients, eq(serviceOrders.clientId, clients.id));
-  return await query.where(and(...conditions)).orderBy(desc(serviceOrders.orderDate), desc(serviceOrders.createdAt)).limit(clientId ? 200 : 500);
-}
-async function getServiceOrderHistory(clientId, accountId) {
-  const orders = await getServiceOrders(clientId, accountId);
-  const db = await getDb();
-  if (!db) return [];
-  const ids = orders.map(({ order }) => order.id);
-  const items = ids.length ? await db.select().from(serviceOrderItems).where(inArray(serviceOrderItems.serviceOrderId, ids)) : [];
-  return orders.map((entry) => ({ ...entry, items: items.filter((item) => item.serviceOrderId === entry.order.id) }));
-}
-async function updateServiceOrder(id, order, items, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const existing = await getServiceOrderById(id, tenant);
-  if (!existing) throw new Error("Ordem n\xE3o encontrada ou sem permiss\xE3o");
-  if (order.clientId && !await getClientById(order.clientId, tenant)) throw new Error("Cliente sem permiss\xE3o");
-  const { accountId: ignoredAccountId, orderNumber: ignoredOrderNumber, ...safeOrder } = order;
-  void ignoredAccountId;
-  void ignoredOrderNumber;
-  await db.transaction(async (tx) => {
-    await tx.update(serviceOrders).set(safeOrder).where(and(eq(serviceOrders.id, id), eq(serviceOrders.accountId, tenant)));
-    await tx.delete(serviceOrderItems).where(eq(serviceOrderItems.serviceOrderId, id));
-    if (items.length) await tx.insert(serviceOrderItems).values(items.map((item) => ({ ...item, serviceOrderId: id })));
-  });
-}
-async function deleteServiceOrder(id, accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) throw new Error("Database not connected");
-  const order = await getServiceOrderById(id, tenant);
-  if (!order) throw new Error("Ordem n\xE3o encontrada ou sem permiss\xE3o");
-  await db.transaction(async (tx) => {
-    await tx.insert(trashItems).values({ accountId: tenant, itemType: "order", originalId: id, label: `OS #${order.orderNumber}`, snapshot: JSON.stringify({ order, items: order.items }), expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1e3) });
-    await tx.delete(serviceOrderItems).where(eq(serviceOrderItems.serviceOrderId, id));
-    await tx.delete(serviceOrders).where(and(eq(serviceOrders.id, id), eq(serviceOrders.accountId, tenant)));
-  });
-}
-async function listTrash(accountId) {
+async function listTrash(accountId, scopeMemberId2) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) return [];
-  await db.delete(trashItems).where(and(eq(trashItems.accountId, tenant), sql`${trashItems.expiresAt} <= NOW()`));
-  return await db.select().from(trashItems).where(and(eq(trashItems.accountId, tenant), sql`${trashItems.expiresAt} > NOW()`)).orderBy(desc(trashItems.deletedAt));
+  await ensureTrashTable();
+  await purgeExpiredTrash(db, tenant);
+  return await db.select().from(trashItems).where(and2(trashScope(tenant, scopeMemberId2), sql2`${trashItems.expiresAt} > NOW()`)).orderBy(desc(trashItems.deletedAt));
 }
 async function cleanupExpiredData() {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
+  await ensureTrashTable();
   const [trashResult, memberResult, platformResult] = await Promise.all([
-    db.delete(trashItems).where(sql`${trashItems.expiresAt} <= NOW()`),
-    db.delete(memberSessions).where(sql`${memberSessions.expiresAt} <= NOW()`),
-    db.delete(platformSessions).where(sql`${platformSessions.expiresAt} <= NOW()`)
+    purgeExpiredTrash(db),
+    db.delete(memberSessions).where(sql2`${memberSessions.expiresAt} <= NOW()`),
+    db.delete(platformSessions).where(sql2`${platformSessions.expiresAt} <= NOW()`)
   ]);
   return {
     trash: Number(trashResult[0]?.affectedRows || 0),
@@ -1642,78 +1412,69 @@ function parseTrashSnapshot(snapshot) {
 }
 function restoreDateFields(value) {
   const restored = { ...value };
-  for (const key of ["createdAt", "updatedAt"]) {
+  for (const key of ["createdAt", "updatedAt", "capturedAt", "expiresAt"]) {
     if (restored[key] && !(restored[key] instanceof Date)) restored[key] = new Date(restored[key]);
   }
   return restored;
 }
-async function restoreTrashItem(id, accountId) {
+async function restoreTrashItem(id2, accountId, scopeMemberId2) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const item = (await db.select().from(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant))).limit(1))[0];
+  await ensureTrashTable();
+  const item = (await db.select().from(trashItems).where(and2(eq2(trashItems.id, id2), trashScope(tenant, scopeMemberId2))).limit(1))[0];
   if (!item) throw new Error("Item n\xE3o encontrado na lixeira ou sem permiss\xE3o.");
   if (new Date(item.expiresAt).getTime() <= Date.now()) {
-    await db.delete(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant)));
+    await db.delete(trashItems).where(and2(eq2(trashItems.id, id2), eq2(trashItems.accountId, tenant)));
     throw new Error("O prazo de restaura\xE7\xE3o deste item expirou.");
   }
   const snapshot = parseTrashSnapshot(item.snapshot);
   await db.transaction(async (tx) => {
-    if (item.itemType === "client") {
-      const clientData = snapshot.client || snapshot;
-      const orders = snapshot.orders || [];
-      const items = snapshot.items || [];
-      const savedExtinguishers = snapshot.extinguishers || [];
-      const existingClient = await tx.select({ id: clients.id }).from(clients).where(eq(clients.id, item.originalId)).limit(1);
-      if (existingClient[0]) throw new Error("J\xE1 existe um cliente com o mesmo identificador. Exclua o conflito antes de restaurar.");
-      await tx.insert(clients).values({ ...restoreDateFields(clientData), id: item.originalId, accountId: tenant });
-      for (const extinguisher of savedExtinguishers) {
-        await tx.insert(extinguishers).values({ ...restoreDateFields(extinguisher), accountId: tenant, clientId: item.originalId });
-      }
-      for (const savedOrder of orders) {
-        const { client: _client, items: _nestedItems, ...orderData } = savedOrder;
-        void _client;
-        void _nestedItems;
-        await tx.insert(serviceOrders).values({ ...restoreDateFields(orderData), accountId: tenant, clientId: item.originalId });
-        const orderItems = items.filter((entry) => entry.serviceOrderId === savedOrder.id);
-        if (orderItems.length) await tx.insert(serviceOrderItems).values(orderItems.map((entry) => ({ ...restoreDateFields(entry), serviceOrderId: savedOrder.id })));
-      }
-    } else if (item.itemType === "order") {
-      const savedOrder = snapshot.order || snapshot;
-      const { client: _client, items: nestedItems, ...orderData } = savedOrder;
-      void _client;
-      const orderItems = snapshot.items || nestedItems || [];
-      const client = await tx.select({ id: clients.id }).from(clients).where(and(eq(clients.id, orderData.clientId), eq(clients.accountId, tenant))).limit(1);
-      if (!client[0]) throw new Error("O cliente vinculado \xE0 OS n\xE3o existe mais; restaure o cliente antes.");
-      await tx.insert(serviceOrders).values({ ...restoreDateFields(orderData), id: item.originalId, accountId: tenant });
-      if (orderItems.length) await tx.insert(serviceOrderItems).values(orderItems.map((entry) => ({ ...restoreDateFields(entry), serviceOrderId: item.originalId })));
-    } else if (item.itemType === "extinguisher") {
-      const clientId = snapshot.clientId;
-      const client = await tx.select({ id: clients.id }).from(clients).where(and(eq(clients.id, clientId), eq(clients.accountId, tenant))).limit(1);
-      if (!client[0]) throw new Error("O cliente vinculado ao extintor n\xE3o existe mais; restaure o cliente antes.");
-      await tx.insert(extinguishers).values({ ...restoreDateFields(snapshot), id: item.originalId, accountId: tenant });
-    } else if (item.itemType === "product") {
-      const existing = await tx.select({ id: inventoryProducts.id }).from(inventoryProducts).where(and(eq(inventoryProducts.id, item.originalId), eq(inventoryProducts.companyId, tenant))).limit(1);
+    if (item.itemType === "product") {
+      const existing = await tx.select({ id: inventoryProducts.id }).from(inventoryProducts).where(and2(eq2(inventoryProducts.id, item.originalId), eq2(inventoryProducts.companyId, tenant))).limit(1);
       if (existing[0]) throw new Error("J\xE1 existe um produto com esse identificador. N\xE3o foi poss\xEDvel restaurar.");
       await tx.insert(inventoryProducts).values({ ...restoreDateFields(snapshot), id: item.originalId, companyId: tenant });
+    } else if (item.itemType === "store_photo") {
+      const existing = await tx.select({ id: storePhotos.id }).from(storePhotos).where(and2(eq2(storePhotos.id, item.originalId), eq2(storePhotos.companyId, tenant))).limit(1);
+      if (existing[0]) throw new Error("Esta foto j\xE1 existe na galeria. N\xE3o foi poss\xEDvel restaurar.");
+      const restored = restoreDateFields(snapshot);
+      const minExpiry = Date.now() + 7 * 24 * 60 * 60 * 1e3;
+      const expiresAt = new Date(Math.max(restored.expiresAt ? new Date(restored.expiresAt).getTime() : 0, minExpiry));
+      await tx.insert(storePhotos).values({ ...restored, id: item.originalId, companyId: tenant, expiresAt });
+      const restoredClientId = Number(restored.storeClientId);
+      if (Number.isInteger(restoredClientId) && restoredClientId > 0) {
+        try {
+          await tx.execute(sql2`UPDATE store_photos SET storeClientId = ${restoredClientId} WHERE id = ${item.originalId} AND companyId = ${tenant} AND EXISTS (SELECT 1 FROM store_clients c WHERE c.id = ${restoredClientId} AND c.companyId = ${tenant} AND c.storeId = store_photos.storeId)`);
+        } catch {
+        }
+      }
     } else {
       throw new Error("Tipo de item da lixeira n\xE3o reconhecido.");
     }
-    await tx.delete(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant)));
+    await tx.delete(trashItems).where(and2(eq2(trashItems.id, id2), eq2(trashItems.accountId, tenant)));
   });
+  return { itemType: item.itemType, label: item.label, originalId: item.originalId };
 }
-async function permanentlyDeleteTrashItem(id, accountId) {
+async function permanentlyDeleteTrashItem(id2, accountId, scopeMemberId2) {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const result = await db.delete(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant)));
+  await ensureTrashTable();
+  const item = (await db.select().from(trashItems).where(and2(eq2(trashItems.id, id2), trashScope(tenant, scopeMemberId2))).limit(1))[0];
+  if (!item) throw new Error("Item n\xE3o encontrado na lixeira ou sem permiss\xE3o.");
+  const result = await db.delete(trashItems).where(and2(eq2(trashItems.id, id2), eq2(trashItems.accountId, tenant)));
   if (!result[0]?.affectedRows) throw new Error("Item n\xE3o encontrado na lixeira ou sem permiss\xE3o.");
+  if (item?.itemType === "store_photo") {
+    const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+    await deletePhotoFiles(item.snapshot, storageDelete2);
+  }
+  return { itemType: item.itemType, label: item.label, originalId: item.originalId };
 }
 async function getSetting(key, accountId, defaultValue = "30") {
   const tenant = requireAccountId(accountId);
   const db = await getDb();
   if (!db) return defaultValue;
-  const result = await db.select().from(systemSettings).where(and(eq(systemSettings.settingKey, key), eq(systemSettings.accountId, tenant))).limit(1);
+  const result = await db.select().from(systemSettings).where(and2(eq2(systemSettings.settingKey, key), eq2(systemSettings.accountId, tenant))).limit(1);
   return result[0]?.settingValue ?? defaultValue;
 }
 async function setSetting(key, value, accountId) {
@@ -1722,47 +1483,24 @@ async function setSetting(key, value, accountId) {
   if (!db) throw new Error("Database not connected");
   await db.insert(systemSettings).values({ accountId: tenant, settingKey: key, settingValue: value }).onDuplicateKeyUpdate({ set: { settingValue: value } });
 }
-async function getDashboardStats(accountId) {
-  const tenant = requireAccountId(accountId);
-  const db = await getDb();
-  if (!db) return { totalClients: 0, totalCities: 0, totalExtinguishers: 0, nearExpirationCount: 0, expiredCount: 0, totalOrders: 0, alertDaysConfig: 30 };
-  const daysAhead = parseInt(await getSetting("alert_days_ahead", tenant, "30"), 10) || 30;
-  const [clientRows, cityRows, extinguisherTotalRows, expiredRows, nearRows, orderRows] = await Promise.all([
-    db.select({ total: sql`count(*)` }).from(clients).where(eq(clients.accountId, tenant)),
-    db.select({ total: sql`count(distinct ${clients.city})` }).from(clients).where(and(eq(clients.accountId, tenant), sql`${clients.city} is not null AND ${clients.city} <> ''`)),
-    db.select({ total: sql`count(*)` }).from(extinguishers).where(eq(extinguishers.accountId, tenant)),
-    db.select({ total: sql`count(*)` }).from(extinguishers).where(and(eq(extinguishers.accountId, tenant), sql`${extinguishers.expirationDate} < CURRENT_DATE()`)),
-    db.select({ total: sql`count(*)` }).from(extinguishers).where(and(eq(extinguishers.accountId, tenant), sql`${extinguishers.expirationDate} >= CURRENT_DATE() AND ${extinguishers.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${daysAhead} DAY)`)),
-    db.select({ total: sql`count(*)` }).from(serviceOrders).where(eq(serviceOrders.accountId, tenant))
-  ]);
-  return {
-    totalClients: Number(clientRows[0]?.total || 0),
-    totalCities: Number(cityRows[0]?.total || 0),
-    totalExtinguishers: Number(extinguisherTotalRows[0]?.total || 0),
-    nearExpirationCount: Number(nearRows[0]?.total || 0),
-    expiredCount: Number(expiredRows[0]?.total || 0),
-    totalOrders: Number(orderRows[0]?.total || 0),
-    alertDaysConfig: daysAhead
-  };
-}
 function isMissingEntitlementsTable(error) {
   const code = error?.code ?? error?.cause?.code;
   const message = String(error?.sqlMessage ?? error?.message ?? "");
   return code === "ER_NO_SUCH_TABLE" || code === "ER_BAD_TABLE_ERROR" || /unknown table|does not exist|doesn't exist/i.test(message);
 }
-async function replaceSubscriptionPlanFeatures(database, planId, featureKeys) {
+async function replaceSubscriptionPlanFeatures(database2, planId, featureKeys) {
   const enabled = new Set(featureKeys);
-  const rows = ENTITLEMENT_KEYS.map((featureKey) => ({ planId, featureKey, enabled: enabled.has(featureKey) }));
-  await database.transaction(async (tx) => {
-    await tx.delete(subscriptionPlanFeatures).where(eq(subscriptionPlanFeatures.planId, planId));
-    await tx.insert(subscriptionPlanFeatures).values(rows);
+  const rows2 = ENTITLEMENT_KEYS.map((featureKey) => ({ planId, featureKey, enabled: enabled.has(featureKey) }));
+  await database2.transaction(async (tx) => {
+    await tx.delete(subscriptionPlanFeatures).where(eq2(subscriptionPlanFeatures.planId, planId));
+    await tx.insert(subscriptionPlanFeatures).values(rows2);
   });
 }
-async function attachPlanFeatureKeys(database, plans) {
+async function attachPlanFeatureKeys(database2, plans) {
   if (!plans.length) return plans;
   let featureRows = [];
   try {
-    featureRows = await database.select({ planId: subscriptionPlanFeatures.planId, featureKey: subscriptionPlanFeatures.featureKey, enabled: subscriptionPlanFeatures.enabled }).from(subscriptionPlanFeatures).where(inArray(subscriptionPlanFeatures.planId, plans.map((plan) => Number(plan.id))));
+    featureRows = await database2.select({ planId: subscriptionPlanFeatures.planId, featureKey: subscriptionPlanFeatures.featureKey, enabled: subscriptionPlanFeatures.enabled }).from(subscriptionPlanFeatures).where(inArray(subscriptionPlanFeatures.planId, plans.map((plan) => Number(plan.id))));
   } catch (error) {
     if (!isMissingEntitlementsTable(error)) throw error;
   }
@@ -1779,66 +1517,66 @@ async function attachPlanFeatureKeys(database, plans) {
   });
 }
 async function getCompanyFeatureOverrides(companyId) {
-  const database = await getDb();
-  if (!database) return {};
+  const database2 = await getDb();
+  if (!database2) return {};
   try {
-    const rows = await database.select({ featureKey: companyFeatureOverrides.featureKey, enabled: companyFeatureOverrides.enabled }).from(companyFeatureOverrides).where(eq(companyFeatureOverrides.companyId, companyId));
-    return Object.fromEntries(rows.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, Boolean(row2.enabled)]));
+    const rows2 = await database2.select({ featureKey: companyFeatureOverrides.featureKey, enabled: companyFeatureOverrides.enabled }).from(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, companyId));
+    return Object.fromEntries(rows2.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, Boolean(row2.enabled)]));
   } catch (error) {
     if (isMissingEntitlementsTable(error)) return {};
     throw error;
   }
 }
 async function getMemberFeatureModes(memberAccountId, companyId) {
-  const database = await getDb();
-  if (!database) return {};
-  const account = await database.select({ id: memberAccounts2.id }).from(memberAccounts2).where(and(eq(memberAccounts2.id, memberAccountId), eq(memberAccounts2.companyId, companyId))).limit(1);
+  const database2 = await getDb();
+  if (!database2) return {};
+  const account = await database2.select({ id: memberAccounts2.id }).from(memberAccounts2).where(and2(eq2(memberAccounts2.id, memberAccountId), eq2(memberAccounts2.companyId, companyId))).limit(1);
   if (!account[0]) return {};
   try {
-    const rows = await database.select({ featureKey: memberFeaturePermissions.featureKey, mode: memberFeaturePermissions.mode }).from(memberFeaturePermissions).where(eq(memberFeaturePermissions.memberAccountId, memberAccountId));
-    return Object.fromEntries(rows.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, row2.mode]));
+    const rows2 = await database2.select({ featureKey: memberFeaturePermissions.featureKey, mode: memberFeaturePermissions.mode }).from(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, memberAccountId));
+    return Object.fromEntries(rows2.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, row2.mode]));
   } catch (error) {
     if (isMissingEntitlementsTable(error)) return {};
     throw error;
   }
 }
 async function replaceCompanyFeatureOverrides(input) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
-  const rows = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  const rows2 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
     const enabled = input.overrides[featureKey];
     return enabled == null ? [] : [{ companyId: input.companyId, featureKey, enabled, reason: input.reason ?? null, updatedByPlatformAdminId: input.updatedByPlatformAdminId }];
   });
-  await database.transaction(async (tx) => {
-    await tx.delete(companyFeatureOverrides).where(eq(companyFeatureOverrides.companyId, input.companyId));
-    if (rows.length) await tx.insert(companyFeatureOverrides).values(rows);
+  await database2.transaction(async (tx) => {
+    await tx.delete(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, input.companyId));
+    if (rows2.length) await tx.insert(companyFeatureOverrides).values(rows2);
   });
   return { success: true };
 }
 async function replaceMemberFeatureModes(input) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
-  const rows = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  const rows2 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
     const mode = input.modes[featureKey];
     return !mode || mode === "inherit" ? [] : [{ memberAccountId: input.memberAccountId, featureKey, mode, updatedByMemberAccountId: input.updatedByMemberAccountId }];
   });
-  await database.transaction(async (tx) => {
-    await tx.delete(memberFeaturePermissions).where(eq(memberFeaturePermissions.memberAccountId, input.memberAccountId));
-    if (rows.length) await tx.insert(memberFeaturePermissions).values(rows);
+  await database2.transaction(async (tx) => {
+    await tx.delete(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, input.memberAccountId));
+    if (rows2.length) await tx.insert(memberFeaturePermissions).values(rows2);
   });
   return { success: true };
 }
 async function listSubscriptionPlans() {
-  const database = await getDb();
-  if (!database) return [];
-  const plans = await database.select().from(subscriptionPlans).orderBy(desc(subscriptionPlans.createdAt));
-  return attachPlanFeatureKeys(database, plans);
+  const database2 = await getDb();
+  if (!database2) return [];
+  const plans = await database2.select().from(subscriptionPlans).orderBy(desc(subscriptionPlans.createdAt));
+  return attachPlanFeatureKeys(database2, plans);
 }
 async function createSubscriptionPlan(data) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
   const { featureKeys, ...planFields } = data;
-  const [result] = await database.insert(subscriptionPlans).values({
+  const [result] = await database2.insert(subscriptionPlans).values({
     ...planFields,
     description: data.description ?? null,
     maxUsers: data.maxUsers ?? null,
@@ -1847,24 +1585,24 @@ async function createSubscriptionPlan(data) {
     availableForNew: data.availableForNew ?? true,
     active: true
   });
-  const id = Number(result.insertId);
-  await replaceSubscriptionPlanFeatures(database, id, featureKeys);
-  return { id };
+  const id2 = Number(result.insertId);
+  await replaceSubscriptionPlanFeatures(database2, id2, featureKeys);
+  return { id: id2 };
 }
-async function updateSubscriptionPlan(id, data) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
+async function updateSubscriptionPlan(id2, data) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
   const { featureKeys, ...planFields } = data;
   if (Object.keys(planFields).length) {
-    await database.update(subscriptionPlans).set(planFields).where(eq(subscriptionPlans.id, id));
+    await database2.update(subscriptionPlans).set(planFields).where(eq2(subscriptionPlans.id, id2));
   }
-  if (featureKeys !== void 0) await replaceSubscriptionPlanFeatures(database, id, featureKeys);
+  if (featureKeys !== void 0) await replaceSubscriptionPlanFeatures(database2, id2, featureKeys);
   return { success: true };
 }
 async function listCompanySubscriptions() {
   const db = await getDb();
   if (!db) return [];
-  const rows = await db.select({
+  const rows2 = await db.select({
     id: companySubscriptions.id,
     companyId: companySubscriptions.companyId,
     planId: companySubscriptions.planId,
@@ -1880,8 +1618,8 @@ async function listCompanySubscriptions() {
     maxUsers: subscriptionPlans.maxUsers,
     maxClients: subscriptionPlans.maxClients,
     maxExtinguishers: subscriptionPlans.maxExtinguishers
-  }).from(companySubscriptions).innerJoin(companies, eq(companySubscriptions.companyId, companies.id)).innerJoin(subscriptionPlans, eq(companySubscriptions.planId, subscriptionPlans.id)).orderBy(desc(companySubscriptions.createdAt));
-  return rows;
+  }).from(companySubscriptions).innerJoin(companies, eq2(companySubscriptions.companyId, companies.id)).innerJoin(subscriptionPlans, eq2(companySubscriptions.planId, subscriptionPlans.id)).orderBy(desc(companySubscriptions.createdAt));
+  return rows2;
 }
 async function getSubscriptionStats() {
   const db = await getDb();
@@ -1918,15 +1656,15 @@ async function createCompanySubscription(data) {
     subscriptionStatus: data.status,
     subscriptionStartedAt: new Date(data.startsAt),
     subscriptionExpiresAt: data.endsAt ? new Date(data.endsAt) : null
-  }).where(eq(companies.id, data.companyId));
+  }).where(eq2(companies.id, data.companyId));
   return { id: Number(result.insertId) };
 }
-async function updateCompanySubscription(id, data) {
+async function updateCompanySubscription(id2, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  await db.update(companySubscriptions).set(data).where(eq(companySubscriptions.id, id));
-  const rows = await db.select().from(companySubscriptions).where(eq(companySubscriptions.id, id)).limit(1);
-  const sub = rows[0];
+  await db.update(companySubscriptions).set(data).where(eq2(companySubscriptions.id, id2));
+  const rows2 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.id, id2)).limit(1);
+  const sub = rows2[0];
   if (sub) {
     const patch = {};
     if (data.planId !== void 0) patch.planId = data.planId;
@@ -1934,21 +1672,21 @@ async function updateCompanySubscription(id, data) {
     if (data.endsAt !== void 0) patch.subscriptionExpiresAt = data.endsAt ? new Date(data.endsAt) : null;
     if (data.startsAt !== void 0) patch.subscriptionStartedAt = new Date(data.startsAt);
     if (Object.keys(patch).length) {
-      await db.update(companies).set(patch).where(eq(companies.id, sub.companyId));
+      await db.update(companies).set(patch).where(eq2(companies.id, sub.companyId));
     }
   }
   return { success: true };
 }
 async function getSubscriptionPlanById(planId) {
-  const database = await getDb();
-  if (!database) return null;
-  const rows = await database.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, planId)).limit(1);
-  return (await attachPlanFeatureKeys(database, rows))[0] ?? null;
+  const database2 = await getDb();
+  if (!database2) return null;
+  const rows2 = await database2.select().from(subscriptionPlans).where(eq2(subscriptionPlans.id, planId)).limit(1);
+  return (await attachPlanFeatureKeys(database2, rows2))[0] ?? null;
 }
 async function resolveCompanyPlan(companyId) {
   const db = await getDb();
   if (!db) return { company: null, subscription: null, plan: null };
-  const companyRows = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1);
+  const companyRows = await db.select().from(companies).where(eq2(companies.id, companyId)).limit(1);
   const company = companyRows[0] ?? null;
   const sub = await getLatestCompanySubscription(companyId);
   let planId = sub?.planId ?? company?.planId ?? null;
@@ -1958,7 +1696,7 @@ async function resolveCompanyPlan(companyId) {
       await db.update(companies).set({
         planId: sub.planId,
         subscriptionStatus: sub.status || company.subscriptionStatus
-      }).where(eq(companies.id, companyId));
+      }).where(eq2(companies.id, companyId));
       company.planId = sub.planId;
     } catch {
     }
@@ -1971,23 +1709,23 @@ async function resolveCompanyPlan(companyId) {
 async function getLatestCompanySubscription(companyId) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(companySubscriptions).where(eq(companySubscriptions.companyId, companyId)).orderBy(desc(companySubscriptions.createdAt));
-  if (!rows.length) return null;
-  const preferred = rows.find(
+  const rows2 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.companyId, companyId)).orderBy(desc(companySubscriptions.createdAt));
+  if (!rows2.length) return null;
+  const preferred = rows2.find(
     (r) => ["active", "trial", "test", "pending", "overdue"].includes(String(r.status))
   );
-  return preferred ?? rows[0];
+  return preferred ?? rows2[0];
 }
 async function updateCompanySubscriptionFields(companyId, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  await db.update(companies).set(data).where(eq(companies.id, companyId));
+  await db.update(companies).set(data).where(eq2(companies.id, companyId));
   return { success: true };
 }
 async function listPaymentsForCompany(companyId) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(payments).where(eq(payments.companyId, companyId)).orderBy(desc(payments.createdAt));
+  return db.select().from(payments).where(eq2(payments.companyId, companyId)).orderBy(desc(payments.createdAt));
 }
 async function listAllPayments(limit = 200) {
   const db = await getDb();
@@ -2004,7 +1742,7 @@ async function listAllPayments(limit = 200) {
     paymentDate: payments.paymentDate,
     createdAt: payments.createdAt,
     companyName: companies.name
-  }).from(payments).innerJoin(companies, eq(payments.companyId, companies.id)).orderBy(desc(payments.createdAt)).limit(limit);
+  }).from(payments).innerJoin(companies, eq2(payments.companyId, companies.id)).orderBy(desc(payments.createdAt)).limit(limit);
 }
 async function createPaymentRecord(data) {
   const db = await getDb();
@@ -2029,8 +1767,8 @@ async function createPaymentRecord(data) {
 async function findPaymentEventByEventId(eventId) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(paymentEvents).where(eq(paymentEvents.eventId, eventId)).limit(1);
-  return rows[0] ?? null;
+  const rows2 = await db.select().from(paymentEvents).where(eq2(paymentEvents.eventId, eventId)).limit(1);
+  return rows2[0] ?? null;
 }
 async function recordPaymentEvent(data) {
   const db = await getDb();
@@ -2054,7 +1792,7 @@ async function listAvailablePlansForCompanies() {
 async function applyMockCheckout(input) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const planRows = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, input.planId)).limit(1);
+  const planRows = await db.select().from(subscriptionPlans).where(eq2(subscriptionPlans.id, input.planId)).limit(1);
   const plan = planRows[0];
   if (!plan) throw new Error("Plano n\xE3o encontrado");
   const today = /* @__PURE__ */ new Date();
@@ -2123,12 +1861,12 @@ async function applyMockCheckout(input) {
     subscriptionStartedAt: today,
     subscriptionExpiresAt: periodEnd,
     gracePeriodEndsAt: grace
-  }).where(eq(companies.id, input.companyId));
+  }).where(eq2(companies.id, input.companyId));
   return { subscriptionId, paymentId, status: subStatus };
 }
 async function ensureSeedPlans() {
-  const database = await getDb();
-  if (!database) return;
+  const database2 = await getDb();
+  if (!database2) return;
   const catalog = [
     {
       name: "Start",
@@ -2167,76 +1905,116 @@ async function ensureSeedPlans() {
       active: true
     }
   ];
-  const existing = await database.select().from(subscriptionPlans);
+  const existing = await database2.select().from(subscriptionPlans);
   const byName = new Map(existing.map((p) => [String(p.name).toLowerCase().trim(), p]));
   for (const plan of catalog) {
     const key = plan.name.toLowerCase();
     const row2 = byName.get(key);
     if (row2) continue;
     const { featureKeys, ...planFields } = plan;
-    const [result] = await database.insert(subscriptionPlans).values(planFields);
-    const id = Number(result.insertId);
-    if (id) {
+    const [result] = await database2.insert(subscriptionPlans).values(planFields);
+    const id2 = Number(result.insertId);
+    if (id2) {
       try {
-        await replaceSubscriptionPlanFeatures(database, id, featureKeys);
+        await replaceSubscriptionPlanFeatures(database2, id2, featureKeys);
       } catch (error) {
         if (!isMissingEntitlementsTable(error)) throw error;
       }
     }
   }
 }
-async function listOperationalStores(companyId, search) {
-  const database = await getDb();
-  if (!database) return [];
-  const conditions = [eq(stores.companyId, requireAccountId(companyId)), eq(stores.active, true)];
+async function listOperationalStores(companyId, search, memberAccountId) {
+  const database2 = await getDb();
+  if (!database2) return [];
+  const conditions = [eq2(stores.companyId, requireAccountId(companyId)), eq2(stores.active, true)];
   if (search?.trim()) conditions.push(like(stores.name, `%${search.trim()}%`));
-  return database.select().from(stores).where(and(...conditions)).orderBy(stores.name);
+  if (memberAccountId != null) {
+    await ensureStoreOwnersTable(database2);
+    conditions.push(storeVisibleToMember(stores.id, memberAccountId));
+  }
+  return database2.select().from(stores).where(and2(...conditions)).orderBy(stores.name);
 }
-async function createOperationalStore(input) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
-  const result = await database.insert(stores).values(input);
-  const rows = await database.select().from(stores).where(eq(stores.id, Number(result[0]?.insertId))).limit(1);
-  return rows[0];
+async function createOperationalStore(input, ownerMemberAccountId) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  const result = await database2.insert(stores).values(input);
+  const storeId = Number(result[0]?.insertId);
+  if (ownerMemberAccountId) await recordStoreOwner(database2, { storeId, companyId: input.companyId, memberAccountId: ownerMemberAccountId });
+  const rows2 = await database2.select().from(stores).where(eq2(stores.id, storeId)).limit(1);
+  return rows2[0];
 }
 async function listOperationalRoutes(companyId, options = {}) {
-  const database = await getDb();
-  if (!database) return [];
-  const conditions = [eq(routes.companyId, requireAccountId(companyId))];
-  if (options.date) conditions.push(eq(routes.date, options.date));
-  if (options.promoterId) conditions.push(eq(routes.promoterId, options.promoterId));
-  return database.select().from(routes).where(and(...conditions)).orderBy(desc(routes.date), desc(routes.id));
+  const database2 = await getDb();
+  if (!database2) return [];
+  const conditions = [eq2(routes.companyId, requireAccountId(companyId))];
+  if (options.date) conditions.push(eq2(routes.date, options.date));
+  if (options.promoterId) conditions.push(eq2(routes.promoterId, options.promoterId));
+  return database2.select().from(routes).where(and2(...conditions)).orderBy(desc(routes.date), desc(routes.id));
 }
 async function listWeeklyRouteSchedules(companyId) {
-  const database = await getDb();
-  if (!database) return [];
-  return database.select().from(weeklyRouteSchedules).where(eq(weeklyRouteSchedules.companyId, requireAccountId(companyId))).orderBy(weeklyRouteSchedules.weekday, weeklyRouteSchedules.promoterId);
+  const database2 = await getDb();
+  if (!database2) return [];
+  return database2.select().from(weeklyRouteSchedules).where(eq2(weeklyRouteSchedules.companyId, requireAccountId(companyId))).orderBy(weeklyRouteSchedules.weekday, weeklyRouteSchedules.promoterId);
+}
+async function ensureWeeklyRouteSchedulesTable(database2) {
+  try {
+    await database2.execute(`CREATE TABLE IF NOT EXISTS weekly_route_schedules (
+      id int AUTO_INCREMENT NOT NULL,
+      companyId int NOT NULL,
+      promoterId int NOT NULL,
+      weekday int NOT NULL,
+      name varchar(255) NOT NULL,
+      storeIds json NOT NULL,
+      active boolean NOT NULL DEFAULT true,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY weekly_route_schedules_company_idx (companyId),
+      UNIQUE KEY weekly_route_schedules_promoter_day_unique (companyId, promoterId, weekday)
+    )`);
+  } catch (e) {
+    console.warn("[routes] ensure weekly table", e);
+  }
 }
 async function saveWeeklyRouteSchedule(input) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  await ensureWeeklyRouteSchedulesTable(database2);
   const companyId = requireAccountId(input.companyId);
-  const storeIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
+  const storeIds = [...new Set(input.storeIds)].filter((id2) => Number.isInteger(id2) && id2 > 0);
   if (!storeIds.length) throw new Error("Selecione ao menos uma loja.");
-  return database.transaction(async (tx) => {
-    const stores2 = await tx.select({ id: stores.id }).from(stores).where(and(inArray(stores.id, storeIds), eq(stores.companyId, companyId), eq(stores.active, true)));
+  return database2.transaction(async (tx) => {
+    const stores2 = await tx.select({ id: stores.id }).from(stores).where(and2(inArray(stores.id, storeIds), eq2(stores.companyId, companyId), eq2(stores.active, true)));
     if (stores2.length !== storeIds.length) throw new Error("Uma ou mais lojas n\xE3o pertencem a esta empresa.");
     await tx.insert(weeklyRouteSchedules).values({ ...input, companyId, storeIds, active: true }).onDuplicateKeyUpdate({ set: { name: input.name, storeIds, active: true } });
-    return (await tx.select().from(weeklyRouteSchedules).where(and(
-      eq(weeklyRouteSchedules.companyId, companyId),
-      eq(weeklyRouteSchedules.promoterId, input.promoterId),
-      eq(weeklyRouteSchedules.weekday, input.weekday)
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const weekday = (/* @__PURE__ */ new Date(`${today}T00:00:00Z`)).getUTCDay();
+    if (weekday === input.weekday) {
+      const existing = await tx.select({ id: routes.id }).from(routes).where(and2(
+        eq2(routes.companyId, companyId),
+        eq2(routes.promoterId, input.promoterId),
+        eq2(routes.date, today)
+      ));
+      for (const route of existing) {
+        await tx.delete(visits).where(eq2(visits.routeId, route.id));
+        await tx.delete(routes).where(eq2(routes.id, route.id));
+      }
+    }
+    return (await tx.select().from(weeklyRouteSchedules).where(and2(
+      eq2(weeklyRouteSchedules.companyId, companyId),
+      eq2(weeklyRouteSchedules.promoterId, input.promoterId),
+      eq2(weeklyRouteSchedules.weekday, input.weekday)
     )).limit(1))[0];
   });
 }
 async function updatePromoterManagement(input) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
   const companyId = requireAccountId(input.companyId);
-  const promoter = await database.select({ id: memberAccounts2.id }).from(memberAccounts2).where(and(
-    eq(memberAccounts2.id, input.promoterId),
-    eq(memberAccounts2.companyId, companyId),
-    eq(memberAccounts2.role, "promoter")
+  const promoter = await database2.select({ id: memberAccounts2.id }).from(memberAccounts2).where(and2(
+    eq2(memberAccounts2.id, input.promoterId),
+    eq2(memberAccounts2.companyId, companyId),
+    eq2(memberAccounts2.role, "promoter")
   )).limit(1);
   if (!promoter.length) throw new Error("Promotor n\xE3o pertence a esta empresa.");
   const employeeCode = input.employeeCode?.trim() || null;
@@ -2248,20 +2026,20 @@ async function updatePromoterManagement(input) {
     }
     const storeIds = [...new Set(weeklyRoutes.flatMap((route) => route.storeIds))];
     if (storeIds.length) {
-      const stores2 = await database.select({ id: stores.id }).from(stores).where(and(
+      const stores2 = await database2.select({ id: stores.id }).from(stores).where(and2(
         inArray(stores.id, storeIds),
-        eq(stores.companyId, companyId),
-        eq(stores.active, true)
+        eq2(stores.companyId, companyId),
+        eq2(stores.active, true)
       ));
       if (stores2.length !== storeIds.length) throw new Error("Uma ou mais lojas n\xE3o pertencem a esta empresa ou est\xE3o inativas.");
     }
     if (weeklyRoutes.some((route) => !route.storeIds.length)) throw new Error("Cada dia programado precisa ter ao menos uma loja.");
   }
-  await database.transaction(async (tx) => {
-    await tx.update(memberAccounts).set({ userName: input.userName.trim(), email: input.email.trim().toLowerCase() }).where(and(
-      eq(memberAccounts.id, input.promoterId),
-      eq(memberAccounts.companyId, companyId),
-      eq(memberAccounts.role, "promoter")
+  await database2.transaction(async (tx) => {
+    await tx.update(memberAccounts).set({ userName: input.userName.trim(), email: input.email.trim().toLowerCase() }).where(and2(
+      eq2(memberAccounts.id, input.promoterId),
+      eq2(memberAccounts.companyId, companyId),
+      eq2(memberAccounts.role, "promoter")
     ));
     await tx.insert(promoterProfiles).values({
       memberAccountId: input.promoterId,
@@ -2274,10 +2052,10 @@ async function updatePromoterManagement(input) {
     const weekdayLabels = ["domingo", "segunda-feira", "ter\xE7a-feira", "quarta-feira", "quinta-feira", "sexta-feira", "s\xE1bado"];
     for (let weekday = 0; weekday <= 6; weekday++) {
       const schedule = weeklyRoutes.find((route) => route.weekday === weekday);
-      const conditions = and(
-        eq(weeklyRouteSchedules.companyId, companyId),
-        eq(weeklyRouteSchedules.promoterId, input.promoterId),
-        eq(weeklyRouteSchedules.weekday, weekday)
+      const conditions = and2(
+        eq2(weeklyRouteSchedules.companyId, companyId),
+        eq2(weeklyRouteSchedules.promoterId, input.promoterId),
+        eq2(weeklyRouteSchedules.weekday, weekday)
       );
       if (!schedule) {
         await tx.delete(weeklyRouteSchedules).where(conditions);
@@ -2297,32 +2075,32 @@ async function updatePromoterManagement(input) {
   return { success: true };
 }
 async function materializeWeeklyRoutes(companyId, promoterId, dateString) {
-  const database = await getDb();
-  if (!database) return [];
+  const database2 = await getDb();
+  if (!database2) return [];
   const company = requireAccountId(companyId);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateString) || Number.isNaN(Date.parse(`${dateString}T00:00:00Z`))) return [];
   const weekday = (/* @__PURE__ */ new Date(`${dateString}T00:00:00Z`)).getUTCDay();
-  const schedules = await database.select().from(weeklyRouteSchedules).where(and(
-    eq(weeklyRouteSchedules.companyId, company),
-    eq(weeklyRouteSchedules.promoterId, promoterId),
-    eq(weeklyRouteSchedules.weekday, weekday),
-    eq(weeklyRouteSchedules.active, true)
+  const schedules = await database2.select().from(weeklyRouteSchedules).where(and2(
+    eq2(weeklyRouteSchedules.companyId, company),
+    eq2(weeklyRouteSchedules.promoterId, promoterId),
+    eq2(weeklyRouteSchedules.weekday, weekday),
+    eq2(weeklyRouteSchedules.active, true)
   ));
   for (const schedule of schedules) {
     try {
-      await database.transaction(async (tx) => {
-        const existing = await tx.select({ id: routes.id }).from(routes).where(and(
-          eq(routes.companyId, company),
-          eq(routes.weeklyScheduleId, schedule.id),
-          eq(routes.date, dateString)
+      await database2.transaction(async (tx) => {
+        const existing = await tx.select({ id: routes.id }).from(routes).where(and2(
+          eq2(routes.companyId, company),
+          eq2(routes.promoterId, promoterId),
+          eq2(routes.date, dateString)
         )).limit(1);
         if (existing.length) return;
         const storeIds = Array.isArray(schedule.storeIds) ? schedule.storeIds : [];
         if (!storeIds.length) return;
-        const stores2 = await tx.select({ id: stores.id }).from(stores).where(and(
+        const stores2 = await tx.select({ id: stores.id }).from(stores).where(and2(
           inArray(stores.id, storeIds),
-          eq(stores.companyId, company),
-          eq(stores.active, true)
+          eq2(stores.companyId, company),
+          eq2(stores.active, true)
         ));
         if (!stores2.length) return;
         const inserted = await tx.insert(routes).values({
@@ -2343,111 +2121,204 @@ async function materializeWeeklyRoutes(companyId, promoterId, dateString) {
   return listOperationalRoutes(company, { date: dateString, promoterId });
 }
 async function createOperationalRoute(input) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
-  const result = await database.insert(routes).values(input);
-  const rows = await database.select().from(routes).where(eq(routes.id, Number(result[0]?.insertId))).limit(1);
-  return rows[0];
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  const result = await database2.insert(routes).values(input);
+  const rows2 = await database2.select().from(routes).where(eq2(routes.id, Number(result[0]?.insertId))).limit(1);
+  return rows2[0];
+}
+async function updateOperationalRoute(companyId, routeId, data) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not available");
+  const updates = {};
+  if (data.name) updates.name = data.name;
+  if (data.promoterId) updates.promoterId = data.promoterId;
+  if (data.date) updates.date = data.date.slice(0, 10);
+  if (Object.keys(updates).length) {
+    await database2.update(routes).set(updates).where(and2(eq2(routes.id, routeId), eq2(routes.companyId, requireAccountId(companyId))));
+  }
+  if (data.promoterId) {
+    await database2.update(visits).set({ promoterId: data.promoterId }).where(and2(eq2(visits.routeId, routeId), eq2(visits.companyId, requireAccountId(companyId))));
+  }
+  if (data.storeIds && data.storeIds.length) {
+    await database2.delete(visits).where(and2(eq2(visits.routeId, routeId), eq2(visits.companyId, requireAccountId(companyId))));
+    for (const storeId of data.storeIds) {
+      await database2.insert(visits).values({ companyId: requireAccountId(companyId), routeId, storeId, promoterId: data.promoterId || 0, status: "pending" });
+    }
+  }
+  return { success: true };
+}
+async function deleteOperationalRoute(companyId, routeId) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not available");
+  await database2.delete(visits).where(and2(eq2(visits.routeId, routeId), eq2(visits.companyId, companyId)));
+  await database2.delete(routes).where(and2(eq2(routes.id, routeId), eq2(routes.companyId, companyId)));
+  return { success: true };
 }
 async function createOperationalRouteWithVisits(input) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
   const companyId = requireAccountId(input.route.companyId);
-  const uniqueStoreIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
+  const uniqueStoreIds = [...new Set(input.storeIds)].filter((id2) => Number.isInteger(id2) && id2 > 0);
   if (!uniqueStoreIds.length) throw new Error("Selecione ao menos uma loja para o roteiro.");
-  return database.transaction(async (tx) => {
-    const stores2 = await tx.select({ id: stores.id }).from(stores).where(and(inArray(stores.id, uniqueStoreIds), eq(stores.companyId, companyId), eq(stores.active, true)));
+  return database2.transaction(async (tx) => {
+    const stores2 = await tx.select({ id: stores.id }).from(stores).where(and2(inArray(stores.id, uniqueStoreIds), eq2(stores.companyId, companyId), eq2(stores.active, true)));
     if (stores2.length !== uniqueStoreIds.length) throw new Error("Uma ou mais lojas n\xE3o pertencem a esta empresa.");
     const result = await tx.insert(routes).values(input.route);
     const routeId = Number(result[0]?.insertId);
     await tx.insert(visits).values(stores2.map((store) => ({ companyId, routeId, storeId: store.id, promoterId: input.route.promoterId, status: "pending" })));
-    const rows = await tx.select().from(routes).where(eq(routes.id, routeId)).limit(1);
-    return rows[0];
+    const rows2 = await tx.select().from(routes).where(eq2(routes.id, routeId)).limit(1);
+    return rows2[0];
   });
 }
 async function listOperationalVisits(companyId, options = {}) {
-  const database = await getDb();
-  if (!database) return [];
-  const conditions = [eq(visits.companyId, requireAccountId(companyId))];
-  if (options.promoterId) conditions.push(eq(visits.promoterId, options.promoterId));
-  if (options.routeId) conditions.push(eq(visits.routeId, options.routeId));
-  if (options.date) conditions.push(eq(routes.date, options.date));
-  const rows = await database.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq(visits.storeId, stores.id)).innerJoin(routes, eq(visits.routeId, routes.id)).where(and(...conditions)).orderBy(visits.plannedStart, visits.id);
-  return rows;
+  const database2 = await getDb();
+  if (!database2) return [];
+  const conditions = [eq2(visits.companyId, requireAccountId(companyId))];
+  if (options.promoterId) conditions.push(eq2(visits.promoterId, options.promoterId));
+  if (options.routeId) conditions.push(eq2(visits.routeId, options.routeId));
+  if (options.date) conditions.push(eq2(routes.date, options.date));
+  const rows2 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq2(visits.storeId, stores.id)).innerJoin(routes, eq2(visits.routeId, routes.id)).where(and2(...conditions)).orderBy(visits.plannedStart, visits.id);
+  return rows2;
 }
-async function updateOperationalVisit(companyId, id, data) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
-  await database.update(visits).set(data).where(and(eq(visits.id, id), eq(visits.companyId, requireAccountId(companyId))));
-  const rows = await database.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq(visits.storeId, stores.id)).where(and(eq(visits.id, id), eq(visits.companyId, companyId))).limit(1);
-  return rows[0];
+async function updateOperationalVisit(companyId, id2, data) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  await database2.update(visits).set(data).where(and2(eq2(visits.id, id2), eq2(visits.companyId, requireAccountId(companyId))));
+  const rows2 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq2(visits.storeId, stores.id)).where(and2(eq2(visits.id, id2), eq2(visits.companyId, companyId))).limit(1);
+  return rows2[0];
 }
-async function listInventoryProducts(companyId, search, expiry) {
-  const database = await getDb();
-  if (!database) return [];
+async function ensureInventoryProductsSchema() {
+  if (_inventoryReady) return _inventoryReady;
+  _inventoryReady = (async () => {
+    const database2 = await getDb();
+    if (!database2) return;
+    await database2.execute(`CREATE TABLE IF NOT EXISTS inventory_products (
+      id int AUTO_INCREMENT NOT NULL,
+      companyId int NOT NULL,
+      productCode varchar(64) NOT NULL,
+      description varchar(500) NOT NULL,
+      quantity int NOT NULL DEFAULT 0,
+      expirationDate date NOT NULL,
+      price decimal(12,2) NOT NULL DEFAULT 0.00,
+      storeId int NULL,
+      createdByMemberId int NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY inventory_products_company_idx (companyId),
+      KEY inventory_products_code_idx (companyId, productCode),
+      KEY inventory_products_expiry_idx (companyId, expirationDate)
+    )`);
+    const [cols] = await database2.execute(`SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'inventory_products'`);
+    const names = new Set(cols.map((c) => String(c.COLUMN_NAME ?? c.column_name).toLowerCase()));
+    if (!names.has("storeid")) await database2.execute(`ALTER TABLE inventory_products ADD COLUMN storeId int NULL`);
+    if (!names.has("createdbymemberid")) await database2.execute(`ALTER TABLE inventory_products ADD COLUMN createdByMemberId int NULL`);
+  })().catch((error) => {
+    _inventoryReady = null;
+    throw error;
+  });
+  return _inventoryReady;
+}
+async function listInventoryProducts(companyId, filters = {}) {
+  const database2 = await getDb();
+  if (!database2) return [];
+  await ensureInventoryProductsSchema();
   const company = requireAccountId(companyId);
-  const conditions = [eq(inventoryProducts.companyId, company)];
-  if (search?.trim()) conditions.push(or(like(inventoryProducts.productCode, `%${search.trim()}%`), like(inventoryProducts.description, `%${search.trim()}%`)));
-  if (expiry === "expired") conditions.push(sql`${inventoryProducts.expirationDate} < CURRENT_DATE()`);
-  if (expiry === "near") conditions.push(sql`${inventoryProducts.expirationDate} >= CURRENT_DATE() AND ${inventoryProducts.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL 30 DAY)`);
-  return database.select().from(inventoryProducts).where(and(...conditions)).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
+  const today = todayInZone();
+  const limit = addDays(today, 30);
+  const conditions = [eq2(inventoryProducts.companyId, company)];
+  const search = filters.search?.trim();
+  if (search) conditions.push(or(like(inventoryProducts.productCode, `%${search}%`), like(inventoryProducts.description, `%${search}%`)));
+  if (filters.expiry === "expired") conditions.push(sql2`${inventoryProducts.expirationDate} < ${today}`);
+  if (filters.expiry === "near") conditions.push(sql2`${inventoryProducts.expirationDate} >= ${today} AND ${inventoryProducts.expirationDate} <= ${limit}`);
+  if (filters.expiry === "valid") conditions.push(sql2`${inventoryProducts.expirationDate} > ${limit}`);
+  if (filters.storeId) conditions.push(eq2(inventoryProducts.storeId, filters.storeId));
+  if (filters.from) conditions.push(sql2`${inventoryProducts.expirationDate} >= ${filters.from}`);
+  if (filters.to) conditions.push(sql2`${inventoryProducts.expirationDate} <= ${filters.to}`);
+  return database2.select().from(inventoryProducts).where(and2(...conditions)).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
+}
+async function getInventoryProduct(companyId, id2) {
+  const database2 = await getDb();
+  if (!database2) return null;
+  await ensureInventoryProductsSchema();
+  const company = requireAccountId(companyId);
+  return (await database2.select().from(inventoryProducts).where(and2(eq2(inventoryProducts.id, id2), eq2(inventoryProducts.companyId, company))).limit(1))[0] ?? null;
 }
 async function createInventoryProduct(input) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  await ensureInventoryProductsSchema();
   const companyId = requireAccountId(input.companyId);
-  const result = await database.insert(inventoryProducts).values({ ...input, companyId });
-  const id = Number(result[0]?.insertId);
-  return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, companyId))).limit(1))[0];
+  const dup = await database2.select().from(inventoryProducts).where(and2(
+    eq2(inventoryProducts.companyId, companyId),
+    eq2(inventoryProducts.productCode, input.productCode),
+    sql2`${inventoryProducts.expirationDate} = ${input.expirationDate}`,
+    input.storeId ? eq2(inventoryProducts.storeId, input.storeId) : isNull(inventoryProducts.storeId),
+    eq2(inventoryProducts.quantity, input.quantity ?? 0),
+    sql2`${inventoryProducts.createdAt} >= DATE_SUB(NOW(), INTERVAL 60 SECOND)`
+  )).limit(1);
+  if (dup[0]) return dup[0];
+  const result = await database2.insert(inventoryProducts).values({ ...input, companyId });
+  const id2 = Number(result[0]?.insertId);
+  return (await database2.select().from(inventoryProducts).where(and2(eq2(inventoryProducts.id, id2), eq2(inventoryProducts.companyId, companyId))).limit(1))[0];
 }
-async function updateInventoryProduct(companyId, id, data) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
+async function updateInventoryProduct(companyId, id2, data) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  await ensureInventoryProductsSchema();
   const company = requireAccountId(companyId);
-  await database.update(inventoryProducts).set(data).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company)));
-  return (await database.select().from(inventoryProducts).where(and(eq(inventoryProducts.id, id), eq(inventoryProducts.companyId, company))).limit(1))[0] || null;
+  await database2.update(inventoryProducts).set(data).where(and2(eq2(inventoryProducts.id, id2), eq2(inventoryProducts.companyId, company)));
+  return (await database2.select().from(inventoryProducts).where(and2(eq2(inventoryProducts.id, id2), eq2(inventoryProducts.companyId, company))).limit(1))[0] || null;
 }
-async function deleteInventoryProducts(companyId, ids) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
+async function deleteInventoryProducts(companyId, ids, actor) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
   const tenant = requireAccountId(companyId);
-  const uniqueIds = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
+  const uniqueIds = [...new Set(ids)].filter((id2) => Number.isInteger(id2) && id2 > 0);
   if (!uniqueIds.length) return { deleted: 0 };
-  return database.transaction(async (tx) => {
-    const rows = await tx.select().from(inventoryProducts).where(and(inArray(inventoryProducts.id, uniqueIds), eq(inventoryProducts.companyId, tenant)));
-    if (rows.length !== uniqueIds.length) throw new Error("Um ou mais produtos n\xE3o existem ou n\xE3o pertencem \xE0 sua empresa.");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1e3);
-    await tx.insert(trashItems).values(rows.map((product) => ({ accountId: tenant, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
-    await tx.delete(inventoryProducts).where(and(inArray(inventoryProducts.id, uniqueIds), eq(inventoryProducts.companyId, tenant)));
-    return { deleted: rows.length };
+  await ensureTrashTable();
+  await ensureInventoryProductsSchema();
+  return database2.transaction(async (tx) => {
+    const rows2 = await tx.select().from(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
+    if (rows2.length !== uniqueIds.length) throw new Error("Um ou mais produtos n\xE3o existem ou n\xE3o pertencem \xE0 sua empresa.");
+    const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1e3);
+    await tx.insert(trashItems).values(rows2.map((product) => ({ accountId: tenant, deletedByMemberId: actor?.memberId ?? null, deletedByName: actor?.name ?? null, ownerMemberId: product.createdByMemberId ?? null, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
+    await tx.delete(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
+    return { deleted: rows2.length };
   });
 }
-async function deleteInventoryProduct(companyId, id) {
-  return deleteInventoryProducts(companyId, [id]);
+async function deleteInventoryProduct(companyId, id2, actor) {
+  return deleteInventoryProducts(companyId, [id2], actor);
 }
 async function getExpiringInventoryProducts(companyId, daysAhead = 30) {
-  const database = await getDb();
-  if (!database) return [];
+  const database2 = await getDb();
+  if (!database2) return [];
+  await ensureInventoryProductsSchema();
   const company = requireAccountId(companyId);
   const days = Math.max(0, Math.min(365, Math.trunc(daysAhead)));
-  return database.select().from(inventoryProducts).where(and(
-    eq(inventoryProducts.companyId, company),
-    sql`${inventoryProducts.expirationDate} >= CURRENT_DATE() AND ${inventoryProducts.expirationDate} <= DATE_ADD(CURRENT_DATE(), INTERVAL ${days} DAY)`
+  return database2.select().from(inventoryProducts).where(and2(
+    eq2(inventoryProducts.companyId, company),
+    sql2`${inventoryProducts.expirationDate} >= ${todayInZone()} AND ${inventoryProducts.expirationDate} <= ${addDays(todayInZone(), days)}`
   )).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
 }
-var _db, _dbUrl, _pool, ownerScopeReady;
+var _db, _dbUrl, _pool, ownerScopeReady, ownerScopePromise, _trashTableReady, _inventoryReady;
 var init_db = __esm({
   "server/db.ts"() {
     "use strict";
     init_schema_original();
     init_schema();
+    init_storeAccess();
+    init_expiry();
     init_entitlements();
-    init_env();
     init_schema();
     _db = null;
     _dbUrl = null;
     _pool = null;
     ownerScopeReady = false;
+    ownerScopePromise = null;
+    _trashTableReady = null;
+    _inventoryReady = null;
   }
 });
 
@@ -2466,11 +2337,15 @@ async function checkSubscriptionAccess(companyId) {
   if (!company) {
     return { allowed: false, status: "none", reason: "Empresa n\xE3o encontrada." };
   }
-  let status = company.subscriptionStatus || null;
+  if (company.active === false) {
+    const reason = await getSetting("blocked_reason", companyId, "");
+    return { allowed: false, status: "suspended", reason: reason || "Empresa bloqueada. Entre em contato com o suporte." };
+  }
+  let status2 = company.subscriptionStatus || null;
   let expiresAt = parseDate(company.subscriptionExpiresAt);
   let trialEndsAt = parseDate(company.trialEndsAt);
   let graceUntil = parseDate(company.gracePeriodEndsAt);
-  if (!status) {
+  if (!status2) {
     const sub = await getLatestCompanySubscription(companyId);
     if (!sub) {
       const created = parseDate(company.createdAt) || /* @__PURE__ */ new Date();
@@ -2480,20 +2355,20 @@ async function checkSubscriptionAccess(companyId) {
       }
       return { allowed: false, status: "none", reason: "Nenhuma assinatura ativa. Regularize o plano." };
     }
-    status = sub.status;
+    status2 = sub.status;
     expiresAt = parseDate(sub.currentPeriodEnd) || parseDate(sub.endsAt);
     trialEndsAt = parseDate(sub.trialEndsAt);
     graceUntil = parseDate(sub.gracePeriodEndsAt);
   }
   const now = /* @__PURE__ */ new Date();
-  switch (status) {
+  switch (status2) {
     case "trial":
     case "test": {
       const end = trialEndsAt || expiresAt;
       if (end && now > end) {
-        return { allowed: false, status, expiresAt: end, reason: "Per\xEDodo de teste encerrado." };
+        return { allowed: false, status: status2, expiresAt: end, reason: "Per\xEDodo de teste encerrado." };
       }
-      return { allowed: true, status, expiresAt: end };
+      return { allowed: true, status: status2, expiresAt: end };
     }
     case "active":
       if (expiresAt && now > expiresAt) {
@@ -2503,24 +2378,24 @@ async function checkSubscriptionAccess(companyId) {
         }
         return { allowed: false, status: "overdue", expiresAt, graceUntil: grace, reason: "Assinatura vencida." };
       }
-      return { allowed: true, status, expiresAt };
+      return { allowed: true, status: status2, expiresAt };
     case "pending":
-      return { allowed: true, status, expiresAt, reason: "Pagamento pendente." };
+      return { allowed: true, status: status2, expiresAt, reason: "Pagamento pendente." };
     case "overdue": {
       const grace = graceUntil || (expiresAt ? new Date(expiresAt.getTime() + 3 * 24 * 3600 * 1e3) : null);
       if (grace && now <= grace) {
-        return { allowed: true, status, expiresAt, graceUntil: grace, reason: "Per\xEDodo de toler\xE2ncia." };
+        return { allowed: true, status: status2, expiresAt, graceUntil: grace, reason: "Per\xEDodo de toler\xE2ncia." };
       }
-      return { allowed: false, status, expiresAt, graceUntil: grace, reason: "Pagamento em atraso. Regularize a assinatura." };
+      return { allowed: false, status: status2, expiresAt, graceUntil: grace, reason: "Pagamento em atraso. Regularize a assinatura." };
     }
     case "suspended":
-      return { allowed: false, status, expiresAt, reason: "Assinatura suspensa." };
+      return { allowed: false, status: status2, expiresAt, reason: "Assinatura suspensa." };
     case "canceled":
     case "expired":
       if (expiresAt && now <= expiresAt) {
-        return { allowed: true, status, expiresAt, reason: "Acesso at\xE9 o fim do per\xEDodo j\xE1 pago." };
+        return { allowed: true, status: status2, expiresAt, reason: "Acesso at\xE9 o fim do per\xEDodo j\xE1 pago." };
       }
-      return { allowed: false, status, expiresAt, reason: "Assinatura cancelada ou expirada." };
+      return { allowed: false, status: status2, expiresAt, reason: "Assinatura cancelada ou expirada." };
     default:
       return { allowed: false, status: "none", reason: "Status de assinatura desconhecido." };
   }
@@ -2540,7 +2415,7 @@ __export(entitlements_exports, {
   getCompanyEntitlementBase: () => getCompanyEntitlementBase,
   getMemberEntitlementSnapshot: () => getMemberEntitlementSnapshot
 });
-import { TRPCError } from "@trpc/server";
+import { TRPCError as TRPCError2 } from "@trpc/server";
 async function getCompanyEntitlementBase(companyId) {
   const resolved = await resolveCompanyPlan(companyId);
   const plan = resolved.plan ?? null;
@@ -2579,7 +2454,7 @@ async function getMemberEntitlementSnapshot(companyId, memberAccountId, role) {
 async function assertCompanyFeatureAccess(companyId, featureKey) {
   const base = await getCompanyEntitlementBase(companyId);
   if (!base.companyFeatures[featureKey]) {
-    throw new TRPCError({
+    throw new TRPCError2({
       code: "FORBIDDEN",
       message: `O m\xF3dulo \u201C${featureKey}\u201D n\xE3o est\xE1 habilitado para esta empresa.`,
       cause: { code: "PLAN_FEATURE_BLOCKED", featureKey, planId: base.planId, planName: base.planName }
@@ -2611,7 +2486,7 @@ async function assertMemberFeatureAccess(input) {
       message = "Seu perfil n\xE3o tem permiss\xE3o para usar este m\xF3dulo.";
       code = "ROLE_FEATURE_BLOCKED";
     }
-    throw new TRPCError({
+    throw new TRPCError2({
       code: "FORBIDDEN",
       message,
       cause: { code, featureKey: input.featureKey, planId: base.planId, planName: base.planName, role: input.role }
@@ -2627,395 +2502,92 @@ var init_entitlements2 = __esm({
   }
 });
 
-// server/email.ts
-var email_exports = {};
-__export(email_exports, {
-  emailAccountCreated: () => emailAccountCreated,
-  emailAdminNewCompany: () => emailAdminNewCompany,
-  emailAdminPlanChanged: () => emailAdminPlanChanged,
-  emailExtinguisherAlerts: () => emailExtinguisherAlerts,
-  emailPlanChanged: () => emailPlanChanged,
-  emailProductExpirationAlerts: () => emailProductExpirationAlerts,
-  getAdminNotificationEmail: () => getAdminNotificationEmail,
-  getAppPublicUrl: () => getAppPublicUrl,
-  getEmailFrom: () => getEmailFrom,
-  sendEmail: () => sendEmail
-});
-function env(name, fallback = "") {
-  return (process.env[name] ?? fallback).trim();
-}
-function getAdminNotificationEmail() {
-  return env("ADMIN_NOTIFICATION_EMAIL", "ivan.honemann@gmail.com");
-}
-function getAppPublicUrl() {
-  return env("APP_PUBLIC_URL", "https://gestao-de-extintores-teste.vercel.app").replace(/\/$/, "");
-}
-function getEmailFrom() {
-  return env("EMAIL_FROM", "Extinfy <onboarding@resend.dev>");
-}
-function provider() {
-  const explicit = env("EMAIL_PROVIDER").toLowerCase();
-  if (explicit === "console") return "console";
-  if (explicit === "webhook" || env("EMAIL_WEBHOOK_URL")) return env("EMAIL_WEBHOOK_URL") ? "webhook" : "console";
-  if (explicit === "resend" || env("RESEND_API_KEY")) return "resend";
-  return "console";
-}
-function escapeHtml(value) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-function layout(title, bodyHtml) {
-  return `<!DOCTYPE html>
-<html lang="pt-BR">
-<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${escapeHtml(title)}</title></head>
-<body style="margin:0;padding:0;background:#0a0f23;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#e8ecf8;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0a0f23;padding:24px 12px;">
-    <tr><td align="center">
-      <table role="presentation" width="100%" style="max-width:560px;background:#141a2e;border:1px solid #2a334d;border-radius:16px;overflow:hidden;">
-        <tr><td style="padding:20px 24px;background:linear-gradient(135deg,#e10600,#ff2d2d);">
-          <div style="font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.02em;">Extinfy</div>
-          <div style="font-size:12px;color:rgba(255,255,255,.9);margin-top:2px;">Gest\xE3o de Extintores</div>
-        </td></tr>
-        <tr><td style="padding:28px 24px;">
-          <h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:#fff;">${escapeHtml(title)}</h1>
-          ${bodyHtml}
-        </td></tr>
-        <tr><td style="padding:16px 24px 24px;border-top:1px solid #2a334d;font-size:12px;color:#8b93ad;">
-          Este e-mail foi enviado automaticamente pelo Extinfy. N\xE3o responda a esta mensagem se n\xE3o reconhecer a atividade.
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
-}
-function row(label, value) {
-  return `<tr>
-    <td style="padding:8px 0;color:#8b93ad;font-size:13px;width:38%;vertical-align:top;">${escapeHtml(label)}</td>
-    <td style="padding:8px 0;color:#fff;font-size:14px;font-weight:600;vertical-align:top;">${escapeHtml(value)}</td>
-  </tr>`;
-}
-function dataTable(rows) {
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:12px 0 20px;">${rows.map(([l, v]) => row(l, v)).join("")}</table>`;
-}
-function cta(href, label) {
-  return `<p style="margin:20px 0 8px;"><a href="${escapeHtml(href)}" style="display:inline-block;background:#e10600;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:999px;">${escapeHtml(label)}</a></p>`;
-}
-async function sendEmail(input) {
-  const toList = (Array.isArray(input.to) ? input.to : [input.to]).map((e) => e.trim().toLowerCase()).filter(Boolean);
-  if (!toList.length) return { ok: false, error: "Destinat\xE1rio ausente" };
-  const mode = provider();
-  if (mode === "console") {
-    console.info("[email:console]", {
-      to: toList,
-      subject: input.subject,
-      preview: (input.text || input.html).slice(0, 240)
-    });
-    return { ok: true, id: "console" };
-  }
-  if (mode === "webhook") {
-    const endpoint = env("EMAIL_WEBHOOK_URL");
-    if (!endpoint) {
-      console.info("[email:webhook] EMAIL_WEBHOOK_URL ausente \u2014 log only", { to: toList, subject: input.subject });
-      return { ok: true, id: "console" };
-    }
-    try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          from: getEmailFrom(),
-          to: toList,
-          subject: input.subject,
-          html: input.html,
-          text: input.text,
-          source: "extinfy",
-          timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        })
-      });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        console.warn("[email:webhook] fail", res.status, detail);
-        return { ok: false, error: detail || res.statusText };
-      }
-      return { ok: true, id: "webhook" };
-    } catch (error) {
-      console.warn("[email:webhook] error", error);
-      return { ok: false, error: error instanceof Error ? error.message : "webhook failed" };
-    }
-  }
-  if (!env("RESEND_API_KEY")) {
-    console.info("[email:console] RESEND_API_KEY ausente", { to: toList, subject: input.subject });
-    return { ok: true, id: "console" };
-  }
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env("RESEND_API_KEY")}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        from: getEmailFrom(),
-        to: toList,
-        subject: input.subject,
-        html: input.html,
-        text: input.text
-      })
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      console.warn("[email:resend] fail", res.status, body);
-      return { ok: false, error: String(body?.message || res.statusText) };
-    }
-    return { ok: true, id: String(body?.id || "") };
-  } catch (error) {
-    console.warn("[email:resend] error", error);
-    return { ok: false, error: error instanceof Error ? error.message : "send failed" };
-  }
-}
-async function emailAccountCreated(input) {
-  const loginUrl = `${getAppPublicUrl()}/?login=1`;
-  const planLine = input.planName ? `${input.planName}${input.isTrial ? " (teste gr\xE1tis)" : ""}` : input.isTrial ? "Teste gr\xE1tis" : "N\xE3o informado";
-  const rows = [
-    ["Empresa", input.companyName],
-    ["Respons\xE1vel", input.userName],
-    ["E-mail de acesso", input.email]
-  ];
-  if (input.password) rows.push(["Senha", input.password]);
-  rows.push(["C\xF3digo de redefini\xE7\xE3o", input.recoveryCode]);
-  rows.push(["Plano", planLine]);
-  const html = layout(
-    "Sua conta Extinfy foi criada",
-    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Sua conta foi criada com sucesso. Guarde estes dados em local seguro.</p>
-    ${dataTable(rows)}
-    <p style="margin:0 0 8px;color:#c4cae0;font-size:13px;line-height:1.5;">Use o <strong style="color:#fff;">c\xF3digo de redefini\xE7\xE3o</strong> se precisar trocar a senha na tela de recupera\xE7\xE3o.</p>
-    ${cta(loginUrl, "Entrar no Extinfy")}`
-  );
-  return sendEmail({
-    to: input.to,
-    subject: "Extinfy \u2014 conta criada e dados de acesso",
-    html,
-    text: `Conta criada
-Empresa: ${input.companyName}
-E-mail: ${input.email}
-Senha: ${input.password || "(a definida no cadastro)"}
-C\xF3digo de redefini\xE7\xE3o: ${input.recoveryCode}
-Plano: ${planLine}
-Acesse: ${loginUrl}`
-  });
-}
-async function emailPlanChanged(input) {
-  const title = input.isUpgrade ? "Upgrade de plano confirmado" : "Plano adquirido";
-  const rows = [
-    ["Empresa", input.companyName],
-    ["Plano", input.planName],
-    ["Status", input.status]
-  ];
-  if (input.amount) rows.push(["Valor", `R$ ${input.amount}`]);
-  if (input.periodEnd) rows.push(["V\xE1lido at\xE9", input.periodEnd]);
-  const html = layout(
-    title,
-    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Registramos a altera\xE7\xE3o do plano da sua empresa.</p>
-    ${dataTable(rows)}
-    ${cta(`${getAppPublicUrl()}/minha-assinatura`, "Ver minha assinatura")}`
-  );
-  return sendEmail({
-    to: input.to,
-    subject: `Extinfy \u2014 ${title}: ${input.planName}`,
-    html,
-    text: `${title}
-Empresa: ${input.companyName}
-Plano: ${input.planName}
-Status: ${input.status}`
-  });
-}
-async function emailAdminNewCompany(input) {
-  const admin = getAdminNotificationEmail();
-  if (!admin) return { ok: false, error: "ADMIN_NOTIFICATION_EMAIL vazio" };
-  const planLabel = input.planName ? `${input.planName}${input.isTrial ? " \u2014 teste gr\xE1tis" : ""}` : input.isTrial ? "Teste gr\xE1tis (plano n\xE3o informado)" : "N\xE3o informado";
-  const html = layout(
-    "Nova empresa cadastrada",
-    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Uma nova empresa acabou de se cadastrar no Extinfy.</p>
-    ${dataTable([
-      ["Empresa", input.companyName],
-      ["Respons\xE1vel", input.userName],
-      ["E-mail", input.email],
-      ["Plano / modo", planLabel],
-      ["Quando", (/* @__PURE__ */ new Date()).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })]
-    ])}`
-  );
-  return sendEmail({
-    to: admin,
-    subject: `Extinfy \u2014 nova empresa: ${input.companyName} (${planLabel})`,
-    html,
-    text: `Nova empresa
-${input.companyName}
-${input.userName} <${input.email}>
-Plano: ${planLabel}`
-  });
-}
-async function emailAdminPlanChanged(input) {
-  const admin = getAdminNotificationEmail();
-  if (!admin) return { ok: false, error: "ADMIN_NOTIFICATION_EMAIL vazio" };
-  const title = input.isUpgrade ? "Upgrade de plano na plataforma" : "Plano adquirido na plataforma";
-  const html = layout(
-    title,
-    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Um cliente alterou ou adquiriu um plano no Extinfy.</p>
-    ${dataTable([
-      ["Empresa", input.companyName],
-      ["Respons\xE1vel", input.userName],
-      ["E-mail", input.email],
-      ["Plano", input.planName],
-      ["Status", input.status],
-      ["Valor", input.amount ? `R$ ${input.amount}` : "\u2014"],
-      ["Quando", (/* @__PURE__ */ new Date()).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })]
-    ])}`
-  );
-  return sendEmail({
-    to: admin,
-    subject: `Extinfy \u2014 ${input.isUpgrade ? "upgrade" : "plano"}: ${input.companyName} \u2192 ${input.planName}`,
-    html,
-    text: `${title}
-Empresa: ${input.companyName}
-${input.userName} <${input.email}>
-Plano: ${input.planName}
-Status: ${input.status}`
-  });
-}
-async function emailExtinguisherAlerts(input) {
-  if (!input.items.length) return { ok: true, id: "empty" };
-  const list = input.items.slice(0, 40).map(
-    (item) => `<li style="margin:0 0 10px;color:#c4cae0;"><strong style="color:#fff;">${escapeHtml(item.clientName)}</strong> \u2014 ${escapeHtml(item.type || "Extintor")}${item.capacity ? ` (${escapeHtml(item.capacity)})` : ""}<br/><span style="color:#ff6b6b;">${escapeHtml(item.alertMessage)}</span> \xB7 validade ${escapeHtml(item.expirationDate)}</li>`
-  ).join("");
-  const more = input.items.length > 40 ? `<p style="color:#8b93ad;font-size:13px;">\u2026 e mais ${input.items.length - 40} item(ns). Veja o painel completo no sistema.</p>` : "";
-  const html = layout(
-    "Alertas de validade de extintores",
-    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong> (${escapeHtml(input.companyName)}). H\xE1 <strong style="color:#fff;">${input.items.length}</strong> extintor(es) vencido(s) ou pr\xF3ximos do vencimento:</p>
-    <ul style="margin:0;padding-left:18px;">${list}</ul>
-    ${more}
-    ${cta(getAppPublicUrl() + "/", "Abrir painel Extinfy")}`
-  );
-  return sendEmail({
-    to: input.to,
-    subject: `Extinfy \u2014 ${input.items.length} alerta(s) de validade (${input.companyName})`,
-    html,
-    text: `Alertas de validade (${input.companyName}): ${input.items.length} item(ns). Acesse o painel.`
-  });
-}
-async function emailProductExpirationAlerts(input) {
-  if (!input.items.length) return { ok: true, id: "empty" };
-  const list = input.items.slice(0, 50).map((item) => `<li style="margin:0 0 12px;color:#c4cae0;"><strong style="color:#fff;">${escapeHtml(item.description)}</strong><br/>C\xF3digo: ${escapeHtml(item.productCode)} \xB7 Quantidade: ${item.quantity} \xB7 Pre\xE7o: R$ ${escapeHtml(String(item.price))}<br/><span style="color:#fbbf24;">Validade: ${escapeHtml(item.expirationDate)}</span></li>`).join("");
-  const more = input.items.length > 50 ? `<p style="color:#8b93ad;font-size:13px;">\u2026 e mais ${input.items.length - 50} produto(s).</p>` : "";
-  const html = layout("Produtos pr\xF3ximos do vencimento", `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong> (${escapeHtml(input.companyName)}). Estes produtos vencem nos pr\xF3ximos 30 dias:</p><ul style="margin:0;padding-left:18px;">${list}</ul>${more}${cta(getAppPublicUrl() + "/produtos", "Ver produtos e validades")}`);
-  return sendEmail({ to: input.to, subject: `Extinfy \u2014 ${input.items.length} produto(s) vencem em at\xE9 30 dias (${input.companyName})`, html, text: `Produtos com validade nos pr\xF3ximos 30 dias: ${input.items.map((i) => `${i.description} (${i.productCode}), quantidade ${i.quantity}, validade ${i.expirationDate}, pre\xE7o R$ ${i.price}`).join("; ")}. Acesse /produtos.` });
-}
-var init_email = __esm({
-  "server/email.ts"() {
-    "use strict";
-  }
-});
-
-// server/vercel-entry.ts
-import express from "express";
-import fs2 from "fs";
-import path2 from "path";
-import { createExpressMiddleware } from "@trpc/server/adapters/express";
-
-// shared/const.ts
-var MEMBER_COOKIE_NAME = "member_session_id";
-var ONE_YEAR_MS = 1e3 * 60 * 60 * 24 * 365;
-var UNAUTHED_ERR_MSG = "Please login (10001)";
-var NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
-
-// server/modules/timeTracking.ts
-import { z } from "zod";
-import { TRPCError as TRPCError4 } from "@trpc/server";
-
 // server/_core/trpc.ts
-import { initTRPC, TRPCError as TRPCError2 } from "@trpc/server";
+import { initTRPC, TRPCError as TRPCError3 } from "@trpc/server";
 import superjson from "superjson";
-var t = initTRPC.context().create({ transformer: superjson });
-var router = t.router;
-var publicProcedure = t.procedure;
-var requireUser = t.middleware(async (opts) => {
-  if (!opts.ctx.user) throw new TRPCError2({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
-  return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
-});
-var requireCompanyUser = t.middleware(async (opts) => {
-  const user = opts.ctx.user;
-  if (!user) throw new TRPCError2({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
-  if (!opts.ctx.accountId || !Number.isInteger(opts.ctx.accountId) || opts.ctx.accountId <= 0 || user.role === "platform_admin") {
-    throw new TRPCError2({ code: "FORBIDDEN", message: "Usu\xE1rio sem empresa associada para acessar dados comerciais." });
-  }
-  const companyRoles = ["company_admin", "supervisor", "promoter"];
-  if (!companyRoles.includes(user.role)) throw new TRPCError2({ code: "FORBIDDEN", message: "Perfil sem permiss\xE3o comercial." });
-  if (process.env.NODE_ENV !== "test") {
-    const { checkSubscriptionAccess: checkSubscriptionAccess2 } = await Promise.resolve().then(() => (init_subscriptionAccess(), subscriptionAccess_exports));
-    const access = await checkSubscriptionAccess2(opts.ctx.accountId);
-    if (!access.allowed) {
-      throw new TRPCError2({
-        code: "FORBIDDEN",
-        message: access.reason || "Assinatura irregular. Regularize o plano para continuar.",
-        cause: { code: "SUBSCRIPTION_BLOCKED", status: access.status }
+var t, router, publicProcedure, requireUser, requireCompanyUser, requireCompanyAdmin, requirePlatformAdmin, protectedProcedure, requireCompanyMemberNoBillingGate, companyBillingProcedure, requireEntitlement, commercialFeatureProcedure, companyAdminFeatureProcedure, companyAdminProcedure, platformProcedure, adminProcedure;
+var init_trpc = __esm({
+  "server/_core/trpc.ts"() {
+    "use strict";
+    init_const();
+    t = initTRPC.context().create({ transformer: superjson });
+    router = t.router;
+    publicProcedure = t.procedure;
+    requireUser = t.middleware(async (opts) => {
+      if (!opts.ctx.user) throw new TRPCError3({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+      return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
+    });
+    requireCompanyUser = t.middleware(async (opts) => {
+      const user = opts.ctx.user;
+      if (!user) throw new TRPCError3({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+      if (!opts.ctx.accountId || !Number.isInteger(opts.ctx.accountId) || opts.ctx.accountId <= 0 || user.role === "platform_admin") {
+        throw new TRPCError3({ code: "FORBIDDEN", message: "Usu\xE1rio sem empresa associada para acessar dados comerciais." });
+      }
+      const companyRoles = ["company_admin", "supervisor", "promoter"];
+      if (!companyRoles.includes(user.role)) throw new TRPCError3({ code: "FORBIDDEN", message: "Perfil sem permiss\xE3o comercial." });
+      if (process.env.NODE_ENV !== "test" && !opts.ctx.actingAsPlatform) {
+        const { checkSubscriptionAccess: checkSubscriptionAccess2 } = await Promise.resolve().then(() => (init_subscriptionAccess(), subscriptionAccess_exports));
+        const access = await checkSubscriptionAccess2(opts.ctx.accountId);
+        if (!access.allowed) {
+          throw new TRPCError3({
+            code: "FORBIDDEN",
+            message: access.reason || "Assinatura irregular. Regularize o plano para continuar.",
+            cause: { code: "SUBSCRIPTION_BLOCKED", status: access.status }
+          });
+        }
+      }
+      return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
+    });
+    requireCompanyAdmin = t.middleware(async (opts) => {
+      const user = opts.ctx.user;
+      if (!user) throw new TRPCError3({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+      if (user.role !== "company_admin" || !opts.ctx.accountId) throw new TRPCError3({ code: "FORBIDDEN", message: "Somente o administrador da empresa pode executar esta opera\xE7\xE3o." });
+      return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
+    });
+    requirePlatformAdmin = t.middleware(async (opts) => {
+      const user = opts.ctx.user;
+      if (!user) throw new TRPCError3({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+      if (user.role !== "platform_admin" || !opts.ctx.isPlatformAdmin) throw new TRPCError3({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
+      return opts.next({ ctx: { ...opts.ctx, user } });
+    });
+    protectedProcedure = t.procedure.use(requireUser);
+    requireCompanyMemberNoBillingGate = t.middleware(async (opts) => {
+      const user = opts.ctx.user;
+      if (!user) throw new TRPCError3({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+      if (!opts.ctx.accountId || !Number.isInteger(opts.ctx.accountId) || opts.ctx.accountId <= 0 || user.role === "platform_admin") {
+        throw new TRPCError3({ code: "FORBIDDEN", message: "Usu\xE1rio sem empresa associada." });
+      }
+      const companyRoles = ["company_admin", "supervisor", "promoter"];
+      if (!companyRoles.includes(user.role)) throw new TRPCError3({ code: "FORBIDDEN", message: "Perfil sem permiss\xE3o comercial." });
+      return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
+    });
+    companyBillingProcedure = t.procedure.use(requireCompanyMemberNoBillingGate);
+    requireEntitlement = (featureKey) => t.middleware(async (opts) => {
+      const user = opts.ctx.user;
+      const companyId = opts.ctx.accountId;
+      if (!user || !companyId || user.role === "platform_admin") {
+        throw new TRPCError3({ code: "FORBIDDEN", message: "N\xE3o foi poss\xEDvel determinar a empresa e o perfil para validar este m\xF3dulo." });
+      }
+      if (opts.ctx.actingAsPlatform) return opts.next({ ctx: { ...opts.ctx, user, accountId: companyId } });
+      const { assertMemberFeatureAccess: assertMemberFeatureAccess2 } = await Promise.resolve().then(() => (init_entitlements2(), entitlements_exports));
+      await assertMemberFeatureAccess2({
+        companyId,
+        memberAccountId: opts.ctx.memberAccountId ?? null,
+        role: user.role,
+        featureKey
       });
-    }
+      return opts.next({ ctx: { ...opts.ctx, user, accountId: companyId } });
+    });
+    commercialFeatureProcedure = (featureKey) => t.procedure.use(requireCompanyUser).use(requireEntitlement(featureKey));
+    companyAdminFeatureProcedure = (featureKey) => t.procedure.use(requireCompanyAdmin).use(requireCompanyUser).use(requireEntitlement(featureKey));
+    companyAdminProcedure = t.procedure.use(requireCompanyAdmin);
+    platformProcedure = t.procedure.use(requirePlatformAdmin);
+    adminProcedure = platformProcedure;
   }
-  return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
 });
-var requireCompanyAdmin = t.middleware(async (opts) => {
-  const user = opts.ctx.user;
-  if (!user) throw new TRPCError2({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
-  if (user.role !== "company_admin" || !opts.ctx.accountId) throw new TRPCError2({ code: "FORBIDDEN", message: "Somente o administrador da empresa pode executar esta opera\xE7\xE3o." });
-  return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
-});
-var requirePlatformAdmin = t.middleware(async (opts) => {
-  const user = opts.ctx.user;
-  if (!user) throw new TRPCError2({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
-  if (user.role !== "platform_admin" || !opts.ctx.isPlatformAdmin) throw new TRPCError2({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
-  return opts.next({ ctx: { ...opts.ctx, user } });
-});
-var protectedProcedure = t.procedure.use(requireUser);
-var requireCompanyMemberNoBillingGate = t.middleware(async (opts) => {
-  const user = opts.ctx.user;
-  if (!user) throw new TRPCError2({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
-  if (!opts.ctx.accountId || !Number.isInteger(opts.ctx.accountId) || opts.ctx.accountId <= 0 || user.role === "platform_admin") {
-    throw new TRPCError2({ code: "FORBIDDEN", message: "Usu\xE1rio sem empresa associada." });
-  }
-  const companyRoles = ["company_admin", "supervisor", "promoter"];
-  if (!companyRoles.includes(user.role)) throw new TRPCError2({ code: "FORBIDDEN", message: "Perfil sem permiss\xE3o comercial." });
-  return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
-});
-var companyBillingProcedure = t.procedure.use(requireCompanyMemberNoBillingGate);
-var requireEntitlement = (featureKey) => t.middleware(async (opts) => {
-  const user = opts.ctx.user;
-  const companyId = opts.ctx.accountId;
-  if (!user || !companyId || user.role === "platform_admin") {
-    throw new TRPCError2({ code: "FORBIDDEN", message: "N\xE3o foi poss\xEDvel determinar a empresa e o perfil para validar este m\xF3dulo." });
-  }
-  const { assertMemberFeatureAccess: assertMemberFeatureAccess2 } = await Promise.resolve().then(() => (init_entitlements2(), entitlements_exports));
-  await assertMemberFeatureAccess2({
-    companyId,
-    memberAccountId: opts.ctx.memberAccountId ?? null,
-    role: user.role,
-    featureKey
-  });
-  return opts.next({ ctx: { ...opts.ctx, user, accountId: companyId } });
-});
-var commercialFeatureProcedure = (featureKey) => t.procedure.use(requireCompanyUser).use(requireEntitlement(featureKey));
-var companyAdminFeatureProcedure = (featureKey) => t.procedure.use(requireCompanyAdmin).use(requireCompanyUser).use(requireEntitlement(featureKey));
-var companyAdminProcedure = t.procedure.use(requireCompanyAdmin);
-var platformProcedure = t.procedure.use(requirePlatformAdmin);
-var adminProcedure = platformProcedure;
-
-// server/modules/timeTracking.ts
-init_db();
-init_schema();
-import { eq as eq2, and as and2, desc as desc2, gte, lt } from "drizzle-orm";
 
 // server/audit.ts
-init_db();
-import { TRPCError as TRPCError3 } from "@trpc/server";
-var auditTableReady = false;
+import { TRPCError as TRPCError4 } from "@trpc/server";
 async function ensureAuditLogsTable() {
   if (auditTableReady) return;
   const pool = await getPool();
@@ -3052,17 +2624,16 @@ async function ensureAuditLogsTable() {
     console.warn("[audit] ensure table failed", err);
   }
 }
-function toMysqlDateTime(value, endOfDay = false) {
+function toMysqlDateTime(value, endOfDay2 = false) {
   const raw = String(value).trim();
-  const d = raw.length <= 10 ? /* @__PURE__ */ new Date(`${raw}T${endOfDay ? "23:59:59" : "00:00:00"}`) : new Date(raw);
+  const d = raw.length <= 10 ? /* @__PURE__ */ new Date(`${raw}T${endOfDay2 ? "23:59:59" : "00:00:00"}`) : new Date(raw);
   if (Number.isNaN(d.getTime())) return raw.slice(0, 19).replace("T", " ");
   const pad = (n) => String(n).padStart(2, "0");
   if (raw.length <= 10) {
-    return `${raw} ${endOfDay ? "23:59:59" : "00:00:00"}`;
+    return `${raw} ${endOfDay2 ? "23:59:59" : "00:00:00"}`;
   }
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-var SENSITIVE_KEY_RE = /password|passwd|pwd|token|secret|cookie|authorization|recovery|hash|credit.?card|card.?number|cvv|cvc|ssn|api.?key/i;
 function sanitizeAuditData(value) {
   if (value == null) return value;
   if (Array.isArray(value)) return value.map(sanitizeAuditData);
@@ -3232,12 +2803,12 @@ async function listAuditLogs(filters = {}) {
       params
     );
     const total = Number(countRows[0]?.value || 0);
-    const [rows] = await pool.query(
+    const [rows2] = await pool.query(
       `SELECT * FROM \`audit_logs\` ${whereSql} ORDER BY \`createdAt\` DESC, \`id\` DESC LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
     return {
-      items: rows || [],
+      items: rows2 || [],
       total,
       page,
       pageSize
@@ -3252,34 +2823,34 @@ async function listAuditLogs(filters = {}) {
         params
       );
       const total = Number(countRows[0]?.value || 0);
-      const [rows] = await pool.query(
+      const [rows2] = await pool.query(
         `SELECT * FROM \`audit_logs\` ${whereSql} ORDER BY \`createdAt\` DESC, \`id\` DESC LIMIT ? OFFSET ?`,
         [...params, pageSize, offset]
       );
-      return { items: rows || [], total, page, pageSize };
+      return { items: rows2 || [], total, page, pageSize };
     } catch (err2) {
       console.warn("[audit] list failed permanently", err2);
       return { items: [], total: 0, page, pageSize };
     }
   }
 }
-async function getAuditLogById(id, companyId) {
+async function getAuditLogById(id2, companyId) {
   await ensureAuditLogsTable();
   const pool = await getPool();
   if (!pool) return null;
   try {
     if (companyId != null) {
-      const [rows2] = await pool.query(
+      const [rows3] = await pool.query(
         "SELECT * FROM `audit_logs` WHERE `id` = ? AND `companyId` = ? LIMIT 1",
-        [id, companyId]
+        [id2, companyId]
       );
-      return rows2[0] || null;
+      return rows3[0] || null;
     }
-    const [rows] = await pool.query(
+    const [rows2] = await pool.query(
       "SELECT * FROM `audit_logs` WHERE `id` = ? LIMIT 1",
-      [id]
+      [id2]
     );
-    return rows[0] || null;
+    return rows2[0] || null;
   } catch (err) {
     console.warn("[audit] getById failed", err);
     return null;
@@ -3426,16 +2997,1474 @@ async function listPromoterActivities(filters) {
   try {
     const [countRows] = await pool.query(`SELECT COUNT(*) AS value ${tableSql}`, params);
     const total = Number(countRows[0]?.value || 0);
-    const [rows] = await pool.query(`SELECT activity.* ${tableSql} ORDER BY activity.occurredAt DESC, activity.activityId DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
-    return { items: rows || [], total, page, pageSize };
+    const [rows2] = await pool.query(`SELECT activity.* ${tableSql} ORDER BY activity.occurredAt DESC, activity.activityId DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
+    return { items: rows2 || [], total, page, pageSize };
   } catch (err) {
     console.warn("[audit] promoter activity query failed", err);
-    throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel carregar as atividades dos promotores. Tente novamente em instantes." });
+    throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel carregar as atividades dos promotores. Tente novamente em instantes." });
   }
 }
+var auditTableReady, SENSITIVE_KEY_RE;
+var init_audit = __esm({
+  "server/audit.ts"() {
+    "use strict";
+    init_db();
+    auditTableReady = false;
+    SENSITIVE_KEY_RE = /password|passwd|pwd|token|secret|cookie|authorization|recovery|hash|credit.?card|card.?number|cvv|cvc|ssn|api.?key/i;
+  }
+});
+
+// server/missingPunch.ts
+var missingPunch_exports = {};
+__export(missingPunch_exports, {
+  findMissingPunches: () => findMissingPunches
+});
+import { inArray as inArray3, sql as sql4 } from "drizzle-orm";
+function local(d) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: TZ2, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(d).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour}:${p.minute}` };
+}
+async function findMissingPunches(opts = {}) {
+  const database2 = await getDb();
+  if (!database2) return [];
+  const since = new Date(Date.now() - 14 * 864e5);
+  const filters = [sql4`te.serverTime >= ${since}`];
+  if (opts.companyId) filters.push(sql4`te.companyId = ${opts.companyId}`);
+  if (opts.memberId) filters.push(sql4`te.memberAccountId = ${opts.memberId}`);
+  const where = sql4.join(filters, sql4` AND `);
+  const [raw] = await database2.execute(sql4`
+    SELECT te.id, te.companyId, te.memberAccountId, te.eventType, te.serverTime, te.deviceTime
+    FROM time_events te
+    JOIN (SELECT memberAccountId, MAX(id) AS maxId FROM time_events te WHERE ${where} GROUP BY memberAccountId) lastev ON lastev.maxId = te.id
+    WHERE te.eventType <> 'clock_out'`);
+  const open = raw.map((r) => ({ companyId: Number(r.companyId), memberAccountId: Number(r.memberAccountId), eventType: String(r.eventType), t: new Date(r.deviceTime || r.serverTime) }));
+  if (!open.length) return [];
+  const ids = open.map((o) => o.memberAccountId);
+  const members = await database2.select({ id: memberAccounts2.id, companyId: memberAccounts2.companyId, name: memberAccounts2.userName, email: memberAccounts2.email, active: memberAccounts2.active }).from(memberAccounts2).where(inArray3(memberAccounts2.id, ids));
+  const memberById = new Map(members.map((m) => [m.id, m]));
+  const profiles = await database2.select({ id: promoterProfiles.memberAccountId, end: promoterProfiles.workEndTime }).from(promoterProfiles).where(inArray3(promoterProfiles.memberAccountId, ids));
+  const endByMember = new Map(profiles.map((p) => [p.id, p.end]));
+  const companyIds = [...new Set(open.map((o) => o.companyId))];
+  const [settingRows] = await database2.execute(sql4`SELECT accountId, settingValue FROM system_settings WHERE settingKey = 'auto_clock_out_time' AND accountId IN (${sql4.join(companyIds.map((c) => sql4`${c}`), sql4`, `)})`);
+  const limitByCompany = new Map(settingRows.map((r) => [Number(r.accountId), String(r.settingValue)]));
+  const now = local(/* @__PURE__ */ new Date());
+  const out = [];
+  for (const e of open) {
+    const member = memberById.get(e.memberAccountId);
+    if (!member?.active || member.companyId !== e.companyId) continue;
+    const lt3 = local(e.t);
+    let reason = null;
+    if (lt3.date < now.date) reason = "previous_day";
+    else {
+      const limit = endByMember.get(e.memberAccountId) || limitByCompany.get(e.companyId) || "";
+      if (limit && now.hm >= limit) reason = "past_end_time";
+    }
+    if (!reason) continue;
+    out.push({ memberId: e.memberAccountId, companyId: e.companyId, name: member.name, email: member.email, lastType: e.eventType, lastLabel: LABEL[e.eventType] ?? e.eventType, missing: NEXT[e.eventType] ?? "Sa\xEDda", lastTime: e.t.toISOString(), day: lt3.date, reason });
+  }
+  return out;
+}
+var TZ2, LABEL, NEXT;
+var init_missingPunch = __esm({
+  "server/missingPunch.ts"() {
+    "use strict";
+    init_db();
+    init_schema();
+    TZ2 = "America/Sao_Paulo";
+    LABEL = { clock_in: "Entrada", break_start: "In\xEDcio do intervalo", break_end: "Retorno do intervalo" };
+    NEXT = { clock_in: "Sa\xEDda (ou intervalo)", break_start: "Retorno do intervalo e Sa\xEDda", break_end: "Sa\xEDda" };
+  }
+});
+
+// server/_core/rateLimit.ts
+function checkRateLimit(key, bucket = "api") {
+  const limit = LIMITS[bucket] || LIMITS.api;
+  const now = Date.now();
+  const fullKey = `${bucket}:${key}`;
+  let entry = buckets.get(fullKey);
+  if (!entry || entry.resetAt < now) {
+    entry = { count: 0, resetAt: now + limit.windowMs };
+    buckets.set(fullKey, entry);
+  }
+  entry.count++;
+  if (buckets.size > 1e4) {
+    for (const [k, v] of buckets) {
+      if (v.resetAt < now) buckets.delete(k);
+    }
+  }
+  return {
+    ok: entry.count <= limit.max,
+    remaining: Math.max(0, limit.max - entry.count),
+    resetAt: entry.resetAt
+  };
+}
+function getClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string") return forwarded.split(",")[0].trim();
+  return req.socket?.remoteAddress || "unknown";
+}
+var buckets, LIMITS;
+var init_rateLimit = __esm({
+  "server/_core/rateLimit.ts"() {
+    "use strict";
+    buckets = /* @__PURE__ */ new Map();
+    LIMITS = {
+      login: { max: 5, windowMs: 6e4 },
+      // 5 tentativas por minuto
+      api: { max: 100, windowMs: 6e4 },
+      // 100 req/min geral
+      upload: { max: 10, windowMs: 6e4 }
+      // 10 uploads/min
+    };
+  }
+});
+
+// server/storeClients.ts
+import { sql as sql6 } from "drizzle-orm";
+function ensureStoreClientsSchema(db) {
+  if (!ensured) {
+    ensured = (async () => {
+      await db.execute(sql6.raw(`CREATE TABLE IF NOT EXISTS store_clients (
+        id int AUTO_INCREMENT NOT NULL,
+        companyId int NOT NULL,
+        storeId int NOT NULL,
+        name varchar(255) NOT NULL,
+        contactName varchar(255) NULL,
+        phone varchar(50) NULL,
+        notes text NULL,
+        active boolean NOT NULL DEFAULT true,
+        createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY store_clients_company_store_idx (companyId, storeId)
+      )`));
+      await db.execute(sql6.raw(`CREATE TABLE IF NOT EXISTS store_photos (
+        id int AUTO_INCREMENT NOT NULL,
+        companyId int NOT NULL,
+        storeId int NOT NULL,
+        promoterId int NOT NULL,
+        visitId int,
+        capturedAt timestamp NOT NULL,
+        latitude double,
+        longitude double,
+        accuracy double,
+        locationStatus enum('success','permission_denied','unavailable','timeout','error') DEFAULT 'unavailable',
+        fileKey varchar(512) NOT NULL,
+        thumbnailKey varchar(512),
+        mimeType varchar(100),
+        fileSize int,
+        idempotencyKey varchar(64),
+        uploadStatus enum('pending','uploaded','failed') NOT NULL DEFAULT 'pending',
+        expiresAt timestamp NOT NULL,
+        createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY store_photos_company_store_date_idx (companyId,storeId,capturedAt),
+        KEY store_photos_company_promoter_idx (companyId,promoterId),
+        KEY store_photos_expires_idx (expiresAt),
+        UNIQUE KEY store_photos_company_idempotency_unique (companyId,idempotencyKey)
+      )`));
+      const res = await db.execute(sql6`SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_photos' AND COLUMN_NAME = 'storeClientId'`);
+      const first = Array.isArray(res?.[0]) ? res[0][0] : Array.isArray(res) ? res[0] : res?.rows?.[0];
+      if (Number(first?.n ?? 0) === 0) {
+        await db.execute(sql6.raw(`ALTER TABLE store_photos ADD COLUMN storeClientId int NULL`));
+        try {
+          await db.execute(sql6.raw(`CREATE INDEX store_photos_client_idx ON store_photos (companyId, storeClientId)`));
+        } catch {
+        }
+      }
+    })().catch((err) => {
+      ensured = null;
+      throw err;
+    });
+  }
+  return ensured;
+}
+var ensured;
+var init_storeClients = __esm({
+  "server/storeClients.ts"() {
+    "use strict";
+    ensured = null;
+  }
+});
+
+// server/modules/storePhotos.ts
+var storePhotos_exports = {};
+__export(storePhotos_exports, {
+  expireOldStorePhotos: () => expireOldStorePhotos,
+  storePhotosRouter: () => storePhotosRouter
+});
+import { z as z4 } from "zod";
+import { and as and6, desc as desc4, eq as eq6, gte as gte3, lte, sql as sql7 } from "drizzle-orm";
+import { TRPCError as TRPCError8 } from "@trpc/server";
+async function moveStorePhotosToTrash(db, accountId, photos, actor) {
+  if (photos.length === 0) return;
+  await ensureTrashTable();
+  const storeIds = Array.from(new Set(photos.map((p) => p.storeId)));
+  const storeRows = await db.select({ id: stores.id, name: stores.name }).from(stores).where(and6(eq6(stores.companyId, accountId), sql7`${stores.id} IN (${sql7.join(storeIds.map((id2) => sql7`${id2}`), sql7`, `)})`));
+  const storeName = new Map(storeRows.map((r) => [r.id, r.name]));
+  const clientOf = /* @__PURE__ */ new Map();
+  try {
+    await ensureStoreClientsSchema(db);
+    const res = await db.execute(sql7`SELECT id, storeClientId FROM store_photos WHERE companyId = ${accountId} AND id IN (${sql7.join(photos.map((p) => sql7`${p.id}`), sql7`, `)})`);
+    for (const r of Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? []) clientOf.set(Number(r.id), r.storeClientId == null ? null : Number(r.storeClientId));
+  } catch {
+  }
+  const expiresAt = new Date(Date.now() + TRASH_DAYS * 24 * 60 * 60 * 1e3);
+  await db.transaction(async (tx) => {
+    await tx.insert(trashItems).values(
+      photos.map((photo) => ({
+        accountId,
+        deletedByMemberId: actor?.memberId ?? null,
+        deletedByName: actor?.name ?? null,
+        ownerMemberId: photo.promoterId ?? null,
+        itemType: "store_photo",
+        originalId: photo.id,
+        label: `Foto - ${storeName.get(photo.storeId || 0) || "Loja"} - ${new Date(photo.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}`.slice(0, 255),
+        snapshot: JSON.stringify({ ...photo, storeClientId: clientOf.get(photo.id) ?? null }),
+        expiresAt
+      }))
+    );
+    await tx.delete(storePhotos).where(and6(eq6(storePhotos.companyId, accountId), sql7`${storePhotos.id} IN (${sql7.join(photos.map((p) => sql7`${p.id}`), sql7`, `)})`));
+  });
+}
+async function ensureStorePhotosTable(db) {
+  try {
+    await db.execute(`CREATE TABLE IF NOT EXISTS store_photos (
+      id int AUTO_INCREMENT NOT NULL,
+      companyId int NOT NULL,
+      storeId int,
+      promoterId int NOT NULL,
+      visitId int,
+      capturedAt timestamp NOT NULL,
+      latitude double,
+      longitude double,
+      accuracy double,
+      locationStatus enum('success','permission_denied','unavailable','timeout','error') DEFAULT 'unavailable',
+      fileKey varchar(512) NOT NULL,
+      thumbnailKey varchar(512),
+      mimeType varchar(100),
+      fileSize int,
+      idempotencyKey varchar(64),
+      uploadStatus enum('pending','uploaded','failed') NOT NULL DEFAULT 'pending',
+      expiresAt timestamp NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY store_photos_company_store_date_idx (companyId,storeId,capturedAt),
+      KEY store_photos_company_store_date_idx (companyId,storeId,capturedAt),
+      KEY store_photos_company_promoter_idx (companyId,promoterId),
+      KEY store_photos_expires_idx (expiresAt),
+      UNIQUE KEY store_photos_company_idempotency_unique (companyId,idempotencyKey)
+    )`);
+  } catch (e) {
+    console.warn("[storePhotos] ensure table", e);
+  }
+  try {
+    await db.execute(`ALTER TABLE store_photos MODIFY storeId int NULL`);
+  } catch (e) {
+  }
+}
+async function assertStoreClient(db, companyId, storeId, storeClientId) {
+  await ensureStoreClientsSchema(db);
+  const res = await db.execute(sql7`SELECT id, active FROM store_clients WHERE id = ${storeClientId} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`);
+  const r = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0];
+  if (!r) throw new TRPCError8({ code: "BAD_REQUEST", message: "Cliente n\xE3o encontrado nesta loja." });
+  if (!r.active) throw new TRPCError8({ code: "BAD_REQUEST", message: "Este cliente foi removido da loja." });
+}
+async function linkPhotoToClient(db, companyId, photoId, storeClientId) {
+  await db.execute(sql7`UPDATE store_photos SET storeClientId = ${storeClientId} WHERE id = ${photoId} AND companyId = ${companyId}`);
+}
+async function expireOldStorePhotos() {
+  const db = await getDb();
+  if (!db) return { deleted: 0, errors: 0 };
+  const now = /* @__PURE__ */ new Date();
+  const expired = await db.select().from(storePhotos).where(lte(storePhotos.expiresAt, now)).limit(200);
+  if (expired.length === 0) return { deleted: 0, errors: 0 };
+  const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+  let deleted = 0;
+  let errors = 0;
+  for (const photo of expired) {
+    try {
+      if (photo.fileKey) await storageDelete2(photo.fileKey);
+      if (photo.thumbnailKey) await storageDelete2(photo.thumbnailKey);
+      await db.delete(storePhotos).where(eq6(storePhotos.id, photo.id));
+      deleted++;
+    } catch {
+      errors++;
+    }
+  }
+  return { deleted, errors };
+}
+var RETENTION_DAYS, TRASH_DAYS, storePhotosRouter;
+var init_storePhotos = __esm({
+  "server/modules/storePhotos.ts"() {
+    "use strict";
+    init_schema();
+    init_schema_original();
+    init_db();
+    init_trpc();
+    init_rateLimit();
+    init_audit();
+    init_storeClients();
+    init_storeAccess();
+    RETENTION_DAYS = 60;
+    TRASH_DAYS = 5;
+    storePhotosRouter = router({
+      /** Lista lojas com contagem de fotos e última atividade. */
+      listStoresWithStats: commercialFeatureProcedure("fieldOperations").input(z4.object({ search: z4.string().optional(), city: z4.string().optional() }).optional()).query(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        await ensureStorePhotosTable(db);
+        const memberId = scopeMemberId(ctx);
+        const conditions = [eq6(stores.companyId, ctx.accountId), eq6(stores.active, true)];
+        if (memberId !== null) {
+          await ensurePromoterStoreAssignmentsTable(db);
+          conditions.push(storeVisibleToMember(stores.id, memberId));
+        }
+        const ownPhotos = memberId !== null ? sql7` AND store_photos.promoterId = ${memberId}` : sql7``;
+        if (input?.search) {
+          conditions.push(sql7`${stores.name} LIKE ${`%${input.search}%`}`);
+        }
+        if (input?.city) {
+          conditions.push(eq6(stores.city, input.city));
+        }
+        try {
+          const rows2 = await db.select({
+            id: stores.id,
+            name: stores.name,
+            city: stores.city,
+            state: stores.state,
+            address: stores.address,
+            photoCount: sql7`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
+            lastActivity: sql7`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`
+          }).from(stores).where(and6(...conditions)).orderBy(desc4(stores.updatedAt));
+          return rows2;
+        } catch (err) {
+          if (String(err?.message || "").includes("store_photos") || err?.code === "ER_NO_SUCH_TABLE") {
+            const rows2 = await db.select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address }).from(stores).where(and6(...conditions)).orderBy(desc4(stores.updatedAt));
+            return rows2.map((r) => ({ ...r, photoCount: 0, lastActivity: null }));
+          }
+          throw err;
+        }
+      }),
+      /** Lista fotos de uma loja, agrupáveis por data no cliente. */
+      listByStore: commercialFeatureProcedure("fieldOperations").input(z4.object({
+        storeId: z4.number().int().positive().optional().nullable(),
+        from: z4.string().optional(),
+        to: z4.string().optional(),
+        promoterId: z4.number().int().positive().optional(),
+        storeClientId: z4.number().int().positive().optional(),
+        withoutClient: z4.boolean().optional()
+      })).query(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        await ensureStorePhotosTable(db);
+        await ensureStoreClientsSchema(db);
+        const memberId = scopeMemberId(ctx);
+        const conditions = [eq6(storePhotos.companyId, ctx.accountId)];
+        if (input.storeId) {
+          await assertStoreAccess(db, ctx, input.storeId);
+          conditions.push(eq6(storePhotos.storeId, input.storeId));
+        } else {
+          conditions.push(sql7`store_photos.storeId IS NULL`);
+        }
+        if (input.storeClientId) conditions.push(sql7`store_photos.storeClientId = ${input.storeClientId}`);
+        else if (input.withoutClient) conditions.push(sql7`store_photos.storeClientId IS NULL`);
+        if (memberId !== null) conditions.push(eq6(storePhotos.promoterId, memberId));
+        if (input.from) conditions.push(gte3(storePhotos.capturedAt, new Date(input.from)));
+        if (input.to) conditions.push(lte(storePhotos.capturedAt, new Date(input.to)));
+        if (memberId === null && input.promoterId) conditions.push(eq6(storePhotos.promoterId, input.promoterId));
+        const photos = await db.select({
+          id: storePhotos.id,
+          companyId: storePhotos.companyId,
+          storeId: storePhotos.storeId,
+          promoterId: storePhotos.promoterId,
+          visitId: storePhotos.visitId,
+          capturedAt: storePhotos.capturedAt,
+          latitude: storePhotos.latitude,
+          longitude: storePhotos.longitude,
+          accuracy: storePhotos.accuracy,
+          locationStatus: storePhotos.locationStatus,
+          fileKey: storePhotos.fileKey,
+          thumbnailKey: storePhotos.thumbnailKey,
+          mimeType: storePhotos.mimeType,
+          fileSize: storePhotos.fileSize,
+          uploadStatus: storePhotos.uploadStatus,
+          expiresAt: storePhotos.expiresAt,
+          storeClientId: sql7`store_photos.storeClientId`,
+          clientName: sql7`(SELECT name FROM store_clients WHERE store_clients.id = store_photos.storeClientId AND store_clients.companyId = ${ctx.accountId})`,
+          promoterName: sql7`(SELECT userName FROM member_accounts WHERE member_accounts.id = store_photos.promoterId AND member_accounts.companyId = ${ctx.accountId})`
+        }).from(storePhotos).where(and6(...conditions)).orderBy(desc4(storePhotos.capturedAt));
+        return photos;
+      }),
+      /** Cria registro de foto com idempotência. Upload do arquivo é feito separadamente. */
+      create: commercialFeatureProcedure("fieldOperations").input(z4.object({
+        storeId: z4.number().int().positive().optional().nullable(),
+        visitId: z4.number().int().positive().optional(),
+        capturedAt: z4.string(),
+        latitude: z4.number().optional(),
+        longitude: z4.number().optional(),
+        accuracy: z4.number().optional(),
+        locationStatus: z4.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
+        fileKey: z4.string().min(1),
+        thumbnailKey: z4.string().optional(),
+        mimeType: z4.string().optional(),
+        fileSize: z4.number().int().optional(),
+        storeClientId: z4.number().int().positive().optional(),
+        idempotencyKey: z4.string().min(8).max(64)
+      })).mutation(async ({ ctx, input }) => {
+        const ip = getClientIp(ctx.req);
+        const limit = checkRateLimit(`${ctx.accountId}:${ip}`, "upload");
+        if (!limit.ok) {
+          throw new TRPCError8({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
+        }
+        const db = await getDb();
+        if (!db) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        let storeName = "Sem loja vinculada";
+        if (input.storeId) {
+          const store = await assertStoreAccess(db, ctx, input.storeId);
+          storeName = store.name;
+          if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
+        } else if (input.storeClientId) {
+          throw new TRPCError8({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
+        }
+        const [existing] = await db.select().from(storePhotos).where(and6(eq6(storePhotos.companyId, ctx.accountId), eq6(storePhotos.idempotencyKey, input.idempotencyKey))).limit(1);
+        if (existing) return existing;
+        const capturedAt = new Date(input.capturedAt);
+        const expiresAt = new Date(capturedAt.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1e3);
+        const [result] = await db.insert(storePhotos).values({
+          companyId: ctx.accountId,
+          storeId: input.storeId ?? null,
+          promoterId: ctx.memberAccountId,
+          visitId: input.visitId ?? null,
+          capturedAt,
+          latitude: input.latitude ?? null,
+          longitude: input.longitude ?? null,
+          accuracy: input.accuracy ?? null,
+          locationStatus: input.locationStatus ?? "unavailable",
+          fileKey: input.fileKey,
+          thumbnailKey: input.thumbnailKey ?? null,
+          mimeType: input.mimeType ?? null,
+          fileSize: input.fileSize ?? null,
+          idempotencyKey: input.idempotencyKey,
+          uploadStatus: "uploaded",
+          expiresAt
+        });
+        const photoId = Number(result.insertId);
+        if (input.storeClientId) await linkPhotoToClient(db, ctx.accountId, photoId, input.storeClientId);
+        await auditFromCtx(ctx, {
+          action: "create",
+          module: "store_photos",
+          entityType: "store_photo",
+          entityId: photoId,
+          entityLabel: storeName,
+          description: `Foto registrada ${input.storeId ? "na loja " + storeName : "sem loja vinculada"}`,
+          newData: { storeId: input.storeId ?? null, capturedAt: input.capturedAt, hasGps: Boolean(input.latitude) }
+        });
+        return { id: photoId, expiresAt };
+      }),
+      /** Recebe imagem em base64, faz upload no storage e cria o registro (com idempotência). */
+      uploadAndCreate: commercialFeatureProcedure("fieldOperations").input(z4.object({
+        storeId: z4.number().int().positive().optional().nullable(),
+        visitId: z4.number().int().positive().optional(),
+        capturedAt: z4.string(),
+        latitude: z4.number().optional(),
+        longitude: z4.number().optional(),
+        accuracy: z4.number().optional(),
+        locationStatus: z4.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
+        imageBase64: z4.string().min(100),
+        mimeType: z4.string().default("image/jpeg"),
+        storeClientId: z4.number().int().positive().optional(),
+        idempotencyKey: z4.string().min(8).max(64)
+      })).mutation(async ({ ctx, input }) => {
+        const ip = getClientIp(ctx.req);
+        const limit = checkRateLimit(`${ctx.accountId}:${ip}`, "upload");
+        if (!limit.ok) {
+          throw new TRPCError8({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
+        }
+        const db = await getDb();
+        if (!db) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        let storeName = "Sem loja vinculada";
+        if (input.storeId) {
+          const store = await assertStoreAccess(db, ctx, input.storeId);
+          storeName = store.name;
+          if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
+        } else if (input.storeClientId) {
+          throw new TRPCError8({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
+        }
+        const [existing] = await db.select().from(storePhotos).where(and6(eq6(storePhotos.companyId, ctx.accountId), eq6(storePhotos.idempotencyKey, input.idempotencyKey))).limit(1);
+        if (existing) return { id: existing.id, alreadyExists: true };
+        const { storagePut: storagePut2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+        const buffer = Buffer.from(input.imageBase64, "base64");
+        const ext = input.mimeType.includes("png") ? "png" : "jpg";
+        const relKey = `store-photos/${ctx.accountId}/${input.storeId}/${input.idempotencyKey}.${ext}`;
+        let fileKey;
+        try {
+          const uploaded = await storagePut2(relKey, buffer, input.mimeType);
+          fileKey = uploaded.key;
+        } catch (err) {
+          throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao salvar a imagem. Verifique a configura\xE7\xE3o de armazenamento." });
+        }
+        const capturedAt = new Date(input.capturedAt);
+        const expiresAt = new Date(capturedAt.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1e3);
+        const [result] = await db.insert(storePhotos).values({
+          companyId: ctx.accountId,
+          storeId: input.storeId ?? null,
+          promoterId: ctx.memberAccountId,
+          visitId: input.visitId ?? null,
+          capturedAt,
+          latitude: input.latitude ?? null,
+          longitude: input.longitude ?? null,
+          accuracy: input.accuracy ?? null,
+          locationStatus: input.locationStatus ?? "unavailable",
+          fileKey,
+          mimeType: input.mimeType,
+          fileSize: buffer.length,
+          idempotencyKey: input.idempotencyKey,
+          uploadStatus: "uploaded",
+          expiresAt
+        });
+        const photoId = Number(result.insertId);
+        if (input.storeClientId) await linkPhotoToClient(db, ctx.accountId, photoId, input.storeClientId);
+        await auditFromCtx(ctx, {
+          action: "create",
+          module: "store_photos",
+          entityType: "store_photo",
+          entityId: photoId,
+          entityLabel: storeName,
+          description: `Foto registrada ${input.storeId ? "na loja " + storeName : "sem loja vinculada"}`,
+          newData: { storeId: input.storeId ?? null, capturedAt: input.capturedAt, hasGps: Boolean(input.latitude), fileSize: buffer.length }
+        });
+        return { id: photoId, expiresAt, alreadyExists: false };
+      }),
+      /** Retorna URL assinada temporária para visualizar uma foto. */
+      getImageUrl: commercialFeatureProcedure("fieldOperations").input(z4.object({ photoId: z4.number().int().positive() })).query(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const [photo] = await db.select().from(storePhotos).where(and6(eq6(storePhotos.id, input.photoId), eq6(storePhotos.companyId, ctx.accountId))).limit(1);
+        if (!photo) throw new TRPCError8({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        assertPhotoAccess(ctx, photo);
+        const { storageGetSignedUrl: storageGetSignedUrl2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+        const url = await storageGetSignedUrl2(photo.fileKey);
+        return { url, expiresIn: 3600 };
+      }),
+      /** Retorna a imagem como base64 para compartilhamento sem CORS. */
+      getImageData: commercialFeatureProcedure("fieldOperations").input(z4.object({ photoId: z4.number().int().positive() })).query(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const [photo] = await db.select().from(storePhotos).where(and6(eq6(storePhotos.id, input.photoId), eq6(storePhotos.companyId, ctx.accountId))).limit(1);
+        if (!photo) throw new TRPCError8({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        assertPhotoAccess(ctx, photo);
+        const { storageRead: storageRead2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+        try {
+          const image = await storageRead2(photo.fileKey);
+          return { base64: image.data.toString("base64"), mime: image.contentType || photo.mimeType || "image/jpeg" };
+        } catch {
+          throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel obter a imagem armazenada." });
+        }
+      }),
+      /** Exclui uma foto (com auditoria). */
+      delete: commercialFeatureProcedure("fieldOperations").input(z4.object({ photoId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const [photo] = await db.select().from(storePhotos).where(and6(eq6(storePhotos.id, input.photoId), eq6(storePhotos.companyId, ctx.accountId))).limit(1);
+        if (!photo) throw new TRPCError8({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (scopeMemberId(ctx) !== null && photo.promoterId !== ctx.memberAccountId) {
+          throw new TRPCError8({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
+        }
+        try {
+          await moveStorePhotosToTrash(db, ctx.accountId, [photo], { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
+        } catch (error) {
+          console.error("[storePhotos.delete] falha ao enviar para a lixeira", error);
+          throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar a foto para a lixeira." });
+        }
+        await auditFromCtx(ctx, {
+          action: "delete",
+          module: "store_photos",
+          entityType: "store_photo",
+          entityId: photo.id,
+          entityLabel: `Foto #${photo.id}`,
+          description: "Foto enviada para a lixeira",
+          oldData: { storeId: photo.storeId, capturedAt: photo.capturedAt }
+        });
+        return { ok: true };
+      }),
+      /** Exclui várias fotos de uma vez. */
+      bulkDelete: commercialFeatureProcedure("fieldOperations").input(z4.object({ photoIds: z4.array(z4.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const photos = await db.select().from(storePhotos).where(and6(eq6(storePhotos.companyId, ctx.accountId), sql7`${storePhotos.id} IN (${sql7.join(input.photoIds.map((id2) => sql7`${id2}`), sql7`, `)})`));
+        if (photos.length === 0) return { deleted: 0 };
+        const memberId = scopeMemberId(ctx);
+        const allowed = photos.filter((photo) => memberId === null || photo.promoterId === memberId);
+        if (allowed.length === 0) throw new TRPCError8({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
+        try {
+          await moveStorePhotosToTrash(db, ctx.accountId, allowed, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
+        } catch (error) {
+          console.error("[storePhotos.bulkDelete] falha ao enviar para a lixeira", error);
+          throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar as fotos para a lixeira." });
+        }
+        const deleted = allowed.length;
+        await auditFromCtx(ctx, {
+          action: "delete",
+          module: "store_photos",
+          entityType: "store_photo",
+          description: `${deleted} foto(s) enviada(s) para a lixeira em massa`,
+          newData: { count: deleted }
+        });
+        return { deleted };
+      }),
+      /** Move fotos já tiradas para um cliente da mesma loja (ou tira o vínculo com `storeClientId: null`). */
+      assignClient: commercialFeatureProcedure("fieldOperations").input(z4.object({
+        storeId: z4.number().int().positive().optional().nullable(),
+        photoIds: z4.array(z4.number().int().positive()).min(1).max(200),
+        storeClientId: z4.number().int().positive().nullable()
+      })).mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const store = input.storeId != null ? await assertStoreAccess(db, ctx, input.storeId) : null;
+        await ensureStorePhotosTable(db);
+        await ensureStoreClientsSchema(db);
+        let clientName = "Sem cliente";
+        if (input.storeClientId && input.storeId != null) {
+          await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
+          const res2 = await db.execute(sql7`SELECT name FROM store_clients WHERE id = ${input.storeClientId} AND companyId = ${ctx.accountId} LIMIT 1`);
+          clientName = (Array.isArray(res2?.[0]) ? res2[0] : Array.isArray(res2) ? res2 : res2?.rows ?? [])[0]?.name ?? clientName;
+        }
+        const memberId = scopeMemberId(ctx);
+        const owner = memberId !== null ? sql7` AND promoterId = ${memberId}` : sql7``;
+        const ids = sql7.join(input.photoIds.map((id2) => sql7`${id2}`), sql7`, `);
+        const res = await db.execute(sql7`UPDATE store_photos SET storeClientId = ${input.storeClientId} WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND id IN (${ids})${owner}`);
+        const moved = Number((Array.isArray(res) ? res[0] : res)?.affectedRows ?? 0);
+        if (moved === 0) throw new TRPCError8({ code: "FORBIDDEN", message: "Nenhuma das fotos selecionadas p\xF4de ser movida (s\xF3 \xE9 poss\xEDvel mover as suas pr\xF3prias fotos desta loja)." });
+        await auditFromCtx(ctx, {
+          action: "update",
+          module: "store_photos",
+          entityType: "store_photo",
+          description: `${moved} foto(s) da loja ${store?.name || "Sem loja"} movida(s) para: ${clientName}`,
+          newData: { storeId: input.storeId ?? null, storeClientId: input.storeClientId, count: moved }
+        });
+        return { moved };
+      })
+    });
+  }
+});
+
+// server/email.ts
+var email_exports = {};
+__export(email_exports, {
+  emailAccountCreated: () => emailAccountCreated,
+  emailAdminNewCompany: () => emailAdminNewCompany,
+  emailAdminPlanChanged: () => emailAdminPlanChanged,
+  emailPlanChanged: () => emailPlanChanged,
+  emailProductExpirationAlerts: () => emailProductExpirationAlerts,
+  getAdminNotificationEmail: () => getAdminNotificationEmail,
+  getAppPublicUrl: () => getAppPublicUrl,
+  getEmailFrom: () => getEmailFrom,
+  sendEmail: () => sendEmail
+});
+function env(name, fallback = "") {
+  return (process.env[name] ?? fallback).trim();
+}
+function getAdminNotificationEmail() {
+  return env("ADMIN_NOTIFICATION_EMAIL", "ivan.honemann@gmail.com");
+}
+function getAppPublicUrl() {
+  return env("APP_PUBLIC_URL", "https://promotores-saas-teste.vercel.app").replace(/\/$/, "");
+}
+function getEmailFrom() {
+  return env("EMAIL_FROM", "GondUp <onboarding@resend.dev>");
+}
+function provider() {
+  const explicit = env("EMAIL_PROVIDER").toLowerCase();
+  if (explicit === "console") return "console";
+  if (explicit === "webhook" || env("EMAIL_WEBHOOK_URL")) return env("EMAIL_WEBHOOK_URL") ? "webhook" : "console";
+  if (explicit === "resend" || env("RESEND_API_KEY")) return "resend";
+  return "console";
+}
+function escapeHtml(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function layout(title, bodyHtml) {
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${escapeHtml(title)}</title></head>
+<body style="margin:0;padding:0;background:#0a0f23;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#e8ecf8;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0a0f23;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" style="max-width:560px;background:#141a2e;border:1px solid #2a334d;border-radius:16px;overflow:hidden;">
+        <tr><td style="padding:20px 24px;background:linear-gradient(135deg,#e10600,#ff2d2d);">
+          <div style="font-size:20px;font-weight:800;color:#fff;letter-spacing:-0.02em;">GondUp</div>
+          <div style="font-size:12px;color:rgba(255,255,255,.9);margin-top:2px;">Gest\xE3o de opera\xE7\xF5es</div>
+        </td></tr>
+        <tr><td style="padding:28px 24px;">
+          <h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:#fff;">${escapeHtml(title)}</h1>
+          ${bodyHtml}
+        </td></tr>
+        <tr><td style="padding:16px 24px 24px;border-top:1px solid #2a334d;font-size:12px;color:#8b93ad;">
+          Este e-mail foi enviado automaticamente pelo GondUp. N\xE3o responda a esta mensagem se n\xE3o reconhecer a atividade.
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+function row(label, value) {
+  return `<tr>
+    <td style="padding:8px 0;color:#8b93ad;font-size:13px;width:38%;vertical-align:top;">${escapeHtml(label)}</td>
+    <td style="padding:8px 0;color:#fff;font-size:14px;font-weight:600;vertical-align:top;">${escapeHtml(value)}</td>
+  </tr>`;
+}
+function dataTable(rows2) {
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:12px 0 20px;">${rows2.map(([l, v]) => row(l, v)).join("")}</table>`;
+}
+function cta(href, label) {
+  return `<p style="margin:20px 0 8px;"><a href="${escapeHtml(href)}" style="display:inline-block;background:#e10600;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:999px;">${escapeHtml(label)}</a></p>`;
+}
+async function sendEmail(input) {
+  const toList = (Array.isArray(input.to) ? input.to : [input.to]).map((e) => e.trim().toLowerCase()).filter(Boolean);
+  if (!toList.length) return { ok: false, error: "Destinat\xE1rio ausente" };
+  const mode = provider();
+  if (mode === "console") {
+    console.info("[email:console]", {
+      to: toList,
+      subject: input.subject,
+      preview: (input.text || input.html).slice(0, 240)
+    });
+    return { ok: true, id: "console" };
+  }
+  if (mode === "webhook") {
+    const endpoint = env("EMAIL_WEBHOOK_URL");
+    if (!endpoint) {
+      console.info("[email:webhook] EMAIL_WEBHOOK_URL ausente \u2014 log only", { to: toList, subject: input.subject });
+      return { ok: true, id: "console" };
+    }
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          from: getEmailFrom(),
+          to: toList,
+          subject: input.subject,
+          html: input.html,
+          text: input.text,
+          source: "extinfy",
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        })
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        console.warn("[email:webhook] fail", res.status, detail);
+        return { ok: false, error: detail || res.statusText };
+      }
+      return { ok: true, id: "webhook" };
+    } catch (error) {
+      console.warn("[email:webhook] error", error);
+      return { ok: false, error: error instanceof Error ? error.message : "webhook failed" };
+    }
+  }
+  if (!env("RESEND_API_KEY")) {
+    console.info("[email:console] RESEND_API_KEY ausente", { to: toList, subject: input.subject });
+    return { ok: true, id: "console" };
+  }
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env("RESEND_API_KEY")}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: getEmailFrom(),
+        to: toList,
+        subject: input.subject,
+        html: input.html,
+        text: input.text
+      })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.warn("[email:resend] fail", res.status, body);
+      return { ok: false, error: String(body?.message || res.statusText) };
+    }
+    return { ok: true, id: String(body?.id || "") };
+  } catch (error) {
+    console.warn("[email:resend] error", error);
+    return { ok: false, error: error instanceof Error ? error.message : "send failed" };
+  }
+}
+async function emailAccountCreated(input) {
+  const loginUrl = `${getAppPublicUrl()}/?login=1`;
+  const planLine = input.planName ? `${input.planName}${input.isTrial ? " (teste gr\xE1tis)" : ""}` : input.isTrial ? "Teste gr\xE1tis" : "N\xE3o informado";
+  const rows2 = [
+    ["Empresa", input.companyName],
+    ["Respons\xE1vel", input.userName],
+    ["E-mail de acesso", input.email]
+  ];
+  if (input.password) rows2.push(["Senha", input.password]);
+  rows2.push(["C\xF3digo de redefini\xE7\xE3o", input.recoveryCode]);
+  rows2.push(["Plano", planLine]);
+  const html = layout(
+    "Sua conta GondUp foi criada",
+    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Sua conta foi criada com sucesso. Guarde estes dados em local seguro.</p>
+    ${dataTable(rows2)}
+    <p style="margin:0 0 8px;color:#c4cae0;font-size:13px;line-height:1.5;">Use o <strong style="color:#fff;">c\xF3digo de redefini\xE7\xE3o</strong> se precisar trocar a senha na tela de recupera\xE7\xE3o.</p>
+    ${cta(loginUrl, "Entrar no GondUp")}`
+  );
+  return sendEmail({
+    to: input.to,
+    subject: "GondUp \u2014 conta criada e dados de acesso",
+    html,
+    text: `Conta criada
+Empresa: ${input.companyName}
+E-mail: ${input.email}
+Senha: ${input.password || "(a definida no cadastro)"}
+C\xF3digo de redefini\xE7\xE3o: ${input.recoveryCode}
+Plano: ${planLine}
+Acesse: ${loginUrl}`
+  });
+}
+async function emailPlanChanged(input) {
+  const title = input.isUpgrade ? "Upgrade de plano confirmado" : "Plano adquirido";
+  const rows2 = [
+    ["Empresa", input.companyName],
+    ["Plano", input.planName],
+    ["Status", input.status]
+  ];
+  if (input.amount) rows2.push(["Valor", `R$ ${input.amount}`]);
+  if (input.periodEnd) rows2.push(["V\xE1lido at\xE9", input.periodEnd]);
+  const html = layout(
+    title,
+    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Registramos a altera\xE7\xE3o do plano da sua empresa.</p>
+    ${dataTable(rows2)}
+    ${cta(`${getAppPublicUrl()}/minha-assinatura`, "Ver minha assinatura")}`
+  );
+  return sendEmail({
+    to: input.to,
+    subject: `GondUp \u2014 ${title}: ${input.planName}`,
+    html,
+    text: `${title}
+Empresa: ${input.companyName}
+Plano: ${input.planName}
+Status: ${input.status}`
+  });
+}
+async function emailAdminNewCompany(input) {
+  const admin = getAdminNotificationEmail();
+  if (!admin) return { ok: false, error: "ADMIN_NOTIFICATION_EMAIL vazio" };
+  const planLabel = input.planName ? `${input.planName}${input.isTrial ? " \u2014 teste gr\xE1tis" : ""}` : input.isTrial ? "Teste gr\xE1tis (plano n\xE3o informado)" : "N\xE3o informado";
+  const html = layout(
+    "Nova empresa cadastrada",
+    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Uma nova empresa acabou de se cadastrar no GondUp.</p>
+    ${dataTable([
+      ["Empresa", input.companyName],
+      ["Respons\xE1vel", input.userName],
+      ["E-mail", input.email],
+      ["Plano / modo", planLabel],
+      ["Quando", (/* @__PURE__ */ new Date()).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })]
+    ])}`
+  );
+  return sendEmail({
+    to: admin,
+    subject: `GondUp \u2014 nova empresa: ${input.companyName} (${planLabel})`,
+    html,
+    text: `Nova empresa
+${input.companyName}
+${input.userName} <${input.email}>
+Plano: ${planLabel}`
+  });
+}
+async function emailAdminPlanChanged(input) {
+  const admin = getAdminNotificationEmail();
+  if (!admin) return { ok: false, error: "ADMIN_NOTIFICATION_EMAIL vazio" };
+  const title = input.isUpgrade ? "Upgrade de plano na plataforma" : "Plano adquirido na plataforma";
+  const html = layout(
+    title,
+    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Um cliente alterou ou adquiriu um plano no GondUp.</p>
+    ${dataTable([
+      ["Empresa", input.companyName],
+      ["Respons\xE1vel", input.userName],
+      ["E-mail", input.email],
+      ["Plano", input.planName],
+      ["Status", input.status],
+      ["Valor", input.amount ? `R$ ${input.amount}` : "\u2014"],
+      ["Quando", (/* @__PURE__ */ new Date()).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })]
+    ])}`
+  );
+  return sendEmail({
+    to: admin,
+    subject: `GondUp \u2014 ${input.isUpgrade ? "upgrade" : "plano"}: ${input.companyName} \u2192 ${input.planName}`,
+    html,
+    text: `${title}
+Empresa: ${input.companyName}
+${input.userName} <${input.email}>
+Plano: ${input.planName}
+Status: ${input.status}`
+  });
+}
+async function emailProductExpirationAlerts(input) {
+  if (!input.items.length) return { ok: true, id: "empty" };
+  const list = input.items.slice(0, 50).map((item) => `<li style="margin:0 0 12px;color:#c4cae0;"><strong style="color:#fff;">${escapeHtml(item.description)}</strong><br/>C\xF3digo: ${escapeHtml(item.productCode)} \xB7 Quantidade: ${item.quantity} \xB7 Pre\xE7o: R$ ${escapeHtml(String(item.price))}<br/><span style="color:#fbbf24;">Validade: ${escapeHtml(item.expirationDate)}</span></li>`).join("");
+  const more = input.items.length > 50 ? `<p style="color:#8b93ad;font-size:13px;">\u2026 e mais ${input.items.length - 50} produto(s).</p>` : "";
+  const html = layout("Produtos pr\xF3ximos do vencimento", `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong> (${escapeHtml(input.companyName)}). Estes produtos vencem nos pr\xF3ximos 30 dias:</p><ul style="margin:0;padding-left:18px;">${list}</ul>${more}${cta(getAppPublicUrl() + "/produtos", "Ver produtos e validades")}`);
+  return sendEmail({ to: input.to, subject: `GondUp \u2014 ${input.items.length} produto(s) vencem em at\xE9 30 dias (${input.companyName})`, html, text: `Produtos com validade nos pr\xF3ximos 30 dias: ${input.items.map((i) => `${i.description} (${i.productCode}), quantidade ${i.quantity}, validade ${i.expirationDate}, pre\xE7o R$ ${i.price}`).join("; ")}. Acesse /produtos.` });
+}
+var init_email = __esm({
+  "server/email.ts"() {
+    "use strict";
+  }
+});
+
+// shared/barcode.ts
+function barcodeVariants(code) {
+  const d = onlyDigits(code);
+  if (!d) return [];
+  const set = /* @__PURE__ */ new Set([d]);
+  const stripped = d.replace(/^0+/, "");
+  for (const len of [8, 12, 13, 14]) if (stripped.length <= len) set.add(stripped.padStart(len, "0"));
+  return [...set].filter((v) => v.length >= 8);
+}
+var onlyDigits;
+var init_barcode = __esm({
+  "shared/barcode.ts"() {
+    "use strict";
+    onlyDigits = (code) => String(code ?? "").replace(/\D/g, "");
+  }
+});
+
+// server/productLookup.ts
+var productLookup_exports = {};
+__export(productLookup_exports, {
+  lookupProductByCode: () => lookupProductByCode
+});
+import { and as and8, desc as desc5, eq as eq9, inArray as inArray5 } from "drizzle-orm";
+async function fetchJson(url, init = {}, ms = 4e3) {
+  const ctl = new AbortController();
+  const t2 = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, { ...init, signal: ctl.signal, headers: { "User-Agent": "PromotoresSaaS/1.0 (consulta de codigo de barras)", Accept: "application/json", ...init.headers || {} } });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t2);
+  }
+}
+function describe(p) {
+  const name = p?.product_name_pt || p?.product_name || p?.generic_name_pt || p?.generic_name || p?.product_name_en || "";
+  if (!name) return "";
+  const brand = String(p?.brands || "").split(",")[0]?.trim();
+  const qty = p?.quantity ? ` ${p.quantity}` : "";
+  const base = brand && !name.toLowerCase().includes(brand.toLowerCase()) ? `${name} \u2014 ${brand}` : name;
+  return `${base}${qty}`.slice(0, 500);
+}
+async function lookupProductByCode(companyId, rawCode) {
+  const variants = barcodeVariants(rawCode);
+  const code = variants[0] ?? rawCode.trim();
+  const database2 = await getDb();
+  if (database2) {
+    await ensureInventoryProductsSchema();
+    const codes = [.../* @__PURE__ */ new Set([rawCode.trim(), ...variants])];
+    const rows2 = await database2.select({ description: inventoryProducts.description, price: inventoryProducts.price, productCode: inventoryProducts.productCode }).from(inventoryProducts).where(and8(eq9(inventoryProducts.companyId, companyId), inArray5(inventoryProducts.productCode, codes))).orderBy(desc5(inventoryProducts.id)).limit(1);
+    if (rows2[0]) return { found: true, source: "company", description: rows2[0].description, price: String(rows2[0].price), code: rows2[0].productCode };
+  }
+  if (!variants.length) return { found: false, source: null, description: "", code };
+  const token = process.env.COSMOS_API_TOKEN;
+  if (token) {
+    for (const v of variants) {
+      const data = await fetchJson(`https://api.cosmos.bluesoft.com.br/gtins/${v}.json`, { headers: { "X-Cosmos-Token": token } });
+      if (data?.description) return { found: true, source: "cosmos", description: String(data.description).slice(0, 500), price: data.avg_price ? Number(data.avg_price).toFixed(2) : null, code: v };
+    }
+  }
+  const tasks = OPEN_BASES.map(async (b) => {
+    for (const v of variants) {
+      const data = await fetchJson(`https://${b.host}/api/v2/product/${encodeURIComponent(v)}?fields=product_name,product_name_pt,product_name_en,generic_name,generic_name_pt,brands,quantity`);
+      const description = data?.status === 1 ? describe(data.product) : "";
+      if (description) return { found: true, source: b.source, description, code: v };
+    }
+    return null;
+  });
+  const results = await Promise.all(tasks);
+  const hit = results.find(Boolean);
+  return hit ? { ...hit, price: null } : { found: false, source: null, description: "", code };
+}
+var OPEN_BASES;
+var init_productLookup = __esm({
+  "server/productLookup.ts"() {
+    "use strict";
+    init_db();
+    init_schema();
+    init_barcode();
+    OPEN_BASES = [
+      { source: "openfoodfacts", host: "world.openfoodfacts.org" },
+      { source: "openbeautyfacts", host: "world.openbeautyfacts.org" },
+      { source: "openpetfoodfacts", host: "world.openpetfoodfacts.org" },
+      { source: "openproductsfacts", host: "world.openproductsfacts.org" }
+    ];
+  }
+});
+
+// server/backup.ts
+var backup_exports = {};
+__export(backup_exports, {
+  ensureBackupProgressTable: () => ensureBackupProgressTable,
+  runBackupStep: () => runBackupStep
+});
+import crypto2 from "node:crypto";
+import zlib from "node:zlib";
+import { promisify } from "node:util";
+async function ensureBackupProgressTable(c) {
+  await c.query(`CREATE TABLE IF NOT EXISTS backup_progress (
+    day varchar(10) NOT NULL,
+    tableName varchar(64) NOT NULL,
+    cursorValue varchar(64) NULL,
+    part int NOT NULL DEFAULT 0,
+    rowsDone int NOT NULL DEFAULT 0,
+    done tinyint NOT NULL DEFAULT 0,
+    files text NULL,
+    updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (day, tableName)
+  )`);
+}
+async function runBackupStep(c, opts) {
+  const started = Date.now();
+  const storagePut2 = opts.put ?? storagePut;
+  const day = opts.day ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const prefix = `backups/database/${day}`;
+  await ensureBackupProgressTable(c);
+  const [tableRows] = await c.query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
+  const tables = tableRows.map((r) => String(Object.values(r)[0])).filter((n) => !SKIP_TABLES.has(n)).sort();
+  let bytes = 0, partsWritten = 0;
+  const [marker] = await c.query("SELECT 1 FROM backup_progress WHERE day = ? AND tableName = '_manifest' AND done = 1", [day]);
+  if (marker.length) return { day, complete: true, skipped: true, tables: tables.length, tablesDone: tables.length, partsWritten: 0, bytes: 0, manifestKey: null };
+  const [doneRows] = await c.query("SELECT tableName FROM backup_progress WHERE day = ? AND done = 1", [day]);
+  const done = new Set(doneRows.map((r) => r.tableName));
+  for (const table of tables) {
+    if (done.has(table)) continue;
+    const [progRows] = await c.query("SELECT * FROM backup_progress WHERE day = ? AND tableName = ?", [day, table]);
+    const prog = progRows[0];
+    let part = prog?.part ?? 0, rowsDone = prog?.rowsDone ?? 0, cursor = prog?.cursorValue ?? null;
+    const files = prog?.files ? JSON.parse(prog.files) : [];
+    const [keys] = await c.query(`SHOW KEYS FROM \`${table}\` WHERE Key_name = 'PRIMARY'`);
+    const pk = keys.length === 1 ? keys[0].Column_name : null;
+    let finished = false;
+    while (Date.now() - started < opts.budgetMs) {
+      const [rows2] = pk ? await c.query(`SELECT * FROM \`${table}\` ${cursor != null ? `WHERE \`${pk}\` > ?` : ""} ORDER BY \`${pk}\` LIMIT ${CHUNK_ROWS}`, cursor != null ? [cursor] : []) : await c.query(`SELECT * FROM \`${table}\` ORDER BY 1 LIMIT ${CHUNK_ROWS} OFFSET ${rowsDone}`);
+      if (!rows2.length) {
+        finished = true;
+        break;
+      }
+      const body = await gzip(Buffer.from(rows2.map((r) => JSON.stringify(r, jsonReplacer)).join("\n") + "\n"));
+      const key = `${prefix}/${table}.${String(part).padStart(5, "0")}.jsonl.gz`;
+      await storagePut2(key, body, "application/gzip");
+      files.push({ key, rows: rows2.length, sha256: crypto2.createHash("sha256").update(body).digest("hex") });
+      bytes += body.length;
+      partsWritten += 1;
+      part += 1;
+      rowsDone += rows2.length;
+      if (pk) cursor = String(rows2[rows2.length - 1][pk]);
+      await c.query(
+        `INSERT INTO backup_progress (day, tableName, cursorValue, part, rowsDone, done, files) VALUES (?,?,?,?,?,0,?)
+         ON DUPLICATE KEY UPDATE cursorValue = VALUES(cursorValue), part = VALUES(part), rowsDone = VALUES(rowsDone), files = VALUES(files)`,
+        [day, table, cursor, part, rowsDone, JSON.stringify(files)]
+      );
+      if (rows2.length < CHUNK_ROWS) {
+        finished = true;
+        break;
+      }
+    }
+    if (finished) {
+      await c.query(
+        `INSERT INTO backup_progress (day, tableName, cursorValue, part, rowsDone, done, files) VALUES (?,?,?,?,?,1,?)
+         ON DUPLICATE KEY UPDATE done = 1, files = VALUES(files), rowsDone = VALUES(rowsDone), part = VALUES(part)`,
+        [day, table, cursor, part, rowsDone, JSON.stringify(files)]
+      );
+      done.add(table);
+    } else break;
+  }
+  const complete = tables.every((t2) => done.has(t2));
+  let manifestKey = null;
+  if (complete) {
+    const [all] = await c.query("SELECT tableName, rowsDone, files FROM backup_progress WHERE day = ? AND tableName <> '_manifest' ORDER BY tableName", [day]);
+    const ddl = [];
+    for (const t2 of tables) {
+      const [d] = await c.query(`SHOW CREATE TABLE \`${t2}\``);
+      ddl.push(`${d[0]["Create Table"]};`);
+    }
+    const schema = await gzip(Buffer.from(ddl.join("\n\n")));
+    await storagePut2(`${prefix}/_schema.sql.gz`, schema, "application/gzip");
+    const manifest = { format: 2, day, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), tables: all.map((r) => ({ name: r.tableName, rows: r.rowsDone, files: JSON.parse(r.files || "[]") })) };
+    const stored = await storagePut2(`${prefix}/_manifest.json`, Buffer.from(JSON.stringify(manifest)), "application/json");
+    manifestKey = stored.key;
+    await c.query("INSERT INTO backup_progress (day, tableName, done) VALUES (?, '_manifest', 1) ON DUPLICATE KEY UPDATE done = 1", [day]);
+  }
+  return { day, complete, tables: tables.length, tablesDone: done.size, partsWritten, bytes, manifestKey };
+}
+var gzip, CHUNK_ROWS, SKIP_TABLES, jsonReplacer;
+var init_backup = __esm({
+  "server/backup.ts"() {
+    "use strict";
+    init_storage();
+    gzip = promisify(zlib.gzip);
+    CHUNK_ROWS = Number(process.env.BACKUP_CHUNK_ROWS || 5e3);
+    SKIP_TABLES = /* @__PURE__ */ new Set(["__drizzle_migrations", "member_sessions", "platform_sessions", "backup_progress"]);
+    jsonReplacer = (_k, v) => typeof v === "bigint" ? v.toString() : v;
+  }
+});
+
+// server/vercel-entry.ts
+import express from "express";
+import compression from "compression";
+import fs from "fs";
+import path from "path";
+import { createExpressMiddleware } from "@trpc/server/adapters/express";
+
+// server/routers.ts
+init_const();
 
 // server/modules/timeTracking.ts
-var timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
+init_trpc();
+init_db();
+init_schema();
+init_audit();
+import { z as z2 } from "zod";
+import { TRPCError as TRPCError6 } from "@trpc/server";
+import { eq as eq4, and as and4, desc as desc2, gte as gte2, lt as lt2 } from "drizzle-orm";
+
+// server/modules/timesheetMirror.ts
+init_trpc();
+init_db();
+init_schema();
+init_audit();
+import { z } from "zod";
+import { TRPCError as TRPCError5 } from "@trpc/server";
+import { and as and3, eq as eq3, gte, lt, inArray as inArray2, sql as sql3 } from "drizzle-orm";
+
+// shared/timesheetMirror.ts
+var MARK_LABEL = { clock_in: "Entrada", break_start: "In\xEDcio do intervalo", break_end: "Retorno do intervalo", clock_out: "Sa\xEDda" };
+var DAY = 864e5;
+function localParts(iso, timeZone) {
+  const f = new Intl.DateTimeFormat("en-CA", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const v = Object.fromEntries(f.formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+  return { date: `${v.year}-${v.month}-${v.day}`, time: `${v.hour}:${v.minute}:${v.second}`, hm: `${v.hour}:${v.minute}`, minutesOfDay: Number(v.hour) * 60 + Number(v.minute) };
+}
+var dayNum = (d) => {
+  const [y, m, dd] = d.split("-").map(Number);
+  return Math.floor(Date.UTC(y, m - 1, dd) / DAY);
+};
+var weekdayOf = (d) => new Date(dayNum(d) * DAY).getUTCDay();
+var addDay = (d, n) => new Date((dayNum(d) + n) * DAY).toISOString().slice(0, 10);
+var toMin = (hm2) => {
+  const [h, m] = hm2.split(":").map(Number);
+  return h * 60 + m;
+};
+function nightOverlap(aMs, bMs, tz, start, end) {
+  let n = 0;
+  for (let t2 = Math.ceil(aMs / 6e4) * 6e4; t2 < bMs; t2 += 6e4) {
+    const m = localParts(new Date(t2).toISOString(), tz).minutesOfDay;
+    if (start > end ? m >= start || m < end : m >= start && m < end) n++;
+  }
+  return n;
+}
+function buildMirror(input) {
+  const tz = input.timeZone || "America/Sao_Paulo";
+  const labor = input.labor || null;
+  const events = [...input.events].sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
+  const notes = [];
+  const shifts = [];
+  let cur = null;
+  for (const ev of events) {
+    const date3 = localParts(ev.time, tz).date;
+    const lastT = cur ? new Date(cur.events[cur.events.length - 1].time).getTime() : 0;
+    const stale = cur && new Date(ev.time).getTime() - lastT > 20 * 36e5;
+    if (ev.type === "clock_in" || !cur || stale) {
+      cur = { date: date3, events: [] };
+      shifts.push(cur);
+    }
+    cur.events.push(ev);
+    if (ev.type === "clock_out") cur = null;
+  }
+  const byDate = /* @__PURE__ */ new Map();
+  for (const s of shifts) {
+    if (s.date >= input.from && s.date <= input.to) byDate.set(s.date, [...byDate.get(s.date) || [], s]);
+  }
+  const workdays = labor?.workdays && labor.workdays.length ? new Set(labor.workdays) : null;
+  const daily = labor?.dailyMinutes && labor.dailyMinutes > 0 ? labor.dailyMinutes : null;
+  const night = labor?.nightEnabled && labor.nightStart && labor.nightEnd ? { s: toMin(labor.nightStart), e: toMin(labor.nightEnd) } : null;
+  const days = [];
+  for (let d = input.from; d <= input.to; d = addDay(d, 1)) {
+    const dayShifts = byDate.get(d) || [];
+    const issues = [];
+    const marks = [];
+    let worked = 0, brk = 0, nightMin = 0;
+    for (const sh of dayShifts) {
+      let openIn = null, openBreak = null;
+      for (const ev of sh.events) {
+        const t2 = new Date(ev.time).getTime();
+        const kind = ev.automatic ? "automatic" : ev.adjustment ? "adjusted" : ev.legacyAdjustment ? "legacy_adjusted" : "original";
+        marks.push({
+          type: ev.type,
+          label: MARK_LABEL[ev.type],
+          time: ev.time,
+          receivedAt: ev.receivedAt,
+          synced: ev.synced,
+          kind,
+          originalTime: ev.adjustment?.originalTime,
+          originalLabel: ev.adjustment ? MARK_LABEL[ev.adjustment.originalType] : void 0,
+          justification: ev.adjustment?.justification,
+          reviewedBy: ev.adjustment?.reviewedBy,
+          reviewedAt: ev.adjustment?.reviewedAt
+        });
+        if (ev.type === "clock_in") {
+          if (openIn != null) issues.push("Entrada sem sa\xEDda anterior");
+          openIn = t2;
+        } else if (ev.type === "break_start") {
+          if (openIn == null) issues.push("In\xEDcio de intervalo sem entrada");
+          else {
+            worked += (t2 - openIn) / 6e4;
+            if (night) nightMin += nightOverlap(openIn, t2, tz, night.s, night.e);
+            openIn = null;
+          }
+          openBreak = t2;
+        } else if (ev.type === "break_end") {
+          if (openBreak == null) issues.push("Retorno de intervalo sem in\xEDcio");
+          else {
+            brk += (t2 - openBreak) / 6e4;
+            openBreak = null;
+          }
+          openIn = t2;
+        } else if (ev.type === "clock_out") {
+          if (openIn == null) issues.push("Sa\xEDda sem entrada");
+          else {
+            worked += (t2 - openIn) / 6e4;
+            if (night) nightMin += nightOverlap(openIn, t2, tz, night.s, night.e);
+            openIn = null;
+          }
+        }
+      }
+      if (openIn != null || openBreak != null) issues.push("Jornada incompleta: falta marca\xE7\xE3o de sa\xEDda ou retorno");
+    }
+    if (marks.some((m) => !m.synced)) issues.push("Marca\xE7\xE3o com sincroniza\xE7\xE3o pendente");
+    if (marks.some((m) => m.kind === "automatic")) issues.push("Sa\xEDda autom\xE1tica do sistema (n\xE3o marcada pelo funcion\xE1rio)");
+    if (marks.some((m) => m.kind === "legacy_adjusted")) issues.push("Ajuste antigo sem registro estruturado do valor original (ver observa\xE7\xF5es da marca\xE7\xE3o)");
+    const isWorkday = workdays ? workdays.has(weekdayOf(d)) : null;
+    if (!marks.length && isWorkday) issues.push("Sem marca\xE7\xF5es em dia previsto \u2014 verificar falta, abono ou justificativa (n\xE3o informados)");
+    const expected = daily != null && isWorkday ? daily : daily != null && !workdays ? null : null;
+    const w = Math.round(worked);
+    const hasMarks = marks.length > 0;
+    const diff = expected != null && hasMarks ? w - expected : null;
+    days.push({
+      date: d,
+      weekday: weekdayOf(d),
+      marks,
+      workedMinutes: w,
+      breakMinutes: Math.round(brk),
+      expectedMinutes: expected,
+      diffMinutes: diff,
+      overtimeMinutes: diff != null ? Math.max(0, diff) : null,
+      nightMinutes: night && hasMarks ? nightMin : null,
+      issues
+    });
+  }
+  const marked = days.filter((x) => x.marks.length);
+  const sum = (f) => marked.reduce((a, x) => a + (f(x) || 0), 0);
+  const configured = daily != null && workdays != null;
+  const totals = {
+    daysWithMarks: marked.length,
+    workedMinutes: sum((x) => x.workedMinutes),
+    breakMinutes: sum((x) => x.breakMinutes),
+    expectedMinutes: configured ? days.reduce((a, x) => a + (x.expectedMinutes || 0), 0) : null,
+    balanceMinutes: configured ? sum((x) => x.diffMinutes) : null,
+    overtimeMinutes: configured ? sum((x) => x.overtimeMinutes) : null,
+    deficitMinutes: configured ? marked.reduce((a, x) => a + Math.max(0, -(x.diffMinutes || 0)), 0) : null,
+    nightMinutes: night ? sum((x) => x.nightMinutes) : null,
+    // Hora noturna reduzida (CLT art. 73 §1º): 52min30s = 1h → minutos noturnos × 60/52,5
+    nightReducedMinutes: night ? Math.round(sum((x) => x.nightMinutes) * 60 / 52.5) : null,
+    incompleteDays: marked.filter((x) => x.issues.some((i) => i.startsWith("Jornada incompleta") || i.includes("sem entrada") || i.includes("sem sa\xEDda") || i.includes("sem in\xEDcio"))).length,
+    adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
+    automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
+    pendingSyncMarks: marked.reduce((a, x) => a + x.marks.filter((m) => !m.synced).length, 0),
+    daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday)).length : null
+  };
+  if (!daily) notes.push("Jornada contratada n\xE3o configurada para este funcion\xE1rio: horas previstas, diferen\xE7as e horas extras n\xE3o foram calculadas.");
+  if (!workdays) notes.push("Dias de trabalho da semana n\xE3o configurados: faltas e dias previstos n\xE3o foram apurados.");
+  if (!night) notes.push("Adicional noturno e hora reduzida n\xE3o configurados: n\xE3o calculados.");
+  notes.push("Banco de horas, feriados, compensa\xE7\xF5es, abonos e toler\xE2ncia (CLT art. 58 \xA71\xBA) dependem de regras/conven\xE7\xE3o n\xE3o cadastradas e n\xE3o foram aplicados.");
+  return { from: input.from, to: input.to, timeZone: tz, days, totals, notes };
+}
+
+// server/modules/timesheetMirror.ts
+var TZ = "America/Sao_Paulo";
+var dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+var hm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+var adjustmentsReady = null;
+async function ensureAdjustmentsTable() {
+  if (adjustmentsReady) return adjustmentsReady;
+  adjustmentsReady = (async () => {
+    const database2 = await getDb();
+    if (!database2) return;
+    await database2.execute(`CREATE TABLE IF NOT EXISTS time_event_adjustments (
+      id int AUTO_INCREMENT NOT NULL,
+      companyId int NOT NULL,
+      timeEventId int NOT NULL,
+      correctionRequestId int NULL,
+      memberAccountId int NOT NULL,
+      originalType varchar(20) NOT NULL,
+      originalTime timestamp NOT NULL,
+      correctedType varchar(20) NOT NULL,
+      correctedTime timestamp NOT NULL,
+      justification text NOT NULL,
+      reviewedByMemberId int NULL,
+      reviewedByName varchar(255) NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY time_event_adj_event_idx (companyId, timeEventId),
+      KEY time_event_adj_member_idx (companyId, memberAccountId)
+    )`);
+  })().catch((e) => {
+    adjustmentsReady = null;
+    throw e;
+  });
+  return adjustmentsReady;
+}
+async function recordAdjustment(a) {
+  await ensureAdjustmentsTable();
+  const database2 = await getDb();
+  if (!database2) throw new Error("Banco de dados indispon\xEDvel.");
+  await database2.execute(sql3`INSERT INTO time_event_adjustments
+    (companyId, timeEventId, correctionRequestId, memberAccountId, originalType, originalTime, correctedType, correctedTime, justification, reviewedByMemberId, reviewedByName)
+    VALUES (${a.companyId}, ${a.timeEventId}, ${a.correctionRequestId}, ${a.memberAccountId}, ${a.originalType}, ${a.originalTime}, ${a.correctedType}, ${a.correctedTime}, ${a.justification}, ${a.reviewedByMemberId ?? null}, ${a.reviewedByName ?? null})`);
+}
+var legalSchema = z.object({
+  legalName: z.string().trim().max(200).optional().default(""),
+  document: z.string().trim().max(32).optional().default(""),
+  // CNPJ/CPF do empregador
+  establishment: z.string().trim().max(200).optional().default(""),
+  address: z.string().trim().max(300).optional().default("")
+});
+var laborSchema = z.object({
+  jobTitle: z.string().trim().max(120).nullish(),
+  admissionDate: dateStr.nullish(),
+  cpf: z.string().trim().max(14).nullish(),
+  dailyMinutes: z.number().int().min(0).max(1440).nullish(),
+  intervalMinutes: z.number().int().min(0).max(600).nullish(),
+  workdays: z.array(z.number().int().min(0).max(6)).max(7).nullish(),
+  nightEnabled: z.boolean().optional(),
+  nightStart: hm.optional(),
+  nightEnd: hm.optional()
+});
+async function readJson(key, companyId) {
+  const raw = await getSetting(key, companyId, "");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+async function companyMembers(companyId, memberIds) {
+  const database2 = await getDb();
+  if (!database2) throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  const where = [eq3(memberAccounts2.companyId, companyId)];
+  if (memberIds?.length) where.push(inArray2(memberAccounts2.id, memberIds));
+  const rows2 = await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq3(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and3(...where));
+  return rows2.filter((r) => r.role !== "company_admin");
+}
+var timesheetMirrorRouter = router({
+  /** Promotores da empresa + perfil trabalhista configurado (ou null). */
+  promoters: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
+    const members = await companyMembers(ctx.accountId);
+    const out = [];
+    for (const m of members) out.push({ ...m, labor: await readJson(`labor_profile:${m.id}`, ctx.accountId) });
+    return out;
+  }),
+  getCompanyProfile: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
+    const database2 = await getDb();
+    const company = database2 ? (await database2.select({ name: companies2.name }).from(companies2).where(eq3(companies2.id, ctx.accountId)).limit(1))[0] : null;
+    const legal = await readJson("company_legal_profile", ctx.accountId);
+    return { name: company?.name ?? "", legal: legal ?? { legalName: "", document: "", establishment: "", address: "" } };
+  }),
+  saveCompanyProfile: companyAdminFeatureProcedure("timeTracking").input(legalSchema).mutation(async ({ ctx, input }) => {
+    await setSetting("company_legal_profile", JSON.stringify(input), ctx.accountId);
+    void auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "company_legal_profile", description: "Atualizou dados de identifica\xE7\xE3o da empresa para o espelho de ponto", newData: input });
+    return { success: true };
+  }),
+  saveLaborProfile: companyAdminFeatureProcedure("timeTracking").input(z.object({ memberId: z.number().int().positive(), profile: laborSchema })).mutation(async ({ ctx, input }) => {
+    const [member] = await companyMembers(ctx.accountId, [input.memberId]);
+    if (!member) throw new TRPCError5({ code: "NOT_FOUND", message: "Funcion\xE1rio n\xE3o encontrado." });
+    await setSetting(`labor_profile:${input.memberId}`, JSON.stringify(input.profile), ctx.accountId);
+    void auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "labor_profile", entityId: input.memberId, entityLabel: member.name, description: `Atualizou perfil trabalhista de ${member.name}`, newData: input.profile });
+    return { success: true };
+  }),
+  /** Gera os dados do espelho. Somente leitura; registra a emissão na auditoria. */
+  generate: companyAdminFeatureProcedure("timeTracking").input(z.object({ memberIds: z.array(z.number().int().positive()).max(500).optional(), from: dateStr, to: dateStr })).query(async ({ ctx, input }) => {
+    if (input.from > input.to) throw new TRPCError5({ code: "BAD_REQUEST", message: "A data inicial deve ser anterior ou igual \xE0 final." });
+    const spanDays = (Date.parse(input.to) - Date.parse(input.from)) / 864e5 + 1;
+    if (spanDays > 366) throw new TRPCError5({ code: "BAD_REQUEST", message: "O per\xEDodo m\xE1ximo \xE9 de 366 dias." });
+    const database2 = await getDb();
+    if (!database2) throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+    await ensureAdjustmentsTable();
+    const members = await companyMembers(ctx.accountId, input.memberIds);
+    if (input.memberIds?.length && members.length !== new Set(input.memberIds).size) throw new TRPCError5({ code: "NOT_FOUND", message: "Funcion\xE1rio n\xE3o encontrado nesta empresa." });
+    const start = new Date(Date.parse(`${input.from}T00:00:00Z`) - 15 * 36e5);
+    const end = new Date(Date.parse(`${input.to}T00:00:00Z`) + 60 * 36e5);
+    const company = (await database2.select({ name: companies2.name }).from(companies2).where(eq3(companies2.id, ctx.accountId)).limit(1))[0];
+    const legal = await readJson("company_legal_profile", ctx.accountId);
+    const memberIds = members.map((m) => m.id);
+    const eventRows = memberIds.length ? await database2.select().from(timeEvents).where(and3(eq3(timeEvents.companyId, ctx.accountId), inArray2(timeEvents.memberAccountId, memberIds), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end))).orderBy(timeEvents.serverTime) : [];
+    const eventsByMember = /* @__PURE__ */ new Map();
+    for (const r of eventRows) eventsByMember.set(r.memberAccountId, [...eventsByMember.get(r.memberAccountId) || [], r]);
+    const evIds = eventRows.map((r) => r.id);
+    const adjByEvent = /* @__PURE__ */ new Map();
+    if (evIds.length) {
+      const adjRows = (await database2.execute(sql3`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${ctx.accountId} AND memberAccountId IN (${sql3.join(memberIds.map((id2) => sql3`${id2}`), sql3`, `)}) ORDER BY id`))[0];
+      for (const a of adjRows) if (!adjByEvent.has(Number(a.timeEventId))) adjByEvent.set(Number(a.timeEventId), a);
+    }
+    const laborByMember = /* @__PURE__ */ new Map();
+    if (memberIds.length) {
+      const laborRows = (await database2.execute(sql3`SELECT settingKey, settingValue FROM system_settings WHERE accountId = ${ctx.accountId} AND settingKey LIKE 'labor\\_profile:%'`))[0];
+      for (const r of laborRows) {
+        try {
+          laborByMember.set(Number(String(r.settingKey).split(":")[1]), JSON.parse(r.settingValue));
+        } catch {
+        }
+      }
+    }
+    const results = members.map((m) => {
+      const events = (eventsByMember.get(m.id) || []).map((r) => {
+        const a = adjByEvent.get(r.id);
+        const notes = r.notes || "";
+        return {
+          id: r.id,
+          type: r.eventType,
+          time: (r.deviceTime || r.serverTime).toISOString(),
+          receivedAt: r.serverTime.toISOString(),
+          synced: r.synced,
+          notes,
+          automatic: /automática/i.test(notes) && /^auto-clock-out:/.test(r.idempotencyKey || ""),
+          adjustment: a ? { originalType: a.originalType, originalTime: new Date(a.originalTime).toISOString(), justification: a.justification, reviewedBy: a.reviewedByName, reviewedAt: a.createdAt ? new Date(a.createdAt).toISOString() : null } : null,
+          legacyAdjustment: !a && /Ajuste aprovado em/.test(notes)
+        };
+      });
+      const labor = laborByMember.get(m.id) ?? null;
+      return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: labor ? { ...labor } : null, report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor }) };
+    });
+    void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "timesheet_mirror", description: `Gerou espelho de ponto ${input.from} a ${input.to} (${results.length} funcion\xE1rio(s))`, newData: { from: input.from, to: input.to, memberIds: results.map((r) => r.member.id) } });
+    return { company: { name: company?.name ?? "", legal: legal ?? null }, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), timeZone: TZ, results };
+  }),
+  /** Registra no log de auditoria que o espelho foi exportado/impresso/compartilhado. */
+  logExport: companyAdminFeatureProcedure("timeTracking").input(z.object({ kind: z.enum(["pdf", "xlsx", "print", "whatsapp"]), from: dateStr, to: dateStr, count: z.number().int().min(1).max(500) })).mutation(async ({ ctx, input }) => {
+    void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "timesheet_mirror", description: `Exportou espelho de ponto (${input.kind}) ${input.from} a ${input.to}, ${input.count} funcion\xE1rio(s)`, newData: input });
+    return { success: true };
+  })
+});
+
+// server/modules/timeTracking.ts
+init_missingPunch();
+var timeEventType = z2.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 function localDay(date3, timeZone) {
   try {
     const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date3);
@@ -3456,27 +4485,27 @@ function isValidTransition(last, next) {
   return transitions[last].includes(next);
 }
 var timeTrackingRouter = router({
-  shiftStatus: commercialFeatureProcedure("timeTracking").input(z.object({ timeZone: z.string().min(1).default("UTC") }).optional()).query(async ({ ctx, input }) => {
+  shiftStatus: commercialFeatureProcedure("timeTracking").input(z2.object({ timeZone: z2.string().min(1).default("UTC") }).optional()).query(async ({ ctx, input }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     const timeZone = input?.timeZone || "UTC";
     if (!companyId || !memberId) return { status: "clock_in_required", active: false, timeZone, localDate: localDay(/* @__PURE__ */ new Date(), timeZone) };
-    const database = await getDb();
-    if (!database) return { status: "clock_in_required", active: false, timeZone, localDate: localDay(/* @__PURE__ */ new Date(), timeZone) };
+    const database2 = await getDb();
+    if (!database2) return { status: "clock_in_required", active: false, timeZone, localDate: localDay(/* @__PURE__ */ new Date(), timeZone) };
     const today = localDay(/* @__PURE__ */ new Date(), timeZone);
-    const events = await database.select().from(timeEvents).where(and2(eq2(timeEvents.memberAccountId, memberId), eq2(timeEvents.companyId, companyId))).orderBy(desc2(timeEvents.serverTime)).limit(100);
+    const events = await database2.select().from(timeEvents).where(and4(eq4(timeEvents.memberAccountId, memberId), eq4(timeEvents.companyId, companyId))).orderBy(desc2(timeEvents.serverTime)).limit(100);
     const todayEvents = events.filter((event) => localDay(event.deviceTime || event.serverTime, timeZone) === today);
     const last = todayEvents[0];
     const active = Boolean(last && last.eventType !== "clock_out");
     return { status: active ? "active" : last?.eventType === "clock_out" ? "closed" : "clock_in_required", active, timeZone, localDate: today, lastEvent: last?.eventType || null };
   }),
-  companyToday: companyAdminFeatureProcedure("timeTracking").input(z.object({ timeZone: z.string().min(1).max(128).default("UTC") }).optional()).query(async ({ ctx, input }) => {
-    const database = await getDb();
-    if (!database) return [];
+  companyToday: companyAdminFeatureProcedure("timeTracking").input(z2.object({ timeZone: z2.string().min(1).max(128).default("UTC") }).optional()).query(async ({ ctx, input }) => {
+    const database2 = await getDb();
+    if (!database2) return [];
     const timeZone = input?.timeZone || "UTC";
     const today = localDay(/* @__PURE__ */ new Date(), timeZone);
     const since = new Date(Date.now() - 36 * 60 * 60 * 1e3);
-    const rows = await database.select({
+    const rows2 = await database2.select({
       promoterId: memberAccounts2.id,
       promoterName: memberAccounts2.userName,
       eventType: timeEvents.eventType,
@@ -3485,16 +4514,16 @@ var timeTrackingRouter = router({
       latitude: timeEvents.latitude,
       longitude: timeEvents.longitude,
       accuracy: timeEvents.accuracy
-    }).from(timeEvents).innerJoin(memberAccounts2, and2(
-      eq2(timeEvents.memberAccountId, memberAccounts2.id),
-      eq2(memberAccounts2.companyId, ctx.accountId)
-    )).where(and2(
-      eq2(timeEvents.companyId, ctx.accountId),
-      eq2(memberAccounts2.role, "promoter"),
-      gte(timeEvents.serverTime, since)
+    }).from(timeEvents).innerJoin(memberAccounts2, and4(
+      eq4(timeEvents.memberAccountId, memberAccounts2.id),
+      eq4(memberAccounts2.companyId, ctx.accountId)
+    )).where(and4(
+      eq4(timeEvents.companyId, ctx.accountId),
+      eq4(memberAccounts2.role, "promoter"),
+      gte2(timeEvents.serverTime, since)
     )).orderBy(desc2(timeEvents.serverTime)).limit(5e3);
     const eventsByPromoter = /* @__PURE__ */ new Map();
-    for (const row2 of rows) {
+    for (const row2 of rows2) {
       if (localDay(row2.deviceTime || row2.serverTime, timeZone) !== today) continue;
       const promoterEvents = eventsByPromoter.get(row2.promoterId) || [];
       promoterEvents.push(row2);
@@ -3512,7 +4541,7 @@ var timeTrackingRouter = router({
         clockInTime: entry.deviceTime || entry.serverTime,
         lastEventType: last.eventType,
         lastEventTime: last.deviceTime || last.serverTime,
-        active: last.eventType !== "clock_out",
+        active: last.eventType === "clock_in" || last.eventType === "break_end",
         latitude: entry.latitude,
         longitude: entry.longitude,
         accuracy: entry.accuracy
@@ -3520,49 +4549,48 @@ var timeTrackingRouter = router({
     }
     return presence.sort((a, b) => b.clockInTime.getTime() - a.clockInTime.getTime());
   }),
-  registerEvent: commercialFeatureProcedure("timeTracking").input(z.object({
+  registerEvent: commercialFeatureProcedure("timeTracking").input(z2.object({
     eventType: timeEventType,
-    deviceTime: z.string().datetime().optional(),
-    latitude: z.number().min(-90).max(90),
-    longitude: z.number().min(-180).max(180),
-    accuracy: z.number().finite().nonnegative().max(1e4),
-    locationStatus: z.literal("success"),
-    locationError: z.string().optional(),
-    deviceInfo: z.string().optional(),
-    idempotencyKey: z.string().min(1).max(64).optional(),
-    timeZone: z.string().min(1),
-    notes: z.string().optional()
+    deviceTime: z2.string().datetime().optional(),
+    latitude: z2.number().min(-90).max(90),
+    longitude: z2.number().min(-180).max(180),
+    accuracy: z2.number().finite().nonnegative().max(1e4),
+    locationStatus: z2.literal("success"),
+    locationError: z2.string().optional(),
+    deviceInfo: z2.string().optional(),
+    idempotencyKey: z2.string().min(1).max(64).optional(),
+    timeZone: z2.string().min(1),
+    notes: z2.string().optional()
   })).mutation(async ({ ctx, input }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
-    if (!companyId || !memberId) throw new TRPCError4({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
+    if (!companyId || !memberId) throw new TRPCError6({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
     if (!Number.isFinite(input.latitude) || !Number.isFinite(input.longitude) || !Number.isFinite(input.accuracy) || input.locationStatus !== "success") {
-      throw new TRPCError4({ code: "BAD_REQUEST", message: "O ponto s\xF3 pode ser registrado ap\xF3s obter uma localiza\xE7\xE3o GPS v\xE1lida." });
+      throw new TRPCError6({ code: "BAD_REQUEST", message: "O ponto s\xF3 pode ser registrado ap\xF3s obter uma localiza\xE7\xE3o GPS v\xE1lida." });
     }
-    const database = await getDb();
-    if (!database) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+    const database2 = await getDb();
+    if (!database2) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     if (input.idempotencyKey) {
-      const existing = await database.select().from(timeEvents).where(eq2(timeEvents.idempotencyKey, input.idempotencyKey)).limit(1);
+      const existing = await database2.select().from(timeEvents).where(eq4(timeEvents.idempotencyKey, input.idempotencyKey)).limit(1);
       if (existing[0]) {
         if (Number(existing[0].companyId) !== companyId || Number(existing[0].memberAccountId) !== memberId) {
-          throw new TRPCError4({ code: "CONFLICT", message: "Esta chave de idempot\xEAncia n\xE3o pode ser reutilizada nesta sess\xE3o." });
+          throw new TRPCError6({ code: "CONFLICT", message: "Esta chave de idempot\xEAncia n\xE3o pode ser reutilizada nesta sess\xE3o." });
         }
         return existing[0];
       }
     }
-    const lastEvents = await database.select().from(timeEvents).where(and2(eq2(timeEvents.memberAccountId, memberId), eq2(timeEvents.companyId, companyId))).orderBy(desc2(timeEvents.serverTime)).limit(1);
-    const lastType = lastEvents[0]?.eventType;
     const today = localDay(/* @__PURE__ */ new Date(), input.timeZone);
-    const todayEvents = lastEvents.length ? (await database.select().from(timeEvents).where(and2(eq2(timeEvents.memberAccountId, memberId), eq2(timeEvents.companyId, companyId))).orderBy(desc2(timeEvents.serverTime)).limit(100)).filter((event) => localDay(event.deviceTime || event.serverTime, input.timeZone) === today) : [];
+    const recent = await database2.select().from(timeEvents).where(and4(eq4(timeEvents.memberAccountId, memberId), eq4(timeEvents.companyId, companyId))).orderBy(desc2(timeEvents.serverTime)).limit(100);
+    const todayEvents = recent.filter((event) => localDay(event.deviceTime || event.serverTime, input.timeZone) === today);
     const lastToday = todayEvents[0]?.eventType;
-    if (input.eventType === "clock_in" && lastToday === "clock_out") throw new TRPCError4({ code: "BAD_REQUEST", message: "A jornada de hoje j\xE1 foi encerrada. O pr\xF3ximo acesso ser\xE1 liberado no pr\xF3ximo dia." });
-    if (input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) throw new TRPCError4({ code: "BAD_REQUEST", message: "Bata a entrada antes de registrar este evento." });
-    if (!isValidTransition(lastType, input.eventType)) {
-      throw new TRPCError4({ code: "BAD_REQUEST", message: "Sequ\xEAncia de marca\xE7\xE3o inv\xE1lida. Confira o \xFAltimo evento do ponto." });
+    if (input.eventType === "clock_in" && lastToday === "clock_out") throw new TRPCError6({ code: "BAD_REQUEST", message: "A jornada de hoje j\xE1 foi encerrada. O pr\xF3ximo acesso ser\xE1 liberado no pr\xF3ximo dia." });
+    if (input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) throw new TRPCError6({ code: "BAD_REQUEST", message: "Bata a entrada antes de registrar este evento." });
+    if (!isValidTransition(lastToday, input.eventType)) {
+      throw new TRPCError6({ code: "BAD_REQUEST", message: "Sequ\xEAncia de marca\xE7\xE3o inv\xE1lida. Confira o \xFAltimo evento do ponto." });
     }
     let result;
     try {
-      result = await database.insert(timeEvents).values({
+      result = await database2.insert(timeEvents).values({
         companyId,
         memberAccountId: memberId,
         eventType: input.eventType,
@@ -3580,15 +4608,15 @@ var timeTrackingRouter = router({
     } catch (error) {
       const duplicate = error?.code === "ER_DUP_ENTRY" || /duplicate entry/i.test(String(error?.message ?? ""));
       if (!duplicate || !input.idempotencyKey) throw error;
-      const existing = await database.select().from(timeEvents).where(eq2(timeEvents.idempotencyKey, input.idempotencyKey)).limit(1);
+      const existing = await database2.select().from(timeEvents).where(eq4(timeEvents.idempotencyKey, input.idempotencyKey)).limit(1);
       if (existing[0] && Number(existing[0].companyId) === companyId && Number(existing[0].memberAccountId) === memberId) {
         return existing[0];
       }
-      throw new TRPCError4({ code: "CONFLICT", message: "Esta chave de idempot\xEAncia n\xE3o pode ser reutilizada nesta sess\xE3o." });
+      throw new TRPCError6({ code: "CONFLICT", message: "Esta chave de idempot\xEAncia n\xE3o pode ser reutilizada nesta sess\xE3o." });
     }
-    const insertedRows = await database.select().from(timeEvents).where(eq2(timeEvents.id, Number(result[0]?.insertId))).limit(1);
+    const insertedRows = await database2.select().from(timeEvents).where(eq4(timeEvents.id, Number(result[0]?.insertId))).limit(1);
     const inserted = insertedRows[0];
-    if (!inserted) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel recuperar a marca\xE7\xE3o criada." });
+    if (!inserted) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel recuperar a marca\xE7\xE3o criada." });
     await auditFromCtx(ctx, {
       action: "create",
       module: "time_tracking",
@@ -3598,30 +4626,43 @@ var timeTrackingRouter = router({
     });
     return inserted;
   }),
-  myHistory: commercialFeatureProcedure("timeTracking").input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional()).query(async ({ ctx, input }) => {
+  companyHistory: companyAdminFeatureProcedure("timeTracking").input(z2.object({ memberId: z2.number().int().positive(), month: z2.string().regex(/^\d{4}-\d{2}$/) })).query(async ({ ctx, input }) => {
+    const database2 = await getDb();
+    if (!database2) return [];
+    const [year, mon] = input.month.split("-").map(Number);
+    const start = new Date(Date.UTC(year, mon - 1, 1));
+    const end = new Date(Date.UTC(year, mon, 1));
+    return database2.select().from(timeEvents).where(and4(eq4(timeEvents.memberAccountId, input.memberId), eq4(timeEvents.companyId, ctx.accountId), gte2(timeEvents.serverTime, start), lt2(timeEvents.serverTime, end))).orderBy(timeEvents.serverTime);
+  }),
+  myMissingPunch: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
+    if (!ctx.accountId || !ctx.memberAccountId) return null;
+    return (await findMissingPunches({ companyId: ctx.accountId, memberId: ctx.memberAccountId }))[0] ?? null;
+  }),
+  companyMissingPunches: companyAdminFeatureProcedure("timeTracking").query(({ ctx }) => findMissingPunches({ companyId: ctx.accountId })),
+  myHistory: commercialFeatureProcedure("timeTracking").input(z2.object({ limit: z2.number().min(1).max(100).default(100), date: z2.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional()).query(async ({ ctx, input }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) return [];
-    const database = await getDb();
-    if (!database) return [];
-    const conditions = [eq2(timeEvents.memberAccountId, memberId), eq2(timeEvents.companyId, companyId)];
+    const database2 = await getDb();
+    if (!database2) return [];
+    const conditions = [eq4(timeEvents.memberAccountId, memberId), eq4(timeEvents.companyId, companyId)];
     if (input?.date) {
       const start = /* @__PURE__ */ new Date(`${input.date}T00:00:00.000Z`);
       const end = new Date(start.getTime() + 864e5);
-      conditions.push(gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end));
+      conditions.push(gte2(timeEvents.serverTime, start), lt2(timeEvents.serverTime, end));
     }
-    return database.select().from(timeEvents).where(and2(...conditions)).orderBy(desc2(timeEvents.serverTime)).limit(input?.limit || 100);
+    return database2.select().from(timeEvents).where(and4(...conditions)).orderBy(desc2(timeEvents.serverTime)).limit(input?.limit || 100);
   }),
   myTimeSummary: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) return { periodLabel: "M\xEAs atual", daysTracked: 0, workedMinutes: 0, expectedMinutes: 0, balanceMinutes: 0, openShift: false };
-    const database = await getDb();
-    if (!database) return { periodLabel: "M\xEAs atual", daysTracked: 0, workedMinutes: 0, expectedMinutes: 0, balanceMinutes: 0, openShift: false };
+    const database2 = await getDb();
+    if (!database2) return { periodLabel: "M\xEAs atual", daysTracked: 0, workedMinutes: 0, expectedMinutes: 0, balanceMinutes: 0, openShift: false };
     const now = /* @__PURE__ */ new Date();
     const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-    const events = await database.select().from(timeEvents).where(and2(eq2(timeEvents.memberAccountId, memberId), eq2(timeEvents.companyId, companyId), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end))).orderBy(timeEvents.serverTime);
+    const events = await database2.select().from(timeEvents).where(and4(eq4(timeEvents.memberAccountId, memberId), eq4(timeEvents.companyId, companyId), gte2(timeEvents.serverTime, start), lt2(timeEvents.serverTime, end))).orderBy(timeEvents.serverTime);
     const byDay = /* @__PURE__ */ new Map();
     for (const event of events) {
       const timestamp3 = event.deviceTime || event.serverTime;
@@ -3655,80 +4696,427 @@ var timeTrackingRouter = router({
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) return [];
-    const database = await getDb();
-    if (!database) return [];
-    return database.select({ request: timeCorrectionRequests, event: timeEvents }).from(timeCorrectionRequests).leftJoin(timeEvents, eq2(timeCorrectionRequests.timeEventId, timeEvents.id)).where(and2(eq2(timeCorrectionRequests.companyId, companyId), eq2(timeCorrectionRequests.memberAccountId, memberId))).orderBy(desc2(timeCorrectionRequests.createdAt));
+    const database2 = await getDb();
+    if (!database2) return [];
+    return database2.select({ request: timeCorrectionRequests, event: timeEvents }).from(timeCorrectionRequests).leftJoin(timeEvents, eq4(timeCorrectionRequests.timeEventId, timeEvents.id)).where(and4(eq4(timeCorrectionRequests.companyId, companyId), eq4(timeCorrectionRequests.memberAccountId, memberId))).orderBy(desc2(timeCorrectionRequests.createdAt));
   }),
-  requestCorrection: commercialFeatureProcedure("timeTracking").input(z.object({
-    timeEventId: z.number().int().positive(),
+  requestCorrection: commercialFeatureProcedure("timeTracking").input(z2.object({
+    timeEventId: z2.number().int().positive().optional().nullable(),
     requestedType: timeEventType,
-    requestedTime: z.string().datetime(),
-    justification: z.string().min(10)
+    requestedTime: z2.string().datetime(),
+    justification: z2.string().min(5)
   })).mutation(async ({ ctx, input }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
-    if (!companyId || !memberId) throw new TRPCError4({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
-    const database = await getDb();
-    if (!database) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-    const event = await database.select().from(timeEvents).where(and2(eq2(timeEvents.id, input.timeEventId), eq2(timeEvents.companyId, companyId), eq2(timeEvents.memberAccountId, memberId))).limit(1);
-    if (!event[0]) throw new TRPCError4({ code: "NOT_FOUND", message: "Marca\xE7\xE3o n\xE3o encontrada para este funcion\xE1rio." });
-    const result = await database.insert(timeCorrectionRequests).values({
+    if (!companyId || !memberId) throw new TRPCError6({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
+    const database2 = await getDb();
+    if (!database2) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+    let timeEventId = null;
+    if (input.timeEventId) {
+      const event = await database2.select().from(timeEvents).where(and4(eq4(timeEvents.id, input.timeEventId), eq4(timeEvents.companyId, companyId), eq4(timeEvents.memberAccountId, memberId))).limit(1);
+      if (!event[0]) throw new TRPCError6({ code: "NOT_FOUND", message: "Marca\xE7\xE3o n\xE3o encontrada para este funcion\xE1rio." });
+      timeEventId = input.timeEventId;
+    }
+    const result = await database2.insert(timeCorrectionRequests).values({
       companyId,
       memberAccountId: memberId,
-      timeEventId: input.timeEventId,
+      timeEventId,
       requestedType: input.requestedType,
       requestedTime: new Date(input.requestedTime),
       justification: input.justification,
       status: "pending"
     });
-    const insertedRows = await database.select().from(timeCorrectionRequests).where(eq2(timeCorrectionRequests.id, Number(result[0]?.insertId))).limit(1);
+    const insertedRows = await database2.select().from(timeCorrectionRequests).where(eq4(timeCorrectionRequests.id, Number(result[0]?.insertId))).limit(1);
     const inserted = insertedRows[0];
-    if (!inserted) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel recuperar a solicita\xE7\xE3o criada." });
+    if (!inserted) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel recuperar a solicita\xE7\xE3o criada." });
     await auditFromCtx(ctx, {
       action: "create",
       module: "time_tracking",
       entityType: "correction_request",
       entityId: inserted.id,
-      description: "Solicita\xE7\xE3o de corre\xE7\xE3o de ponto"
+      description: timeEventId ? "Solicita\xE7\xE3o de corre\xE7\xE3o de ponto" : "Solicita\xE7\xE3o de inclus\xE3o de batida faltante"
     });
     return inserted;
   }),
   correctionRequests: router({
     pending: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
-      const database = await getDb();
-      if (!database) return [];
-      return database.select({
+      const database2 = await getDb();
+      if (!database2) return [];
+      return database2.select({
         request: timeCorrectionRequests,
         event: timeEvents,
         employee: { userName: memberAccounts2.userName }
-      }).from(timeCorrectionRequests).innerJoin(memberAccounts2, eq2(timeCorrectionRequests.memberAccountId, memberAccounts2.id)).leftJoin(timeEvents, eq2(timeCorrectionRequests.timeEventId, timeEvents.id)).where(and2(eq2(timeCorrectionRequests.companyId, ctx.accountId), eq2(timeCorrectionRequests.status, "pending"))).orderBy(desc2(timeCorrectionRequests.createdAt));
+      }).from(timeCorrectionRequests).innerJoin(memberAccounts2, eq4(timeCorrectionRequests.memberAccountId, memberAccounts2.id)).leftJoin(timeEvents, eq4(timeCorrectionRequests.timeEventId, timeEvents.id)).where(and4(eq4(timeCorrectionRequests.companyId, ctx.accountId), eq4(timeCorrectionRequests.status, "pending"))).orderBy(desc2(timeCorrectionRequests.createdAt));
     }),
-    review: companyAdminFeatureProcedure("timeTracking").input(z.object({ id: z.number().int().positive(), status: z.enum(["approved", "rejected"]), reviewNotes: z.string().max(1e3).optional() })).mutation(async ({ ctx, input }) => {
-      const database = await getDb();
-      if (!database) throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-      const rows = await database.select().from(timeCorrectionRequests).where(and2(eq2(timeCorrectionRequests.id, input.id), eq2(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
-      const request = rows[0];
-      if (!request) throw new TRPCError4({ code: "NOT_FOUND", message: "Solicita\xE7\xE3o de corre\xE7\xE3o n\xE3o encontrada." });
-      if (request.status !== "pending") throw new TRPCError4({ code: "BAD_REQUEST", message: "Esta solicita\xE7\xE3o j\xE1 foi analisada." });
+    review: companyAdminFeatureProcedure("timeTracking").input(z2.object({ id: z2.number().int().positive(), status: z2.enum(["approved", "rejected"]), reviewNotes: z2.string().max(1e3).optional() })).mutation(async ({ ctx, input }) => {
+      const database2 = await getDb();
+      if (!database2) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+      const rows2 = await database2.select().from(timeCorrectionRequests).where(and4(eq4(timeCorrectionRequests.id, input.id), eq4(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
+      const request = rows2[0];
+      if (!request) throw new TRPCError6({ code: "NOT_FOUND", message: "Solicita\xE7\xE3o de corre\xE7\xE3o n\xE3o encontrada." });
+      if (request.status !== "pending") throw new TRPCError6({ code: "BAD_REQUEST", message: "Esta solicita\xE7\xE3o j\xE1 foi analisada." });
       if (input.status === "approved") {
-        const event = request.timeEventId ? (await database.select().from(timeEvents).where(and2(eq2(timeEvents.id, request.timeEventId), eq2(timeEvents.companyId, ctx.accountId))).limit(1))[0] : null;
-        if (!event) throw new TRPCError4({ code: "NOT_FOUND", message: "A marca\xE7\xE3o original n\xE3o foi encontrada." });
-        const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
-        const note = `Ajuste aprovado em ${(/* @__PURE__ */ new Date()).toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcion\xE1rio: ${request.justification}`;
-        await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}
-` : ""}${note}` }).where(eq2(timeEvents.id, event.id));
+        if (request.timeEventId) {
+          const event = (await database2.select().from(timeEvents).where(and4(eq4(timeEvents.id, request.timeEventId), eq4(timeEvents.companyId, ctx.accountId))).limit(1))[0];
+          if (!event) throw new TRPCError6({ code: "NOT_FOUND", message: "A marca\xE7\xE3o original n\xE3o foi encontrada." });
+          const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
+          const note = `Ajuste aprovado em ${(/* @__PURE__ */ new Date()).toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcion\xE1rio: ${request.justification}`;
+          await recordAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
+          await database2.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}
+` : ""}${note}` }).where(eq4(timeEvents.id, event.id));
+        } else {
+          const note = `Batida inclu\xEDda via solicita\xE7\xE3o aprovada em ${(/* @__PURE__ */ new Date()).toISOString()}. Motivo: ${request.justification}`;
+          const insertResult = await database2.insert(timeEvents).values({
+            companyId: request.companyId,
+            memberAccountId: request.memberAccountId,
+            eventType: request.requestedType,
+            deviceTime: request.requestedTime,
+            serverTime: /* @__PURE__ */ new Date(),
+            notes: note,
+            synced: true,
+            locationStatus: "unavailable"
+          });
+          const newEventId = Number(insertResult[0]?.insertId);
+          if (newEventId) {
+            await recordAdjustment({
+              companyId: ctx.accountId,
+              timeEventId: newEventId,
+              correctionRequestId: request.id,
+              memberAccountId: request.memberAccountId,
+              originalType: "missing",
+              originalTime: request.requestedTime,
+              correctedType: request.requestedType,
+              correctedTime: request.requestedTime,
+              justification: request.justification,
+              reviewedByMemberId: ctx.memberAccountId ?? null,
+              reviewedByName: ctx.user?.name ?? null
+            });
+          }
+        }
       }
-      await database.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: /* @__PURE__ */ new Date(), reviewNotes: input.reviewNotes || null }).where(eq2(timeCorrectionRequests.id, request.id));
-      await auditFromCtx(ctx, { action: input.status === "approved" ? "update" : "security", module: "time_tracking", entityType: "correction_request", entityId: request.id, description: `Solicita\xE7\xE3o de corre\xE7\xE3o ${input.status === "approved" ? "aprovada" : "rejeitada"}`, newData: { status: input.status, reviewNotes: input.reviewNotes || null } });
+      await database2.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: /* @__PURE__ */ new Date(), reviewNotes: input.reviewNotes || null }).where(eq4(timeCorrectionRequests.id, request.id));
+      await auditFromCtx(ctx, { action: input.status === "approved" ? "update" : "security", module: "time_tracking", entityType: "correction_request", entityId: request.id, description: `Solicita\xE7\xE3o de corre\xE7\xE3o ${input.status === "approved" ? "aprovada" : "rejeitada"}${!request.timeEventId ? " (inclus\xE3o de batida)" : ""}`, newData: { status: input.status, reviewNotes: input.reviewNotes || null } });
       return { success: true };
     })
   })
 });
 
-// server/routers.ts
+// server/modules/platformCompanies.ts
+init_trpc();
+init_db();
+init_audit();
 import { z as z3 } from "zod";
-import { parse as parseCookie } from "cookie";
+
+// server/platformCompanies.ts
+init_db();
+init_schema_original();
+import { and as and5, eq as eq5, inArray as inArray4, sql as sql5 } from "drizzle-orm";
 import { TRPCError as TRPCError7 } from "@trpc/server";
+var BR = "-03:00";
+var endOfDay = (d) => /* @__PURE__ */ new Date(`${d}T23:59:59${BR}`);
+var startOfDay = (d) => /* @__PURE__ */ new Date(`${d}T00:00:00${BR}`);
+var addDaysDate = (d, n) => new Date(d.getTime() + n * 864e5);
+async function database() {
+  const d = await getDb();
+  if (!d) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  return d;
+}
+async function listCompaniesOverview() {
+  const d = await database();
+  const [rows2, plans, pays, counts, admins, flags] = await Promise.all([
+    d.select().from(companies).orderBy(companies.name),
+    d.select().from(subscriptionPlans),
+    d.execute(sql5`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
+    d.execute(sql5`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
+    d.execute(sql5`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
+    d.select().from(systemSettings).where(inArray4(systemSettings.settingKey, ["blocked_reason", "archived_at"]))
+  ]);
+  const planById = new Map(plans.map((p) => [p.id, p]));
+  const map = (r, key = "companyId") => new Map(r[0].map((x) => [Number(x[key]), x]));
+  const payBy = map(pays), countBy = map(counts), adminBy = map(admins);
+  const flagBy = new Map(flags.map((f) => [`${f.accountId}:${f.settingKey}`, f.settingValue]));
+  return rows2.map((c) => {
+    const plan = c.planId ? planById.get(c.planId) : null;
+    return {
+      id: c.id,
+      name: c.name,
+      active: c.active,
+      createdAt: c.createdAt,
+      archivedAt: flagBy.get(`${c.id}:archived_at`) ?? null,
+      blockedReason: flagBy.get(`${c.id}:blocked_reason`) ?? null,
+      planId: c.planId ?? null,
+      planName: plan?.name ?? null,
+      planPrice: plan?.price ?? null,
+      subscriptionStatus: c.subscriptionStatus ?? null,
+      startedAt: c.subscriptionStartedAt ?? null,
+      expiresAt: c.subscriptionExpiresAt ?? null,
+      graceUntil: c.gracePeriodEndsAt ?? null,
+      lastPayment: payBy.get(c.id)?.lastPayment ?? null,
+      paymentsCount: Number(payBy.get(c.id)?.n ?? 0),
+      users: Number(countBy.get(c.id)?.total ?? 0),
+      activeUsers: Number(countBy.get(c.id)?.ativos ?? 0),
+      adminEmail: adminBy.get(c.id)?.email ?? null,
+      adminName: adminBy.get(c.id)?.name ?? null
+    };
+  });
+}
+async function setCompanyBlocked(companyId, blocked, reason) {
+  const d = await database();
+  const company = await getCompanyById(companyId);
+  if (!company) throw new TRPCError7({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  await updateCompany(companyId, { active: !blocked });
+  if (blocked) await setSetting("blocked_reason", (reason || "").trim().slice(0, 300) || "Acesso bloqueado pelo administrador da plataforma.", companyId);
+  else await d.delete(systemSettings).where(and5(eq5(systemSettings.accountId, companyId), eq5(systemSettings.settingKey, "blocked_reason")));
+  if (blocked) {
+    const ids = (await d.select({ id: memberAccounts.id }).from(memberAccounts).where(eq5(memberAccounts.companyId, companyId))).map((r) => r.id);
+    if (ids.length) await d.delete(memberSessions).where(inArray4(memberSessions.memberAccountId, ids));
+  }
+  return company;
+}
+async function setCompanyPlan(input) {
+  const d = await database();
+  const company = await getCompanyById(input.companyId);
+  if (!company) throw new TRPCError7({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  const plan = await getSubscriptionPlanById(input.planId);
+  if (!plan) throw new TRPCError7({ code: "NOT_FOUND", message: "Plano n\xE3o encontrado." });
+  if (input.endsAt && input.endsAt < input.startsAt) throw new TRPCError7({ code: "BAD_REQUEST", message: "A validade final n\xE3o pode ser anterior ao in\xEDcio." });
+  const latest = await getLatestCompanySubscription(input.companyId);
+  if (latest) await updateCompanySubscription(latest.id, { planId: input.planId, status: input.status, startsAt: input.startsAt, endsAt: input.endsAt ?? null, notes: input.notes ?? latest.notes ?? null });
+  else await createCompanySubscription({ companyId: input.companyId, planId: input.planId, status: input.status, startsAt: input.startsAt, endsAt: input.endsAt ?? null, notes: input.notes ?? null });
+  const end = input.endsAt ? endOfDay(input.endsAt) : null;
+  await d.update(companies).set({
+    planId: input.planId,
+    subscriptionStatus: input.status,
+    subscriptionStartedAt: startOfDay(input.startsAt),
+    subscriptionExpiresAt: end,
+    // tolerância explícita (padrão 0 dia): acesso até o fim do dia de validade + graceDays
+    gracePeriodEndsAt: end ? addDaysDate(end, Math.max(0, input.graceDays ?? 0)) : null
+  }).where(eq5(companies.id, input.companyId));
+  return { success: true };
+}
+async function registerCompanyPayment(input) {
+  const company = await getCompanyById(input.companyId);
+  if (!company) throw new TRPCError7({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (input.periodTo < input.periodFrom) throw new TRPCError7({ code: "BAD_REQUEST", message: "O fim do per\xEDodo pago n\xE3o pode ser anterior ao in\xEDcio." });
+  const planId = input.planId ?? company.planId;
+  if (!planId) throw new TRPCError7({ code: "BAD_REQUEST", message: "Selecione um plano para esta empresa antes de registrar o pagamento." });
+  const latest = await getLatestCompanySubscription(input.companyId);
+  await setCompanyPlan({ companyId: input.companyId, planId, status: "active", startsAt: input.periodFrom, endsAt: input.periodTo, graceDays: input.graceDays ?? 0, notes: input.note ?? latest?.notes ?? null });
+  const sub = await getLatestCompanySubscription(input.companyId);
+  const created = await createPaymentRecord({ companyId: input.companyId, subscriptionId: sub?.id ?? null, amount: input.amount, netAmount: input.amount, billingType: input.billingType, status: "RECEIVED", dueDate: input.periodFrom, paymentDate: input.paymentDate });
+  if (!company.active) await setCompanyBlocked(input.companyId, false);
+  return created;
+}
+async function listCompanyPayments(companyId) {
+  return listPaymentsForCompany(companyId);
+}
+async function deletePayment(id2, companyId) {
+  const d = await database();
+  const r = await d.delete(payments).where(and5(eq5(payments.id, id2), eq5(payments.companyId, companyId)));
+  if (!r[0]?.affectedRows) throw new TRPCError7({ code: "NOT_FOUND", message: "Pagamento n\xE3o encontrado." });
+}
+async function archiveCompany(companyId, archived) {
+  const d = await database();
+  const company = await getCompanyById(companyId);
+  if (!company) throw new TRPCError7({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (archived) {
+    await setCompanyBlocked(companyId, true, "Empresa exclu\xEDda pelo administrador da plataforma.");
+    await setSetting("archived_at", (/* @__PURE__ */ new Date()).toISOString(), companyId);
+  } else {
+    await d.delete(systemSettings).where(and5(eq5(systemSettings.accountId, companyId), eq5(systemSettings.settingKey, "archived_at")));
+    await setCompanyBlocked(companyId, false);
+  }
+  return company;
+}
+async function purgeCompany(companyId, confirmName) {
+  const company = await getCompanyById(companyId);
+  if (!company) throw new TRPCError7({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (company.name.trim() !== confirmName.trim()) throw new TRPCError7({ code: "BAD_REQUEST", message: "O nome digitado n\xE3o confere com o da empresa." });
+  const archived = await getSetting("archived_at", companyId, "");
+  if (!archived) throw new TRPCError7({ code: "PRECONDITION_FAILED", message: "Exclua (arquive) a empresa primeiro; a exclus\xE3o definitiva s\xF3 vale para empresas j\xE1 exclu\xEDdas." });
+  let filesDeleted = 0;
+  try {
+    const d = await database();
+    const [photoRows] = await d.execute(sql5`SELECT fileKey, thumbnailKey FROM store_photos WHERE companyId = ${companyId}`);
+    const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+    for (const p of photoRows) {
+      for (const k of [p.fileKey, p.thumbnailKey]) if (k) {
+        try {
+          await storageDelete2(k);
+          filesDeleted++;
+        } catch {
+        }
+      }
+    }
+  } catch {
+  }
+  const pool = await getPool();
+  if (!pool) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  const conn = await pool.getConnection();
+  const deleted = {};
+  try {
+    const [cols] = await conn.query(`SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME IN ('companyId','accountId')`);
+    const [memberIdsRows] = await conn.query("SELECT id FROM member_accounts WHERE companyId = ?", [companyId]);
+    const memberIds = memberIdsRows.map((r2) => r2.id);
+    await conn.query("SET FOREIGN_KEY_CHECKS = 0");
+    await conn.beginTransaction();
+    if (memberIds.length) {
+      const [r2] = await conn.query("DELETE FROM member_sessions WHERE memberAccountId IN (?)", [memberIds]);
+      deleted.member_sessions = r2.affectedRows;
+    }
+    const skip = /* @__PURE__ */ new Set(["companies"]);
+    for (const { t: t2, c } of cols) {
+      if (skip.has(t2) || !/^[A-Za-z0-9_]+$/.test(t2)) continue;
+      const [r2] = await conn.query(`DELETE FROM \`${t2}\` WHERE \`${c}\` = ?`, [companyId]);
+      if (r2.affectedRows) deleted[t2] = (deleted[t2] ?? 0) + r2.affectedRows;
+    }
+    const [r] = await conn.query("DELETE FROM companies WHERE id = ?", [companyId]);
+    deleted.companies = r.affectedRows;
+    await conn.commit();
+  } catch (e) {
+    await conn.rollback().catch(() => void 0);
+    throw e;
+  } finally {
+    await conn.query("SET FOREIGN_KEY_CHECKS = 1").catch(() => void 0);
+    conn.release();
+  }
+  return { company, deleted, filesDeleted };
+}
+
+// server/modules/platformCompanies.ts
+var dateStr2 = z3.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+var status = z3.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]);
+var id = z3.number().int().positive();
+var log = (ctx, companyId, action, description, data) => void auditFromCtx(ctx, { action, module: "platform", entityType: "company", entityId: companyId, entityLabel: String(companyId), description, newData: data, companyId: null });
+var platformCompaniesRouter = router({
+  overview: platformProcedure.query(() => listCompaniesOverview()),
+  rename: platformProcedure.input(z3.object({ companyId: id, name: z3.string().trim().min(2).max(255) })).mutation(async ({ ctx, input }) => {
+    await updateCompany(input.companyId, { name: input.name });
+    log(ctx, input.companyId, "update", `Renomeou empresa #${input.companyId} para ${input.name}`);
+    return { success: true };
+  }),
+  setBlocked: platformProcedure.input(z3.object({ companyId: id, blocked: z3.boolean(), reason: z3.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
+    const c = await setCompanyBlocked(input.companyId, input.blocked, input.reason);
+    log(ctx, input.companyId, input.blocked ? "block" : "unblock", `${input.blocked ? "Bloqueou" : "Desbloqueou"} a empresa ${c.name}${input.reason ? `: ${input.reason}` : ""}`);
+    return { success: true };
+  }),
+  setPlan: platformProcedure.input(z3.object({ companyId: id, planId: id, status, startsAt: dateStr2, endsAt: dateStr2.nullish(), graceDays: z3.number().int().min(0).max(60).optional(), notes: z3.string().max(500).nullish() })).mutation(async ({ ctx, input }) => {
+    await setCompanyPlan(input);
+    log(ctx, input.companyId, "update", `Definiu plano/validade da empresa #${input.companyId}: plano ${input.planId}, ${input.status}, ${input.startsAt} a ${input.endsAt ?? "sem fim"}`, input);
+    return { success: true };
+  }),
+  payments: platformProcedure.input(z3.object({ companyId: id })).query(({ input }) => listCompanyPayments(input.companyId)),
+  registerPayment: platformProcedure.input(z3.object({
+    companyId: id,
+    amount: z3.string().regex(/^\d{1,10}(\.\d{1,2})?$/),
+    paymentDate: dateStr2,
+    periodFrom: dateStr2,
+    periodTo: dateStr2,
+    billingType: z3.enum(["BOLETO", "CREDIT_CARD", "PIX", "UNDEFINED"]).default("PIX"),
+    planId: id.nullish(),
+    graceDays: z3.number().int().min(0).max(60).optional(),
+    note: z3.string().max(500).nullish()
+  })).mutation(async ({ ctx, input }) => {
+    const r = await registerCompanyPayment(input);
+    log(ctx, input.companyId, "payment", `Registrou pagamento de R$ ${input.amount} em ${input.paymentDate}; plano v\xE1lido de ${input.periodFrom} a ${input.periodTo}`, input);
+    return r;
+  }),
+  deletePayment: platformProcedure.input(z3.object({ companyId: id, paymentId: id })).mutation(async ({ ctx, input }) => {
+    await deletePayment(input.paymentId, input.companyId);
+    log(ctx, input.companyId, "delete", `Excluiu o pagamento #${input.paymentId} da empresa #${input.companyId}`);
+    return { success: true };
+  }),
+  /** "Excluir": arquiva e bloqueia (reversível). */
+  archive: platformProcedure.input(z3.object({ companyId: id, archived: z3.boolean() })).mutation(async ({ ctx, input }) => {
+    const c = await archiveCompany(input.companyId, input.archived);
+    log(ctx, input.companyId, input.archived ? "delete" : "restore", `${input.archived ? "Excluiu (arquivou)" : "Restaurou"} a empresa ${c.name}`);
+    return { success: true };
+  }),
+  /** Exclusão definitiva e irreversível; exige o nome da empresa e que ela já esteja excluída. */
+  purge: platformProcedure.input(z3.object({ companyId: id, confirmName: z3.string().min(1) })).mutation(async ({ ctx, input }) => {
+    const r = await purgeCompany(input.companyId, input.confirmName);
+    log(ctx, input.companyId, "permanent_delete", `Excluiu DEFINITIVAMENTE a empresa ${r.company.name} (#${input.companyId})`, { deleted: r.deleted, filesDeleted: r.filesDeleted });
+    return { success: true, deleted: r.deleted };
+  })
+});
+
+// server/routers.ts
+init_storePhotos();
+
+// server/modules/storeClients.ts
+init_db();
+init_trpc();
+init_audit();
+init_storeAccess();
+init_storeClients();
+import { z as z5 } from "zod";
+import { TRPCError as TRPCError9 } from "@trpc/server";
+import { sql as sql8 } from "drizzle-orm";
+var rows = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
+var text3 = (max) => z5.string().trim().max(max).optional().transform((v) => v ? v : null);
+async function loadClient(db, companyId, storeId, id2) {
+  const r = rows(await db.execute(sql8`SELECT * FROM store_clients WHERE id = ${id2} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`));
+  if (!r[0]) throw new TRPCError9({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado nesta loja." });
+  return r[0];
+}
+var storeClientsRouter = router({
+  /** Clientes de uma loja, com a quantidade de fotos (o promotor conta só as próprias). */
+  list: commercialFeatureProcedure("fieldOperations").input(z5.object({ storeId: z5.number().int().positive(), includeInactive: z5.boolean().optional() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    await assertStoreAccess(db, ctx, input.storeId);
+    await ensureStoreClientsSchema(db);
+    const memberId = scopeMemberId(ctx);
+    const own = memberId !== null ? sql8` AND p.promoterId = ${memberId}` : sql8``;
+    const r = rows(await db.execute(sql8`
+        SELECT c.id, c.storeId, c.name, c.contactName, c.phone, c.notes, c.active,
+          (SELECT COUNT(*) FROM store_photos p WHERE p.companyId = c.companyId AND p.storeClientId = c.id AND p.uploadStatus = 'uploaded'${own}) AS photoCount,
+          (SELECT MAX(p.capturedAt) FROM store_photos p WHERE p.companyId = c.companyId AND p.storeClientId = c.id${own}) AS lastActivity
+        FROM store_clients c
+        WHERE c.companyId = ${ctx.accountId} AND c.storeId = ${input.storeId}${input.includeInactive ? sql8`` : sql8` AND c.active = true`}
+        ORDER BY c.name ASC`));
+    return r.map((c) => ({ ...c, active: Boolean(c.active), photoCount: Number(c.photoCount ?? 0) }));
+  }),
+  create: commercialFeatureProcedure("fieldOperations").input(z5.object({ storeId: z5.number().int().positive(), name: z5.string().trim().min(2, "Informe o nome do cliente.").max(255), contactName: text3(255), phone: text3(50), notes: text3(2e3) })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    const store = await assertStoreAccess(db, ctx, input.storeId);
+    await ensureStoreClientsSchema(db);
+    const dup = rows(await db.execute(sql8`SELECT id FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true AND LOWER(name) = ${input.name.toLowerCase()} LIMIT 1`));
+    if (dup[0]) throw new TRPCError9({ code: "CONFLICT", message: "Esta loja j\xE1 tem um cliente com esse nome." });
+    const res = await db.execute(sql8`INSERT INTO store_clients (companyId, storeId, name, contactName, phone, notes) VALUES (${ctx.accountId}, ${input.storeId}, ${input.name}, ${input.contactName}, ${input.phone}, ${input.notes})`);
+    const id2 = Number((Array.isArray(res) ? res[0] : res)?.insertId);
+    await auditFromCtx(ctx, { action: "create", module: "store_clients", entityType: "store_client", entityId: id2, entityLabel: input.name, description: `Cliente ${input.name} cadastrado na loja ${store.name}`, newData: { storeId: input.storeId, name: input.name } });
+    return { id: id2 };
+  }),
+  update: commercialFeatureProcedure("fieldOperations").input(z5.object({ storeId: z5.number().int().positive(), id: z5.number().int().positive(), name: z5.string().trim().min(2).max(255), contactName: text3(255), phone: text3(50), notes: text3(2e3) })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    const store = await assertStoreAccess(db, ctx, input.storeId);
+    await ensureStoreClientsSchema(db);
+    const old = await loadClient(db, ctx.accountId, input.storeId, input.id);
+    await db.execute(sql8`UPDATE store_clients SET name = ${input.name}, contactName = ${input.contactName}, phone = ${input.phone}, notes = ${input.notes} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
+    await auditFromCtx(ctx, { action: "update", module: "store_clients", entityType: "store_client", entityId: input.id, entityLabel: input.name, description: `Cliente ${old.name} atualizado na loja ${store.name}`, oldData: { name: old.name, phone: old.phone }, newData: { name: input.name, phone: input.phone } });
+    return { id: input.id };
+  }),
+  /** Remover = desativar: as fotos já tiradas continuam ligadas ao cliente na galeria. */
+  setActive: commercialFeatureProcedure("fieldOperations").input(z5.object({ storeId: z5.number().int().positive(), id: z5.number().int().positive(), active: z5.boolean() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    const store = await assertStoreAccess(db, ctx, input.storeId);
+    await ensureStoreClientsSchema(db);
+    const old = await loadClient(db, ctx.accountId, input.storeId, input.id);
+    await db.execute(sql8`UPDATE store_clients SET active = ${input.active} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
+    await auditFromCtx(ctx, { action: input.active ? "update" : "delete", module: "store_clients", entityType: "store_client", entityId: input.id, entityLabel: old.name, description: `Cliente ${old.name} ${input.active ? "reativado" : "removido"} da loja ${store.name}` });
+    return { id: input.id, active: input.active };
+  })
+});
+
+// server/routers.ts
+init_rateLimit();
+import { z as z7 } from "zod";
+import { parse as parseCookie } from "cookie";
+import { TRPCError as TRPCError12 } from "@trpc/server";
 
 // server/_core/cookies.ts
 function isSecureRequest(req) {
@@ -3739,34 +5127,33 @@ function isSecureRequest(req) {
   return protoList.some((proto) => proto.trim().toLowerCase() === "https");
 }
 function getSessionCookieOptions(req, allowCrossSite = false) {
+  const secure = process.env.NODE_ENV === "production" || isSecureRequest(req);
   return {
     httpOnly: true,
     path: "/",
-    // O login e o painel usam o mesmo domínio. Lax evita que navegadores
-    // rejeitem o cookie quando o proxy não encaminha HTTPS de forma uniforme.
-    sameSite: "lax",
-    secure: isSecureRequest(req)
+    sameSite: secure ? "none" : "lax",
+    secure
   };
 }
 
 // server/_core/systemRouter.ts
-import { z as z2 } from "zod";
+import { z as z6 } from "zod";
 
 // server/_core/notification.ts
-import { TRPCError as TRPCError5 } from "@trpc/server";
+import { TRPCError as TRPCError10 } from "@trpc/server";
 var TITLE_MAX_LENGTH = 1200;
 var CONTENT_MAX_LENGTH = 2e4;
 var trimValue = (value) => value.trim();
 var isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
 var validatePayload = (input) => {
   if (!isNonEmptyString(input.title)) {
-    throw new TRPCError5({
+    throw new TRPCError10({
       code: "BAD_REQUEST",
       message: "Notification title is required."
     });
   }
   if (!isNonEmptyString(input.content)) {
-    throw new TRPCError5({
+    throw new TRPCError10({
       code: "BAD_REQUEST",
       message: "Notification content is required."
     });
@@ -3774,13 +5161,13 @@ var validatePayload = (input) => {
   const title = trimValue(input.title);
   const content = trimValue(input.content);
   if (title.length > TITLE_MAX_LENGTH) {
-    throw new TRPCError5({
+    throw new TRPCError10({
       code: "BAD_REQUEST",
       message: `Notification title must be at most ${TITLE_MAX_LENGTH} characters.`
     });
   }
   if (content.length > CONTENT_MAX_LENGTH) {
-    throw new TRPCError5({
+    throw new TRPCError10({
       code: "BAD_REQUEST",
       message: `Notification content must be at most ${CONTENT_MAX_LENGTH} characters.`
     });
@@ -3798,7 +5185,7 @@ async function notifyOwner(payload) {
         accept: "application/json",
         "content-type": "application/json"
       },
-      body: JSON.stringify({ title, content, source: "gestao-extintores", timestamp: (/* @__PURE__ */ new Date()).toISOString() })
+      body: JSON.stringify({ title, content, source: "promotores-saas", timestamp: (/* @__PURE__ */ new Date()).toISOString() })
     });
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
@@ -3815,18 +5202,19 @@ async function notifyOwner(payload) {
 }
 
 // server/_core/systemRouter.ts
+init_trpc();
 var systemRouter = router({
   health: publicProcedure.input(
-    z2.object({
-      timestamp: z2.number().min(0, "timestamp cannot be negative")
+    z6.object({
+      timestamp: z6.number().min(0, "timestamp cannot be negative")
     })
   ).query(() => ({
     ok: true
   })),
   notifyOwner: adminProcedure.input(
-    z2.object({
-      title: z2.string().min(1, "title is required"),
-      content: z2.string().min(1, "content is required")
+    z6.object({
+      title: z6.string().min(1, "title is required"),
+      content: z6.string().min(1, "content is required")
     })
   ).mutation(async ({ input }) => {
     const delivered = await notifyOwner(input);
@@ -3837,18 +5225,19 @@ var systemRouter = router({
 });
 
 // server/routers.ts
+init_trpc();
 init_subscriptionAccess();
 
 // server/planLimits.ts
 init_db();
-import { TRPCError as TRPCError6 } from "@trpc/server";
+import { TRPCError as TRPCError11 } from "@trpc/server";
 
 // server/memberAuth.ts
 init_schema_original();
 init_schema();
 init_db();
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { and as and3, eq as eq3, gt, lte } from "drizzle-orm";
+import { and as and7, eq as eq7, gt, lte as lte2 } from "drizzle-orm";
 var SESSION_DAYS = 30;
 var RATE_WINDOW_MS = 15 * 60 * 1e3;
 var RATE_LIMIT = 5;
@@ -3898,13 +5287,13 @@ async function authenticateMember(email, password) {
   if (isRateLimited(key)) return null;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const platformResult = await db.select().from(platformAdmins).where(eq3(platformAdmins.email, normalizedEmail)).limit(1);
+  const platformResult = await db.select().from(platformAdmins).where(eq7(platformAdmins.email, normalizedEmail)).limit(1);
   const platform = platformResult[0];
   if (platform && platform.active && verifyPassword(password, platform.passwordHash)) {
     clearRateLimit(key);
     return { kind: "platform", account: platform };
   }
-  const memberResult = await db.select().from(memberAccounts).where(eq3(memberAccounts.email, normalizedEmail)).limit(1);
+  const memberResult = await db.select().from(memberAccounts).where(eq7(memberAccounts.email, normalizedEmail)).limit(1);
   const member = memberResult[0];
   if (member && member.active && verifyPassword(password, member.passwordHash)) {
     clearRateLimit(key);
@@ -3919,11 +5308,11 @@ async function createSession(principal) {
   const rawToken = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1e3);
   if (principal.kind === "platform") {
-    await db.delete(platformSessions).where(and3(eq3(platformSessions.platformAdminId, principal.account.id), lte(platformSessions.expiresAt, /* @__PURE__ */ new Date())));
+    await db.delete(platformSessions).where(and7(eq7(platformSessions.platformAdminId, principal.account.id), lte2(platformSessions.expiresAt, /* @__PURE__ */ new Date())));
     await db.insert(platformSessions).values({ platformAdminId: principal.account.id, tokenHash: hashToken(rawToken), expiresAt });
     return { rawToken, expiresAt, kind: "platform" };
   }
-  await db.delete(memberSessions).where(and3(eq3(memberSessions.memberAccountId, principal.account.id), lte(memberSessions.expiresAt, /* @__PURE__ */ new Date())));
+  await db.delete(memberSessions).where(and7(eq7(memberSessions.memberAccountId, principal.account.id), lte2(memberSessions.expiresAt, /* @__PURE__ */ new Date())));
   await db.insert(memberSessions).values({ memberAccountId: principal.account.id, tokenHash: hashToken(rawToken), expiresAt });
   return { rawToken, expiresAt, kind: "company" };
 }
@@ -3931,39 +5320,39 @@ async function getMemberBySessionToken(rawToken) {
   const db = await getDb();
   if (!db || !rawToken) return null;
   const now = /* @__PURE__ */ new Date();
-  const result = await db.select({ account: memberAccounts, session: memberSessions }).from(memberSessions).innerJoin(memberAccounts, eq3(memberSessions.memberAccountId, memberAccounts.id)).where(and3(eq3(memberSessions.tokenHash, hashToken(rawToken)), gt(memberSessions.expiresAt, now), eq3(memberAccounts.active, true))).limit(1);
-  await db.delete(memberSessions).where(lte(memberSessions.expiresAt, now));
+  const result = await db.select({ account: memberAccounts, session: memberSessions }).from(memberSessions).innerJoin(memberAccounts, eq7(memberSessions.memberAccountId, memberAccounts.id)).innerJoin(companies, eq7(memberAccounts.companyId, companies.id)).where(and7(eq7(memberSessions.tokenHash, hashToken(rawToken)), gt(memberSessions.expiresAt, now), eq7(memberAccounts.active, true), eq7(companies.active, true))).limit(1);
+  await db.delete(memberSessions).where(lte2(memberSessions.expiresAt, now));
   return result[0]?.account ?? null;
 }
 async function getPlatformAdminBySessionToken(rawToken) {
   const db = await getDb();
   if (!db || !rawToken) return null;
   const now = /* @__PURE__ */ new Date();
-  const result = await db.select({ account: platformAdmins, session: platformSessions }).from(platformSessions).innerJoin(platformAdmins, eq3(platformSessions.platformAdminId, platformAdmins.id)).where(and3(eq3(platformSessions.tokenHash, hashToken(rawToken)), gt(platformSessions.expiresAt, now), eq3(platformAdmins.active, true))).limit(1);
-  await db.delete(platformSessions).where(lte(platformSessions.expiresAt, now));
+  const result = await db.select({ account: platformAdmins, session: platformSessions }).from(platformSessions).innerJoin(platformAdmins, eq7(platformSessions.platformAdminId, platformAdmins.id)).where(and7(eq7(platformSessions.tokenHash, hashToken(rawToken)), gt(platformSessions.expiresAt, now), eq7(platformAdmins.active, true))).limit(1);
+  await db.delete(platformSessions).where(lte2(platformSessions.expiresAt, now));
   return result[0]?.account ?? null;
 }
 async function revokeSessions(rawToken) {
   const db = await getDb();
   if (!db || !rawToken) return;
   const tokenHash = hashToken(rawToken);
-  await db.delete(memberSessions).where(eq3(memberSessions.tokenHash, tokenHash));
-  await db.delete(platformSessions).where(eq3(platformSessions.tokenHash, tokenHash));
+  await db.delete(memberSessions).where(eq7(memberSessions.tokenHash, tokenHash));
+  await db.delete(platformSessions).where(eq7(platformSessions.tokenHash, tokenHash));
 }
 async function changeMemberPassword(memberAccountId, currentPassword, newPassword) {
   const key = `change:member:${memberAccountId}`;
   if (isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const result = await db.select().from(memberAccounts).where(eq3(memberAccounts.id, memberAccountId)).limit(1);
+  const result = await db.select().from(memberAccounts).where(eq7(memberAccounts.id, memberAccountId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(currentPassword, account.passwordHash)) {
     registerFailure(key);
     return false;
   }
   clearRateLimit(key);
-  await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq3(memberAccounts.id, memberAccountId));
-  await db.delete(memberSessions).where(eq3(memberSessions.memberAccountId, memberAccountId));
+  await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq7(memberAccounts.id, memberAccountId));
+  await db.delete(memberSessions).where(eq7(memberSessions.memberAccountId, memberAccountId));
   return true;
 }
 async function changePlatformPassword(platformAdminId, currentPassword, newPassword) {
@@ -3971,22 +5360,22 @@ async function changePlatformPassword(platformAdminId, currentPassword, newPassw
   if (isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const result = await db.select().from(platformAdmins).where(eq3(platformAdmins.id, platformAdminId)).limit(1);
+  const result = await db.select().from(platformAdmins).where(eq7(platformAdmins.id, platformAdminId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(currentPassword, account.passwordHash)) {
     registerFailure(key);
     return false;
   }
   clearRateLimit(key);
-  await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq3(platformAdmins.id, platformAdminId));
-  await db.delete(platformSessions).where(eq3(platformSessions.platformAdminId, platformAdminId));
+  await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq7(platformAdmins.id, platformAdminId));
+  await db.delete(platformSessions).where(eq7(platformSessions.platformAdminId, platformAdminId));
   return true;
 }
 async function resetMemberPassword(memberAccountId, newPassword) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq3(memberAccounts.id, memberAccountId));
-  await db.delete(memberSessions).where(eq3(memberSessions.memberAccountId, memberAccountId));
+  await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq7(memberAccounts.id, memberAccountId));
+  await db.delete(memberSessions).where(eq7(memberSessions.memberAccountId, memberAccountId));
   clearRateLimit(`login:${memberAccountId}`);
 }
 async function recoverPassword(email, recoveryCode, newPassword) {
@@ -3996,19 +5385,19 @@ async function recoverPassword(email, recoveryCode, newPassword) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const nextRecoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
-  const platformResult = await db.select().from(platformAdmins).where(eq3(platformAdmins.email, normalizedEmail)).limit(1);
+  const platformResult = await db.select().from(platformAdmins).where(eq7(platformAdmins.email, normalizedEmail)).limit(1);
   const platform = platformResult[0];
   if (platform?.active && platform.recoveryCodeHash && verifyPassword(recoveryCode, platform.recoveryCodeHash)) {
-    await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq3(platformAdmins.id, platform.id));
-    await db.delete(platformSessions).where(eq3(platformSessions.platformAdminId, platform.id));
+    await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq7(platformAdmins.id, platform.id));
+    await db.delete(platformSessions).where(eq7(platformSessions.platformAdminId, platform.id));
     clearRateLimit(key);
     return { recoveryCode: nextRecoveryCode, kind: "platform" };
   }
-  const memberResult = await db.select().from(memberAccounts).where(eq3(memberAccounts.email, normalizedEmail)).limit(1);
+  const memberResult = await db.select().from(memberAccounts).where(eq7(memberAccounts.email, normalizedEmail)).limit(1);
   const member = memberResult[0];
   if (member?.active && member.recoveryCodeHash && verifyPassword(recoveryCode, member.recoveryCodeHash)) {
-    await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq3(memberAccounts.id, member.id));
-    await db.delete(memberSessions).where(eq3(memberSessions.memberAccountId, member.id));
+    await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq7(memberAccounts.id, member.id));
+    await db.delete(memberSessions).where(eq7(memberSessions.memberAccountId, member.id));
     clearRateLimit(key);
     return { recoveryCode: nextRecoveryCode, kind: "company" };
   }
@@ -4016,11 +5405,11 @@ async function recoverPassword(email, recoveryCode, newPassword) {
   return false;
 }
 async function createCompanyWithAdmin(input) {
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
   const recoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
   const normalizedEmail = input.email.trim().toLowerCase();
-  return await database.transaction(async (tx) => {
+  return await database2.transaction(async (tx) => {
     const trialEnds = new Date(Date.now() + 14 * 24 * 3600 * 1e3);
     const trialYmd = trialEnds.toISOString().slice(0, 10);
     const todayYmd = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
@@ -4044,7 +5433,7 @@ async function createCompanyWithAdmin(input) {
       active: true
     });
     if (input.planId) {
-      const planRows = await tx.select().from(subscriptionPlans).where(eq3(subscriptionPlans.id, input.planId)).limit(1);
+      const planRows = await tx.select().from(subscriptionPlans).where(eq7(subscriptionPlans.id, input.planId)).limit(1);
       const plan = planRows[0];
       if (plan) {
         await tx.insert(companySubscriptions).values({
@@ -4087,54 +5476,54 @@ async function createCompanyUser(input) {
 async function listMemberAccounts(companyId) {
   const db = await getDb();
   if (!db) return [];
-  const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt, employeeCode: promoterProfiles.employeeCode, workStartTime: promoterProfiles.workStartTime, workEndTime: promoterProfiles.workEndTime }).from(memberAccounts).leftJoin(promoterProfiles, and3(eq3(promoterProfiles.memberAccountId, memberAccounts.id), eq3(promoterProfiles.companyId, memberAccounts.companyId)));
-  const rows = companyId ? await query.where(eq3(memberAccounts.companyId, companyId)) : await query;
-  return rows.map((row2) => ({ ...row2, role: normalizeMemberRole(String(row2.role)) }));
+  const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt, employeeCode: promoterProfiles.employeeCode, workStartTime: promoterProfiles.workStartTime, workEndTime: promoterProfiles.workEndTime }).from(memberAccounts).leftJoin(promoterProfiles, and7(eq7(promoterProfiles.memberAccountId, memberAccounts.id), eq7(promoterProfiles.companyId, memberAccounts.companyId)));
+  const rows2 = companyId ? await query.where(eq7(memberAccounts.companyId, companyId)) : await query;
+  return rows2.map((row2) => ({ ...row2, role: normalizeMemberRole(String(row2.role)) }));
 }
 async function updateCompanyUser(accountId, companyId, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  await db.update(memberAccounts).set({ ...data, email: data.email?.trim().toLowerCase() }).where(and3(eq3(memberAccounts.id, accountId), eq3(memberAccounts.companyId, companyId)));
+  await db.update(memberAccounts).set({ ...data, email: data.email?.trim().toLowerCase() }).where(and7(eq7(memberAccounts.id, accountId), eq7(memberAccounts.companyId, companyId)));
 }
-async function setMemberActive(id, active, companyId) {
+async function setMemberActive(id2, active, companyId) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const conditions = companyId === void 0 ? eq3(memberAccounts.id, id) : and3(eq3(memberAccounts.id, id), eq3(memberAccounts.companyId, companyId));
+  const conditions = companyId === void 0 ? eq7(memberAccounts.id, id2) : and7(eq7(memberAccounts.id, id2), eq7(memberAccounts.companyId, companyId));
   const account = await db.select({ role: memberAccounts.role }).from(memberAccounts).where(conditions).limit(1);
   if (account[0]?.role === "company_admin" && !active) {
-    const adminCount = await db.select({ id: memberAccounts.id }).from(memberAccounts).where(and3(eq3(memberAccounts.companyId, companyId ?? 0), eq3(memberAccounts.role, "company_admin"), eq3(memberAccounts.active, true))).limit(2);
+    const adminCount = await db.select({ id: memberAccounts.id }).from(memberAccounts).where(and7(eq7(memberAccounts.companyId, companyId ?? 0), eq7(memberAccounts.role, "company_admin"), eq7(memberAccounts.active, true))).limit(2);
     if (adminCount.length <= 1) throw new Error("A empresa precisa manter pelo menos um administrador ativo.");
   }
   await db.update(memberAccounts).set({ active }).where(conditions);
-  if (!active) await db.delete(memberSessions).where(eq3(memberSessions.memberAccountId, id));
+  if (!active) await db.delete(memberSessions).where(eq7(memberSessions.memberAccountId, id2));
 }
 async function updateMemberProfile(memberAccountId, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const name = data.userName.trim();
   if (name.length < 2) throw new Error("Nome deve ter pelo menos 2 caracteres.");
-  await db.update(memberAccounts).set({ userName: name }).where(eq3(memberAccounts.id, memberAccountId));
+  await db.update(memberAccounts).set({ userName: name }).where(eq7(memberAccounts.id, memberAccountId));
   return { success: true, userName: name };
 }
 async function regenerateMemberRecoveryCode(memberAccountId) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const recoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
-  await db.update(memberAccounts).set({ recoveryCodeHash: hashPassword(recoveryCode) }).where(eq3(memberAccounts.id, memberAccountId));
+  await db.update(memberAccounts).set({ recoveryCodeHash: hashPassword(recoveryCode) }).where(eq7(memberAccounts.id, memberAccountId));
   return { recoveryCode };
 }
 async function revokeAllMemberSessions(memberAccountId) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  await db.delete(memberSessions).where(eq3(memberSessions.memberAccountId, memberAccountId));
+  await db.delete(memberSessions).where(eq7(memberSessions.memberAccountId, memberAccountId));
   return { success: true };
 }
 async function verifyMemberPassword(memberAccountId, password) {
   const key = `verify:member:${memberAccountId}`;
   if (isRateLimited(key)) return false;
-  const database = await getDb();
-  if (!database) throw new Error("Database not connected");
-  const result = await database.select().from(memberAccounts).where(eq3(memberAccounts.id, memberAccountId)).limit(1);
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  const result = await database2.select().from(memberAccounts).where(eq7(memberAccounts.id, memberAccountId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(password, account.passwordHash)) {
     registerFailure(key);
@@ -4148,7 +5537,7 @@ async function verifyMemberPassword(memberAccountId, password) {
 init_schema_original();
 init_entitlements();
 init_entitlements2();
-import { sql as sql2, eq as eq4 } from "drizzle-orm";
+import { sql as sql9, eq as eq8 } from "drizzle-orm";
 async function getEffectivePlan(companyId) {
   const base = await getCompanyEntitlementBase(companyId);
   const plan = base.plan;
@@ -4163,65 +5552,16 @@ async function getEffectivePlan(companyId) {
     features
   };
 }
-async function requireModuleAccess(companyId, featureKey, label) {
-  try {
-    await assertCompanyFeatureAccess(companyId, featureKey);
-  } catch (error) {
-    if (error instanceof TRPCError6 && label) {
-      throw new TRPCError6({ code: error.code, message: label, cause: error.cause });
-    }
-    throw error;
-  }
-  return getEffectivePlan(companyId);
-}
-async function countClients(companyId) {
-  const database = await getDb();
-  if (!database) return 0;
-  const rows = await database.select({ total: sql2`count(*)` }).from(clients).where(eq4(clients.accountId, companyId));
-  return Number(rows[0]?.total || 0);
-}
-async function countExtinguishers(companyId) {
-  const database = await getDb();
-  if (!database) return 0;
-  const rows = await database.select({ total: sql2`count(*)` }).from(extinguishers).where(eq4(extinguishers.accountId, companyId));
-  return Number(rows[0]?.total || 0);
-}
 async function countUsers(companyId) {
   const list = await listMemberAccounts(companyId);
   return Array.isArray(list) ? list.length : 0;
-}
-async function assertClientLimit(companyId) {
-  const plan = await requireModuleAccess(companyId, "clients", "Cadastro de clientes n\xE3o est\xE1 dispon\xEDvel no seu plano.");
-  if (plan.maxClients == null) return plan;
-  const current = await countClients(companyId);
-  if (current >= plan.maxClients) {
-    throw new TRPCError6({
-      code: "FORBIDDEN",
-      message: `Limite de clientes do plano ${plan.name} atingido (${plan.maxClients}). Fa\xE7a upgrade para continuar.`,
-      cause: { code: "PLAN_LIMIT", resource: "clients", limit: plan.maxClients, current }
-    });
-  }
-  return plan;
-}
-async function assertExtinguisherLimit(companyId) {
-  const plan = await requireModuleAccess(companyId, "pointsOfSale", "Cadastro de pontos de venda n\xE3o est\xE1 dispon\xEDvel no seu plano.");
-  if (plan.maxExtinguishers == null) return plan;
-  const current = await countExtinguishers(companyId);
-  if (current >= plan.maxExtinguishers) {
-    throw new TRPCError6({
-      code: "FORBIDDEN",
-      message: `Limite de pontos de venda do plano ${plan.name} atingido (${plan.maxExtinguishers}). Fa\xE7a upgrade para continuar.`,
-      cause: { code: "PLAN_LIMIT", resource: "pointsOfSale", limit: plan.maxExtinguishers, current }
-    });
-  }
-  return plan;
 }
 async function assertUserLimit(companyId) {
   const plan = await getEffectivePlan(companyId);
   if (plan.maxUsers == null) return plan;
   const current = await countUsers(companyId);
   if (current >= plan.maxUsers) {
-    throw new TRPCError6({
+    throw new TRPCError11({
       code: "FORBIDDEN",
       message: `Limite de usu\xE1rios do plano ${plan.name} atingido (${plan.maxUsers}). Fa\xE7a upgrade para adicionar outro usu\xE1rio.`,
       cause: { code: "PLAN_LIMIT", resource: "users", limit: plan.maxUsers, current }
@@ -4229,13 +5569,11 @@ async function assertUserLimit(companyId) {
   }
   return plan;
 }
-async function assertServiceOrderFeature(companyId) {
-  return requireModuleAccess(companyId, "serviceOrders", "Ordens de servi\xE7o n\xE3o est\xE3o dispon\xEDveis no seu plano.");
-}
 
 // server/routers.ts
 init_db();
 init_email();
+init_audit();
 
 // server/geocoding.ts
 var CACHE_TTL_MS = 60 * 60 * 1e3;
@@ -4319,6 +5657,7 @@ async function reverseGeocodeAddress(latitude, longitude) {
 }
 
 // server/routers.ts
+init_storeAccess();
 init_entitlements();
 init_entitlements2();
 
@@ -4335,10 +5674,10 @@ var editableFiles = [
   "package.json",
   "vercel.json"
 ];
-async function github(path3, init = {}) {
+async function github(path2, init = {}) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GITHUB_TOKEN n\xE3o est\xE1 configurado na Vercel.");
-  const response = await fetch(`${GITHUB_API}${path3}`, {
+  const response = await fetch(`${GITHUB_API}${path2}`, {
     ...init,
     headers: {
       Accept: "application/vnd.github+json",
@@ -4358,54 +5697,104 @@ async function github(path3, init = {}) {
   if (!response.ok) throw new Error(`GitHub ${response.status}: ${parsed.message || "erro desconhecido"}`);
   return parsed;
 }
-async function readFile(path3, ref) {
-  const file = await github(`/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(path3)}?ref=${encodeURIComponent(ref)}`);
-  return { path: path3, sha: file.sha, content: Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8") };
+async function readFile(path2, ref) {
+  const file = await github(`/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(path2)}?ref=${encodeURIComponent(ref)}`);
+  return { path: path2, sha: file.sha, content: Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8") };
 }
-async function askGemini(prompt, files) {
+async function askGemini(prompt, files, history = []) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY n\xE3o est\xE1 configurada na Vercel.");
-  const context = files.map((file) => `
+  const context = files.length ? files.map((file) => `
 --- ${file.path} ---
-${file.content}`).join("\n");
-  const system = `Voc\xEA \xE9 o engenheiro de software do Promotores SaaS. Responda em portugu\xEAs brasileiro.
+${file.content}`).join("\n") : "(nenhum arquivo precisa ser consultado para esta conversa)";
+  const conversation = history.slice(-12).map((message) => `${message.role === "user" ? "Usu\xE1rio" : "Assistente"}: ${message.content}`).join("\n");
+  const system = `Voc\xEA \xE9 o assistente de IA e engenheiro de software do GondUp. Converse naturalmente e responda em portugu\xEAs brasileiro, sempre levando em conta exatamente o que o usu\xE1rio escreveu e o hist\xF3rico fornecido. Voc\xEA deve responder perguntas, explicar conceitos, sugerir ideias e ajudar o usu\xE1rio mesmo quando ele n\xE3o pedir nenhuma altera\xE7\xE3o no c\xF3digo.
 
 Voc\xEA pode alterar SOMENTE estes arquivos: ${editableFiles.join(", ")}.
-A solicita\xE7\xE3o do usu\xE1rio pode ser apenas uma pergunta. Nesse caso, retorne changes vazio e responda normalmente.
-Quando for solicitada uma altera\xE7\xE3o, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conte\xFAdo parcial. N\xE3o invente arquivos nem diga que publicou algo: o servidor criar\xE1 um commit real depois de validar sua resposta. Preserve o funcionamento existente e n\xE3o remova recursos sem pedido expl\xEDcito.
+Se o usu\xE1rio estiver apenas conversando ou fazendo uma pergunta, retorne changes vazio e responda diretamente, sem dizer que alguma altera\xE7\xE3o foi feita. S\xF3 inclua changes quando o usu\xE1rio pedir explicitamente uma altera\xE7\xE3o no site ou no c\xF3digo. Quando for solicitada uma altera\xE7\xE3o, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conte\xFAdo parcial. N\xE3o invente arquivos nem diga que publicou algo: o servidor criar\xE1 um commit real depois de validar sua resposta. Preserve o funcionamento existente e n\xE3o remova recursos sem pedido expl\xEDcito.
 
 Retorne SOMENTE JSON v\xE1lido no formato:
 {"reply":"resposta objetiva","changes":[{"path":"arquivo permitido","content":"conte\xFAdo completo","reason":"motivo"}]}
 
+Hist\xF3rico recente da conversa:
+${conversation || "(primeira mensagem)"}
+
 C\xF3digo atual:${context}`;
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
-    })
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(`Gemini ${response.status}: ${body.error?.message || "resposta inv\xE1lida"}`);
-  const text3 = body.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
+  const responseSchema = {
+    type: "OBJECT",
+    properties: {
+      reply: { type: "STRING" },
+      changes: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            path: { type: "STRING" },
+            content: { type: "STRING" },
+            reason: { type: "STRING" }
+          },
+          required: ["path", "content"]
+        }
+      }
+    },
+    required: ["reply", "changes"]
+  };
+  const requestBody = {
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: "application/json", responseSchema }
+  };
+  let response = null;
+  let body = null;
+  let lastError = "resposta inv\xE1lida";
+  const modelListResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+  const modelList = modelListResponse.ok ? await modelListResponse.json() : null;
+  const preferredModels = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+  const availableModels = (modelList?.models || []).filter((model) => model.supportedGenerationMethods?.includes("generateContent")).map((model) => String(model.name || "").replace(/^models\//, ""));
+  const models = preferredModels.filter((model) => availableModels.length === 0 || availableModels.includes(model));
+  for (const model of models.length ? models : ["gemini-3.8-flash"]) {
+    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody)
+    });
+    body = await response.json();
+    if (response.ok) break;
+    lastError = `${model}: ${body.error?.message || `HTTP ${response.status}`}`;
+  }
+  if (!response?.ok) throw new Error(`Gemini indispon\xEDvel: ${lastError}`);
+  const text4 = body.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
+  const cleaned = text4.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   try {
-    return JSON.parse(text3);
+    return JSON.parse(cleaned);
   } catch {
-    throw new Error("O Gemini retornou uma resposta que n\xE3o p\xF4de ser validada como JSON.");
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1));
+      } catch {
+      }
+    }
+    if (cleaned) return {
+      reply: /^an error\b/i.test(cleaned) ? "O Gemini respondeu com uma mensagem de indisponibilidade tempor\xE1ria. Tente enviar novamente em alguns segundos." : cleaned,
+      changes: []
+    };
+    return { reply: "N\xE3o consegui interpretar a resposta do Gemini. Tente enviar a mensagem novamente.", changes: [] };
   }
 }
-async function runPersistentGemini(prompt) {
-  const ref = await github(`/repos/${OWNER}/${REPO}/git/ref/heads/${encodeURIComponent(BRANCH)}`);
-  const files = await Promise.all(editableFiles.map((path3) => readFile(path3, BRANCH)));
-  const result = await askGemini(prompt, files);
+async function runPersistentGemini(prompt, history = []) {
+  const asksForChange = /\b(altere|alterar|mude|mudar|modifique|modificar|adicione|adicionar|remova|remover|crie|criar|corrija|corrigir|implemente|implementar|troque|trocar|aplique|aplicar|faça|fazer|coloque|colocar|insira|inserir|inclua|incluir|disponibilize|disponibilizar|leve|levar|reative|reativar|restaure|restaurar)\b/i.test(prompt);
+  const ref = asksForChange ? await github(`/repos/${OWNER}/${REPO}/git/ref/heads/${encodeURIComponent(BRANCH)}`) : null;
+  const files = asksForChange ? await Promise.all(editableFiles.map((path2) => readFile(path2, BRANCH))) : [];
+  const result = await askGemini(prompt, files, history);
   const changes = (result.changes || []).filter((change) => editableFiles.includes(change.path) && typeof change.content === "string");
-  if (!changes.length) return { reply: result.reply || "N\xE3o h\xE1 altera\xE7\xE3o de c\xF3digo para aplicar.", changed: false };
+  if (!changes.length) return { reply: result.reply || "Estou aqui para responder sua mensagem. O que voc\xEA gostaria de saber?", changed: false };
   if (changes.length > 4) throw new Error("A solicita\xE7\xE3o gerou arquivos demais para uma \xFAnica altera\xE7\xE3o segura.");
   for (const change of changes) {
     if (change.content.length > 3e5) throw new Error(`O arquivo ${change.path} excede o limite seguro.`);
   }
+  if (!ref) throw new Error("N\xE3o foi poss\xEDvel preparar a altera\xE7\xE3o. Envie o pedido de mudan\xE7a novamente.");
   const baseCommitSha = ref.object.sha;
   const baseCommit = await github(`/repos/${OWNER}/${REPO}/git/commits/${baseCommitSha}`);
   const treeEntries = [];
@@ -4428,42 +5817,47 @@ Commit criado com sucesso. A Vercel foi acionada para publicar a nova vers\xE3o;
 }
 
 // server/routers.ts
-var emptyToNull = (value) => value?.trim() || null;
-var companyUserRole = z3.enum(["company_admin", "supervisor", "promoter"]);
-var entitlementFeatureKey = z3.enum(ENTITLEMENT_KEYS);
-var permissionModeSchema = z3.enum(["inherit", "allow", "deny"]);
-var featurePermissionListSchema = z3.array(z3.object({ featureKey: entitlementFeatureKey, mode: permissionModeSchema })).max(ENTITLEMENT_KEYS.length);
-var clientInput = z3.object({
-  companyName: z3.string().min(1, "Nome da empresa \xE9 obrigat\xF3rio"),
-  cnpj: z3.string().optional(),
-  address: z3.string().optional(),
-  city: z3.string().min(1, "Cidade \xE9 obrigat\xF3ria"),
-  cep: z3.string().optional(),
-  phone: z3.string().optional(),
-  contactName: z3.string().optional(),
-  cpf: z3.string().optional(),
-  birthDate: z3.string().optional(),
-  notes: z3.string().optional()
+var companyUserRole = z7.enum(["company_admin", "supervisor", "promoter"]);
+var entitlementFeatureKey = z7.enum(ENTITLEMENT_KEYS);
+var permissionModeSchema = z7.enum(["inherit", "allow", "deny"]);
+var featurePermissionListSchema = z7.array(z7.object({ featureKey: entitlementFeatureKey, mode: permissionModeSchema })).max(ENTITLEMENT_KEYS.length);
+var productInput = z7.object({
+  productCode: z7.string().trim().min(1).max(64),
+  description: z7.string().trim().min(1).max(500),
+  quantity: z7.number().int().min(0).max(2147483647),
+  expirationDate: z7.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  price: z7.string().regex(/^\d{1,10}(\.\d{1,2})?$/),
+  storeId: z7.number().int().positive().nullish()
 });
+async function assertStoreInCompany(ctx, storeId) {
+  if (!storeId) return null;
+  const database2 = await getDb();
+  await assertStoreAccess(database2, ctx, storeId);
+  return storeId;
+}
 var appRouter = router({
   system: systemRouter,
   timeTracking: timeTrackingRouter,
+  timesheetMirror: timesheetMirrorRouter,
+  platformCompanies: platformCompaniesRouter,
+  storePhotos: storePhotosRouter,
+  storeClients: storeClientsRouter,
   entitlements: router({
     mine: companyBillingProcedure.query(({ ctx }) => {
-      if (!ctx.memberAccountId) throw new TRPCError7({ code: "FORBIDDEN", message: "Usu\xE1rio da empresa n\xE3o encontrado." });
+      if (!ctx.memberAccountId) throw new TRPCError12({ code: "FORBIDDEN", message: "Usu\xE1rio da empresa n\xE3o encontrado." });
       return getMemberEntitlementSnapshot(ctx.accountId, ctx.memberAccountId, ctx.user.role);
     })
   }),
   auth: router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
     /** Cadastro público: cria empresa + admin com plano opcional (trial 14 dias). */
-    signup: publicProcedure.input(z3.object({
-      companyName: z3.string().min(2, "Nome da empresa \xE9 obrigat\xF3rio"),
-      userName: z3.string().min(2, "Nome do respons\xE1vel \xE9 obrigat\xF3rio"),
-      email: z3.string().email(),
-      password: z3.string().min(8, "A senha deve ter pelo menos 8 caracteres"),
-      planId: z3.number().int().positive("Selecione um plano antes de criar a conta"),
-      paymentConfirmed: z3.boolean().refine((v) => v === true, { message: "Confirme o pagamento para criar a conta." })
+    signup: publicProcedure.input(z7.object({
+      companyName: z7.string().min(2, "Nome da empresa \xE9 obrigat\xF3rio"),
+      userName: z7.string().min(2, "Nome do respons\xE1vel \xE9 obrigat\xF3rio"),
+      email: z7.string().email(),
+      password: z7.string().min(8, "A senha deve ter pelo menos 8 caracteres"),
+      planId: z7.number().int().positive("Selecione um plano antes de criar a conta"),
+      paymentConfirmed: z7.boolean().refine((v) => v === true, { message: "Confirme o pagamento para criar a conta." })
     })).mutation(async ({ ctx, input }) => {
       try {
         const created = await createCompanyWithAdmin({
@@ -4509,19 +5903,53 @@ var appRouter = router({
         return { success: true, ...created };
       } catch (error) {
         if (error?.code === "ER_DUP_ENTRY") {
-          throw new TRPCError7({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          throw new TRPCError12({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
         }
         throw error;
       }
     }),
-    login: publicProcedure.input(z3.object({ email: z3.string().email(), password: z3.string().min(1) })).mutation(async ({ ctx, input }) => {
+    login: publicProcedure.input(z7.object({ email: z7.string().email(), password: z7.string().min(1) })).mutation(async ({ ctx, input }) => {
+      const ip = getClientIp(ctx.req);
+      const limit = checkRateLimit(ip, "login");
+      if (!limit.ok) {
+        throw new TRPCError12({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde um minuto." });
+      }
       const principal = await authenticateMember(input.email, input.password);
       if (!principal) {
         void auditFromCtx(ctx, { action: "login_failed", module: "auth", entityType: "session", description: `Tentativa de login falhou para ${input.email}`, newData: { email: input.email } });
-        throw new TRPCError7({ code: "UNAUTHORIZED", message: "E-mail ou senha inv\xE1lidos." });
+        throw new TRPCError12({ code: "UNAUTHORIZED", message: "E-mail ou senha inv\xE1lidos." });
+      }
+      if (principal.kind === "company") {
+        const company = await getCompanyById(principal.account.companyId);
+        if (!company || company.active === false) {
+          const reason = company ? await getSetting("blocked_reason", company.id, "") : "";
+          throw new TRPCError12({ code: "FORBIDDEN", message: reason || "Acesso da empresa bloqueado. Entre em contato com o suporte." });
+        }
       }
       const session = await createSession(principal);
       ctx.res.cookie(MEMBER_COOKIE_NAME, session.rawToken, { ...getSessionCookieOptions(ctx.req, true), maxAge: 30 * 24 * 60 * 60 * 1e3 });
+      const user = principal.kind === "platform" ? {
+        id: principal.account.id,
+        openId: `platform:${principal.account.id}`,
+        name: principal.account.userName,
+        email: principal.account.email,
+        loginMethod: "password",
+        role: "platform_admin",
+        createdAt: principal.account.createdAt,
+        updatedAt: principal.account.updatedAt,
+        lastSignedIn: principal.account.createdAt
+      } : {
+        id: -principal.account.id,
+        openId: `member:${principal.account.id}`,
+        name: principal.account.userName,
+        email: principal.account.email,
+        loginMethod: "password",
+        role: normalizeMemberRole(String(principal.account.role)),
+        companyId: principal.account.companyId,
+        createdAt: principal.account.createdAt,
+        updatedAt: principal.account.updatedAt,
+        lastSignedIn: principal.account.createdAt
+      };
       void auditFromCtx(ctx, {
         companyId: principal.companyId ?? null,
         action: "login",
@@ -4530,34 +5958,34 @@ var appRouter = router({
         description: `Login realizado: ${input.email}`,
         newData: { email: input.email, kind: session.kind }
       });
-      return { success: true, kind: session.kind };
+      return { success: true, kind: session.kind, user, sessionToken: session.rawToken };
     }),
-    recoverPassword: publicProcedure.input(z3.object({ email: z3.string().email(), recoveryCode: z3.string().min(1), newPassword: z3.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ input }) => {
+    recoverPassword: publicProcedure.input(z7.object({ email: z7.string().email(), recoveryCode: z7.string().min(1), newPassword: z7.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ input }) => {
       const recovered = await recoverPassword(input.email, input.recoveryCode, input.newPassword);
-      if (!recovered) throw new TRPCError7({ code: "UNAUTHORIZED", message: "E-mail ou c\xF3digo de recupera\xE7\xE3o inv\xE1lido." });
+      if (!recovered) throw new TRPCError12({ code: "UNAUTHORIZED", message: "E-mail ou c\xF3digo de recupera\xE7\xE3o inv\xE1lido." });
       return { success: true, recoveryCode: recovered.recoveryCode };
     }),
     changePassword: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
-    }).input(z3.object({ currentPassword: z3.string().min(1), newPassword: z3.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ ctx, input }) => {
+    }).input(z7.object({ currentPassword: z7.string().min(1), newPassword: z7.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ ctx, input }) => {
       const changed = ctx.user.role === "platform_admin" ? await changePlatformPassword(ctx.platformAdminId ?? ctx.user.id, input.currentPassword, input.newPassword) : await changeMemberPassword(ctx.memberAccountId ?? Math.abs(ctx.user.id), input.currentPassword, input.newPassword);
-      if (!changed) throw new TRPCError7({ code: "UNAUTHORIZED", message: "A senha atual est\xE1 incorreta." });
+      if (!changed) throw new TRPCError12({ code: "UNAUTHORIZED", message: "A senha atual est\xE1 incorreta." });
       return { success: true };
     }),
     updateProfile: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
-    }).input(z3.object({
-      userName: z3.string().min(2).optional(),
-      avatarDataUrl: z3.string().max(4e5).optional().nullable()
+    }).input(z7.object({
+      userName: z7.string().min(2).optional(),
+      avatarDataUrl: z7.string().max(4e5).optional().nullable()
     })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role === "platform_admin") {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Perfil de plataforma n\xE3o usa esta rota." });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "Perfil de plataforma n\xE3o usa esta rota." });
       }
       const memberId = ctx.memberAccountId ?? Math.abs(ctx.user.id);
       const companyId = ctx.accountId;
-      if (!companyId) throw new TRPCError7({ code: "FORBIDDEN", message: "Empresa n\xE3o identificada." });
+      if (!companyId) throw new TRPCError12({ code: "FORBIDDEN", message: "Empresa n\xE3o identificada." });
       let userName = ctx.user.name || "";
       if (input.userName) {
         const updated = await updateMemberProfile(memberId, { userName: input.userName });
@@ -4569,7 +5997,7 @@ var appRouter = router({
           await setSetting(key, "", companyId);
         } else {
           if (!input.avatarDataUrl.startsWith("data:image/")) {
-            throw new TRPCError7({ code: "BAD_REQUEST", message: "Imagem de perfil inv\xE1lida." });
+            throw new TRPCError12({ code: "BAD_REQUEST", message: "Imagem de perfil inv\xE1lida." });
           }
           await setSetting(key, input.avatarDataUrl, companyId);
         }
@@ -4577,7 +6005,7 @@ var appRouter = router({
       return { success: true, userName };
     }),
     profileExtras: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).query(async ({ ctx }) => {
       if (ctx.user.role === "platform_admin" || !ctx.accountId) {
@@ -4589,20 +6017,20 @@ var appRouter = router({
       return { avatarDataUrl: avatar || null, alertDays };
     }),
     regenerateRecoveryCode: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
-    }).input(z3.object({ currentPassword: z3.string().min(1) })).mutation(async ({ ctx, input }) => {
+    }).input(z7.object({ currentPassword: z7.string().min(1) })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role === "platform_admin") {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "Indispon\xEDvel para admin da plataforma nesta tela." });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "Indispon\xEDvel para admin da plataforma nesta tela." });
       }
       const memberId = ctx.memberAccountId ?? Math.abs(ctx.user.id);
       const ok = await verifyMemberPassword(memberId, input.currentPassword);
-      if (!ok) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Senha atual incorreta." });
+      if (!ok) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Senha atual incorreta." });
       const result = await regenerateMemberRecoveryCode(memberId);
       return { success: true, recoveryCode: result.recoveryCode };
     }),
     logoutAllSessions: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError7({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError12({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).mutation(async ({ ctx }) => {
       if (ctx.user.role === "platform_admin") return { success: true };
@@ -4619,72 +6047,73 @@ var appRouter = router({
       return { success: true };
     })
   }),
-  offline: router({
-    snapshot: commercialFeatureProcedure("offline").input(z3.object({ page: z3.number().int().positive().optional(), pageSize: z3.number().int().min(10).max(100).optional() }).optional()).query(({ ctx, input }) => getOfflineSnapshot(ctx.accountId, input))
-  }),
+  offline: router({}),
   platform: router({
     aiSupport: router({
-      chat: platformProcedure.input(z3.object({ prompt: z3.string().trim().min(1).max(12e3) })).mutation(async ({ input }) => runPersistentGemini(input.prompt))
+      chat: platformProcedure.input(z7.object({
+        prompt: z7.string().trim().min(1).max(12e3),
+        history: z7.array(z7.object({ role: z7.enum(["user", "assistant"]), content: z7.string().max(12e3) })).max(30).optional()
+      })).mutation(async ({ input }) => runPersistentGemini(input.prompt, input.history ?? []))
     }),
     plans: router({
       list: platformProcedure.query(() => listSubscriptionPlans()),
-      create: platformProcedure.input(z3.object({
-        name: z3.string().min(2),
-        description: z3.string().optional().nullable(),
-        price: z3.string().default("0.00"),
-        billingCycle: z3.enum(["monthly", "yearly"]).default("monthly"),
-        maxUsers: z3.number().int().positive().optional().nullable(),
-        maxClients: z3.number().int().positive().optional().nullable(),
-        maxExtinguishers: z3.number().int().positive().optional().nullable(),
-        featureKeys: z3.array(entitlementFeatureKey).default([]),
-        availableForNew: z3.boolean().default(true)
+      create: platformProcedure.input(z7.object({
+        name: z7.string().min(2),
+        description: z7.string().optional().nullable(),
+        price: z7.string().default("0.00"),
+        billingCycle: z7.enum(["monthly", "yearly"]).default("monthly"),
+        maxUsers: z7.number().int().positive().optional().nullable(),
+        maxClients: z7.number().int().positive().optional().nullable(),
+        maxExtinguishers: z7.number().int().positive().optional().nullable(),
+        featureKeys: z7.array(entitlementFeatureKey).default([]),
+        availableForNew: z7.boolean().default(true)
       })).mutation(({ input }) => createSubscriptionPlan(input)),
-      update: platformProcedure.input(z3.object({
-        id: z3.number().int().positive(),
-        name: z3.string().min(2).optional(),
-        description: z3.string().optional().nullable(),
-        price: z3.string().optional(),
-        billingCycle: z3.enum(["monthly", "yearly"]).optional(),
-        maxUsers: z3.number().int().positive().optional().nullable(),
-        maxClients: z3.number().int().positive().optional().nullable(),
-        maxExtinguishers: z3.number().int().positive().optional().nullable(),
-        featureKeys: z3.array(entitlementFeatureKey).optional(),
-        availableForNew: z3.boolean().optional(),
-        active: z3.boolean().optional()
+      update: platformProcedure.input(z7.object({
+        id: z7.number().int().positive(),
+        name: z7.string().min(2).optional(),
+        description: z7.string().optional().nullable(),
+        price: z7.string().optional(),
+        billingCycle: z7.enum(["monthly", "yearly"]).optional(),
+        maxUsers: z7.number().int().positive().optional().nullable(),
+        maxClients: z7.number().int().positive().optional().nullable(),
+        maxExtinguishers: z7.number().int().positive().optional().nullable(),
+        featureKeys: z7.array(entitlementFeatureKey).optional(),
+        availableForNew: z7.boolean().optional(),
+        active: z7.boolean().optional()
       })).mutation(async ({ input }) => {
-        const { id, ...data } = input;
-        return updateSubscriptionPlan(id, data);
+        const { id: id2, ...data } = input;
+        return updateSubscriptionPlan(id2, data);
       })
     }),
     subscriptions: router({
       list: platformProcedure.query(() => listCompanySubscriptions()),
       stats: platformProcedure.query(() => getSubscriptionStats()),
-      create: platformProcedure.input(z3.object({
-        companyId: z3.number().int().positive(),
-        planId: z3.number().int().positive(),
-        status: z3.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]).default("active"),
-        startsAt: z3.string().min(8),
-        endsAt: z3.string().optional().nullable(),
-        notes: z3.string().optional().nullable()
+      create: platformProcedure.input(z7.object({
+        companyId: z7.number().int().positive(),
+        planId: z7.number().int().positive(),
+        status: z7.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]).default("active"),
+        startsAt: z7.string().min(8),
+        endsAt: z7.string().optional().nullable(),
+        notes: z7.string().optional().nullable()
       })).mutation(({ input }) => createCompanySubscription(input)),
-      update: platformProcedure.input(z3.object({
-        id: z3.number().int().positive(),
-        planId: z3.number().int().positive().optional(),
-        status: z3.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]).optional(),
-        startsAt: z3.string().min(8).optional(),
-        endsAt: z3.string().optional().nullable(),
-        notes: z3.string().optional().nullable()
+      update: platformProcedure.input(z7.object({
+        id: z7.number().int().positive(),
+        planId: z7.number().int().positive().optional(),
+        status: z7.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]).optional(),
+        startsAt: z7.string().min(8).optional(),
+        endsAt: z7.string().optional().nullable(),
+        notes: z7.string().optional().nullable()
       })).mutation(async ({ input }) => {
-        const { id, ...data } = input;
-        return updateCompanySubscription(id, data);
+        const { id: id2, ...data } = input;
+        return updateCompanySubscription(id2, data);
       })
     }),
     companyFeatures: router({
-      get: platformProcedure.input(z3.object({ companyId: z3.number().int().positive() })).query(({ input }) => getCompanyEntitlementBase(input.companyId)),
-      set: platformProcedure.input(z3.object({
-        companyId: z3.number().int().positive(),
+      get: platformProcedure.input(z7.object({ companyId: z7.number().int().positive() })).query(({ input }) => getCompanyEntitlementBase(input.companyId)),
+      set: platformProcedure.input(z7.object({
+        companyId: z7.number().int().positive(),
         overrides: featurePermissionListSchema,
-        reason: z3.string().max(500).optional().nullable()
+        reason: z7.string().max(500).optional().nullable()
       })).mutation(async ({ ctx, input }) => {
         const overrides = Object.fromEntries(input.overrides.map(({ featureKey, mode }) => [
           featureKey,
@@ -4701,107 +6130,42 @@ var appRouter = router({
     }),
     /** Compatibilidade do painel administrativo: somente platform_admin acessa estas operações globais. */
     identity: platformProcedure.query(({ ctx }) => ({ id: ctx.platformAdminId ?? ctx.user.id, role: "platform_admin", global: true })),
-    reverseGeocodePoint: platformProcedure.input(z3.object({ latitude: z3.number().min(-90).max(90), longitude: z3.number().min(-180).max(180) })).mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
+    reverseGeocodePoint: platformProcedure.input(z7.object({ latitude: z7.number().min(-90).max(90), longitude: z7.number().min(-180).max(180) })).mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
     companies: router({
       list: platformProcedure.query(() => listCompanies()),
-      create: platformProcedure.input(z3.object({ companyName: z3.string().min(2), userName: z3.string().min(2), email: z3.string().email(), password: z3.string().min(8) })).mutation(async ({ input }) => {
+      create: platformProcedure.input(z7.object({ companyName: z7.string().min(2), userName: z7.string().min(2), email: z7.string().email(), password: z7.string().min(8) })).mutation(async ({ input }) => {
         try {
           return await createCompanyWithAdmin(input);
         } catch (error) {
-          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError7({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError12({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
           throw error;
         }
       }),
-      update: platformProcedure.input(z3.object({ id: z3.number().int().positive(), name: z3.string().min(2).optional(), active: z3.boolean().optional() })).mutation(async ({ input }) => {
+      update: platformProcedure.input(z7.object({ id: z7.number().int().positive(), name: z7.string().min(2).optional(), active: z7.boolean().optional() })).mutation(async ({ input }) => {
         await updateCompany(input.id, { name: input.name, active: input.active });
         return { success: true };
       })
     }),
-    dashboard: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), city: z3.string().optional(), from: z3.string().optional(), to: z3.string().optional() })).query(({ input }) => getPlatformDashboardStats(input.companyId, input)),
     users: router({
       list: platformProcedure.query(() => listMemberAccounts()),
-      create: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), userName: z3.string().min(2), email: z3.string().email(), password: z3.string().min(8), role: companyUserRole })).mutation(async ({ input, ctx }) => {
+      create: platformProcedure.input(z7.object({ companyId: z7.number().int().positive(), userName: z7.string().min(2), email: z7.string().email(), password: z7.string().min(8), role: companyUserRole })).mutation(async ({ input, ctx }) => {
         const company = await getCompanyById(input.companyId);
-        if (!company) throw new TRPCError7({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-        if (!company.active) throw new TRPCError7({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
+        if (!company) throw new TRPCError12({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+        if (!company.active) throw new TRPCError12({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
         try {
           const created = await createCompanyUser(input);
           void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usu\xE1rio criado pelo administrador geral: ${input.userName}`, newData: { companyId: input.companyId, email: input.email, role: input.role } });
           return created;
         } catch (error) {
-          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError7({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError12({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
           throw error;
         }
-      })
-    }),
-    data: router({
-      clients: platformProcedure.input(z3.object({ companyId: z3.number().int().positive().optional() }).optional()).query(({ input }) => getPlatformClients(input?.companyId)),
-      clientsPage: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), page: z3.number().int().positive().optional(), pageSize: z3.number().int().positive().max(100).optional(), city: z3.string().optional(), search: z3.string().optional() })).query(({ input }) => getClientsPage(input.companyId, input)),
-      extinguishers: platformProcedure.input(z3.object({ companyId: z3.number().int().positive().optional() }).optional()).query(({ input }) => getPlatformExtinguishers(input?.companyId)),
-      extinguishersPage: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), page: z3.number().int().positive().optional(), pageSize: z3.number().int().positive().max(100).optional(), clientId: z3.number().int().positive().optional(), search: z3.string().optional(), filter: z3.enum(["all", "active", "near", "expired"]).optional() })).query(({ input }) => getExtinguishersPage(input.companyId, input)),
-      orders: platformProcedure.input(z3.object({ companyId: z3.number().int().positive().optional() }).optional()).query(({ input }) => getPlatformOrders(input?.companyId)),
-      ordersPage: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), page: z3.number().int().positive().optional(), pageSize: z3.number().int().positive().max(100).optional(), clientId: z3.number().int().positive().optional(), search: z3.string().optional(), city: z3.string().optional(), from: z3.string().optional(), to: z3.string().optional() })).query(({ input }) => getServiceOrdersPage(input.companyId, input)),
-      alertsPage: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), page: z3.number().int().positive().optional(), pageSize: z3.number().int().positive().max(100).optional(), daysAhead: z3.number().optional(), filter: z3.enum(["all", "near", "expired"]).optional(), search: z3.string().optional(), city: z3.string().optional() })).query(async ({ input }) => {
-        const days = input.daysAhead || parseInt(await getSetting("alert_days_ahead", input.companyId, "30"), 10) || 30;
-        return getExpiringExtinguishersPage(days, input.companyId, input);
-      }),
-      history: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), clientId: z3.number().int().positive() })).query(({ input }) => getServiceOrderHistory(input.clientId, input.companyId)),
-      createClient: platformProcedure.input(clientInput.extend({ companyId: z3.number().int().positive() })).mutation(async ({ input }) => {
-        const { companyId, ...data } = input;
-        const company = await getCompanyById(companyId);
-        if (!company || !company.active) throw new TRPCError7({ code: "BAD_REQUEST", message: "Selecione uma empresa ativa para cadastrar o cliente." });
-        return { id: await createClient({ ...data, accountId: companyId, cnpj: emptyToNull(data.cnpj), address: emptyToNull(data.address), cep: emptyToNull(data.cep), phone: emptyToNull(data.phone), contactName: emptyToNull(data.contactName), cpf: emptyToNull(data.cpf), birthDate: emptyToNull(data.birthDate), notes: emptyToNull(data.notes) }) };
-      }),
-      createExtinguisher: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), clientId: z3.number(), typeModel: z3.string().min(1), capacity: z3.string().optional(), serialNumber: z3.string().optional(), locationInBuilding: z3.string().optional(), expirationDate: z3.string(), lastInspectionDate: z3.string().optional(), notes: z3.string().optional() })).mutation(async ({ input }) => {
-        const { companyId, ...data } = input;
-        const company = await getCompanyById(companyId);
-        if (!company || !company.active) throw new TRPCError7({ code: "BAD_REQUEST", message: "Selecione uma empresa ativa para cadastrar o extintor." });
-        return { id: await createExtinguisher({ ...data, accountId: companyId, expirationDate: data.expirationDate, lastInspectionDate: data.lastInspectionDate || null, capacity: emptyToNull(data.capacity), serialNumber: emptyToNull(data.serialNumber), locationInBuilding: emptyToNull(data.locationInBuilding), notes: emptyToNull(data.notes) }, companyId) };
-      }),
-      createOrder: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), orderNumber: z3.number().optional(), orderDate: z3.string(), clientId: z3.number(), replacedAndDelivered: z3.string().default("SIM"), leftReserve: z3.string().default("N\xC3O"), reserveDetails: z3.string().optional(), extinguisherExpiration: z3.string().optional(), licenseExpiration: z3.string().optional(), totalAmount: z3.string().default("0.00"), paymentMethod: z3.string().default("A VISTA"), installmentsCount: z3.number().default(1), installmentDates: z3.string().optional(), responsibleName: z3.string().optional(), responsibleCpf: z3.string().optional(), responsibleBirthDate: z3.string().optional(), observations: z3.string().optional(), items: z3.array(z3.object({ description: z3.string().min(1), quantity: z3.number().min(1), unitPrice: z3.string(), totalPrice: z3.string(), extinguisherId: z3.number().optional() })) })).mutation(async ({ input, ctx }) => {
-        const { companyId, items, ...orderData } = input;
-        const company = await getCompanyById(companyId);
-        if (!company || !company.active) throw new TRPCError7({ code: "BAD_REQUEST", message: "Selecione uma empresa ativa para criar a ordem de servi\xE7o." });
-        return createServiceOrder({ ...orderData, accountId: companyId, createdByName: ctx.user.name || ctx.user.email || "Administrador geral", createdByUserId: null }, items, companyId);
-      }),
-      deleteOrder: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), id: z3.number().int().positive() })).mutation(async ({ input }) => {
-        await deleteServiceOrder(input.id, input.companyId);
-        return { success: true };
-      }),
-      deleteClient: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), id: z3.number().int().positive() })).mutation(async ({ input }) => {
-        await deleteClient(input.id, input.companyId);
-        return { success: true };
-      }),
-      deleteExtinguisher: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), id: z3.number().int().positive() })).mutation(async ({ input }) => {
-        await deleteExtinguisher(input.id, input.companyId);
-        return { success: true };
-      }),
-      updateClient: platformProcedure.input(clientInput.extend({ companyId: z3.number().int().positive(), id: z3.number().int().positive() })).mutation(async ({ input }) => {
-        const { companyId, id, ...data } = input;
-        await updateClient(id, { ...data, accountId: companyId, cnpj: emptyToNull(data.cnpj), address: emptyToNull(data.address), cep: emptyToNull(data.cep), phone: emptyToNull(data.phone), contactName: emptyToNull(data.contactName), cpf: emptyToNull(data.cpf), birthDate: emptyToNull(data.birthDate), notes: emptyToNull(data.notes) }, companyId);
-        return { success: true };
-      }),
-      updateOrder: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), id: z3.number().int().positive(), orderDate: z3.string(), clientId: z3.number(), replacedAndDelivered: z3.string(), leftReserve: z3.string(), reserveDetails: z3.string().optional(), extinguisherExpiration: z3.string().optional(), licenseExpiration: z3.string().optional(), totalAmount: z3.string(), paymentMethod: z3.string(), installmentsCount: z3.number(), installmentDates: z3.string().optional(), responsibleName: z3.string().optional(), responsibleCpf: z3.string().optional(), responsibleBirthDate: z3.string().optional(), observations: z3.string().optional(), items: z3.array(z3.object({ description: z3.string().min(1), quantity: z3.number().min(1), unitPrice: z3.string(), totalPrice: z3.string(), extinguisherId: z3.number().optional() })) })).mutation(async ({ input }) => {
-        const { companyId, id, items, ...orderData } = input;
-        await updateServiceOrder(id, { ...orderData, accountId: companyId }, items, companyId);
-        return { success: true };
-      }),
-      trash: router({
-        list: platformProcedure.input(z3.object({ companyId: z3.number().int().positive() })).query(({ input }) => listTrash(input.companyId)),
-        restore: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), id: z3.number().int().positive() })).mutation(async ({ input }) => {
-          await restoreTrashItem(input.id, input.companyId);
-          return { success: true };
-        }),
-        permanentlyDelete: platformProcedure.input(z3.object({ companyId: z3.number().int().positive(), id: z3.number().int().positive() })).mutation(async ({ input }) => {
-          await permanentlyDeleteTrashItem(input.id, input.companyId);
-          return { success: true };
-        })
       })
     })
   }),
   accounts: router({
     list: platformProcedure.query(() => listMemberAccounts()),
-    create: platformProcedure.input(z3.object({ companyName: z3.string().min(2), userName: z3.string().min(2), email: z3.string().email(), password: z3.string().min(8) })).mutation(async ({ input }) => {
+    create: platformProcedure.input(z7.object({ companyName: z7.string().min(2), userName: z7.string().min(2), email: z7.string().email(), password: z7.string().min(8) })).mutation(async ({ input }) => {
       const created = await createCompanyWithAdmin(input);
       void (async () => {
         try {
@@ -4828,41 +6192,41 @@ var appRouter = router({
       })();
       return created;
     }),
-    setActive: platformProcedure.input(z3.object({ id: z3.number().int().positive(), active: z3.boolean() })).mutation(async ({ input }) => {
+    setActive: platformProcedure.input(z7.object({ id: z7.number().int().positive(), active: z7.boolean() })).mutation(async ({ input }) => {
       await setMemberActive(input.id, input.active);
       return { success: true };
     }),
-    resetPassword: platformProcedure.input(z3.object({ id: z3.number().int().positive(), newPassword: z3.string().min(8) })).mutation(async ({ input }) => {
+    resetPassword: platformProcedure.input(z7.object({ id: z7.number().int().positive(), newPassword: z7.string().min(8) })).mutation(async ({ input }) => {
       await resetMemberPassword(input.id, input.newPassword);
       return { success: true };
     })
   }),
   companyUsers: router({
     list: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => listMemberAccounts(ctx.accountId)),
-    permissions: companyAdminFeatureProcedure("teamManagement").input(z3.object({ id: z3.number().int().positive() })).query(async ({ ctx, input }) => {
+    permissions: companyAdminFeatureProcedure("teamManagement").input(z7.object({ id: z7.number().int().positive() })).query(async ({ ctx, input }) => {
       const members = await listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
-      if (!target) throw new TRPCError7({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!target) throw new TRPCError12({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
       return getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role);
     }),
-    setPermissions: companyAdminFeatureProcedure("teamManagement").input(z3.object({
-      id: z3.number().int().positive(),
+    setPermissions: companyAdminFeatureProcedure("teamManagement").input(z7.object({
+      id: z7.number().int().positive(),
       permissions: featurePermissionListSchema
     })).mutation(async ({ ctx, input }) => {
       const members = await listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
-      if (!target) throw new TRPCError7({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!target) throw new TRPCError12({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
       const modes = Object.fromEntries(input.permissions.map(({ featureKey, mode }) => [featureKey, mode]));
       if (target.role === "company_admin" && modes.teamManagement === "deny") {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "A permiss\xE3o de gest\xE3o da equipe n\xE3o pode ser bloqueada individualmente para um administrador da empresa." });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "A permiss\xE3o de gest\xE3o da equipe n\xE3o pode ser bloqueada individualmente para um administrador da empresa." });
       }
       const base = await getCompanyEntitlementBase(ctx.accountId);
       for (const [featureKey, mode] of Object.entries(modes)) {
         if (mode === "allow" && !base.companyFeatures[featureKey]) {
-          throw new TRPCError7({ code: "BAD_REQUEST", message: `O m\xF3dulo ${featureKey} n\xE3o est\xE1 liberado para esta empresa.` });
+          throw new TRPCError12({ code: "BAD_REQUEST", message: `O m\xF3dulo ${featureKey} n\xE3o est\xE1 liberado para esta empresa.` });
         }
         if (mode === "allow" && !ROLE_FEATURE_CEILING[target.role].includes(featureKey)) {
-          throw new TRPCError7({ code: "BAD_REQUEST", message: `O papel ${target.role} n\xE3o permite liberar o m\xF3dulo ${featureKey}.` });
+          throw new TRPCError12({ code: "BAD_REQUEST", message: `O papel ${target.role} n\xE3o permite liberar o m\xF3dulo ${featureKey}.` });
         }
       }
       const before = await getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role);
@@ -4871,10 +6235,15 @@ var appRouter = router({
       void auditFromCtx(ctx, { action: "settings_change", module: "users", entityType: "user_permissions", entityId: target.id, entityLabel: target.userName, description: `Permiss\xF5es de m\xF3dulos atualizadas para ${target.userName}`, oldData: before.effective, newData: after.effective });
       return { success: true };
     }),
-    create: companyAdminFeatureProcedure("teamManagement").input(z3.object({ userName: z3.string().min(2), email: z3.string().email(), password: z3.string().min(8), role: companyUserRole })).mutation(async ({ ctx, input }) => {
+    create: companyAdminFeatureProcedure("teamManagement").input(z7.object({ userName: z7.string().min(2), email: z7.string().email(), password: z7.string().min(8), role: companyUserRole, storeIds: z7.array(z7.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
       try {
         await assertUserLimit(ctx.accountId);
-        const created = await createCompanyUser({ ...input, companyId: ctx.accountId });
+        const { storeIds, ...userInput } = input;
+        const created = await createCompanyUser({ ...userInput, companyId: ctx.accountId });
+        if (input.role === "promoter" && storeIds && storeIds.length > 0) {
+          const database2 = await getDb();
+          await setPromoterStoreAssignments(database2, ctx.accountId, created.accountId, storeIds);
+        }
         void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usu\xE1rio criado: ${input.userName} (${input.role})`, newData: { userName: input.userName, email: input.email, role: input.role, id: created.accountId } });
         void (async () => {
           try {
@@ -4895,15 +6264,15 @@ var appRouter = router({
         })();
         return created;
       } catch (error) {
-        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError7({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError12({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
         console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message });
-        if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError7({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
-        if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados est\xE1 com a estrutura de usu\xE1rios desatualizada. A implanta\xE7\xE3o precisa concluir a migra\xE7\xE3o." });
-        throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar o usu\xE1rio. Verifique os dados e tente novamente." });
+        if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError12({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
+        if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados est\xE1 com a estrutura de usu\xE1rios desatualizada. A implanta\xE7\xE3o precisa concluir a migra\xE7\xE3o." });
+        throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar o usu\xE1rio. Verifique os dados e tente novamente." });
       }
     }),
-    update: companyAdminFeatureProcedure("teamManagement").input(z3.object({ id: z3.number().int().positive(), userName: z3.string().min(2).optional(), email: z3.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
-      if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError7({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode remover o pr\xF3prio n\xEDvel administrativo." });
+    update: companyAdminFeatureProcedure("teamManagement").input(z7.object({ id: z7.number().int().positive(), userName: z7.string().min(2).optional(), email: z7.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
+      if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError12({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode remover o pr\xF3prio n\xEDvel administrativo." });
       const usersBefore = await listMemberAccounts(ctx.accountId);
       const beforeUser = usersBefore.find((u) => u.id === input.id) || null;
       await updateCompanyUser(input.id, ctx.accountId, { userName: input.userName, email: input.email, role: input.role });
@@ -4913,21 +6282,26 @@ var appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "users", entityType: "user", entityId: input.id, entityLabel: afterUser?.userName || beforeUser?.userName || `#${input.id}`, description: `Usu\xE1rio atualizado: ${afterUser?.userName || input.id}`, oldData: userDiff.oldData, newData: userDiff.newData });
       return { success: true };
     }),
-    updatePromoterManagement: companyAdminFeatureProcedure("teamManagement").input(z3.object({
-      id: z3.number().int().positive(),
-      userName: z3.string().trim().min(2).max(255),
-      email: z3.string().trim().email().max(320),
-      employeeCode: z3.string().trim().max(50).nullable(),
-      workStartTime: z3.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
-      workEndTime: z3.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
-      weeklyRoutes: z3.array(z3.object({ weekday: z3.number().int().min(0).max(6), storeIds: z3.array(z3.number().int().positive()).min(1) })).max(7).optional()
+    getPromoterStores: companyAdminFeatureProcedure("teamManagement").input(z7.object({ id: z7.number().int().positive() })).query(async ({ ctx, input }) => {
+      const database2 = await getDb();
+      return getPromoterStoreAssignments(database2, ctx.accountId, input.id);
+    }),
+    updatePromoterManagement: companyAdminFeatureProcedure("teamManagement").input(z7.object({
+      id: z7.number().int().positive(),
+      userName: z7.string().trim().min(2).max(255),
+      email: z7.string().trim().email().max(320),
+      employeeCode: z7.string().trim().max(50).nullable(),
+      workStartTime: z7.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+      workEndTime: z7.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+      weeklyRoutes: z7.array(z7.object({ weekday: z7.number().int().min(0).max(6), storeIds: z7.array(z7.number().int().positive()).min(1) })).max(7).optional(),
+      storeIds: z7.array(z7.number().int().positive()).optional()
     })).mutation(async ({ ctx, input }) => {
       if (input.workStartTime && input.workEndTime && input.workEndTime <= input.workStartTime) {
-        throw new TRPCError7({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao in\xEDcio." });
+        throw new TRPCError12({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao in\xEDcio." });
       }
       const usersBefore = await listMemberAccounts(ctx.accountId);
       const before = usersBefore.find((member) => member.id === input.id);
-      if (!before || before.role !== "promoter") throw new TRPCError7({ code: "NOT_FOUND", message: "Promotor n\xE3o encontrado nesta empresa." });
+      if (!before || before.role !== "promoter") throw new TRPCError12({ code: "NOT_FOUND", message: "Promotor n\xE3o encontrado nesta empresa." });
       try {
         await updatePromoterManagement({
           companyId: ctx.accountId,
@@ -4939,10 +6313,14 @@ var appRouter = router({
           workEndTime: input.workEndTime,
           weeklyRoutes: input.weeklyRoutes
         });
+        if (input.storeIds !== void 0) {
+          const database2 = await getDb();
+          await setPromoterStoreAssignments(database2, ctx.accountId, input.id, input.storeIds);
+        }
       } catch (error) {
-        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError7({ code: "CONFLICT", message: "Este e-mail ou matr\xEDcula j\xE1 est\xE1 em uso." });
+        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError12({ code: "CONFLICT", message: "Este e-mail ou matr\xEDcula j\xE1 est\xE1 em uso." });
         if (error?.message?.includes("n\xE3o pertence") || error?.message?.includes("inativas") || error?.message?.includes("programa\xE7\xE3o") || error?.message?.includes("dia programado")) {
-          throw new TRPCError7({ code: "BAD_REQUEST", message: error.message });
+          throw new TRPCError12({ code: "BAD_REQUEST", message: error.message });
         }
         throw error;
       }
@@ -4951,25 +6329,23 @@ var appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "users", entityType: "promoter_profile", entityId: input.id, entityLabel: after?.userName || before.userName, description: `Cadastro e roteiro de ${after?.userName || before.userName} atualizados`, oldData: before, newData: after });
       return { success: true };
     }),
-    setActive: companyAdminFeatureProcedure("teamManagement").input(z3.object({ id: z3.number().int().positive(), active: z3.boolean() })).mutation(async ({ ctx, input }) => {
-      if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError7({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode desativar a pr\xF3pria sess\xE3o." });
+    setActive: companyAdminFeatureProcedure("teamManagement").input(z7.object({ id: z7.number().int().positive(), active: z7.boolean() })).mutation(async ({ ctx, input }) => {
+      if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError12({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode desativar a pr\xF3pria sess\xE3o." });
       await setMemberActive(input.id, input.active, ctx.accountId);
       void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Usu\xE1rio ${input.active ? "ativado" : "desativado"} #${input.id}`, newData: { active: input.active } });
       return { success: true };
     }),
-    resetPassword: companyAdminFeatureProcedure("teamManagement").input(z3.object({ id: z3.number().int().positive(), newPassword: z3.string().min(8) })).mutation(async ({ ctx, input }) => {
+    resetPassword: companyAdminFeatureProcedure("teamManagement").input(z7.object({ id: z7.number().int().positive(), newPassword: z7.string().min(8) })).mutation(async ({ ctx, input }) => {
       const users3 = await listMemberAccounts(ctx.accountId);
-      if (!users3.some((account) => account.id === input.id)) throw new TRPCError7({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!users3.some((account) => account.id === input.id)) throw new TRPCError12({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
       await resetMemberPassword(input.id, input.newPassword);
       return { success: true };
     })
   }),
-  dashboard: router({ stats: commercialFeatureProcedure("dashboard").query(async ({ ctx }) => {
-    if (ctx.user.role === "promoter") throw new TRPCError7({ code: "FORBIDDEN", message: "Este painel n\xE3o est\xE1 dispon\xEDvel para promotores." });
-    return getDashboardStats(ctx.accountId);
-  }) }),
+  // O dashboard é a tela básica de toda conta autenticada; módulos pagos
+  // continuam usando commercialFeatureProcedure normalmente.
   companyProfile: router({
-    updateName: companyAdminProcedure.input(z3.object({ name: z3.string().min(2).max(255) })).mutation(async ({ ctx, input }) => {
+    updateName: companyAdminProcedure.input(z7.object({ name: z7.string().min(2).max(255) })).mutation(async ({ ctx, input }) => {
       await updateCompany(ctx.accountId, { name: input.name.trim() });
       void auditFromCtx(ctx, {
         action: "update",
@@ -4984,176 +6360,40 @@ var appRouter = router({
     })
   }),
   settings: router({
+    getAutoClockOut: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => await getSetting("auto_clock_out_time", ctx.accountId, "")),
+    setAutoClockOut: companyAdminFeatureProcedure("timeTracking").input(z7.object({ time: z7.string().regex(/^\d{2}:\d{2}$/).optional() })).mutation(async ({ ctx, input }) => {
+      await setSetting("auto_clock_out_time", input.time || "", ctx.accountId);
+      return { success: true, time: input.time || "" };
+    }),
     getAlertDays: commercialFeatureProcedure("alerts").query(async ({ ctx }) => parseInt(await getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30),
-    setAlertDays: companyAdminFeatureProcedure("alerts").input(z3.object({ days: z3.number().min(1).max(365) })).mutation(async ({ ctx, input }) => {
+    setAlertDays: companyAdminFeatureProcedure("alerts").input(z7.object({ days: z7.number().min(1).max(365) })).mutation(async ({ ctx, input }) => {
       const prev = await getSetting("alert_days_ahead", ctx.accountId, "30");
       await setSetting("alert_days_ahead", input.days.toString(), ctx.accountId);
       void auditFromCtx(ctx, { action: "settings_change", module: "settings", entityType: "setting", entityLabel: "alert_days_ahead", description: `Anteced\xEAncia de alertas alterada: ${prev} \u2192 ${input.days} dias`, oldData: { alert_days_ahead: prev }, newData: { alert_days_ahead: String(input.days) } });
       return { success: true, days: input.days };
     })
   }),
-  clients: router({
-    list: commercialFeatureProcedure("clients").input(z3.object({ city: z3.string().optional() }).optional()).query(async ({ ctx, input }) => {
-      const ownerUserId = ctx.user?.role === "company_admin" ? null : ctx.memberAccountId ?? null;
-      return getClients(input?.city, ctx.accountId, ownerUserId);
-    }),
-    page: commercialFeatureProcedure("clients").input(z3.object({ page: z3.number().int().positive().optional(), pageSize: z3.number().int().positive().max(100).optional(), city: z3.string().optional(), search: z3.string().optional() }).optional()).query(({ ctx, input }) => {
-      const ownerUserId = ctx.user?.role === "company_admin" ? null : ctx.memberAccountId ?? null;
-      return getClientsPage(ctx.accountId, { ...input || {}, ownerUserId });
-    }),
-    cities: commercialFeatureProcedure("clients").query(async ({ ctx }) => getDistinctCities(ctx.accountId)),
-    byId: commercialFeatureProcedure("clients").input(z3.object({ id: z3.number() })).query(async ({ ctx, input }) => {
-      const ownerUserId = ctx.user?.role === "company_admin" ? null : ctx.memberAccountId ?? null;
-      const client = await getClientById(input.id, ctx.accountId, ownerUserId);
-      if (!client) return { client: null, extinguishers: [], orders: [] };
-      return {
-        client,
-        extinguishers: await getExtinguishersByClient(input.id, ctx.accountId),
-        orders: await getServiceOrders(input.id, ctx.accountId, ownerUserId)
-      };
-    }),
-    create: commercialFeatureProcedure("clients").input(clientInput).mutation(async ({ ctx, input }) => {
-      await assertClientLimit(ctx.accountId);
-      const id = await createClient({ ...input, accountId: ctx.accountId, createdByUserId: ctx.memberAccountId ?? null, cnpj: emptyToNull(input.cnpj), address: emptyToNull(input.address), cep: emptyToNull(input.cep), phone: emptyToNull(input.phone), contactName: emptyToNull(input.contactName), cpf: emptyToNull(input.cpf), birthDate: emptyToNull(input.birthDate), notes: emptyToNull(input.notes) });
-      void auditFromCtx(ctx, { action: "create", module: "clients", entityType: "client", entityId: id, entityLabel: input.companyName, description: `Cliente criado: ${input.companyName}`, newData: { ...input, id } });
-      return { id };
-    }),
-    update: commercialFeatureProcedure("clients").input(clientInput.extend({ id: z3.number() })).mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
-      const ownerUserId = ctx.user?.role === "company_admin" ? null : ctx.memberAccountId ?? null;
-      const before = await getClientById(id, ctx.accountId, ownerUserId);
-      if (!before) throw new TRPCError7({ code: "FORBIDDEN", message: "Cliente n\xE3o encontrado ou sem permiss\xE3o." });
-      await updateClient(id, { ...data, cnpj: emptyToNull(data.cnpj), address: emptyToNull(data.address), cep: emptyToNull(data.cep), phone: emptyToNull(data.phone), contactName: emptyToNull(data.contactName), cpf: emptyToNull(data.cpf), birthDate: emptyToNull(data.birthDate), notes: emptyToNull(data.notes) }, ctx.accountId);
-      const after = await getClientById(id, ctx.accountId, ownerUserId);
-      const diff = diffAuditData(before, after);
-      void auditFromCtx(ctx, { action: "update", module: "clients", entityType: "client", entityId: id, entityLabel: after?.companyName || before?.companyName || `#${id}`, description: `Cliente atualizado: ${after?.companyName || id}`, oldData: diff.oldData, newData: diff.newData });
-      return { success: true };
-    }),
-    delete: companyAdminFeatureProcedure("clients").input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
-      const before = await getClientById(input.id, ctx.accountId);
-      await deleteClient(input.id, ctx.accountId);
-      void auditFromCtx(ctx, { action: "delete", module: "clients", entityType: "client", entityId: input.id, entityLabel: before?.companyName || `#${input.id}`, description: `Cliente exclu\xEDdo (lixeira): ${before?.companyName || input.id}`, oldData: before });
-      return { success: true };
-    })
-  }),
-  extinguishers: router({
-    list: commercialFeatureProcedure("pointsOfSale").query(({ ctx }) => getExtinguishers(ctx.accountId)),
-    page: commercialFeatureProcedure("pointsOfSale").input(z3.object({ page: z3.number().int().positive().optional(), pageSize: z3.number().int().positive().max(100).optional(), clientId: z3.number().int().positive().optional(), search: z3.string().optional(), filter: z3.enum(["all", "active", "near", "expired"]).optional() }).optional()).query(({ ctx, input }) => getExtinguishersPage(ctx.accountId, input)),
-    listByClient: commercialFeatureProcedure("pointsOfSale").input(z3.object({ clientId: z3.number() })).query(async ({ ctx, input }) => getExtinguishersByClient(input.clientId, ctx.accountId)),
-    alerts: commercialFeatureProcedure("alerts").input(z3.object({ daysAhead: z3.number().optional() }).optional()).query(async ({ ctx, input }) => {
-      const days = input?.daysAhead || parseInt(await getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30;
-      return getExpiringExtinguishers(days, ctx.accountId);
-    }),
-    alertsPage: commercialFeatureProcedure("alerts").input(z3.object({ page: z3.number().int().positive().optional(), pageSize: z3.number().int().positive().max(100).optional(), daysAhead: z3.number().optional(), filter: z3.enum(["all", "near", "expired"]).optional(), search: z3.string().optional(), city: z3.string().optional() }).optional()).query(async ({ ctx, input }) => {
-      const days = input?.daysAhead || parseInt(await getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30;
-      return getExpiringExtinguishersPage(days, ctx.accountId, input);
-    }),
-    create: commercialFeatureProcedure("pointsOfSale").input(z3.object({ clientId: z3.number(), typeModel: z3.string().min(1), capacity: z3.string().optional(), serialNumber: z3.string().optional(), locationInBuilding: z3.string().optional(), expirationDate: z3.string(), lastInspectionDate: z3.string().optional(), notes: z3.string().optional(), stockQuantity: z3.number().int().min(1).optional() })).mutation(async ({ ctx, input }) => {
-      await assertExtinguisherLimit(ctx.accountId);
-      const id = await createExtinguisher({ ...input, accountId: ctx.accountId, expirationDate: input.expirationDate, lastInspectionDate: input.lastInspectionDate || null, capacity: emptyToNull(input.capacity), serialNumber: emptyToNull(input.serialNumber), locationInBuilding: emptyToNull(input.locationInBuilding), notes: emptyToNull(input.notes) }, ctx.accountId);
-      const label = input.serialNumber || input.typeModel || `#${id}`;
-      let publicToken = null;
-      try {
-        publicToken = await ensureExtinguisherPublicToken(id, ctx.accountId);
-      } catch {
-        publicToken = null;
-      }
-      void auditFromCtx(ctx, { action: "create", module: "extinguishers", entityType: "extinguisher", entityId: id, entityLabel: label, description: `Extintor criado: ${label}`, newData: { ...input, id, publicToken } });
-      return { id, publicToken };
-    }),
-    /** Garante token QR e retorna URL pública (não regenera se já existir). */
-    qrInfo: commercialFeatureProcedure("pointsOfSale").input(z3.object({ id: z3.number().int().positive() })).query(async ({ ctx, input }) => {
-      const token = await ensureExtinguisherPublicToken(input.id, ctx.accountId);
-      return { publicToken: token, url: buildExtinguisherPublicUrl(token) };
-    }),
-    ensurePublicToken: commercialFeatureProcedure("pointsOfSale").input(z3.object({ id: z3.number().int().positive() })).mutation(async ({ ctx, input }) => {
-      const token = await ensureExtinguisherPublicToken(input.id, ctx.accountId);
-      void auditFromCtx(ctx, {
-        action: "update",
-        module: "extinguishers",
-        entityType: "extinguisher",
-        entityId: input.id,
-        entityLabel: `#${input.id}`,
-        description: `QR Code garantido para extintor #${input.id}`,
-        newData: { publicToken: token }
-      });
-      return { publicToken: token, url: buildExtinguisherPublicUrl(token) };
-    }),
-    backfillPublicTokens: companyAdminFeatureProcedure("pointsOfSale").mutation(async ({ ctx }) => {
-      const result = await backfillExtinguisherPublicTokens(ctx.accountId);
-      void auditFromCtx(ctx, {
-        action: "update",
-        module: "extinguishers",
-        entityType: "extinguisher",
-        entityId: null,
-        description: `Backfill de QR Codes: ${result.updated} extintor(es)`,
-        newData: result
-      });
-      return result;
-    }),
-    update: commercialFeatureProcedure("pointsOfSale").input(z3.object({ id: z3.number(), typeModel: z3.string().min(1), capacity: z3.string().optional(), serialNumber: z3.string().optional(), locationInBuilding: z3.string().optional(), expirationDate: z3.string(), lastInspectionDate: z3.string().optional(), notes: z3.string().optional() })).mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
-      const rowsBefore = await getExtinguishers(ctx.accountId);
-      const before = rowsBefore.find((e) => e.id === id) || null;
-      await updateExtinguisher(id, { ...data, expirationDate: data.expirationDate, lastInspectionDate: data.lastInspectionDate || null }, ctx.accountId);
-      const rowsAfter = await getExtinguishers(ctx.accountId);
-      const after = rowsAfter.find((e) => e.id === id) || null;
-      const diff = diffAuditData(before, after);
-      const label = after?.serialNumber || after?.typeModel || before?.serialNumber || `#${id}`;
-      void auditFromCtx(ctx, { action: "update", module: "extinguishers", entityType: "extinguisher", entityId: id, entityLabel: label, description: `Extintor atualizado: ${label}`, oldData: diff.oldData, newData: diff.newData });
-      return { success: true };
-    }),
-    delete: companyAdminFeatureProcedure("pointsOfSale").input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
-      const rows = await getExtinguishers(ctx.accountId);
-      const before = rows.find((e) => e.id === input.id) || null;
-      await deleteExtinguisher(input.id, ctx.accountId);
-      const label = before?.serialNumber || before?.typeModel || `#${input.id}`;
-      void auditFromCtx(ctx, { action: "delete", module: "extinguishers", entityType: "extinguisher", entityId: input.id, entityLabel: label, description: `Extintor exclu\xEDdo (lixeira): ${label}`, oldData: before });
-      return { success: true };
-    })
-  }),
-  orders: router({
-    list: commercialFeatureProcedure("serviceOrders").input(z3.object({ clientId: z3.number().optional() }).optional()).query(async ({ ctx, input }) => getServiceOrders(input?.clientId, ctx.accountId, ctx.user?.role === "company_admin" ? null : ctx.memberAccountId ?? null)),
-    page: commercialFeatureProcedure("serviceOrders").input(z3.object({ page: z3.number().int().positive().optional(), pageSize: z3.number().int().positive().max(100).optional(), clientId: z3.number().int().positive().optional(), search: z3.string().optional(), city: z3.string().optional(), from: z3.string().optional(), to: z3.string().optional() }).optional()).query(({ ctx, input }) => getServiceOrdersPage(ctx.accountId, { ...input || {}, ownerUserId: ctx.user?.role === "company_admin" ? null : ctx.memberAccountId ?? null })),
-    history: commercialFeatureProcedure("serviceOrders").input(z3.object({ clientId: z3.number() })).query(async ({ ctx, input }) => getServiceOrderHistory(input.clientId, ctx.accountId)),
-    nextNumber: commercialFeatureProcedure("serviceOrders").query(async ({ ctx }) => getNextOrderNumber(ctx.accountId)),
-    byId: commercialFeatureProcedure("serviceOrders").input(z3.object({ id: z3.number() })).query(async ({ ctx, input }) => getServiceOrderById(input.id, ctx.accountId)),
-    create: commercialFeatureProcedure("serviceOrders").input(z3.object({ orderNumber: z3.number().optional(), orderDate: z3.string(), clientId: z3.number(), replacedAndDelivered: z3.string().default("SIM"), leftReserve: z3.string().default("N\xC3O"), reserveDetails: z3.string().optional(), extinguisherExpiration: z3.string().optional(), licenseExpiration: z3.string().optional(), totalAmount: z3.string().default("0.00"), paymentMethod: z3.string().default("A VISTA"), installmentsCount: z3.number().default(1), installmentDates: z3.string().optional(), responsibleName: z3.string().optional(), responsibleCpf: z3.string().optional(), responsibleBirthDate: z3.string().optional(), observations: z3.string().optional(), items: z3.array(z3.object({ description: z3.string().min(1), quantity: z3.number().min(1), unitPrice: z3.string(), totalPrice: z3.string(), extinguisherId: z3.number().optional() })) })).mutation(async ({ ctx, input }) => {
-      await assertServiceOrderFeature(ctx.accountId);
-      const { items, ...orderData } = input;
-      const created = await createServiceOrder({ ...orderData, accountId: ctx.accountId, createdByName: ctx.user.name || ctx.user.email || "Usu\xE1rio n\xE3o identificado", createdByUserId: ctx.memberAccountId ?? null }, items, ctx.accountId);
-      const orderId = typeof created === "object" && created !== null ? Number(created.id ?? created) : Number(created);
-      void auditFromCtx(ctx, { action: "create", module: "orders", entityType: "order", entityId: orderId || null, entityLabel: "OS", description: "Ordem de servi\xE7o criada", newData: { ...orderData, items } });
-      return created;
-    }),
-    update: commercialFeatureProcedure("serviceOrders").input(z3.object({ id: z3.number(), orderDate: z3.string(), clientId: z3.number(), replacedAndDelivered: z3.string(), leftReserve: z3.string(), reserveDetails: z3.string().optional(), extinguisherExpiration: z3.string().optional(), licenseExpiration: z3.string().optional(), totalAmount: z3.string(), paymentMethod: z3.string(), installmentsCount: z3.number(), installmentDates: z3.string().optional(), responsibleName: z3.string().optional(), responsibleCpf: z3.string().optional(), responsibleBirthDate: z3.string().optional(), observations: z3.string().optional(), items: z3.array(z3.object({ description: z3.string().min(1), quantity: z3.number().min(1), unitPrice: z3.string(), totalPrice: z3.string(), extinguisherId: z3.number().optional() })) })).mutation(async ({ ctx, input }) => {
-      const { id, items, ...orderData } = input;
-      const before = await getServiceOrderById(id, ctx.accountId);
-      if (!before) throw new TRPCError7({ code: "NOT_FOUND", message: "Ordem n\xE3o encontrada." });
-      if (ctx.user?.role !== "company_admin" && before.createdByUserId != null && before.createdByUserId !== ctx.memberAccountId) {
-        throw new TRPCError7({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode editar ordens que voc\xEA criou." });
-      }
-      await updateServiceOrder(id, { ...orderData, accountId: ctx.accountId }, items, ctx.accountId);
-      const after = await getServiceOrderById(id, ctx.accountId);
-      const diff = diffAuditData(before, after);
-      void auditFromCtx(ctx, { action: "update", module: "orders", entityType: "order", entityId: id, entityLabel: `OS #${after?.orderNumber || before?.orderNumber || id}`, description: `Ordem de servi\xE7o atualizada #${after?.orderNumber || id}`, oldData: diff.oldData, newData: diff.newData });
-      return { success: true };
-    }),
-    delete: commercialFeatureProcedure("serviceOrders").input(z3.object({ id: z3.number() })).mutation(async ({ ctx, input }) => {
-      const before = await getServiceOrderById(input.id, ctx.accountId);
-      await deleteServiceOrder(input.id, ctx.accountId);
-      void auditFromCtx(ctx, { action: "delete", module: "orders", entityType: "order", entityId: input.id, entityLabel: `OS #${before?.orderNumber || input.id}`, description: `Ordem de servi\xE7o exclu\xEDda (lixeira) #${before?.orderNumber || input.id}`, oldData: before });
-      return { success: true };
-    })
+  inventoryAlerts: protectedProcedure.input(z7.object({ daysAhead: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
+    if (!ctx.accountId) return [];
+    const days = input?.daysAhead || 30;
+    try {
+      return await getExpiringInventoryProducts(ctx.accountId, days);
+    } catch (error) {
+      console.error("[inventoryAlerts] falha ao consultar validades", error);
+      throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel consultar as validades." });
+    }
   }),
   trash: router({
-    list: companyAdminProcedure.query(({ ctx }) => listTrash(ctx.accountId)),
-    restore: companyAdminProcedure.input(z3.object({ id: z3.number().int().positive() })).mutation(async ({ ctx, input }) => {
-      await restoreTrashItem(input.id, ctx.accountId);
+    // Qualquer usuário autenticado da empresa; não-administradores só enxergam/operam o que apagaram ou é deles.
+    list: companyBillingProcedure.query(({ ctx }) => listTrash(ctx.accountId, scopeMemberId(ctx))),
+    restore: companyBillingProcedure.input(z7.object({ id: z7.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const item = await restoreTrashItem(input.id, ctx.accountId, scopeMemberId(ctx));
+      void auditFromCtx(ctx, { action: "restore", module: "trash", entityType: item.itemType, entityId: item.originalId, entityLabel: item.label, description: `Restaurou da lixeira: ${item.label}` });
       return { success: true };
     }),
-    permanentlyDelete: companyAdminProcedure.input(z3.object({ id: z3.number().int().positive() })).mutation(async ({ ctx, input }) => {
-      await permanentlyDeleteTrashItem(input.id, ctx.accountId);
+    permanentlyDelete: companyBillingProcedure.input(z7.object({ id: z7.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const item = await permanentlyDeleteTrashItem(input.id, ctx.accountId, scopeMemberId(ctx));
+      void auditFromCtx(ctx, { action: "permanent_delete", module: "trash", entityType: item.itemType, entityId: item.originalId, entityLabel: item.label, description: `Excluiu definitivamente: ${item.label}` });
       return { success: true };
     })
   }),
@@ -5168,19 +6408,6 @@ var appRouter = router({
    * Consulta pública por QR Code — sem login.
    * Dados mínimos do equipamento; isolamento por token opaco (não enumerável).
    */
-  publicExtinguisher: router({
-    byToken: publicProcedure.input(z3.object({ token: z3.string().min(10).max(32) })).query(async ({ ctx, input }) => {
-      const data = await getPublicExtinguisherByToken(input.token);
-      if (!data) throw new TRPCError7({ code: "NOT_FOUND", message: "Extintor n\xE3o encontrado." });
-      const { _internalId, _accountId, ...publicFields } = data;
-      const sameCompany = Boolean(ctx.accountId) && Number(ctx.accountId) === Number(_accountId) && ctx.user && ctx.user.role !== "platform_admin";
-      return {
-        ...publicFields,
-        canManage: sameCompany,
-        extinguisherId: sameCompany ? _internalId : void 0
-      };
-    })
-  }),
   /** Planos e assinatura da empresa (acesso mesmo com bloqueio para regularização). */
   billing: router({
     access: companyBillingProcedure.query(async ({ ctx }) => checkSubscriptionAccess(ctx.accountId)),
@@ -5196,9 +6423,9 @@ var appRouter = router({
       return { ...resolved, plan, effective };
     }),
     payments: companyBillingProcedure.query(async ({ ctx }) => listPaymentsForCompany(ctx.accountId)),
-    mockCheckout: companyAdminProcedure.input(z3.object({
-      planId: z3.number().int().positive(),
-      outcome: z3.enum(["approved", "pending", "overdue", "canceled"]).default("approved")
+    mockCheckout: companyAdminProcedure.input(z7.object({
+      planId: z7.number().int().positive(),
+      outcome: z7.enum(["approved", "pending", "overdue", "canceled"]).default("approved")
     })).mutation(async ({ ctx, input }) => {
       const result = await applyMockCheckout({ companyId: ctx.accountId, planId: input.planId, outcome: input.outcome });
       if (input.outcome === "approved" && ctx.user.email) {
@@ -5236,12 +6463,12 @@ var appRouter = router({
       }
       return result;
     }),
-    mockCheckoutOpen: companyBillingProcedure.input(z3.object({
-      planId: z3.number().int().positive(),
-      outcome: z3.enum(["approved", "pending", "overdue", "canceled"]).default("approved")
+    mockCheckoutOpen: companyBillingProcedure.input(z7.object({
+      planId: z7.number().int().positive(),
+      outcome: z7.enum(["approved", "pending", "overdue", "canceled"]).default("approved")
     })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== "company_admin") {
-        throw new TRPCError7({ code: "FORBIDDEN", message: "Somente o administrador da empresa pode assinar." });
+        throw new TRPCError12({ code: "FORBIDDEN", message: "Somente o administrador da empresa pode assinar." });
       }
       const result = await applyMockCheckout({ companyId: ctx.accountId, planId: input.planId, outcome: input.outcome });
       if (input.outcome === "approved" && ctx.user.email) {
@@ -5279,27 +6506,50 @@ var appRouter = router({
     })
   }),
   products: router({
-    list: companyBillingProcedure.input(z3.object({ search: z3.string().optional(), expiry: z3.enum(["all", "expired", "near"]).optional() }).optional()).query(({ ctx, input }) => listInventoryProducts(ctx.accountId, input?.search, input?.expiry)),
-    create: companyBillingProcedure.input(z3.object({ productCode: z3.string().trim().min(1).max(64), description: z3.string().trim().min(1).max(500), quantity: z3.number().int().min(0).max(2147483647), expirationDate: z3.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z3.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(async ({ ctx, input }) => {
-      const product = await createInventoryProduct({ ...input, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate, price: input.price });
+    alertsSimple: protectedProcedure.input(z7.object({ daysAhead: z7.number().optional() }).optional()).query(async ({ ctx, input }) => {
+      if (!ctx.accountId) return [];
+      const days = input?.daysAhead || 30;
+      try {
+        return await getExpiringInventoryProducts(ctx.accountId, days);
+      } catch {
+        return [];
+      }
+    }),
+    /** Descobre a descrição pelo código de barras: 1º produtos já cadastrados pela empresa, 2º bases abertas (e Cosmos, se houver token). */
+    lookupByCode: companyBillingProcedure.input(z7.object({ code: z7.string().trim().min(6).max(64) })).query(async ({ ctx, input }) => {
+      const { lookupProductByCode: lookupProductByCode2 } = await Promise.resolve().then(() => (init_productLookup(), productLookup_exports));
+      return lookupProductByCode2(ctx.accountId, input.code);
+    }),
+    list: companyBillingProcedure.input(z7.object({
+      search: z7.string().max(100).optional(),
+      expiry: z7.enum(["all", "expired", "near", "valid"]).optional(),
+      storeId: z7.number().int().positive().optional(),
+      from: z7.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z7.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    }).optional()).query(({ ctx, input }) => listInventoryProducts(ctx.accountId, input ?? {})),
+    create: companyBillingProcedure.input(productInput).mutation(async ({ ctx, input }) => {
+      const storeId = await assertStoreInCompany(ctx, input.storeId);
+      const product = await createInventoryProduct({ ...input, storeId, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate, price: input.price });
       void auditFromCtx(ctx, { action: "create", module: "products", entityType: "product", entityId: product?.id, entityLabel: input.description, description: `Cadastrou produto: ${input.description}`, newData: input });
       return product;
     }),
-    update: companyBillingProcedure.input(z3.object({ id: z3.number().int().positive(), productCode: z3.string().trim().min(1).max(64), description: z3.string().trim().min(1).max(500), quantity: z3.number().int().min(0).max(2147483647), expirationDate: z3.string().regex(/^\d{4}-\d{2}-\d{2}$/), price: z3.string().regex(/^\d{1,10}(\.\d{1,2})?$/) })).mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
-      const before = (await listInventoryProducts(ctx.accountId)).find((row2) => row2.id === id);
-      const product = await updateInventoryProduct(ctx.accountId, id, { ...data, expirationDate: data.expirationDate });
-      if (product) void auditFromCtx(ctx, { action: "update", module: "products", entityType: "product", entityId: id, entityLabel: product.description, description: `Alterou produto: ${product.description}`, oldData: before, newData: product });
+    update: companyBillingProcedure.input(productInput.extend({ id: z7.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const { id: id2, ...data } = input;
+      const before = await getInventoryProduct(ctx.accountId, id2);
+      if (!before) throw new TRPCError12({ code: "NOT_FOUND", message: "Produto n\xE3o encontrado." });
+      const storeId = await assertStoreInCompany(ctx, data.storeId);
+      const product = await updateInventoryProduct(ctx.accountId, id2, { ...data, storeId, expirationDate: data.expirationDate });
+      if (product) void auditFromCtx(ctx, { action: "update", module: "products", entityType: "product", entityId: id2, entityLabel: product.description, description: `Alterou produto: ${product.description}`, oldData: before, newData: product });
       return product;
     }),
-    delete: companyBillingProcedure.input(z3.object({ id: z3.number().int().positive() })).mutation(async ({ ctx, input }) => {
-      const before = (await listInventoryProducts(ctx.accountId)).find((row2) => row2.id === input.id);
-      const result = await deleteInventoryProduct(ctx.accountId, input.id);
+    delete: companyBillingProcedure.input(z7.object({ id: z7.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const before = await getInventoryProduct(ctx.accountId, input.id);
+      const result = await deleteInventoryProduct(ctx.accountId, input.id, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
       if (before) void auditFromCtx(ctx, { action: "delete", module: "products", entityType: "product", entityId: input.id, entityLabel: before.description, description: `Enviou produto \xE0 lixeira: ${before.description}`, oldData: before });
       return result;
     }),
-    deleteMany: companyBillingProcedure.input(z3.object({ ids: z3.array(z3.number().int().positive()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
-      const result = await deleteInventoryProducts(ctx.accountId, input.ids);
+    deleteMany: companyBillingProcedure.input(z7.object({ ids: z7.array(z7.number().int().positive()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
+      const result = await deleteInventoryProducts(ctx.accountId, input.ids, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
       void auditFromCtx(ctx, { action: "delete", module: "products", entityType: "product_bulk", entityLabel: `${result.deleted} produtos`, description: `Enviou ${result.deleted} produto(s) \xE0 lixeira`, newData: { productIds: input.ids, count: result.deleted } });
       return result;
     })
@@ -5307,75 +6557,92 @@ var appRouter = router({
   operations: router({
     promoters: router({
       list: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError7({ code: "FORBIDDEN", message: "Promotores n\xE3o podem consultar a lista da equipe." });
-        return (await listMemberAccounts(ctx.accountId)).filter((member) => member.role === "promoter" && member.active).map(({ id, userName, role, active }) => ({ id, userName, role, active }));
+        if (ctx.user.role === "promoter") throw new TRPCError12({ code: "FORBIDDEN", message: "Promotores n\xE3o podem consultar a lista da equipe." });
+        return (await listMemberAccounts(ctx.accountId)).filter((member) => member.role === "promoter" && member.active).map(({ id: id2, userName, role, active }) => ({ id: id2, userName, role, active }));
       })
     }),
     stores: router({
-      list: commercialFeatureProcedure("fieldOperations").input(z3.object({ search: z3.string().optional() }).optional()).query(({ ctx, input }) => listOperationalStores(ctx.accountId, input?.search)),
-      create: commercialFeatureProcedure("fieldOperations").input(z3.object({ name: z3.string().min(2), city: z3.string().min(2), address: z3.string().optional(), state: z3.string().length(2).optional(), cep: z3.string().optional(), code: z3.string().optional(), latitude: z3.number().optional(), longitude: z3.number().optional(), notes: z3.string().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError7({ code: "FORBIDDEN", message: "Promotores n\xE3o podem cadastrar lojas." });
-        return createOperationalStore({ ...input, companyId: ctx.accountId, active: true });
+      list: commercialFeatureProcedure("fieldOperations").input(z7.object({ search: z7.string().optional() }).optional()).query(({ ctx, input }) => listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
+      create: commercialFeatureProcedure("fieldOperations").input(z7.object({ name: z7.string().min(2), city: z7.string().min(2), address: z7.string().optional(), state: z7.string().length(2).optional(), cep: z7.string().optional(), code: z7.string().optional(), latitude: z7.number().optional(), longitude: z7.number().optional(), notes: z7.string().optional() })).mutation(async ({ ctx, input }) => {
+        if (ctx.user.role === "promoter") throw new TRPCError12({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
+        return createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
       })
     }),
     routes: router({
-      list: commercialFeatureProcedure("fieldOperations").input(z3.object({ date: z3.string().optional(), promoterId: z3.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
+      list: commercialFeatureProcedure("fieldOperations").input(z7.object({ date: z7.string().optional(), promoterId: z7.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
         const date3 = input?.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-        if (ctx.user.role === "promoter") await materializeWeeklyRoutes(ctx.accountId, ctx.memberAccountId, date3);
-        return listOperationalRoutes(ctx.accountId, { date: input?.date, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId });
+        const ownerId = scopeMemberId(ctx);
+        if (ownerId !== null) {
+          await materializeWeeklyRoutes(ctx.accountId, ownerId, date3);
+        } else {
+          const members = await listMemberAccounts(ctx.accountId);
+          const promoters = members.filter((m) => m.role === "promoter" && m.active);
+          for (const p of promoters) {
+            await materializeWeeklyRoutes(ctx.accountId, p.id, date3);
+          }
+        }
+        const filterDate = ownerId === null && !input?.date ? void 0 : input?.date || date3;
+        return listOperationalRoutes(ctx.accountId, { date: filterDate, promoterId: ownerId ?? input?.promoterId });
       }),
       weekly: commercialFeatureProcedure("fieldOperations").query(({ ctx }) => listWeeklyRouteSchedules(ctx.accountId)),
-      saveWeekly: companyAdminProcedure.input(z3.object({ name: z3.string().min(2).max(255), weekday: z3.number().int().min(0).max(6), promoterId: z3.number().int().positive(), storeIds: z3.array(z3.number().int().positive()).min(1) })).mutation(async ({ ctx, input }) => {
+      saveWeekly: companyAdminProcedure.input(z7.object({ name: z7.string().min(2).max(255), weekday: z7.number().int().min(0).max(6), promoterId: z7.number().int().positive(), storeIds: z7.array(z7.number().int().positive()).min(1) })).mutation(async ({ ctx, input }) => {
         const members = await listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
-        if (!promoter) throw new TRPCError7({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        if (!promoter) throw new TRPCError12({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         return saveWeeklyRouteSchedule({ ...input, companyId: ctx.accountId });
       }),
-      create: commercialFeatureProcedure("fieldOperations").input(z3.object({ name: z3.string().min(2), date: z3.string().min(8), promoterId: z3.number().int().positive(), storeIds: z3.array(z3.number().int().positive()).min(1), teamId: z3.number().int().positive().optional(), notes: z3.string().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError7({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
+      create: commercialFeatureProcedure("fieldOperations").input(z7.object({ name: z7.string().min(2), date: z7.string().min(8), promoterId: z7.number().int().positive(), storeIds: z7.array(z7.number().int().positive()).min(1), teamId: z7.number().int().positive().optional(), notes: z7.string().optional() })).mutation(async ({ ctx, input }) => {
+        if (ctx.user.role === "promoter") throw new TRPCError12({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
         const members = await listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
-        if (!promoter) throw new TRPCError7({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        if (!promoter) throw new TRPCError12({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         const { storeIds, ...route } = input;
         return createOperationalRouteWithVisits({ route: { ...route, date: /* @__PURE__ */ new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" }, storeIds });
+      }),
+      update: companyAdminProcedure.input(z7.object({ id: z7.number().int().positive(), name: z7.string().optional(), promoterId: z7.number().int().positive().optional(), date: z7.string().optional(), storeIds: z7.array(z7.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
+        const { id: id2, ...data } = input;
+        return updateOperationalRoute(ctx.accountId, id2, data);
+      }),
+      delete: companyAdminProcedure.input(z7.object({ id: z7.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        return deleteOperationalRoute(ctx.accountId, input.id);
       })
     }),
     visits: router({
-      today: commercialFeatureProcedure("fieldOperations").input(z3.object({ date: z3.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional()).query(async ({ ctx, input }) => {
+      today: commercialFeatureProcedure("fieldOperations").input(z7.object({ date: z7.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional()).query(async ({ ctx, input }) => {
         const date3 = input?.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-        const promoterId = ctx.user.role === "promoter" ? ctx.memberAccountId : void 0;
+        const promoterId = scopeMemberId(ctx) ?? void 0;
         if (promoterId) await materializeWeeklyRoutes(ctx.accountId, promoterId, date3);
         return listOperationalVisits(ctx.accountId, { date: date3, promoterId: promoterId ?? void 0 });
       }),
-      list: commercialFeatureProcedure("fieldOperations").input(z3.object({ date: z3.string().optional(), routeId: z3.number().int().positive().optional(), promoterId: z3.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : input?.promoterId })),
-      start: commercialFeatureProcedure("fieldOperations").input(z3.object({ id: z3.number().int().positive(), latitude: z3.number().optional(), longitude: z3.number().optional(), accuracy: z3.number().optional() })).mutation(async ({ ctx, input }) => {
-        const visit = await listOperationalVisits(ctx.accountId, { promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : void 0 });
+      list: commercialFeatureProcedure("fieldOperations").input(z7.object({ date: z7.string().optional(), routeId: z7.number().int().positive().optional(), promoterId: z7.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
+      start: commercialFeatureProcedure("fieldOperations").input(z7.object({ id: z7.number().int().positive(), latitude: z7.number().optional(), longitude: z7.number().optional(), accuracy: z7.number().optional() })).mutation(async ({ ctx, input }) => {
+        const visit = await listOperationalVisits(ctx.accountId, { promoterId: scopeMemberId(ctx) ?? void 0 });
         const owned = visit.find((row2) => row2.visit.id === input.id);
-        if (!owned) throw new TRPCError7({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
-        if (ctx.user.role === "promoter" && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError7({ code: "FORBIDDEN", message: "Visita n\xE3o pertence ao promotor autenticado." });
+        if (!owned) throw new TRPCError12({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        if (scopeMemberId(ctx) !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError12({ code: "FORBIDDEN", message: "Visita n\xE3o pertence ao promotor autenticado." });
         return updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: /* @__PURE__ */ new Date(), startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
       }),
-      complete: commercialFeatureProcedure("fieldOperations").input(z3.object({ id: z3.number().int().positive(), latitude: z3.number().optional(), longitude: z3.number().optional(), accuracy: z3.number().optional(), notes: z3.string().optional() })).mutation(async ({ ctx, input }) => {
-        const visit = await listOperationalVisits(ctx.accountId, { promoterId: ctx.user.role === "promoter" ? ctx.memberAccountId : void 0 });
+      complete: commercialFeatureProcedure("fieldOperations").input(z7.object({ id: z7.number().int().positive(), latitude: z7.number().optional(), longitude: z7.number().optional(), accuracy: z7.number().optional(), notes: z7.string().optional() })).mutation(async ({ ctx, input }) => {
+        const visit = await listOperationalVisits(ctx.accountId, { promoterId: scopeMemberId(ctx) ?? void 0 });
         const owned = visit.find((row2) => row2.visit.id === input.id);
-        if (!owned) throw new TRPCError7({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        if (!owned) throw new TRPCError12({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
         return updateOperationalVisit(ctx.accountId, input.id, { status: "completed", actualEnd: /* @__PURE__ */ new Date(), endLatitude: input.latitude, endLongitude: input.longitude, endAccuracy: input.accuracy, notes: input.notes });
       })
     })
   }),
   audit: router({
     promoters: companyAdminFeatureProcedure("reports").query(
-      async ({ ctx }) => (await listMemberAccounts(ctx.accountId)).filter((member) => member.role === "promoter").map(({ id, userName, email, active }) => ({ id, userName, email, active }))
+      async ({ ctx }) => (await listMemberAccounts(ctx.accountId)).filter((member) => member.role === "promoter").map(({ id: id2, userName, email, active }) => ({ id: id2, userName, email, active }))
     ),
-    reverseGeocodePoint: companyAdminFeatureProcedure("reports").input(z3.object({ latitude: z3.number().min(-90).max(90), longitude: z3.number().min(-180).max(180) })).mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
-    promoterActivity: companyAdminFeatureProcedure("reports").input(z3.object({
-      page: z3.number().int().positive().optional(),
-      pageSize: z3.number().int().positive().max(100).optional(),
-      from: z3.string().optional(),
-      to: z3.string().optional(),
-      promoterId: z3.number().int().positive().optional(),
-      category: z3.string().optional(),
-      search: z3.string().optional()
+    reverseGeocodePoint: companyAdminFeatureProcedure("reports").input(z7.object({ latitude: z7.number().min(-90).max(90), longitude: z7.number().min(-180).max(180) })).mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
+    promoterActivity: companyAdminFeatureProcedure("reports").input(z7.object({
+      page: z7.number().int().positive().optional(),
+      pageSize: z7.number().int().positive().max(100).optional(),
+      from: z7.string().optional(),
+      to: z7.string().optional(),
+      promoterId: z7.number().int().positive().optional(),
+      category: z7.string().optional(),
+      search: z7.string().optional()
     }).optional()).query(({ ctx, input }) => listPromoterActivities({
       companyId: ctx.accountId,
       page: input?.page,
@@ -5386,12 +6653,12 @@ var appRouter = router({
       category: input?.category,
       search: input?.search
     })),
-    promoterActivityExportCsv: companyAdminFeatureProcedure("reports").input(z3.object({
-      from: z3.string().optional(),
-      to: z3.string().optional(),
-      promoterId: z3.number().int().positive().optional(),
-      category: z3.string().optional(),
-      search: z3.string().optional()
+    promoterActivityExportCsv: companyAdminFeatureProcedure("reports").input(z7.object({
+      from: z7.string().optional(),
+      to: z7.string().optional(),
+      promoterId: z7.number().int().positive().optional(),
+      category: z7.string().optional(),
+      search: z7.string().optional()
     }).optional()).mutation(async ({ ctx, input }) => {
       const result = await listPromoterActivities({ companyId: ctx.accountId, page: 1, pageSize: 1e4, ...input });
       const headers = ["Data/hora", "Promotor", "E-mail", "Atividade", "\xC1rea", "Registro", "Descri\xE7\xE3o", "Detalhes"];
@@ -5400,17 +6667,17 @@ var appRouter = router({
       const csv = `\uFEFF${[headers, ...values].map((line) => line.map(cell).join(";")).join("\r\n")}`;
       return { csv, contentType: "text/csv; charset=utf-8", filename: `atividades-promotores-${ctx.accountId}.csv` };
     }),
-    list: companyAdminFeatureProcedure("reports").input(z3.object({
-      page: z3.number().int().positive().optional(),
-      pageSize: z3.number().int().positive().max(100).optional(),
-      from: z3.string().optional(),
-      to: z3.string().optional(),
-      userId: z3.number().int().positive().optional(),
-      module: z3.string().optional(),
-      action: z3.string().optional(),
-      entityType: z3.string().optional(),
-      entityId: z3.number().int().positive().optional(),
-      search: z3.string().optional()
+    list: companyAdminFeatureProcedure("reports").input(z7.object({
+      page: z7.number().int().positive().optional(),
+      pageSize: z7.number().int().positive().max(100).optional(),
+      from: z7.string().optional(),
+      to: z7.string().optional(),
+      userId: z7.number().int().positive().optional(),
+      module: z7.string().optional(),
+      action: z7.string().optional(),
+      entityType: z7.string().optional(),
+      entityId: z7.number().int().positive().optional(),
+      search: z7.string().optional()
     }).optional()).query(async ({ ctx, input }) => {
       return listAuditLogs({
         companyId: ctx.accountId,
@@ -5427,16 +6694,16 @@ var appRouter = router({
         search: input?.search
       });
     }),
-    byId: companyAdminFeatureProcedure("reports").input(z3.object({ id: z3.number().int().positive() })).query(async ({ ctx, input }) => {
+    byId: companyAdminFeatureProcedure("reports").input(z7.object({ id: z7.number().int().positive() })).query(async ({ ctx, input }) => {
       const row2 = await getAuditLogById(input.id, ctx.accountId);
-      if (!row2) throw new TRPCError7({ code: "NOT_FOUND", message: "Registro de auditoria n\xE3o encontrado." });
+      if (!row2) throw new TRPCError12({ code: "NOT_FOUND", message: "Registro de auditoria n\xE3o encontrado." });
       return row2;
     }),
-    entityHistory: commercialFeatureProcedure("reports").input(z3.object({
-      entityType: z3.string().min(1),
-      entityId: z3.number().int().positive(),
-      page: z3.number().int().positive().optional(),
-      pageSize: z3.number().int().positive().max(100).optional()
+    entityHistory: commercialFeatureProcedure("reports").input(z7.object({
+      entityType: z7.string().min(1),
+      entityId: z7.number().int().positive(),
+      page: z7.number().int().positive().optional(),
+      pageSize: z7.number().int().positive().max(100).optional()
     })).query(async ({ ctx, input }) => listEntityAuditHistory({
       companyId: ctx.accountId,
       entityType: input.entityType,
@@ -5444,15 +6711,15 @@ var appRouter = router({
       page: input.page,
       pageSize: input.pageSize
     })),
-    exportCsv: companyAdminFeatureProcedure("reports").input(z3.object({
-      from: z3.string().optional(),
-      to: z3.string().optional(),
-      userId: z3.number().int().positive().optional(),
-      module: z3.string().optional(),
-      action: z3.string().optional(),
-      entityType: z3.string().optional(),
-      entityId: z3.number().int().positive().optional(),
-      search: z3.string().optional()
+    exportCsv: companyAdminFeatureProcedure("reports").input(z7.object({
+      from: z7.string().optional(),
+      to: z7.string().optional(),
+      userId: z7.number().int().positive().optional(),
+      module: z7.string().optional(),
+      action: z7.string().optional(),
+      entityType: z7.string().optional(),
+      entityId: z7.number().int().positive().optional(),
+      search: z7.string().optional()
     }).optional()).mutation(async ({ ctx, input }) => {
       const csv = await exportAuditLogsCsv({
         companyId: ctx.accountId,
@@ -5468,15 +6735,15 @@ var appRouter = router({
       });
       return { csv, contentType: "text/csv; charset=utf-8", filename: `auditoria-${ctx.accountId}.csv` };
     }),
-    platformList: platformProcedure.input(z3.object({
-      companyId: z3.number().int().positive().optional(),
-      page: z3.number().int().positive().optional(),
-      pageSize: z3.number().int().positive().max(100).optional(),
-      from: z3.string().optional(),
-      to: z3.string().optional(),
-      module: z3.string().optional(),
-      action: z3.string().optional(),
-      search: z3.string().optional()
+    platformList: platformProcedure.input(z7.object({
+      companyId: z7.number().int().positive().optional(),
+      page: z7.number().int().positive().optional(),
+      pageSize: z7.number().int().positive().max(100).optional(),
+      from: z7.string().optional(),
+      to: z7.string().optional(),
+      module: z7.string().optional(),
+      action: z7.string().optional(),
+      search: z7.string().optional()
     }).optional()).query(async ({ input }) => listAuditLogs({
       companyId: input?.companyId,
       page: input?.page,
@@ -5494,6 +6761,7 @@ var appRouter = router({
 });
 
 // server/_core/context.ts
+init_const();
 import { parse as parseCookie2 } from "cookie";
 async function createContext(opts) {
   let user = null;
@@ -5502,8 +6770,14 @@ async function createContext(opts) {
   let platformAdminId;
   let isMember = false;
   let isPlatformAdmin = false;
+  let actingAsPlatform = false;
   const cookies = parseCookie2(opts.req.headers.cookie ?? "");
-  const sessionToken = cookies[MEMBER_COOKIE_NAME] ?? "";
+  const headerToken = String(opts.req.headers["x-session-token"] || opts.req.headers["authorization"]?.toString().replace(/^Bearer\s+/i, "") || "").trim();
+  const queryToken = String(opts.req.query?.token || "").trim();
+  const sessionToken = cookies[MEMBER_COOKIE_NAME] || headerToken || queryToken || "";
+  if (!sessionToken) {
+    console.log("[auth] no session token received", { hasCookie: Boolean(cookies[MEMBER_COOKIE_NAME]), hasHeader: Boolean(headerToken), hasQuery: Boolean(queryToken) });
+  }
   if (sessionToken) {
     const platformAdmin = await getPlatformAdminBySessionToken(sessionToken);
     if (platformAdmin) {
@@ -5520,6 +6794,16 @@ async function createContext(opts) {
         updatedAt: platformAdmin.updatedAt,
         lastSignedIn: platformAdmin.createdAt
       };
+      const actAs = Number(opts.req.headers["x-act-as-company"]);
+      if (Number.isInteger(actAs) && actAs > 0) {
+        const { getCompanyById: getCompanyById2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+        const company = await getCompanyById2(actAs);
+        if (company) {
+          actingAsPlatform = true;
+          accountId = company.id;
+          user = { ...user, name: `${platformAdmin.userName} (administrador da plataforma)`, role: "company_admin", companyId: company.id };
+        }
+      }
     } else {
       const memberAccount = await getMemberBySessionToken(sessionToken);
       if (memberAccount) {
@@ -5541,169 +6825,149 @@ async function createContext(opts) {
       }
     }
   }
-  return { req: opts.req, res: opts.res, user, accountId, memberAccountId, platformAdminId, isMember, isPlatformAdmin };
+  return { req: opts.req, res: opts.res, user, accountId, memberAccountId, platformAdminId, isMember, isPlatformAdmin, actingAsPlatform };
 }
 
 // server/scheduledMaintenance.ts
-import crypto2 from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import mysql2 from "mysql2/promise";
-
-// server/storage.ts
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import crypto from "node:crypto";
-function normalizeKey(relKey) {
-  return relKey.replace(/^\/+/, "");
-}
-function appendHashSuffix(relKey) {
-  const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
-  const lastDot = relKey.lastIndexOf(".");
-  if (lastDot === -1) return `${relKey}_${hash}`;
-  return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
-}
-function getS3Client() {
-  const bucket = process.env.S3_BUCKET;
-  const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-  if (!bucket || !accessKeyId || !secretAccessKey) return null;
-  const client = new S3Client({
-    region: process.env.S3_REGION || "us-east-1",
-    endpoint: process.env.S3_ENDPOINT || void 0,
-    forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
-    credentials: { accessKeyId, secretAccessKey }
-  });
-  return { bucket, client, publicBaseUrl: process.env.S3_PUBLIC_BASE_URL?.replace(/\/+$/, "") };
-}
-async function storagePut(relKey, data, contentType = "application/octet-stream") {
-  const key = appendHashSuffix(normalizeKey(relKey));
-  const s3 = getS3Client();
-  if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
-  const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
-  await s3.client.send(new PutObjectCommand({ Bucket: s3.bucket, Key: key, Body: body, ContentType: contentType }));
-  const url = s3.publicBaseUrl ? `${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}` : await getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
-  return { key, url };
-}
-
-// server/scheduledMaintenance.ts
-function backupDirectory() {
-  return process.env.BACKUP_DIR || "/tmp/gestao-extintores-backups/daily";
-}
-async function pruneBackups(directory, retentionDays) {
-  const cutoff = Date.now() - retentionDays * 864e5;
-  let removed = 0;
-  try {
-    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      if (!entry.isFile() || !/^extintores-.*\.json$/.test(entry.name)) continue;
-      const file = path.join(directory, entry.name);
-      if ((await fs.stat(file)).mtimeMs < cutoff) {
-        await fs.rm(file);
-        await fs.rm(`${file}.sha256`, { force: true });
-        removed += 1;
-      }
-    }
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-  }
-  return removed;
-}
 async function runScheduledMaintenance() {
   const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!url) throw new Error("Database URL is not configured.");
-  const directory = backupDirectory();
-  const retentionDays = Math.max(1, Number(process.env.BACKUP_RETENTION_DAYS || 14));
   const connection = await mysql2.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 1e4 });
   try {
-    await fs.mkdir(directory, { recursive: true, mode: 448 });
-    const [tableRows] = await connection.query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
-    const tableNames = tableRows.map((row2) => Object.values(row2)[0]).filter((name) => name !== "__drizzle_migrations");
-    const tables = [];
-    for (const tableName of tableNames) {
-      const [[definition]] = await connection.query(`SHOW CREATE TABLE \`${tableName}\``);
-      const [rows] = await connection.query(`SELECT * FROM \`${tableName}\``);
-      tables.push({ name: tableName, createSql: definition["Create Table"], rows });
-    }
-    const backup = { format: 1, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), database: "mysql-compatible", schemaOnly: false, tables };
-    const serialized = JSON.stringify(backup, null, 2);
-    const file = path.join(directory, `extintores-${(/* @__PURE__ */ new Date()).toISOString().replaceAll(/[:.]/g, "-")}.json`);
-    await fs.writeFile(file, serialized, { mode: 384 });
-    const checksum = crypto2.createHash("sha256").update(serialized).digest("hex");
-    await fs.writeFile(`${file}.sha256`, `${checksum}  ${path.basename(file)}
-`, { mode: 384 });
-    const objectPrefix = `backups/database/${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}`;
-    const stored = await storagePut(`${objectPrefix}/${path.basename(file)}`, serialized, "application/json");
-    await storagePut(`${objectPrefix}/${path.basename(file)}.sha256`, `${checksum}  ${path.basename(file)}
-`, "text/plain");
+    await connection.query(`CREATE TABLE IF NOT EXISTS visit_photos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      companyId INT NOT NULL,
+      visitId INT NOT NULL,
+      type ENUM('checkin', 'checkout') NOT NULL,
+      fileKey VARCHAR(512) NOT NULL,
+      latitude DOUBLE,
+      longitude DOUBLE,
+      address VARCHAR(255),
+      expiresAt TIMESTAMP NOT NULL,
+      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    const { runBackupStep: runBackupStep2 } = await Promise.resolve().then(() => (init_backup(), backup_exports));
+    const backup = await runBackupStep2(connection, { budgetMs: Number(process.env.BACKUP_BUDGET_MS || 18e3) });
     const [trash] = await connection.query("DELETE FROM trash_items WHERE expiresAt <= UTC_TIMESTAMP()");
+    const [visitPhotos2] = await connection.query("DELETE FROM visit_photos WHERE expiresAt <= UTC_TIMESTAMP()");
     const [memberSessions3] = await connection.query("DELETE FROM member_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
     const [platformSessions3] = await connection.query("DELETE FROM platform_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
-    const removed = await pruneBackups(directory, retentionDays);
-    return { file, storageKey: stored.key, tables: tables.length, checksum, removed, cleaned: { trash: trash.affectedRows, memberSessions: memberSessions3.affectedRows, platformSessions: platformSessions3.affectedRows } };
+    await connection.query("DELETE FROM backup_progress WHERE day < DATE_FORMAT(DATE_SUB(UTC_DATE(), INTERVAL 30 DAY), '%Y-%m-%d')");
+    const retention = await purgeOldAuditLogs(connection);
+    let expiredPhotos = { deleted: 0, errors: 0 };
+    try {
+      const { expireOldStorePhotos: expireOldStorePhotos2 } = await Promise.resolve().then(() => (init_storePhotos(), storePhotos_exports));
+      expiredPhotos = await expireOldStorePhotos2();
+    } catch (e) {
+      console.warn("[maintenance] expire photos failed", e);
+    }
+    return { backup, cleaned: { trash: trash.affectedRows, visitPhotos: visitPhotos2.affectedRows, memberSessions: memberSessions3.affectedRows, platformSessions: platformSessions3.affectedRows, ...retention }, expiredPhotos };
   } finally {
     await connection.end();
   }
 }
-async function runExpirationEmailAlerts(daysAhead = 30) {
-  const { getDb: getDb3 } = await Promise.resolve().then(() => (init_db(), db_exports));
-  const dbmod = await Promise.resolve().then(() => (init_db(), db_exports));
-  const emailService = await Promise.resolve().then(() => (init_email(), email_exports));
-  const schema = await Promise.resolve().then(() => (init_schema(), schema_exports));
-  const { eq: eq5, and: and4 } = await import("drizzle-orm");
-  const database = await getDb3();
-  if (!database) return { companies: 0, emails: 0 };
-  const companies3 = await database.select({ id: schema.companies.id, name: schema.companies.name }).from(schema.companies).where(eq5(schema.companies.active, true));
-  let emails = 0;
-  for (const company of companies3) {
-    const productAlerts = await dbmod.getExpiringInventoryProducts(company.id, 30);
-    const productAdmins = await database.select({ email: schema.memberAccounts.email, userName: schema.memberAccounts.userName }).from(schema.memberAccounts).where(and4(eq5(schema.memberAccounts.companyId, company.id), eq5(schema.memberAccounts.active, true), eq5(schema.memberAccounts.role, "company_admin")));
-    if (productAlerts.length && productAdmins.length) {
-      const productItems = productAlerts.map((product) => ({
-        productCode: product.productCode,
-        description: product.description,
-        quantity: product.quantity,
-        expirationDate: new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(/* @__PURE__ */ new Date(`${product.expirationDate instanceof Date ? product.expirationDate.toISOString().slice(0, 10) : String(product.expirationDate).slice(0, 10)}T00:00:00Z`)),
-        price: product.price
-      }));
-      for (const admin of productAdmins) {
-        if (!admin.email) continue;
-        const result = await emailService.emailProductExpirationAlerts({ to: admin.email, companyName: company.name, userName: admin.userName || admin.email, items: productItems });
-        if (result.ok) emails += 1;
-      }
+async function purgeOldAuditLogs(connection) {
+  const general = Math.max(90, Number(process.env.AUDIT_RETENTION_DAYS || 730));
+  const timeDays = Math.max(general, Number(process.env.AUDIT_RETENTION_TIME_DAYS || 1825));
+  let auditLogs3 = 0;
+  try {
+    for (let i = 0; i < 10; i++) {
+      const [r] = await connection.query(
+        `DELETE FROM audit_logs WHERE (module <> 'time_tracking' AND createdAt < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)) OR (module = 'time_tracking' AND createdAt < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)) LIMIT 5000`,
+        [general, timeDays]
+      );
+      auditLogs3 += r.affectedRows || 0;
+      if ((r.affectedRows || 0) < 5e3) break;
     }
-    const alerts = await dbmod.getExpiringExtinguishers(daysAhead, company.id);
-    const actionable = alerts.filter((a) => a.alertStatus === "expired" || a.alertStatus === "urgent" || a.alertStatus === "warning");
-    if (!actionable.length) continue;
-    const admins = await database.select({
-      email: schema.memberAccounts.email,
-      userName: schema.memberAccounts.userName
-    }).from(schema.memberAccounts).where(
-      and4(
-        eq5(schema.memberAccounts.companyId, company.id),
-        eq5(schema.memberAccounts.active, true),
-        eq5(schema.memberAccounts.role, "company_admin")
-      )
-    );
-    if (!admins.length) continue;
-    const items = actionable.map((a) => ({
-      clientName: a.client?.companyName || "Cliente",
-      type: a.extinguisher?.type || a.extinguisher?.extinguisherType || void 0,
-      capacity: a.extinguisher?.capacity || void 0,
-      expirationDate: String(a.extinguisher?.expirationDate || ""),
-      alertMessage: a.alertMessage || ""
-    }));
-    for (const admin of admins) {
-      if (!admin.email) continue;
-      const res = await emailService.emailExtinguisherAlerts({
-        to: admin.email,
-        companyName: company.name,
-        userName: admin.userName || admin.email,
-        items
-      });
-      if (res.ok) emails += 1;
+  } catch (e) {
+    if (e?.code !== "ER_NO_SUCH_TABLE") throw e;
+  }
+  return { auditLogs: auditLogs3 };
+}
+async function runMissingPunchAlerts() {
+  const { findMissingPunches: findMissingPunches2 } = await Promise.resolve().then(() => (init_missingPunch(), missingPunch_exports));
+  const dbm = await Promise.resolve().then(() => (init_db(), db_exports));
+  const database2 = await dbm.getDb();
+  if (!database2) return { found: 0, notified: 0 };
+  const { and: and9, eq: eq10 } = await import("drizzle-orm");
+  const { memberAccounts: memberAccounts3 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
+  const { sendEmail: sendEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
+  const missing = await findMissingPunches2();
+  let notified = 0;
+  for (const m of missing) {
+    const key = `missing_punch_notified:${m.memberId}:${m.day}`;
+    if (await dbm.getSetting(key, m.companyId, "")) continue;
+    const when = new Date(m.lastTime).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
+    const detail = `\xDAltima marca\xE7\xE3o: ${m.lastLabel} em ${when}. Falta registrar: ${m.missing}.`;
+    try {
+      if (m.email) {
+        await sendEmail2({ to: m.email, subject: "Falta de batida no cart\xE3o ponto", text: `${detail} Abra o app, v\xE1 em Cart\xE3o ponto > Corre\xE7\xF5es de ponto e solicite a corre\xE7\xE3o com a justificativa.`, html: `<p>${detail}</p><p>Abra o app, v\xE1 em <b>Cart\xE3o ponto &gt; Corre\xE7\xF5es de ponto</b> e solicite a corre\xE7\xE3o com a justificativa.</p>` });
+        notified += 1;
+      }
+      const admins = await database2.select({ email: memberAccounts3.email }).from(memberAccounts3).where(and9(eq10(memberAccounts3.companyId, m.companyId), eq10(memberAccounts3.role, "company_admin"), eq10(memberAccounts3.active, true)));
+      for (const admin of admins) {
+        if (!admin.email) continue;
+        await sendEmail2({ to: admin.email, subject: `Falta de batida: ${m.name}`, text: `${m.name}: ${detail}`, html: `<p><b>${m.name}</b>: ${detail}</p><p>O promotor foi avisado para solicitar a corre\xE7\xE3o; voc\xEA poder\xE1 analis\xE1-la em Cart\xE3o-ponto.</p>` });
+        notified += 1;
+      }
+      await dbm.setSetting(key, (/* @__PURE__ */ new Date()).toISOString(), m.companyId);
+    } catch (error) {
+      console.warn("[missing-punch] falha ao enviar aviso", error);
     }
   }
-  return { companies: companies3.length, emails };
+  return { found: missing.length, notified };
+}
+async function runPhotoMaintenance() {
+  const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
+  if (!url) return { deleted: 0, alerted: 0 };
+  const connection = await mysql2.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 1e4 });
+  let deleted = 0;
+  let alerted = 0;
+  const PHOTO_LIMIT = Number(process.env.PHOTO_STORAGE_ALERT_COUNT || 5e3);
+  try {
+    const [expired] = await connection.query(
+      `SELECT id, fileKey, thumbnailKey FROM store_photos WHERE expiresAt <= UTC_TIMESTAMP() LIMIT 200`
+    );
+    const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+    for (const photo of expired || []) {
+      try {
+        if (photo.fileKey) await storageDelete2(photo.fileKey);
+        if (photo.thumbnailKey) await storageDelete2(photo.thumbnailKey);
+      } catch {
+      }
+      await connection.query(`DELETE FROM store_photos WHERE id = ?`, [photo.id]);
+      deleted += 1;
+    }
+    const [counts] = await connection.query(
+      `SELECT companyId, COUNT(*) AS total FROM store_photos GROUP BY companyId HAVING total >= ?`,
+      [PHOTO_LIMIT]
+    );
+    for (const row2 of counts || []) {
+      const [admins] = await connection.query(
+        `SELECT email FROM member_accounts WHERE companyId = ? AND role = 'company_admin' AND active = 1 AND email IS NOT NULL`,
+        [row2.companyId]
+      );
+      for (const admin of admins || []) {
+        try {
+          const { sendEmail: sendEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
+          if (sendEmail2) {
+            await sendEmail2({
+              to: admin.email,
+              subject: "Alerta de consumo de fotos",
+              text: `Sua empresa possui ${row2.total} fotos armazenadas. O limite de alerta \xE9 ${PHOTO_LIMIT}. Considere revisar ou aumentar o plano.`,
+              html: `<p>Sua empresa possui ${row2.total} fotos armazenadas. O limite de alerta \xE9 ${PHOTO_LIMIT}. Considere revisar ou aumentar o plano.</p>`
+            });
+            alerted += 1;
+          }
+        } catch {
+        }
+      }
+    }
+  } finally {
+    await connection.end();
+  }
+  return { deleted, alerted };
 }
 
 // server/vercel-entry.ts
@@ -5711,6 +6975,7 @@ import crypto3 from "node:crypto";
 async function createApp() {
   const app = express();
   app.set("trust proxy", 1);
+  app.use(compression());
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
@@ -5722,13 +6987,19 @@ async function createApp() {
         return res.status(401).json({ error: "Schedule authentication required" });
       }
       const result = await runScheduledMaintenance();
-      let expiry = null;
+      let missingPunch = null;
       try {
-        expiry = await runExpirationEmailAlerts(30);
+        missingPunch = await runMissingPunchAlerts();
       } catch (e) {
-        console.warn("[email] expiry alerts", e);
+        console.warn("[missing-punch]", e);
       }
-      return res.json({ ok: true, result, expiry });
+      let photos = null;
+      try {
+        photos = await runPhotoMaintenance();
+      } catch (e) {
+        console.warn("[photos]", e);
+      }
+      return res.json({ ok: true, result, missingPunch, photos });
     } catch (error) {
       console.error("[Maintenance] failed:", error);
       await notifyOwner({ title: "Falha no backup di\xE1rio", content: "O backup autom\xE1tico falhou." }).catch(() => void 0);
@@ -5768,16 +7039,18 @@ async function createApp() {
   });
   app.use("/api/trpc", createExpressMiddleware({ router: appRouter, createContext }));
   app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
-  const distPath = path2.resolve(process.cwd(), "dist", "public");
-  if (fs2.existsSync(distPath)) {
+  const distPath = path.resolve(process.cwd(), "dist", "public");
+  if (fs.existsSync(distPath)) {
     app.use(express.static(distPath, {
+      maxAge: "1y",
+      immutable: true,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith("index.html") || filePath.endsWith("sw.js")) {
           res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
         }
       }
     }));
-    app.use("*", (_req, res) => res.sendFile(path2.resolve(distPath, "index.html")));
+    app.use("*", (_req, res) => res.sendFile(path.resolve(distPath, "index.html")));
   }
   return app;
 }

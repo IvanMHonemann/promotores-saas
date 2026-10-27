@@ -1,6 +1,5 @@
-import { ChevronDown, Clock3, CreditCard, KeyRound, LogOut, UserRound } from "lucide-react";
+import { Clock3, CreditCard, KeyRound, LogOut, UserRound } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,21 +21,43 @@ export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdo
   const entitlements = trpc.entitlements.mine.useQuery(undefined, {
     enabled: Boolean(user && !isPlatformAdmin),
   });
+  const extras = trpc.auth.profileExtras.useQuery(undefined, {
+    enabled: Boolean(user),
+  });
   const canViewTimeBank = Boolean(entitlements.data?.effective.timeTracking);
+
+  const initials = (user?.name || user?.email || "U")
+    .split(/[\s@._]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s: string) => s[0].toUpperCase())
+    .join("");
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
+        <button
+          type="button"
           aria-label="Abrir menu da conta"
-          className={`h-10 w-10 rounded-full p-0 ${tone === "light"
-            ? "border-teal-800/20 bg-teal-50 text-teal-900 hover:bg-teal-100 hover:text-teal-950"
-            : "border-teal-300/30 bg-teal-300/10 text-teal-100 hover:bg-teal-300/20 hover:text-white"
+          title={user?.name || "Minha conta"}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border transition focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-2 ${
+            tone === "light"
+              ? "border-teal-800/20 bg-teal-50 text-teal-900 hover:bg-teal-100 focus:ring-offset-white"
+              : "border-teal-300/30 bg-teal-400/10 text-teal-100 hover:border-teal-300 hover:bg-teal-400/20 focus:ring-offset-slate-950"
           }`}
         >
-          <UserRound className="h-5 w-5" />
-        </Button>
+          {extras.data?.avatarDataUrl ? (
+            <img
+              src={extras.data.avatarDataUrl}
+              alt={user?.name || "Avatar"}
+              className="h-full w-full rounded-full object-cover"
+            />
+          ) : (
+            <span className="text-xs font-black tracking-wider">
+              {initials || <UserRound className="h-4 w-4" />}
+            </span>
+          )}
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64 border-white/10 bg-[#0b1728] text-white shadow-2xl">
         <DropdownMenuLabel className="px-3 py-2">

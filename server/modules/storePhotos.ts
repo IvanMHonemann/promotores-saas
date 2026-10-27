@@ -38,7 +38,7 @@ async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<
         ownerMemberId: photo.promoterId ?? null,
         itemType: "store_photo",
         originalId: photo.id,
-        label: `Foto - ${storeName.get(photo.storeId) || "Loja"} - ${new Date(photo.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}`.slice(0, 255),
+        label: `Foto - ${storeName.get(photo.storeId || 0) || "Loja"} - ${new Date(photo.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}`.slice(0, 255),
         snapshot: JSON.stringify({ ...photo, storeClientId: clientOf.get(photo.id) ?? null }),
         expiresAt,
       })),
@@ -512,11 +512,11 @@ export const storePhotosRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
-      const store = await assertStoreAccess(db, ctx, input.storeId);
+      const store = input.storeId != null ? await assertStoreAccess(db, ctx, input.storeId) : null;
       await ensureStorePhotosTable(db);
       await ensureStoreClientsSchema(db);
       let clientName = "Sem cliente";
-      if (input.storeClientId) {
+      if (input.storeClientId && input.storeId != null) {
         await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
         const res: any = await db.execute(sql`SELECT name FROM store_clients WHERE id = ${input.storeClientId} AND companyId = ${ctx.accountId} LIMIT 1`);
         clientName = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0]?.name ?? clientName;
@@ -532,7 +532,7 @@ export const storePhotosRouter = router({
         action: "update",
         module: "store_photos",
         entityType: "store_photo",
-        description: `${moved} foto(s) da loja ${store.name} movida(s) para: ${clientName}`,
+        description: `${moved} foto(s) da loja ${store?.name || "Sem loja"} movida(s) para: ${clientName}`,
         newData: { storeId: input.storeId ?? null, storeClientId: input.storeClientId, count: moved },
       });
       return { moved };

@@ -24,7 +24,7 @@ export default function LoginPage() {
       if (token && typeof token === "string" && token.length > 10) {
         localStorage.setItem("promotores-saas-session-token", token);
       }
-      utils.auth.me.setData(undefined, undefined);
+      utils.auth.me.setData(undefined, result.user as any);
       await utils.auth.me.invalidate();
       toast.success("Login realizado");
       window.location.replace("/");

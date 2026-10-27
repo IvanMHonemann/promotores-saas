@@ -751,6 +751,11 @@ export const appRouter = router({
 
 
   products: router({
+    alertsSimple: protectedProcedure.input(z.object({ daysAhead: z.number().optional() }).optional()).query(async ({ ctx, input }) => {
+      if (!ctx.accountId) return [];
+      const days = input?.daysAhead || 30;
+      try { return await db.getExpiringInventoryProducts(ctx.accountId, days); } catch { return []; }
+    }),
     /** Descobre a descrição pelo código de barras: 1º produtos já cadastrados pela empresa, 2º bases abertas (e Cosmos, se houver token). */
     lookupByCode: companyBillingProcedure.input(z.object({ code: z.string().trim().min(6).max(64) })).query(async ({ ctx, input }) => {
       const { lookupProductByCode } = await import("./productLookup");

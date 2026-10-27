@@ -92,7 +92,7 @@ export async function runBackupStep(c: Connection, opts: { budgetMs: number; day
     const schema = await gzip(Buffer.from(ddl.join("\n\n")));
     await storagePut(`${prefix}/_schema.sql.gz`, schema, "application/gzip");
     const manifest = { format: 2, day, generatedAt: new Date().toISOString(), tables: all.map((r: any) => ({ name: r.tableName, rows: r.rowsDone, files: JSON.parse(r.files || "[]") })) };
-    const stored = await storagePut(`${prefix}/_manifest.json`, JSON.stringify(manifest), "application/json");
+    const stored = await storagePut(`${prefix}/_manifest.json`, Buffer.from(JSON.stringify(manifest)), "application/json");
     manifestKey = stored.key;
     await c.query("INSERT INTO backup_progress (day, tableName, done) VALUES (?, '_manifest', 1) ON DUPLICATE KEY UPDATE done = 1", [day]);
   }

@@ -119,7 +119,7 @@ export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCa
       toast.success(`${action === "start" ? "Check-in" : "Check-out"} realizado.`);
       onDone();
     } catch (e) {
-      enqueueVisit({ action, ...payload });
+      enqueueVisit({ action, mimeType: "image/jpeg", ...payload });
       toast.info("Salvo offline. Será sincronizado ao voltar a conexão.");
       onDone();
     } finally {

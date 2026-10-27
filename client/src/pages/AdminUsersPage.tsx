@@ -354,8 +354,6 @@ function PromoterEditDialog({ open, onOpenChange, account, promoterName, setProm
             </div>
           </section>
 
-          <section className="space-y-3">
-            <div>
           <section className="space-y-4 rounded-xl border border-slate-200 p-4">
             <h3 className="flex items-center gap-2 font-bold text-slate-900"><Building2 className="h-4 w-4 text-teal-600" />Lojas atribuídas</h3>
             <p className="text-sm text-slate-500">Selecione as lojas que este promotor poderá acessar na tela de fotos. A atribuição é opcional — o cadastro pode ser concluído sem lojas.</p>
@@ -373,6 +371,7 @@ function PromoterEditDialog({ open, onOpenChange, account, promoterName, setProm
             )}
           </section>
           <section className="space-y-4 rounded-xl border border-slate-200 p-4">
+            <div>
               <h3 className="flex items-center gap-2 font-bold text-slate-900"><CalendarDays className="h-4 w-4 text-teal-600" />Roteiro semanal fixo</h3>
               <p className="mt-1 text-sm text-slate-500">Escolha as lojas de cada dia. O roteiro do dia será exibido automaticamente no painel inicial do promotor.</p>
             </div>

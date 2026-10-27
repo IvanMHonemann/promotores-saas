@@ -15,6 +15,8 @@ import { enqueueStore, listStores } from "@/lib/storeQueue";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 export default function StoresPage() {
+  const { user } = useAuth();
+  const canCreateStore = user?.role === "company_admin" || user?.role === "supervisor";
   const [search, setSearch] = useState("");
   const online = useOnline();
   const term = search.trim();

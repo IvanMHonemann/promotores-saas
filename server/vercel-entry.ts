@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import fs from "fs";
 import path from "path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -11,6 +12,7 @@ import crypto from "node:crypto";
 async function createApp() {
   const app = express();
   app.set("trust proxy", 1);
+  app.use(compression());
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
@@ -72,6 +74,8 @@ async function createApp() {
   const distPath = path.resolve(process.cwd(), "dist", "public");
   if (fs.existsSync(distPath)) {
     app.use(express.static(distPath, {
+      maxAge: "1y",
+      immutable: true,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith("index.html") || filePath.endsWith("sw.js")) {
           res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");

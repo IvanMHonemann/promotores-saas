@@ -23,7 +23,8 @@ import {
   storePhotos,
   subscriptionPlanFeatures,
 } from "../drizzle/schema";
-import { ensureStoreOwnersTable, recordStoreOwner, storeVisibleToMember } from "./storeAccess";
+import { addPromoterStores, assertStoresInCompany, ensurePromoterStoresTable, ensureStoreAccessSchema, recordStoreOwner, replacePromoterStores, storeVisibleToMember } from "./storeAccess";
+import { planStoreAssignments } from "../shared/stores";
 import { todayInZone, addDays } from "../shared/expiry";
 import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits, weeklyRouteSchedules, inventoryProducts } from "../drizzle/schema";
@@ -934,14 +935,14 @@ export async function ensureSeedPlans() {
 
 
 /* Núcleo operacional de promotores — usa as tabelas novas e permanece separado do legado. */
-/** `memberAccountId` = usuário não administrador: só vê lojas que cadastrou ou que estão em visitas atribuídas a ele. */
+/** `memberAccountId` = usuário não administrador: promotor só vê as lojas vinculadas a ele; supervisor, as que cadastrou. */
 export async function listOperationalStores(companyId: number, search?: string, memberAccountId?: number | null) {
   const database = await getDb();
   if (!database) return [];
   const conditions: any[] = [eq(operationalStores.companyId, requireAccountId(companyId)), eq(operationalStores.active, true)];
   if (search?.trim()) conditions.push(like(operationalStores.name, `%${search.trim()}%`));
   if (memberAccountId != null) {
-    await ensureStoreOwnersTable(database);
+    await ensureStoreAccessSchema(database);
     conditions.push(storeVisibleToMember(operationalStores.id, memberAccountId));
   }
   return database.select().from(operationalStores).where(and(...conditions)).orderBy(operationalStores.name);
@@ -1003,10 +1004,13 @@ export async function saveWeeklyRouteSchedule(input: { companyId: number; promot
   const companyId = requireAccountId(input.companyId);
   const storeIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
   if (!storeIds.length) throw new Error("Selecione ao menos uma loja.");
+  await ensurePromoterStoresTable(database); // DDL fica fora da transação
   return database.transaction(async (tx) => {
     const stores = await tx.select({ id: operationalStores.id }).from(operationalStores)
       .where(and(inArray(operationalStores.id, storeIds), eq(operationalStores.companyId, companyId), eq(operationalStores.active, true)));
     if (stores.length !== storeIds.length) throw new Error("Uma ou mais lojas não pertencem a esta empresa.");
+    // Lojas do roteiro precisam estar vinculadas ao promotor, senão ele não as acessa.
+    await addPromoterStores(tx, { companyId, promoterId: input.promoterId, storeIds });
     await tx.insert(weeklyRouteSchedules).values({ ...input, companyId, storeIds, active: true })
       .onDuplicateKeyUpdate({ set: { name: input.name, storeIds, active: true } });
     // Remove roteiro materializado de hoje para que seja recriado com as novas lojas
@@ -1036,6 +1040,9 @@ export async function updatePromoterManagement(input: {
   workStartTime: string | null;
   workEndTime: string | null;
   weeklyRoutes?: Array<{ weekday: number; storeIds: number[] }>;
+  /** Lojas que o promotor atende. Omitido = não altera; lista vazia = remove todas (a atribuição é opcional). */
+  storeIds?: number[];
+  actorMemberId?: number | null;
 }) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
@@ -1051,6 +1058,12 @@ export async function updatePromoterManagement(input: {
 
   const employeeCode = input.employeeCode?.trim() || null;
   const weeklyRoutes = input.weeklyRoutes;
+  // Lojas atendidas: valida a lista informada (e as do roteiro) na empresa antes de qualquer gravação.
+  const storePlan = planStoreAssignments(input.storeIds, weeklyRoutes?.flatMap((route) => route.storeIds));
+  if (storePlan.mode !== "keep") {
+    await assertStoresInCompany(database, companyId, storePlan.storeIds);
+    await ensurePromoterStoresTable(database); // DDL fica fora da transação
+  }
   if (weeklyRoutes !== undefined) {
     const days = weeklyRoutes.map((route) => route.weekday);
     if (new Set(days).size !== days.length || days.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
@@ -1081,6 +1094,9 @@ export async function updatePromoterManagement(input: {
       workStartTime: input.workStartTime,
       workEndTime: input.workEndTime,
     }).onDuplicateKeyUpdate({ set: { companyId, employeeCode, workStartTime: input.workStartTime, workEndTime: input.workEndTime } });
+
+    if (storePlan.mode === "replace") await replacePromoterStores(tx, { companyId, promoterId: input.promoterId, storeIds: storePlan.storeIds, createdByMemberId: input.actorMemberId });
+    else if (storePlan.mode === "add") await addPromoterStores(tx, { companyId, promoterId: input.promoterId, storeIds: storePlan.storeIds, createdByMemberId: input.actorMemberId });
 
     if (weeklyRoutes === undefined) return;
     const weekdayLabels = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
@@ -1167,6 +1183,14 @@ export async function updateOperationalRoute(companyId: number, routeId: number,
     await database.update(operationalVisits).set({ promoterId: data.promoterId }).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, requireAccountId(companyId))));
   }
   if (data.storeIds && data.storeIds.length) {
+    const company = requireAccountId(companyId);
+    const routeOwner = data.promoterId ?? (await database.select({ promoterId: operationalRoutes.promoterId }).from(operationalRoutes)
+      .where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, company))).limit(1))[0]?.promoterId;
+    if (routeOwner) {
+      const linkable = await assertStoresInCompany(database, company, data.storeIds);
+      await ensurePromoterStoresTable(database);
+      await addPromoterStores(database, { companyId: company, promoterId: routeOwner, storeIds: linkable });
+    }
     await database.delete(operationalVisits).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, requireAccountId(companyId))));
     for (const storeId of data.storeIds) {
       await database.insert(operationalVisits).values({ companyId: requireAccountId(companyId), routeId, storeId, promoterId: data.promoterId || 0, status: "pending" });
@@ -1190,12 +1214,14 @@ export async function createOperationalRouteWithVisits(input: { route: typeof op
   const companyId = requireAccountId(input.route.companyId);
   const uniqueStoreIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
   if (!uniqueStoreIds.length) throw new Error("Selecione ao menos uma loja para o roteiro.");
+  await ensurePromoterStoresTable(database); // DDL fica fora da transação
   return database.transaction(async (tx) => {
     const stores = await tx.select({ id: operationalStores.id }).from(operationalStores)
       .where(and(inArray(operationalStores.id, uniqueStoreIds), eq(operationalStores.companyId, companyId), eq(operationalStores.active, true)));
     if (stores.length !== uniqueStoreIds.length) throw new Error("Uma ou mais lojas não pertencem a esta empresa.");
     const result = await tx.insert(operationalRoutes).values(input.route);
     const routeId = Number((result as any)[0]?.insertId);
+    await addPromoterStores(tx, { companyId, promoterId: input.route.promoterId, storeIds: uniqueStoreIds });
     await tx.insert(operationalVisits).values(stores.map((store) => ({ companyId, routeId, storeId: store.id, promoterId: input.route.promoterId, status: "pending" as const })));
     const rows = await tx.select().from(operationalRoutes).where(eq(operationalRoutes.id, routeId)).limit(1);
     return rows[0];

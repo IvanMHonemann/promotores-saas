@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { storePhotos, stores } from "../../drizzle/schema";
 import { trashItems } from "../../drizzle/schema.original";
@@ -8,7 +8,8 @@ import { commercialFeatureProcedure, router } from "../_core/trpc";
 import { checkRateLimit, getClientIp } from "../_core/rateLimit";
 import { auditFromCtx } from "../audit";
 import { ensureStoreClientsSchema } from "../storeClients";
-import { assertPhotoAccess, assertStoreAccess, ensureStoreOwnersTable, scopeMemberId, storeVisibleToMember } from "../storeAccess";
+import { assertPhotoAccess, assertStoreAccess, ensureStoreAccessSchema, scopeMemberId, storeVisibleToMember } from "../storeAccess";
+import { NO_STORE_LABEL } from "../../shared/stores";
 
 const RETENTION_DAYS = 60;
 /** Prazo para restaurar uma foto excluída (igual ao da tela Lixeira: 5 dias). */
@@ -18,8 +19,10 @@ const TRASH_DAYS = 5;
 async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<typeof storePhotos.$inferSelect>, actor?: { memberId?: number | null; name?: string | null }) {
   if (photos.length === 0) return;
   await ensureTrashTable();
-  const storeIds = Array.from(new Set(photos.map((p) => p.storeId)));
-  const storeRows = await db.select({ id: stores.id, name: stores.name }).from(stores).where(and(eq(stores.companyId, accountId), sql`${stores.id} IN (${sql.join(storeIds.map((id) => sql`${id}`), sql`, `)})`));
+  const storeIds = Array.from(new Set(photos.map((p) => p.storeId).filter((id): id is number => id != null)));
+  const storeRows = storeIds.length
+    ? await db.select({ id: stores.id, name: stores.name }).from(stores).where(and(eq(stores.companyId, accountId), sql`${stores.id} IN (${sql.join(storeIds.map((id) => sql`${id}`), sql`, `)})`))
+    : [];
   const storeName = new Map<number, string>(storeRows.map((r: any) => [r.id, r.name]));
   // O vínculo com o cliente da loja fica fora do schema Drizzle (coluna sob demanda): guarda no snapshot para restaurar.
   const clientOf = new Map<number, number | null>();
@@ -38,7 +41,7 @@ async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<
         ownerMemberId: photo.promoterId ?? null,
         itemType: "store_photo",
         originalId: photo.id,
-        label: `Foto - ${storeName.get(photo.storeId) || "Loja"} - ${new Date(photo.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}`.slice(0, 255),
+        label: `Foto - ${(photo.storeId != null ? storeName.get(photo.storeId) : NO_STORE_LABEL) || "Loja"} - ${new Date(photo.capturedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" })}`.slice(0, 255),
         snapshot: JSON.stringify({ ...photo, storeClientId: clientOf.get(photo.id) ?? null }),
         expiresAt,
       })),
@@ -52,7 +55,7 @@ async function ensureStorePhotosTable(db: any) {
     await db.execute(`CREATE TABLE IF NOT EXISTS store_photos (
       id int AUTO_INCREMENT NOT NULL,
       companyId int NOT NULL,
-      storeId int NOT NULL,
+      storeId int NULL,
       promoterId int NOT NULL,
       visitId int,
       capturedAt timestamp NOT NULL,
@@ -80,6 +83,40 @@ async function ensureStorePhotosTable(db: any) {
   }
 }
 
+let storeNullableReady: Promise<void> | null = null;
+/**
+ * Fotos sem loja guardam storeId nulo. Bancos criados antes desta mudança têm a coluna como NOT NULL;
+ * a alteração só afrouxa a restrição (nenhum dado é alterado ou removido) e roda uma vez por instância.
+ */
+function ensureStorePhotosStoreNullable(db: any): Promise<void> {
+  if (!storeNullableReady) {
+    storeNullableReady = (async () => {
+      const res: any = await db.execute(sql`SELECT IS_NULLABLE AS isNullable FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_photos' AND COLUMN_NAME = 'storeId'`);
+      const row = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0];
+      if (!row) return; // tabela ainda não existe
+      if (String(row.isNullable ?? row.IS_NULLABLE).toUpperCase() === "YES") return;
+      await db.execute(sql.raw("ALTER TABLE store_photos MODIFY COLUMN storeId int NULL"));
+    })().catch((err) => { storeNullableReady = null; throw err; });
+  }
+  return storeNullableReady;
+}
+
+/** Consultas: cria a tabela se preciso e tenta liberar fotos sem loja, sem derrubar a listagem se isso falhar. */
+async function ensureStorePhotosSchema(db: any) {
+  await ensureStorePhotosTable(db);
+  try { await ensureStorePhotosStoreNullable(db); } catch (e) { console.warn("[storePhotos] storeId nullable", e); }
+}
+
+/** Gravação de foto sem loja: exige a coluna nula; sem isso o banco rejeitaria a foto. */
+async function requireStorePhotosWithoutStore(db: any) {
+  await ensureStorePhotosTable(db);
+  try { await ensureStorePhotosStoreNullable(db); }
+  catch (e) {
+    console.error("[storePhotos] não foi possível liberar fotos sem loja", e);
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível habilitar fotos sem loja neste banco de dados. Avise o administrador." });
+  }
+}
+
 /** Confere que o cliente pertence à loja/empresa e grava o vínculo da foto (coluna criada sob demanda). */
 async function assertStoreClient(db: any, companyId: number, storeId: number, storeClientId: number) {
   await ensureStoreClientsSchema(db);
@@ -93,18 +130,18 @@ async function linkPhotoToClient(db: any, companyId: number, photoId: number, st
 }
 
 export const storePhotosRouter = router({
-  /** Lista lojas com contagem de fotos e última atividade. */
+  /** Lista lojas com contagem de fotos e última atividade (promotor: só as lojas vinculadas a ele). */
   listStoresWithStats: commercialFeatureProcedure("fieldOperations")
     .input(z.object({ search: z.string().optional(), city: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
-      await ensureStorePhotosTable(db);
+      await ensureStorePhotosSchema(db);
       const memberId = scopeMemberId(ctx); // null = administrador (vê tudo)
 
       const conditions: any[] = [eq(stores.companyId, ctx.accountId), eq(stores.active, true)];
       if (memberId !== null) {
-        await ensureStoreOwnersTable(db);
+        await ensureStoreAccessSchema(db);
         conditions.push(storeVisibleToMember(stores.id, memberId));
       }
       // Não administrador conta e mostra só as próprias fotos.
@@ -145,10 +182,26 @@ export const storePhotosRouter = router({
       }
     }),
 
-  /** Lista fotos de uma loja, agrupáveis por data no cliente. */
+  /** Resumo das fotos "Sem loja vinculada" (administrador: da empresa toda; demais: só as próprias). */
+  unlinkedSummary: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+    await ensureStorePhotosSchema(db);
+    const memberId = scopeMemberId(ctx);
+    const conditions: any[] = [eq(storePhotos.companyId, ctx.accountId), isNull(storePhotos.storeId), eq(storePhotos.uploadStatus, "uploaded")];
+    if (memberId !== null) conditions.push(eq(storePhotos.promoterId, memberId));
+    const [row] = await db
+      .select({ photoCount: sql<number>`COUNT(*)`, lastActivity: sql<string | null>`MAX(${storePhotos.capturedAt})` })
+      .from(storePhotos)
+      .where(and(...conditions));
+    return { photoCount: Number(row?.photoCount ?? 0), lastActivity: row?.lastActivity ?? null };
+  }),
+
+  /** Lista fotos de uma loja (ou, com `withoutStore`, as fotos sem loja), agrupáveis por data no cliente. */
   listByStore: commercialFeatureProcedure("fieldOperations")
     .input(z.object({
-      storeId: z.number().int().positive(),
+      storeId: z.number().int().positive().optional(),
+      withoutStore: z.boolean().optional(),
       from: z.string().optional(),
       to: z.string().optional(),
       promoterId: z.number().int().positive().optional(),
@@ -159,15 +212,19 @@ export const storePhotosRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
-      // A loja precisa ser da empresa e visível para este usuário
-      await assertStoreAccess(db, ctx, input.storeId);
-      await ensureStorePhotosTable(db);
+      const unlinked = Boolean(input.withoutStore);
+      if (unlinked === (input.storeId != null)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Informe a loja ou peça as fotos sem loja." });
+      }
+      // A loja precisa ser da empresa e visível para este usuário (fotos sem loja só passam pelo filtro de dono, abaixo)
+      if (!unlinked) await assertStoreAccess(db, ctx, input.storeId!);
+      await ensureStorePhotosSchema(db);
       await ensureStoreClientsSchema(db);
       const memberId = scopeMemberId(ctx);
 
-      const conditions: any[] = [eq(storePhotos.companyId, ctx.accountId), eq(storePhotos.storeId, input.storeId)];
-      if (input.storeClientId) conditions.push(sql`store_photos.storeClientId = ${input.storeClientId}`);
-      else if (input.withoutClient) conditions.push(sql`store_photos.storeClientId IS NULL`);
+      const conditions: any[] = [eq(storePhotos.companyId, ctx.accountId), unlinked ? isNull(storePhotos.storeId) : eq(storePhotos.storeId, input.storeId!)];
+      if (input.storeClientId && !unlinked) conditions.push(sql`store_photos.storeClientId = ${input.storeClientId}`);
+      else if (input.withoutClient && !unlinked) conditions.push(sql`store_photos.storeClientId IS NULL`);
       // Não administrador só enxerga as próprias fotos
       if (memberId !== null) conditions.push(eq(storePhotos.promoterId, memberId));
       if (input.from) conditions.push(gte(storePhotos.capturedAt, new Date(input.from)));
@@ -206,7 +263,7 @@ export const storePhotosRouter = router({
   /** Cria registro de foto com idempotência. Upload do arquivo é feito separadamente. */
   create: commercialFeatureProcedure("fieldOperations")
     .input(z.object({
-      storeId: z.number().int().positive(),
+      storeId: z.number().int().positive().optional(),
       visitId: z.number().int().positive().optional(),
       capturedAt: z.string(),
       latitude: z.number().optional(),
@@ -229,8 +286,12 @@ export const storePhotosRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
-      const store = await assertStoreAccess(db, ctx, input.storeId);
-      if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
+      // Sem loja: a foto é aceita e identificada como "Sem loja vinculada". Com loja, ela precisa estar vinculada ao usuário.
+      const store = input.storeId != null ? await assertStoreAccess(db, ctx, input.storeId) : null;
+      if (!store) {
+        if (input.storeClientId) throw new TRPCError({ code: "BAD_REQUEST", message: "Cliente só pode ser informado junto com a loja." });
+        await requireStorePhotosWithoutStore(db);
+      } else if (input.storeClientId) await assertStoreClient(db, ctx.accountId, store.id, input.storeClientId);
 
       // Idempotência
       const [existing] = await db
@@ -245,9 +306,9 @@ export const storePhotosRouter = router({
 
       const [result] = await db.insert(storePhotos).values({
         companyId: ctx.accountId,
-        storeId: input.storeId,
+        storeId: store?.id ?? null,
         promoterId: ctx.memberAccountId!,
-        visitId: input.visitId ?? null,
+        visitId: store ? input.visitId ?? null : null,
         capturedAt,
         latitude: input.latitude ?? null,
         longitude: input.longitude ?? null,
@@ -270,9 +331,9 @@ export const storePhotosRouter = router({
         module: "store_photos",
         entityType: "store_photo",
         entityId: photoId,
-        entityLabel: store.name,
-        description: `Foto registrada na loja ${store.name}`,
-        newData: { storeId: input.storeId, capturedAt: input.capturedAt, hasGps: Boolean(input.latitude) },
+        entityLabel: store?.name ?? NO_STORE_LABEL,
+        description: store ? `Foto registrada na loja ${store.name}` : `Foto registrada (${NO_STORE_LABEL})`,
+        newData: { storeId: store?.id ?? null, capturedAt: input.capturedAt, hasGps: Boolean(input.latitude) },
       });
 
       return { id: photoId, expiresAt };
@@ -281,7 +342,7 @@ export const storePhotosRouter = router({
   /** Recebe imagem em base64, faz upload no storage e cria o registro (com idempotência). */
   uploadAndCreate: commercialFeatureProcedure("fieldOperations")
     .input(z.object({
-      storeId: z.number().int().positive(),
+      storeId: z.number().int().positive().optional(),
       visitId: z.number().int().positive().optional(),
       capturedAt: z.string(),
       latitude: z.number().optional(),
@@ -302,8 +363,12 @@ export const storePhotosRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
-      const store = await assertStoreAccess(db, ctx, input.storeId);
-      if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
+      // Sem loja: a foto é aceita e identificada como "Sem loja vinculada". Com loja, ela precisa estar vinculada ao usuário.
+      const store = input.storeId != null ? await assertStoreAccess(db, ctx, input.storeId) : null;
+      if (!store) {
+        if (input.storeClientId) throw new TRPCError({ code: "BAD_REQUEST", message: "Cliente só pode ser informado junto com a loja." });
+        await requireStorePhotosWithoutStore(db);
+      } else if (input.storeClientId) await assertStoreClient(db, ctx.accountId, store.id, input.storeClientId);
 
       // Idempotência
       const [existing] = await db
@@ -316,7 +381,7 @@ export const storePhotosRouter = router({
       const { storagePut } = await import("../storage");
       const buffer = Buffer.from(input.imageBase64, "base64");
       const ext = input.mimeType.includes("png") ? "png" : "jpg";
-      const relKey = `store-photos/${ctx.accountId}/${input.storeId}/${input.idempotencyKey}.${ext}`;
+      const relKey = `store-photos/${ctx.accountId}/${store?.id ?? "sem-loja"}/${input.idempotencyKey}.${ext}`;
 
       let fileKey: string;
       try {
@@ -331,9 +396,9 @@ export const storePhotosRouter = router({
 
       const [result] = await db.insert(storePhotos).values({
         companyId: ctx.accountId,
-        storeId: input.storeId,
+        storeId: store?.id ?? null,
         promoterId: ctx.memberAccountId!,
-        visitId: input.visitId ?? null,
+        visitId: store ? input.visitId ?? null : null,
         capturedAt,
         latitude: input.latitude ?? null,
         longitude: input.longitude ?? null,
@@ -355,9 +420,9 @@ export const storePhotosRouter = router({
         module: "store_photos",
         entityType: "store_photo",
         entityId: photoId,
-        entityLabel: store.name,
-        description: `Foto registrada na loja ${store.name}`,
-        newData: { storeId: input.storeId, capturedAt: input.capturedAt, hasGps: Boolean(input.latitude), fileSize: buffer.length },
+        entityLabel: store?.name ?? NO_STORE_LABEL,
+        description: store ? `Foto registrada na loja ${store.name}` : `Foto registrada (${NO_STORE_LABEL})`,
+        newData: { storeId: store?.id ?? null, capturedAt: input.capturedAt, hasGps: Boolean(input.latitude), fileSize: buffer.length },
       });
 
       return { id: photoId, expiresAt, alreadyExists: false };

@@ -4,6 +4,8 @@ import { ArrowLeft, Camera, Check, ChevronDown, Download, ListChecks, MapPin, Me
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { StoreClientsPanel, type ClientFilter } from "@/components/StoreClientsPanel";
+import { PhotoCapture } from "@/components/PhotoCapture";
+import { NO_STORE_LABEL, NO_STORE_ROUTE_KEY } from "@shared/stores";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet } from "@/lib/offlineCache";
 import { listPhotos } from "@/lib/photoQueue";
@@ -156,7 +158,10 @@ function PhotoThumb({ photoId, selected, selectMode, hasGps, time, onToggle, onE
 
 export default function StoreGalleryPage() {
   const params = useParams<{ storeId: string }>();
-  const storeId = Number(params.storeId);
+  // /lojas/sem-loja: fotos registradas sem loja ("Sem loja vinculada"), com a mesma galeria das demais lojas.
+  const noStore = params.storeId === NO_STORE_ROUTE_KEY;
+  const storeId = noStore ? 0 : Number(params.storeId);
+  const validStore = Number.isFinite(storeId) && storeId > 0;
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
@@ -166,18 +171,22 @@ export default function StoreGalleryPage() {
   const [ready, setReady] = useState<{ files: File[]; failed: number; sent: number[] } | null>(null);
   const { run } = useBusy();
 
-  const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { staleTime: 30000 });
+  const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { staleTime: 30000, enabled: !noStore });
   const online = useOnline();
   // Sem resposta da rede, usa a lista de lojas salva neste aparelho.
-  const store = stores.data?.find((s) => s.id === storeId) ?? cacheGet<any[]>("stores")?.find((s) => s.id === storeId);
+  const store = noStore
+    ? { id: 0, name: NO_STORE_LABEL, city: "", state: null as string | null }
+    : stores.data?.find((s) => s.id === storeId) ?? cacheGet<any[]>("stores")?.find((s) => s.id === storeId);
 
   const today = new Date().toISOString().slice(0, 10);
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000 });
   const activeVisit = visits.data?.find((v: any) => v.visit?.status === "in_progress" && v.store?.id === storeId);
 
   const photos = trpc.storePhotos.listByStore.useQuery(
-    { storeId, from: from || undefined, to: to || undefined, storeClientId: typeof clientFilter === "number" ? clientFilter : undefined, withoutClient: clientFilter === "none" ? true : undefined },
-    { enabled: Number.isFinite(storeId) && storeId > 0, staleTime: 10000 },
+    noStore
+      ? { withoutStore: true, from: from || undefined, to: to || undefined }
+      : { storeId, from: from || undefined, to: to || undefined, storeClientId: typeof clientFilter === "number" ? clientFilter : undefined, withoutClient: clientFilter === "none" ? true : undefined },
+    { enabled: noStore || validStore, staleTime: 10000 },
   );
 
   // Cache the full list (no filters) for offline viewing.
@@ -190,7 +199,7 @@ export default function StoreGalleryPage() {
   const cachedPhotos = useMemo(() => cacheGet<any[]>(`photos-${storeId}`) || [], [storeId, online, photos.data]);
   const displayPhotos = photos.data ?? (!online ? cachedPhotos : []);
 
-  const pending = useMemo(() => listPhotos().filter((p) => p.storeId === storeId), [storeId, online, photos.data]);
+  const pending = useMemo(() => listPhotos().filter((p) => (noStore ? !p.storeId : p.storeId === storeId)), [noStore, storeId, online, photos.data]);
 
   const utils = trpc.useUtils();
   const singleDelete = trpc.storePhotos.delete.useMutation({
@@ -198,6 +207,7 @@ export default function StoreGalleryPage() {
       toast.success("Foto enviada para a lixeira.");
       void photos.refetch();
       void utils.storePhotos.listStoresWithStats.invalidate();
+      void utils.storePhotos.unlinkedSummary.invalidate();
       void utils.trash.list.invalidate();
     },
     onError: (e) => toast.error(e.message || "Não foi possível excluir a foto."),
@@ -209,13 +219,14 @@ export default function StoreGalleryPage() {
       setSelected(new Set());
       void photos.refetch();
       void utils.storePhotos.listStoresWithStats.invalidate();
+      void utils.storePhotos.unlinkedSummary.invalidate();
       void utils.trash.list.invalidate();
     },
     onError: (e) => toast.error(e.message || "Não foi possível excluir as fotos."),
   });
 
   const [moveOpen, setMoveOpen] = useState(false);
-  const clientList = trpc.storeClients.list.useQuery({ storeId }, { enabled: Number.isFinite(storeId) && storeId > 0, staleTime: 10000 });
+  const clientList = trpc.storeClients.list.useQuery({ storeId }, { enabled: !noStore && validStore, staleTime: 10000 });
   const assignClient = trpc.storePhotos.assignClient.useMutation({
     onSuccess: (res, vars) => {
       toast.success(`${res.moved} foto${res.moved !== 1 ? "s" : ""} movida${res.moved !== 1 ? "s" : ""} ${vars.storeClientId ? "para o cliente" : "para \"Sem cliente\""}.`);
@@ -234,7 +245,7 @@ export default function StoreGalleryPage() {
 
   const grouped = useMemo(() => groupByDay(displayPhotos), [displayPhotos]);
   const allPhotos = displayPhotos;
-  const legacyQuery = trpc.storePhotos.listByStore.useQuery({ storeId, withoutClient: true }, { enabled: Number.isFinite(storeId) && storeId > 0, staleTime: 30000 });
+  const legacyQuery = trpc.storePhotos.listByStore.useQuery({ storeId, withoutClient: true }, { enabled: !noStore && validStore, staleTime: 30000 });
   const legacyPhotos = legacyQuery.data?.length ?? 0;
 
   const toggle = (id: number) => {
@@ -362,7 +373,7 @@ export default function StoreGalleryPage() {
   return (
     <DashboardLayout
       title={store?.name || "Galeria da loja"}
-      description={store ? `${store.city}${store.state ? ` · ${store.state}` : ""}` : online ? "Carregando..." : "Loja não disponível offline"}
+      description={noStore ? "Fotos registradas sem escolher uma loja" : store ? `${store.city}${store.state ? ` · ${store.state}` : ""}` : online ? "Carregando..." : "Loja não disponível offline"}
       onRefresh={() => void photos.refetch()}
     >
       <div className={`space-y-5 ${selectMode ? "pb-32" : ""}`}>
@@ -371,7 +382,7 @@ export default function StoreGalleryPage() {
         </Link>
 
         <div>
-          <h2 className="text-2xl font-black text-white">Fotos da loja</h2>
+          <h2 className="text-2xl font-black text-white">{noStore ? "Fotos sem loja vinculada" : "Fotos da loja"}</h2>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold">
             <span className="rounded-full bg-teal-400/15 px-2.5 py-1 text-teal-200">{allPhotos.length} foto{allPhotos.length !== 1 ? "s" : ""}</span>
             {withGps > 0 && <span className="rounded-full bg-sky-400/15 px-2.5 py-1 text-sky-200">{withGps} com GPS</span>}
@@ -384,7 +395,13 @@ export default function StoreGalleryPage() {
             Sem conexão. Mostrando fotos salvas neste aparelho. Novas fotos são guardadas localmente e enviadas automaticamente quando a internet voltar.
           </p>
         )}
-        {store && (
+        {noStore && (
+          <section className="space-y-3" aria-label="Tirar foto sem loja">
+            <p className="text-sm text-slate-300">Use quando não houver loja vinculada ou a foto não for de uma loja específica. As fotos ficam identificadas como “{NO_STORE_LABEL}”.</p>
+            <PhotoCapture storeId={null} storeName={NO_STORE_LABEL} onCaptured={() => { void photos.refetch(); void utils.storePhotos.unlinkedSummary.invalidate(); }} />
+          </section>
+        )}
+        {store && !noStore && (
           <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />
         )}
 
@@ -493,7 +510,7 @@ export default function StoreGalleryPage() {
               <Camera className="h-6 w-6" />
             </div>
             <p className="mt-4 text-base font-bold text-white">Nenhuma foto neste período</p>
-            <p className="mt-1 text-sm text-slate-300">Toque em <span className="font-semibold text-teal-300">Tirar foto</span> dentro de um cliente para registrar a primeira ou escolha outro período.</p>
+            <p className="mt-1 text-sm text-slate-300">{noStore ? <>Toque em <span className="font-semibold text-teal-300">Tirar foto</span> acima para registrar a primeira ou escolha outro período.</> : <>Toque em <span className="font-semibold text-teal-300">Tirar foto</span> dentro de um cliente para registrar a primeira ou escolha outro período.</>}</p>
           </div>
         )}
       </div>
@@ -509,9 +526,11 @@ export default function StoreGalleryPage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Button className="h-11 bg-sky-500 font-bold text-white hover:bg-sky-400" onClick={() => setMoveOpen(true)} disabled={selected.size === 0}>
-                <UserRound className="mr-1.5 h-4 w-4" /> Mover
-              </Button>
+              {!noStore && (
+                <Button className="h-11 bg-sky-500 font-bold text-white hover:bg-sky-400" onClick={() => setMoveOpen(true)} disabled={selected.size === 0}>
+                  <UserRound className="mr-1.5 h-4 w-4" /> Mover
+                </Button>
+              )}
               <Button className="h-11 bg-teal-400 font-bold text-slate-950 hover:bg-teal-300" onClick={shareSelected} disabled={selected.size === 0}>
                 <Share2 className="mr-1.5 h-4 w-4" /> Enviar
               </Button>

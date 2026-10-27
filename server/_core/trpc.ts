@@ -1,6 +1,7 @@
 import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "@shared/const";
 import type { AccessLevel } from "@shared/auth";
 import type { CompanyRole, EntitlementKey } from "@shared/entitlements";
+import { canManageStores } from "@shared/stores";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
@@ -44,6 +45,16 @@ const requireCompanyAdmin = t.middleware(async opts => {
   return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
 });
 
+/** Cadastro de lojas: somente administrador e supervisor da empresa (o promotor só usa as lojas vinculadas a ele). */
+const requireStoreManager = t.middleware(async opts => {
+  const user = opts.ctx.user;
+  if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+  if (!canManageStores(user.role) && !opts.ctx.actingAsPlatform) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Somente administradores e supervisores da empresa podem cadastrar lojas." });
+  }
+  return opts.next();
+});
+
 const requirePlatformAdmin = t.middleware(async opts => {
   const user = opts.ctx.user;
   if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
@@ -84,6 +95,9 @@ const requireEntitlement = (featureKey: EntitlementKey) => t.middleware(async (o
 
 export const commercialFeatureProcedure = (featureKey: EntitlementKey) =>
   t.procedure.use(requireCompanyUser).use(requireEntitlement(featureKey));
+
+export const storeManagerFeatureProcedure = (featureKey: EntitlementKey) =>
+  t.procedure.use(requireCompanyUser).use(requireStoreManager).use(requireEntitlement(featureKey));
 
 export const companyAdminFeatureProcedure = (featureKey: EntitlementKey) =>
   t.procedure.use(requireCompanyAdmin).use(requireCompanyUser).use(requireEntitlement(featureKey));

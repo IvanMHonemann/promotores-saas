@@ -28,7 +28,7 @@ export function ensureStoreClientsSchema(db: any): Promise<void> {
       await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS store_photos (
         id int AUTO_INCREMENT NOT NULL,
         companyId int NOT NULL,
-        storeId int NOT NULL,
+        storeId int NULL,
         promoterId int NOT NULL,
         visitId int,
         capturedAt timestamp NOT NULL,

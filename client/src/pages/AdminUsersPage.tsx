@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, CalendarDays, Check, Clock3, KeyRound, Loader2, Pencil, ShieldCheck, Trash2, UserPlus, UserRound, Users } from "lucide-react";
+import { Building2, CalendarDays, Check, Clock3, KeyRound, Loader2, Pencil, ShieldCheck, Store, Trash2, UserPlus, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { StoreMultiSelect } from "@/components/StoreMultiSelect";
 import { ENTITLEMENT_CATALOG, ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type EntitlementKey, type PermissionMode } from "@shared/entitlements";
 
 const roleLabels = { company_admin: "Administrador da empresa", supervisor: "Supervisor", promoter: "Promotor" } as const;
@@ -43,6 +44,10 @@ export default function AdminUsersPage() {
   const [workStartDraft, setWorkStartDraft] = useState("");
   const [workEndDraft, setWorkEndDraft] = useState("");
   const [weeklyDraft, setWeeklyDraft] = useState<Record<number, number[]>>({});
+  // Lojas que o promotor atende (opcional). `storeDraftFor` indica de qual promotor a lista já foi carregada do servidor.
+  const [storeIdsDraft, setStoreIdsDraft] = useState<number[]>([]);
+  const [storeDraftFor, setStoreDraftFor] = useState<number | null>(null);
+  const [createStoreIds, setCreateStoreIds] = useState<number[]>([]);
   const [permissionsDraft, setPermissionsDraft] = useState<Record<EntitlementKey, PermissionMode>>(
     Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, "inherit"])) as Record<EntitlementKey, PermissionMode>,
   );
@@ -52,11 +57,12 @@ export default function AdminUsersPage() {
   const companyUsersQuery = trpc.companyUsers.list.useQuery(undefined, { enabled: isCompanyAdmin });
   const entitlementsQuery = trpc.entitlements.mine.useQuery(undefined, { enabled: isCompanyAdmin });
   const hasFieldOperations = Boolean(entitlementsQuery.data?.effective.fieldOperations);
-  const promoterStoresQuery = trpc.operations.stores.list.useQuery(undefined, { enabled: isCompanyAdmin && editingPromoterId !== null && hasFieldOperations });
+  const promoterStoresQuery = trpc.operations.stores.list.useQuery(undefined, { enabled: isCompanyAdmin && hasFieldOperations && (editingPromoterId !== null || role === "promoter") });
+  const promoterStoreLinksQuery = trpc.operations.promoterStores.list.useQuery(undefined, { enabled: isCompanyAdmin && hasFieldOperations });
   const promoterWeeklyRoutesQuery = trpc.operations.routes.weekly.useQuery(undefined, { enabled: isCompanyAdmin && editingPromoterId !== null && hasFieldOperations });
   const permissionsQuery = trpc.companyUsers.permissions.useQuery({ id: permissionsUserId ?? 0 }, { enabled: isCompanyAdmin && permissionsUserId !== null });
   const createCompanyMutation = trpc.platform.companies.create.useMutation({ onSuccess: (data) => { toast.success(`Empresa criada. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setCompanyName(""); setUserName(""); setEmail(""); setPassword(""); utils.platform.companies.list.invalidate(); utils.platform.users.invalidate(); }, onError: (error) => toast.error(error.message) });
-  const createUserMutation = trpc.companyUsers.create.useMutation({ onSuccess: (data) => { toast.success(`Usuário criado. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setUserName(""); setEmail(""); setPassword(""); setRole("promoter"); utils.companyUsers.list.invalidate(); }, onError: (error) => toast.error(error.message) });
+  const createUserMutation = trpc.companyUsers.create.useMutation({ onSuccess: (data) => { toast.success(`Usuário criado. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); if (data.storesLinked === false) toast.warning("Usuário criado, mas não foi possível vincular as lojas. Vincule em “Editar promotor”."); setUserName(""); setEmail(""); setPassword(""); setRole("promoter"); setCreateStoreIds([]); utils.companyUsers.list.invalidate(); utils.operations.promoterStores.list.invalidate(); utils.storePhotos.listStoresWithStats.invalidate(); }, onError: (error) => toast.error(error.message) });
   const createPlatformUserMutation = trpc.platform.users.create.useMutation({ onSuccess: (data) => { toast.success(`Usuário criado. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); setUserName(""); setEmail(""); setPassword(""); setRole("promoter"); setPlatformCompanyId(""); utils.platform.users.list.invalidate(); }, onError: (error) => toast.error(error.message) });
   const platformStatusMutation = trpc.accounts.setActive.useMutation({ onSuccess: () => { toast.success("Status atualizado."); utils.platform.users.invalidate(); utils.accounts.list.invalidate(); }, onError: (error) => toast.error(error.message) });
   const companyStatusMutation = trpc.companyUsers.setActive.useMutation({ onSuccess: () => { toast.success("Status atualizado."); utils.companyUsers.list.invalidate(); }, onError: (error) => toast.error(error.message) });
@@ -73,7 +79,7 @@ export default function AdminUsersPage() {
     onError: (error) => toast.error(error.message),
   });
   const ownPasswordMutation = trpc.auth.changePassword.useMutation({ onSuccess: () => { toast.success("Sua senha foi alterada."); setCurrentPassword(""); setNewOwnPassword(""); }, onError: (error) => toast.error(error.message) });
-  const savePromoterManagement = trpc.companyUsers.updatePromoterManagement.useMutation({ onSuccess: async () => { toast.success("Cadastro, jornada e roteiro semanal atualizados."); await utils.companyUsers.list.invalidate(); await utils.operations.routes.weekly.invalidate(); setEditingPromoterId(null); }, onError: e => toast.error(e.message || "Não foi possível atualizar o promotor.") });
+  const savePromoterManagement = trpc.companyUsers.updatePromoterManagement.useMutation({ onSuccess: async () => { toast.success("Cadastro, jornada e roteiro semanal atualizados."); await utils.companyUsers.list.invalidate(); await utils.operations.routes.weekly.invalidate(); await utils.operations.promoterStores.list.invalidate(); void utils.operations.stores.list.invalidate(); void utils.storePhotos.listStoresWithStats.invalidate(); setEditingPromoterId(null); }, onError: e => toast.error(e.message || "Não foi possível atualizar o promotor.") });
   const users = isPlatformAdmin ? platformUsersQuery.data ?? [] : companyUsersQuery.data ?? [];
 
   useEffect(() => {
@@ -90,9 +96,22 @@ export default function AdminUsersPage() {
     }
   }, [editingPromoterId, promoterWeeklyRoutesQuery.data]);
 
+  // Carrega as lojas já vinculadas ao promotor aberto (só com dados atualizados do servidor, para não sobrescrever vínculos de outro administrador).
+  useEffect(() => {
+    if (editingPromoterId === null) { if (storeDraftFor !== null) setStoreDraftFor(null); return; }
+    if (storeDraftFor === editingPromoterId || !promoterStoreLinksQuery.data || promoterStoreLinksQuery.isFetching) return;
+    setStoreIdsDraft(promoterStoreLinksQuery.data.filter((link) => link.promoterId === editingPromoterId).map((link) => link.storeId));
+    setStoreDraftFor(editingPromoterId);
+  }, [editingPromoterId, storeDraftFor, promoterStoreLinksQuery.data, promoterStoreLinksQuery.isFetching]);
+  const storeCountByPromoter = useMemo(() => {
+    const counts: Record<number, number> = {};
+    for (const link of promoterStoreLinksQuery.data ?? []) counts[link.promoterId] = (counts[link.promoterId] ?? 0) + 1;
+    return counts;
+  }, [promoterStoreLinksQuery.data]);
+
   if (!canManage) return <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6"><Card className="max-w-md"><CardContent className="p-6 text-center"><p className="font-bold text-slate-900">Acesso restrito ao administrador da empresa.</p><Button className="mt-4" onClick={() => navigate("/")}>Voltar ao painel</Button></CardContent></Card></div>;
 
-  const handleCreate = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (isPlatformAdmin && platformCreateMode === "company") createCompanyMutation.mutate({ companyName, userName, email, password }); else if (isPlatformAdmin) createPlatformUserMutation.mutate({ companyId: Number(platformCompanyId), userName, email, password, role }); else createUserMutation.mutate({ userName, email, password, role }); };
+  const handleCreate = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (isPlatformAdmin && platformCreateMode === "company") createCompanyMutation.mutate({ companyName, userName, email, password }); else if (isPlatformAdmin) createPlatformUserMutation.mutate({ companyId: Number(platformCompanyId), userName, email, password, role }); else createUserMutation.mutate({ userName, email, password, role, ...(role === "promoter" && createStoreIds.length ? { storeIds: createStoreIds } : {}) }); };
   const handleOwnPassword = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); ownPasswordMutation.mutate({ currentPassword, newPassword: newOwnPassword }); };
   const openPromoterEditor = (account: any) => {
     setPromoterNameDraft(account.userName || "");
@@ -101,6 +120,9 @@ export default function AdminUsersPage() {
     setWorkStartDraft(account.workStartTime || "");
     setWorkEndDraft(account.workEndTime || "");
     setWeeklyDraft({});
+    setStoreIdsDraft([]);
+    setStoreDraftFor(null);
+    if (hasFieldOperations) void promoterStoreLinksQuery.refetch();
     setEditingPromoterId(account.id);
   };
   const generateEmployeeCode = () => {
@@ -114,6 +136,14 @@ export default function AdminUsersPage() {
       if (checked) next.add(storeId); else next.delete(storeId);
       return { ...current, [weekday]: [...next] };
     });
+    // Loja usada no roteiro precisa estar entre as lojas do promotor.
+    if (checked) setStoreIdsDraft((current) => (current.includes(storeId) ? current : [...current, storeId]));
+  };
+  const changeStoreIds = (ids: number[]) => {
+    const keep = new Set(ids);
+    setStoreIdsDraft(ids);
+    // Loja removida da lista também sai do roteiro semanal; senão seria vinculada de novo ao salvar.
+    setWeeklyDraft((current: Record<number, number[]>) => Object.fromEntries(Object.entries(current).map(([weekday, list]: [string, number[]]) => [weekday, list.filter((id: number) => keep.has(id))])));
   };
   const savePromoterProfile = () => {
     if (editingPromoterId === null) return;
@@ -129,8 +159,12 @@ export default function AdminUsersPage() {
       toast.info("Aguarde o carregamento das lojas e da programação semanal.");
       return;
     }
-    if (hasFieldOperations && (promoterWeeklyRoutesQuery.isError || promoterStoresQuery.isError)) {
+    if (hasFieldOperations && (promoterWeeklyRoutesQuery.isError || promoterStoresQuery.isError || promoterStoreLinksQuery.isError)) {
       toast.error("Não foi possível carregar lojas ou roteiros. Atualize a página antes de salvar.");
+      return;
+    }
+    if (hasFieldOperations && storeDraftFor !== editingPromoterId) {
+      toast.info("Aguarde o carregamento das lojas do promotor.");
       return;
     }
     const weeklyRoutes = hasFieldOperations
@@ -144,6 +178,8 @@ export default function AdminUsersPage() {
       workStartTime: workStartDraft || null,
       workEndTime: workEndDraft || null,
       weeklyRoutes,
+      // Opcional: lista vazia remove todas as lojas; sem o módulo de campo a lista não é enviada (nada é alterado).
+      storeIds: hasFieldOperations ? storeIdsDraft.filter((id) => (promoterStoresQuery.data || []).some((store: any) => store.id === id)) : undefined,
     });
   };
   const deletePromoter = (account: any) => {
@@ -178,9 +214,9 @@ export default function AdminUsersPage() {
     >
       <div className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-          {isCompanyAdmin && <div className="lg:col-span-2"><PromoterManagementSection users={users} loading={isLoadingUsers} onEdit={openPromoterEditor} onDelete={deletePromoter} onReactivate={(account: any) => companyStatusMutation.mutate({ id: account.id, active: true })} statusPending={companyStatusMutation.isPending} /></div>}
+          {isCompanyAdmin && <div className="lg:col-span-2"><PromoterManagementSection storeCounts={hasFieldOperations && promoterStoreLinksQuery.isSuccess ? storeCountByPromoter : undefined} users={users} loading={isLoadingUsers} onEdit={openPromoterEditor} onDelete={deletePromoter} onReactivate={(account: any) => companyStatusMutation.mutate({ id: account.id, active: true })} statusPending={companyStatusMutation.isPending} /></div>}
           <div className="space-y-6">
-            <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><UserPlus className="h-5 w-5 text-red-600" /> {isPlatformAdmin ? (platformCreateMode === "company" ? "Criar nova empresa" : "Criar usuário em uma empresa") : "Adicionar usuário"}</CardTitle></CardHeader><CardContent>{isPlatformAdmin && <div className="mb-4 grid grid-cols-2 gap-2"><Button type="button" variant={platformCreateMode === "company" ? "default" : "outline"} onClick={() => setPlatformCreateMode("company")}>Nova empresa</Button><Button type="button" variant={platformCreateMode === "user" ? "default" : "outline"} onClick={() => setPlatformCreateMode("user")}>Novo usuário</Button></div>}<form onSubmit={handleCreate} className="space-y-4">{isPlatformAdmin && platformCreateMode === "company" && <div className="space-y-2"><Label htmlFor="account-company">Nome da empresa</Label><Input id="account-company" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Ex.: Empresa ABC" required /></div>}{isPlatformAdmin && platformCreateMode === "user" && <div className="space-y-2"><Label htmlFor="account-company-select">Empresa do usuário</Label><select id="account-company-select" className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={platformCompanyId} onChange={(e) => setPlatformCompanyId(e.target.value)} required><option value="">Selecione uma empresa ativa</option>{companiesQuery.data?.filter((company) => company.active).map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>}<div className="space-y-2"><Label htmlFor="account-user">Nome do usuário</Label><Input id="account-user" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Nome do responsável" required /></div><div className="space-y-2"><Label htmlFor="account-email">E-mail de acesso</Label><Input id="account-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@empresa.com" required /></div>{(isCompanyAdmin || (isPlatformAdmin && platformCreateMode === "user")) && <div className="space-y-2"><Label htmlFor="account-role">Permissão</Label><select id="account-role" className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={role} onChange={(e) => setRole(e.target.value as typeof role)}><option value="promoter">Promotor — operação em campo</option><option value="supervisor">Supervisor — equipes e roteiros</option><option value="company_admin">Administrador — usuários e configurações</option></select></div>}<div className="space-y-2"><Label htmlFor="account-password">Senha inicial</Label><PasswordInput id="account-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo de 8 caracteres" required /><p className="text-xs text-slate-500">A senha é armazenada protegida e não poderá ser visualizada depois.</p></div><Button type="submit" className="w-full bg-red-600 font-bold hover:bg-red-700" disabled={isCreating}>{isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />} {isPlatformAdmin && platformCreateMode === "company" ? "Criar empresa" : "Criar usuário"}</Button></form></CardContent></Card>
+            <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><UserPlus className="h-5 w-5 text-red-600" /> {isPlatformAdmin ? (platformCreateMode === "company" ? "Criar nova empresa" : "Criar usuário em uma empresa") : "Adicionar usuário"}</CardTitle></CardHeader><CardContent>{isPlatformAdmin && <div className="mb-4 grid grid-cols-2 gap-2"><Button type="button" variant={platformCreateMode === "company" ? "default" : "outline"} onClick={() => setPlatformCreateMode("company")}>Nova empresa</Button><Button type="button" variant={platformCreateMode === "user" ? "default" : "outline"} onClick={() => setPlatformCreateMode("user")}>Novo usuário</Button></div>}<form onSubmit={handleCreate} className="space-y-4">{isPlatformAdmin && platformCreateMode === "company" && <div className="space-y-2"><Label htmlFor="account-company">Nome da empresa</Label><Input id="account-company" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Ex.: Empresa ABC" required /></div>}{isPlatformAdmin && platformCreateMode === "user" && <div className="space-y-2"><Label htmlFor="account-company-select">Empresa do usuário</Label><select id="account-company-select" className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={platformCompanyId} onChange={(e) => setPlatformCompanyId(e.target.value)} required><option value="">Selecione uma empresa ativa</option>{companiesQuery.data?.filter((company) => company.active).map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>}<div className="space-y-2"><Label htmlFor="account-user">Nome do usuário</Label><Input id="account-user" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Nome do responsável" required /></div><div className="space-y-2"><Label htmlFor="account-email">E-mail de acesso</Label><Input id="account-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@empresa.com" required /></div>{(isCompanyAdmin || (isPlatformAdmin && platformCreateMode === "user")) && <div className="space-y-2"><Label htmlFor="account-role">Permissão</Label><select id="account-role" className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm" value={role} onChange={(e) => setRole(e.target.value as typeof role)}><option value="promoter">Promotor — operação em campo</option><option value="supervisor">Supervisor — equipes e roteiros</option><option value="company_admin">Administrador — usuários e configurações</option></select></div>}{isCompanyAdmin && role === "promoter" && hasFieldOperations && <div className="space-y-2"><Label>Lojas que o promotor atenderá <span className="font-normal text-slate-500">(opcional)</span></Label><StoreMultiSelect idPrefix="create-promoter" stores={promoterStoresQuery.data || []} value={createStoreIds} onChange={setCreateStoreIds} loading={promoterStoresQuery.isLoading} error={promoterStoresQuery.isError} /><p className="text-xs text-slate-500">Pode salvar sem lojas e vincular depois em “Editar promotor”.</p></div>}<div className="space-y-2"><Label htmlFor="account-password">Senha inicial</Label><PasswordInput id="account-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo de 8 caracteres" required /><p className="text-xs text-slate-500">A senha é armazenada protegida e não poderá ser visualizada depois.</p></div><Button type="submit" className="w-full bg-red-600 font-bold hover:bg-red-700" disabled={isCreating}>{isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />} {isPlatformAdmin && platformCreateMode === "company" ? "Criar empresa" : "Criar usuário"}</Button></form></CardContent></Card>
             <Card className="border-slate-200 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2 text-lg"><ShieldCheck className="h-5 w-5 text-emerald-600" /> Minha senha</CardTitle></CardHeader><CardContent><form onSubmit={handleOwnPassword} className="space-y-3"><PasswordInput placeholder="Senha atual" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required /><PasswordInput minLength={8} placeholder="Nova senha (mínimo de 8 caracteres)" value={newOwnPassword} onChange={(e) => setNewOwnPassword(e.target.value)} required /><Button type="submit" variant="outline" className="w-full" disabled={ownPasswordMutation.isPending}>{ownPasswordMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />} Alterar minha senha</Button></form><p className="mt-3 text-xs leading-relaxed text-slate-500">As senhas existentes nunca são exibidas.</p></CardContent></Card>
           </div>
           <div className="space-y-6">
@@ -198,10 +234,11 @@ export default function AdminUsersPage() {
         workStart={workStartDraft} setWorkStart={setWorkStartDraft}
         workEnd={workEndDraft} setWorkEnd={setWorkEndDraft}
         weeklyDraft={weeklyDraft} toggleWeeklyStore={toggleWeeklyStore}
+        storeIds={storeIdsDraft} onStoreIdsChange={changeStoreIds}
         hasFieldOperations={hasFieldOperations}
         stores={promoterStoresQuery.data || []}
-        storesLoading={promoterStoresQuery.isLoading || promoterWeeklyRoutesQuery.isLoading}
-        storesError={promoterStoresQuery.isError || promoterWeeklyRoutesQuery.isError}
+        storesLoading={promoterStoresQuery.isLoading || promoterWeeklyRoutesQuery.isLoading || (hasFieldOperations && editingPromoterId !== null && storeDraftFor !== editingPromoterId && !promoterStoreLinksQuery.isError)}
+        storesError={promoterStoresQuery.isError || promoterWeeklyRoutesQuery.isError || promoterStoreLinksQuery.isError}
         saving={savePromoterManagement.isPending}
         onGenerateCode={generateEmployeeCode}
         onSave={savePromoterProfile}
@@ -264,7 +301,7 @@ function Loading() { return <div className="flex items-center gap-2 py-8 text-sm
 function Empty() { return <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Nenhum registro encontrado.</div>; }
 
 
-function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactivate, statusPending }: any) {
+function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactivate, statusPending, storeCounts }: any) {
   const promoters = users.filter((account: any) => account.role === "promoter");
   return (
     <Card className="border-teal-200 shadow-sm">
@@ -278,7 +315,7 @@ function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactiv
             <div className="min-w-0">
               <p className="truncate font-bold text-slate-900">{account.userName}</p>
               <p className="truncate text-xs text-slate-500">{account.email}</p>
-              <p className="mt-1 text-xs text-slate-500">{account.employeeCode ? `Matrícula ${account.employeeCode}` : "Sem matrícula"}{account.workStartTime && account.workEndTime ? ` · ${account.workStartTime}–${account.workEndTime}` : ""}</p>
+              <p className="mt-1 text-xs text-slate-500">{account.employeeCode ? `Matrícula ${account.employeeCode}` : "Sem matrícula"}{account.workStartTime && account.workEndTime ? ` · ${account.workStartTime}–${account.workEndTime}` : ""}{storeCounts ? ` · ${storeCounts[account.id] ?? 0} loja(s) vinculada(s)` : ""}</p>
               <Badge className={`mt-2 ${account.active ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "border border-white/10 bg-slate-700/60 text-slate-200 hover:bg-slate-700/60"}`}>{account.active ? "Ativo" : "Inativo"}</Badge>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
@@ -296,7 +333,7 @@ function PromoterManagementSection({ users, loading, onEdit, onDelete, onReactiv
 }
 
 
-function PromoterEditDialog({ open, onOpenChange, account, promoterName, setPromoterName, promoterEmail, setPromoterEmail, employeeCode, setEmployeeCode, workStart, setWorkStart, workEnd, setWorkEnd, weeklyDraft, toggleWeeklyStore, hasFieldOperations, stores, storesLoading, storesError, saving, onGenerateCode, onSave }: any) {
+function PromoterEditDialog({ open, onOpenChange, account, promoterName, setPromoterName, promoterEmail, setPromoterEmail, employeeCode, setEmployeeCode, workStart, setWorkStart, workEnd, setWorkEnd, weeklyDraft, toggleWeeklyStore, storeIds, onStoreIdsChange, hasFieldOperations, stores, storesLoading, storesError, saving, onGenerateCode, onSave }: any) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="saas-page max-h-[92vh] max-w-4xl overflow-y-auto border-white/10 bg-[#0b1728] text-slate-100 [&_.bg-slate-50]:bg-white/5 [&_.border-slate-200]:border-white/10 [&_.text-slate-500]:text-slate-400 [&_.text-slate-700]:text-slate-300 [&_.text-slate-900]:text-white">
@@ -326,6 +363,16 @@ function PromoterEditDialog({ open, onOpenChange, account, promoterName, setProm
               <p className="mt-2 text-xs text-slate-500">Os horários são informativos e podem ser deixados em branco.</p>
             </div>
           </section>
+
+          {hasFieldOperations && (
+            <section className="space-y-3">
+              <div>
+                <h3 className="flex items-center gap-2 font-bold text-slate-900"><Store className="h-4 w-4 text-teal-600" />Lojas que atende</h3>
+                <p className="mt-1 text-sm text-slate-500">Opcional. O promotor só enxerga as lojas marcadas aqui e pode tirar fotos mesmo sem nenhuma loja. Adicione ou remova lojas a qualquer momento; vale assim que você salvar.</p>
+              </div>
+              <StoreMultiSelect idPrefix="edit-promoter" stores={stores} value={storeIds} onChange={onStoreIdsChange} loading={storesLoading} error={storesError} />
+            </section>
+          )}
 
           <section className="space-y-3">
             <div>

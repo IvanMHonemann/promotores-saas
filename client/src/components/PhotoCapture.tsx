@@ -7,6 +7,7 @@ import { enqueuePhoto } from "@/lib/photoQueue";
 import { isOnline } from "@/lib/offlineCache";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
+import { NO_STORE_LABEL } from "@shared/stores";
 
 
 async function reverseGeocode(lat: number, lng: number): Promise<string> {
@@ -27,7 +28,8 @@ type GpsStatus = "pending" | "ok" | "denied";
 type Shot = { dataUrl: string; capturedAt: Date; gps: GpsFix | null; gpsStatus: GpsStatus };
 
 type Props = {
-  storeId: number;
+  /** Loja da foto; `null` registra a foto como "Sem loja vinculada". */
+  storeId: number | null;
   storeName: string;
   /** Cliente da loja em que a foto está sendo tirada. */
   storeClientId?: number | null;
@@ -228,7 +230,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
     const lines = [
       `Promotor: ${promoter}`,
       `Local: ${location}`,
-      `Loja: ${storeName}`,
+      `Loja: ${storeId == null ? NO_STORE_LABEL : storeName}`,
       ...(clientName ? [`Cliente: ${clientName}`] : []),
       `Data: ${s.capturedAt.toLocaleDateString("pt-BR")}  Hora: ${s.capturedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
     ];
@@ -236,9 +238,9 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
     // Cada foto tem a sua chave: evita o servidor tratar fotos diferentes como repetidas.
     const idempotencyKey = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
     const payload = {
-      storeId,
-      storeClientId: storeClientId ?? undefined,
-      visitId: visitId ?? undefined,
+      storeId: storeId ?? undefined,
+      storeClientId: storeId == null ? undefined : storeClientId ?? undefined,
+      visitId: storeId == null ? undefined : visitId ?? undefined,
       capturedAt: s.capturedAt.toISOString(),
       latitude: s.gps?.lat,
       longitude: s.gps?.lng,

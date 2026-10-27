@@ -10,7 +10,7 @@ import { TRPCError } from "@trpc/server";
 import { checkRateLimit, getClientIp } from "./_core/rateLimit";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, protectedProcedure, publicProcedure, router, storeManagerFeatureProcedure } from "./_core/trpc";
 import { checkSubscriptionAccess } from "./subscriptionAccess";
 import * as planLimits from "./planLimits";
 import * as asaas from "./asaas";
@@ -19,7 +19,7 @@ import * as memberAuth from "./memberAuth";
 import * as emailService from "./email";
 import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory, listPromoterActivities } from "./audit";
 import { reverseGeocodeAddress } from "./geocoding";
-import { scopeMemberId, assertStoreAccess } from "./storeAccess";
+import { scopeMemberId, assertStoreAccess, assertStoresInCompany, ensurePromoterStoresTable, listPromoterStoreIds, listPromoterStoreLinks, replacePromoterStores } from "./storeAccess";
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 import { runPersistentGemini } from "./aiGithubService";
@@ -484,11 +484,30 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "settings_change", module: "users", entityType: "user_permissions", entityId: target.id, entityLabel: target.userName, description: `Permissões de módulos atualizadas para ${target.userName}`, oldData: before.effective, newData: after.effective });
       return { success: true as const };
     }),
-    create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole })).mutation(async ({ ctx, input }) => {
+    create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole, storeIds: z.array(z.number().int().positive()).max(500).optional() })).mutation(async ({ ctx, input: { storeIds, ...input } }) => {
+      // Lojas são opcionais e só fazem sentido para promotores; valida antes de criar o usuário para não deixar cadastro pela metade.
+      if (storeIds?.length && input.role !== "promoter") throw new TRPCError({ code: "BAD_REQUEST", message: "Somente promotores podem ter lojas vinculadas." });
+      let linkableStoreIds: number[] = [];
+      if (storeIds?.length) {
+        try { linkableStoreIds = await assertStoresInCompany(await db.getDb(), ctx.accountId, storeIds); }
+        catch (error: any) { throw new TRPCError({ code: "BAD_REQUEST", message: error?.message || "Lojas inválidas." }); }
+      }
       try {
         await planLimits.assertUserLimit(ctx.accountId);
         const created = await memberAuth.createCompanyUser({ ...input, companyId: ctx.accountId });
-        void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usuário criado: ${input.userName} (${input.role})`, newData: { userName: input.userName, email: input.email, role: input.role, id: created.accountId } });
+        // O usuário já existe; se o vínculo falhar, avisa em vez de reportar erro de criação (as lojas podem ser vinculadas ao editar).
+        let storesLinked = true;
+        if (linkableStoreIds.length) {
+          try {
+            const database = await db.getDb();
+            await ensurePromoterStoresTable(database);
+            await replacePromoterStores(database, { companyId: ctx.accountId, promoterId: created.accountId, storeIds: linkableStoreIds, createdByMemberId: ctx.memberAccountId ?? null });
+          } catch (linkError) {
+            storesLinked = false;
+            console.error("[companyUsers.create] falha ao vincular lojas", linkError);
+          }
+        }
+        void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usuário criado: ${input.userName} (${input.role})`, newData: { userName: input.userName, email: input.email, role: input.role, id: created.accountId, ...(linkableStoreIds.length ? { storeIds: linkableStoreIds } : {}) } });
         void (async () => {
           try {
             const company = await db.getCompanyById(ctx.accountId);
@@ -506,7 +525,7 @@ export const appRouter = router({
             console.warn("[email] company user notify failed", err);
           }
         })();
-        return created;
+        return { ...created, storesLinked };
       }
       catch (error: any) { if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já está cadastrado." }); console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message }); if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError({ code: "BAD_REQUEST", message: "A empresa selecionada não existe mais. Atualize a página e tente novamente." }); if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados está com a estrutura de usuários desatualizada. A implantação precisa concluir a migração." }); throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível criar o usuário. Verifique os dados e tente novamente." }); }
     }),
@@ -529,6 +548,8 @@ export const appRouter = router({
       workStartTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
       workEndTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
       weeklyRoutes: z.array(z.object({ weekday: z.number().int().min(0).max(6), storeIds: z.array(z.number().int().positive()).min(1) })).max(7).optional(),
+      /** Lojas que o promotor atende (opcional; lista vazia remove todas; omitido não altera). */
+      storeIds: z.array(z.number().int().positive()).max(500).optional(),
     })).mutation(async ({ ctx, input }) => {
       if (input.workStartTime && input.workEndTime && input.workEndTime <= input.workStartTime) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao início." });
@@ -536,6 +557,7 @@ export const appRouter = router({
       const usersBefore = await memberAuth.listMemberAccounts(ctx.accountId);
       const before = usersBefore.find((member) => member.id === input.id);
       if (!before || before.role !== "promoter") throw new TRPCError({ code: "NOT_FOUND", message: "Promotor não encontrado nesta empresa." });
+      const storeIdsBefore = input.storeIds !== undefined || input.weeklyRoutes !== undefined ? await listPromoterStoreIds(await db.getDb(), ctx.accountId, input.id) : undefined;
       try {
         await db.updatePromoterManagement({
           companyId: ctx.accountId,
@@ -546,6 +568,8 @@ export const appRouter = router({
           workStartTime: input.workStartTime,
           workEndTime: input.workEndTime,
           weeklyRoutes: input.weeklyRoutes,
+          storeIds: input.storeIds,
+          actorMemberId: ctx.memberAccountId ?? null,
         });
       } catch (error: any) {
         if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail ou matrícula já está em uso." });
@@ -556,7 +580,8 @@ export const appRouter = router({
       }
       const usersAfter = await memberAuth.listMemberAccounts(ctx.accountId);
       const after = usersAfter.find((member) => member.id === input.id);
-      void auditFromCtx(ctx, { action: "update", module: "users", entityType: "promoter_profile", entityId: input.id, entityLabel: after?.userName || before.userName, description: `Cadastro e roteiro de ${after?.userName || before.userName} atualizados`, oldData: before, newData: after });
+      const storeIdsAfter = storeIdsBefore ? await listPromoterStoreIds(await db.getDb(), ctx.accountId, input.id) : undefined;
+      void auditFromCtx(ctx, { action: "update", module: "users", entityType: "promoter_profile", entityId: input.id, entityLabel: after?.userName || before.userName, description: `Cadastro, lojas e roteiro de ${after?.userName || before.userName} atualizados`, oldData: storeIdsBefore ? { ...before, storeIds: storeIdsBefore } : before, newData: storeIdsAfter ? { ...after, storeIds: storeIdsAfter } : after });
       return { success: true as const };
     }),
     setActive: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => {
@@ -787,10 +812,16 @@ export const appRouter = router({
     }),
     stores: router({
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ search: z.string().optional() }).optional()).query(({ ctx, input }) => db.listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
-      create: commercialFeatureProcedure("fieldOperations").input(z.object({ name: z.string().min(2), city: z.string().min(2), address: z.string().optional(), state: z.string().length(2).optional(), cep: z.string().optional(), code: z.string().optional(), latitude: z.number().optional(), longitude: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
-        // Todo usuário da empresa pode cadastrar lojas; a loja fica visível a quem a cadastrou (e ao administrador).
-        return db.createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
+      // Somente administrador e supervisor cadastram lojas (a regra também é validada no middleware, antes de qualquer acesso ao banco).
+      create: storeManagerFeatureProcedure("fieldOperations").input(z.object({ name: z.string().min(2), city: z.string().min(2), address: z.string().optional(), state: z.string().length(2).optional(), cep: z.string().optional(), code: z.string().optional(), latitude: z.number().optional(), longitude: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
+        const store = await db.createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
+        void auditFromCtx(ctx, { action: "create", module: "stores", entityType: "store", entityId: store?.id, entityLabel: input.name, description: `Loja cadastrada: ${input.name}`, newData: { name: input.name, city: input.city } });
+        return store;
       }),
+    }),
+    /** Vínculos promotor ↔ loja da empresa (administrador). Alterações são feitas ao salvar o promotor. */
+    promoterStores: router({
+      list: companyAdminFeatureProcedure("fieldOperations").query(async ({ ctx }) => listPromoterStoreLinks(await db.getDb(), ctx.accountId)),
     }),
     routes: router({
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {

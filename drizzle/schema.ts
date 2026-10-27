@@ -590,7 +590,8 @@ export type InsertSystemSetting = typeof systemSettings.$inferInsert;
 export const storePhotos = mysqlTable("store_photos", {
   id: int("id").autoincrement().primaryKey(),
   companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
-  storeId: int("storeId").notNull().references(() => stores.id, { onDelete: "restrict" }),
+  /** Nulo = foto registrada sem loja ("Sem loja vinculada"). */
+  storeId: int("storeId").references(() => stores.id, { onDelete: "restrict" }),
   promoterId: int("promoterId").notNull().references(() => memberAccounts.id, { onDelete: "restrict" }),
   visitId: int("visitId").references(() => visits.id, { onDelete: "set null" }),
   capturedAt: timestamp("capturedAt").notNull(),

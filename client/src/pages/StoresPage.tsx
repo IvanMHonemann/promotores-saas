@@ -12,10 +12,15 @@ import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet } from "@/lib/offlineCache";
 import { useOnline } from "@/hooks/useOnline";
 import { enqueueStore, listStores } from "@/lib/storeQueue";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { NO_STORE_LABEL, NO_STORE_ROUTE_KEY, canManageStores } from "@shared/stores";
 
 export default function StoresPage() {
   const [search, setSearch] = useState("");
   const online = useOnline();
+  const { user } = useAuth();
+  // Só administrador e supervisor cadastram lojas (o servidor também valida). O promotor usa as lojas vinculadas a ele.
+  const canRegisterStores = canManageStores(user?.role);
   const term = search.trim();
   const storesQuery = trpc.storePhotos.listStoresWithStats.useQuery(
     { search: term || undefined },
@@ -28,8 +33,12 @@ export default function StoresPage() {
   const fallback = useMemo(() => (cachedStores || []).filter((s) => !term || String(s.name).toLowerCase().includes(term.toLowerCase())), [cachedStores, term]);
   const [pendingStores, setPendingStores] = useState(() => listStores());
   useEffect(() => { setPendingStores(listStores()); }, [online]);
+  // Fotos tiradas sem escolher loja ("Sem loja vinculada"): sempre disponíveis, mesmo sem lojas vinculadas.
+  const unlinkedQuery = trpc.storePhotos.unlinkedSummary.useQuery(undefined, { staleTime: 15000 });
+  useEffect(() => { if (unlinkedQuery.data) cacheSet("unlinked-summary", unlinkedQuery.data); }, [unlinkedQuery.data]);
+  const unlinked = unlinkedQuery.data ?? cacheGet<{ photoCount: number; lastActivity: string | null }>("unlinked-summary");
   const serverList: any[] = storesQuery.data ?? fallback;
-  const pendingDisplay = pendingStores
+  const pendingDisplay = (canRegisterStores ? pendingStores : [])
     .filter((s) => !term || s.name.toLowerCase().includes(term.toLowerCase()))
     .map((s) => ({
       id: s.tempId,
@@ -83,7 +92,7 @@ export default function StoresPage() {
   return (
     <DashboardLayout
       title="Lojas"
-      description="Veja as evidências fotográficas de cada ponto de venda"
+      description={canRegisterStores ? "Veja as evidências fotográficas de cada ponto de venda" : "Suas lojas e as evidências fotográficas de cada ponto de venda"}
       onRefresh={() => void stores.refetch()}
     >
       <div className="space-y-6">
@@ -102,7 +111,7 @@ export default function StoresPage() {
           </p>
         </div>
 
-        {formOpen ? (
+        {!canRegisterStores ? null : formOpen ? (
           <section className="space-y-3 rounded-2xl border border-white/15 bg-slate-800/70 p-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white">Cadastrar loja</h3>
@@ -151,6 +160,27 @@ export default function StoresPage() {
         )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {!term && (
+            <Link href={`/lojas/${NO_STORE_ROUTE_KEY}`}>
+              <Card className="h-full cursor-pointer border-dashed border-white/20 bg-slate-900/50 transition hover:-translate-y-0.5 hover:border-teal-300/40 hover:bg-slate-900">
+                <CardContent className="space-y-3 p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-lg font-bold text-white">{NO_STORE_LABEL}</p>
+                      <p className="mt-1.5 text-sm text-slate-300">Tire fotos sem escolher uma loja</p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 border-teal-300/30 bg-teal-300/5 text-teal-200">
+                      <Camera className="mr-1 h-3 w-3" />
+                      {unlinked?.photoCount ?? 0}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {unlinked?.lastActivity ? `Última foto em ${new Date(unlinked.lastActivity).toLocaleDateString("pt-BR")}` : "Nenhuma foto ainda"}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
+          )}
           {list.map((store) => (
             <Link key={store.id} href={store.pending ? "#" : `/lojas/${store.id}`} onClick={store.pending ? (e) => e.preventDefault() : undefined}>
               <Card className={`h-full cursor-pointer border-white/10 bg-slate-900/70 transition hover:-translate-y-0.5 hover:border-teal-300/40 hover:bg-slate-900 ${store.pending ? "opacity-80" : ""}`}>
@@ -187,8 +217,12 @@ export default function StoresPage() {
         {!loading && !stores.isError && list.length === 0 && online && !usingSaved && (
           <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center">
             <Store className="mx-auto h-8 w-8 text-slate-500" />
-            <p className="mt-3 text-sm text-slate-300">Nenhuma loja encontrada.</p>
-            <p className="mt-1 text-xs text-slate-400">Cadastre uma loja para começar a registrar fotos. Você vê as lojas que cadastrou e as dos seus roteiros.</p>
+            <p className="mt-3 text-sm text-slate-300">{canRegisterStores ? "Nenhuma loja encontrada." : "Nenhuma loja vinculada a você."}</p>
+            <p className="mt-1 text-xs text-slate-400">
+              {canRegisterStores
+                ? "Cadastre uma loja para começar a registrar fotos. Você vê as lojas que cadastrou e as dos seus roteiros."
+                : `O administrador da empresa vincula as lojas que você atende. Enquanto isso, você pode tirar fotos em “${NO_STORE_LABEL}”.`}
+            </p>
           </div>
         )}
       </div>

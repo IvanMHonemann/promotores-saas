@@ -18,6 +18,7 @@ export function useStoreSync() {
       if (!pending.length) return;
 
       let synced = 0;
+      let refused = 0;
       for (const store of pending) {
         try {
           await create.mutateAsync({
@@ -28,10 +29,16 @@ export function useStoreSync() {
           });
           removeStore(store.id);
           synced++;
-        } catch {
-          // continua
+        } catch (error: any) {
+          // Cadastro de loja é restrito a administradores e supervisores: não adianta tentar de novo.
+          if (error?.data?.code === "FORBIDDEN") {
+            removeStore(store.id);
+            refused++;
+          }
+          // demais erros: continua e tenta de novo depois
         }
       }
+      if (refused > 0) toast.error("Somente administradores e supervisores podem cadastrar lojas. Cadastros pendentes foram descartados.");
       if (synced > 0) {
         toast.success(`${synced} loja(s) sincronizada(s).`);
         void utils.storePhotos.listStoresWithStats.invalidate();

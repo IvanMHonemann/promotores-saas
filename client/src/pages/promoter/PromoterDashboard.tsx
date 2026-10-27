@@ -52,7 +52,8 @@ export default function PromoterDashboard() {
   const storesQuery = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
   if (storesQuery.data) cacheSet("stores", storesQuery.data);
   const stores = useOfflineQuery(storesQuery, "stores");
-  const photosToday = (stores.data || []).reduce((sum: number, s: any) => sum + (s.photoCount || 0), 0);
+  const unlinkedQuery = trpc.storePhotos.unlinkedSummary.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
+  const photosToday = (stores.data || []).reduce((sum: number, s: any) => sum + (s.photoCount || 0), 0) + (unlinkedQuery.data?.photoCount ?? 0);
   const storeCount = (stores.data || []).length;
   const punchesToday = (history.data || []).filter((e: any) => localDayKey(new Date(e.deviceTime || e.serverTime), timeZone) === today).length;
   const expiringCount = (alerts.data || []).length;
@@ -116,7 +117,7 @@ export default function PromoterDashboard() {
         )}
 
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20 sm:grid-cols-4">
-          <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-teal-300" href="/lojas" />
+          <Metric label="Lojas" detail="Suas lojas" value={storeCount} icon={MapPin} tone="text-teal-300" href="/lojas" />
           <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-sky-300" href="/ponto" />
           <Metric label="Fotos" detail="Registradas" value={photosToday} icon={ClipboardList} tone="text-emerald-300" href="/lojas" />
           <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" href="/produtos" />

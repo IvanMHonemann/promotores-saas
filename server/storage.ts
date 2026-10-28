@@ -13,7 +13,18 @@ function appendHashSuffix(relKey: string): string {
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
 
+let cachedS3: { signature: string; value: NonNullable<ReturnType<typeof buildS3Client>> } | null = null;
+
+/** Reaproveita o S3Client entre chamadas (evita novo handshake TLS/credenciais a cada upload na mesma instância). */
 function getS3Client() {
+  const signature = [process.env.S3_BUCKET, process.env.S3_ACCESS_KEY_ID, process.env.S3_SECRET_ACCESS_KEY, process.env.S3_REGION, process.env.S3_ENDPOINT, process.env.S3_FORCE_PATH_STYLE, process.env.S3_PUBLIC_BASE_URL].join("|");
+  if (cachedS3?.signature === signature) return cachedS3.value;
+  const value = buildS3Client();
+  cachedS3 = value ? { signature, value } : null;
+  return value;
+}
+
+function buildS3Client() {
   const bucket = process.env.S3_BUCKET;
   const accessKeyId = process.env.S3_ACCESS_KEY_ID;
   const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;

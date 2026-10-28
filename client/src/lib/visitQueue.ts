@@ -17,6 +17,10 @@ export type QueuedVisit = {
   longitude?: number;
   accuracy?: number;
   notes?: string;
+  /** Chave da foto: reaproveitada no reenvio para o servidor não duplicar a foto. */
+  idempotencyKey?: string;
+  /** Momento real da captura (queuedAt é só a hora em que entrou na fila). */
+  capturedAt?: string;
   queuedAt: string;
 };
 
@@ -29,11 +33,13 @@ function load(): QueuedVisit[] {
   }
 }
 
-function save(items: QueuedVisit[]) {
+function save(items: QueuedVisit[]): boolean {
   try {
     localStorage.setItem(KEY, JSON.stringify(items));
+    return true;
   } catch (e) {
     console.warn("Fila de visitas cheia", e);
+    return false;
   }
 }
 
@@ -45,7 +51,8 @@ export function enqueueVisit(item: Omit<QueuedVisit, "id" | "queuedAt">): Queued
   };
   const items = load();
   items.push(entry);
-  save(items);
+  // Antes a falha era silenciosa e o check-in sumia; agora quem chama precisa tratar.
+  if (!save(items)) throw new Error("Sem espaço para guardar o check-in offline neste aparelho.");
   return entry;
 }
 

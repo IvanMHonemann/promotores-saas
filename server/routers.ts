@@ -861,16 +861,17 @@ export const appRouter = router({
       }),
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), routeId: z.number().int().positive().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
       start: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional() })).mutation(async ({ ctx, input }) => {
-        const visit = await db.listOperationalVisits(ctx.accountId, { promoterId: scopeMemberId(ctx) ?? undefined });
-        const owned = visit.find((row) => row.visit.id === input.id);
+        const [owned] = await db.listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? undefined });
         if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "Visita não encontrada para esta empresa." });
         if (scopeMemberId(ctx) !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Visita não pertence ao promotor autenticado." });
+        // Reenvio (toque duplo, timeout seguido de fila offline): não reinicia nem reabre uma visita já iniciada/concluída.
+        if (owned.visit.status !== "pending") return owned;
         return db.updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: new Date(), startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
       }),
       complete: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
-        const visit = await db.listOperationalVisits(ctx.accountId, { promoterId: scopeMemberId(ctx) ?? undefined });
-        const owned = visit.find((row) => row.visit.id === input.id);
+        const [owned] = await db.listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? undefined });
         if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "Visita não encontrada para esta empresa." });
+        if (owned.visit.status === "completed") return owned; // reenvio: mantém o horário de saída original
         return db.updateOperationalVisit(ctx.accountId, input.id, { status: "completed", actualEnd: new Date(), endLatitude: input.latitude, endLongitude: input.longitude, endAccuracy: input.accuracy, notes: input.notes });
       }),
     }),

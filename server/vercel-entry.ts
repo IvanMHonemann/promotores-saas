@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 import compression from "compression";
 import fs from "fs";
 import path from "path";
@@ -9,18 +9,45 @@ import { runScheduledMaintenance, runMissingPunchAlerts, runPhotoMaintenance } f
 import { notifyOwner } from "./_core/notification";
 import crypto from "node:crypto";
 
+/** Headers de segurança básicos. */
+function securityHeaders(_req: Request, res: Response, next: NextFunction) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(self), geolocation=(self), microphone=()");
+  res.setHeader("X-DNS-Prefetch-Control", "off");
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  }
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://maps.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  );
+  next();
+}
+
+function timingSafeTokenEqual(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length || a.length === 0) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    return false;
+  }
+}
+
 async function createApp() {
   const app = express();
   app.set("trust proxy", 1);
+  app.use(securityHeaders);
   app.use(compression());
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ limit: "10mb", extended: true }));
   app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
   app.post("/api/scheduled/database-maintenance", async (req, res) => {
     try {
       const configuredSecret = process.env.SCHEDULE_SECRET;
       const suppliedSecret = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.headers["x-schedule-secret"];
-      if (!configuredSecret || typeof suppliedSecret !== "string" || suppliedSecret.length !== configuredSecret.length || !crypto.timingSafeEqual(Buffer.from(suppliedSecret), Buffer.from(configuredSecret))) {
+      if (!configuredSecret || typeof suppliedSecret !== "string" || !timingSafeTokenEqual(configuredSecret, suppliedSecret)) {
         return res.status(401).json({ error: "Schedule authentication required" });
       }
       const result = await runScheduledMaintenance();
@@ -38,9 +65,9 @@ async function createApp() {
   
   app.post("/api/webhooks/asaas", express.json(), async (req, res) => {
     try {
-      const token = process.env.ASAAS_WEBHOOK_TOKEN || "";
+      const configuredToken = process.env.ASAAS_WEBHOOK_TOKEN || "";
       const headerToken = String(req.headers["asaas-access-token"] || req.headers["x-asaas-token"] || "");
-      if (token && headerToken && token !== headerToken) {
+      if (!configuredToken || !timingSafeTokenEqual(configuredToken, headerToken)) {
         return res.status(401).json({ error: "Invalid webhook token" });
       }
       const body = req.body || {};

@@ -306,7 +306,7 @@ export const storePhotosRouter = router({
       longitude: z.number().optional(),
       accuracy: z.number().optional(),
       locationStatus: z.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
-      imageBase64: z.string().min(100),
+      imageBase64: z.string().min(100).max(6_000_000, "Imagem grande demais. Tire a foto novamente."),
       mimeType: z.string().default("image/jpeg"),
       storeClientId: z.number().int().positive().optional(),
       idempotencyKey: z.string().min(8).max(64),

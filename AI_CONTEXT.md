@@ -1,7 +1,7 @@
 # AI_CONTEXT.md
 
 Contexto técnico conciso para continuidade do desenvolvimento.  
-Última atualização: 2026-10-27. Base: `main` (`06c3630`).
+Última atualização: 2026-10-28. Base: `main` (`06c3630`).
 
 ## Visão geral
 
@@ -46,6 +46,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - `server/modules/storeClients.ts` — clientes de loja
 - `server/modules/timesheetMirror.ts` — espelho de ponto
 - `server/storeAccess.ts` — visibilidade e atribuição de lojas
+- `server/storage.ts` — S3/R2 (o `S3Client` é reaproveitado entre chamadas na mesma instância)
 - `server/entitlements.ts` / `shared/entitlements.ts`
 - `server/routers.ts` — `appRouter` (auth, operations, platform, etc.)
 
@@ -57,6 +58,8 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Lojas, clientes de loja, roteiros semanais, visitas, check-in/out com foto de fachada.
 - Fotos de loja: captura com marca d’água (nome, endereço, loja, data/hora), galeria, seleção em massa, compartilhamento, exclusão, expiração (~60 dias), relatório PDF. Suporte a foto sem loja.
 - Vínculo promotor ↔ lojas (opcional) na criação e na edição do promotor; alterações refletem imediatamente no acesso.
+- Check-in/check-out com foto da fachada (`client/src/components/VisitCheckIn.tsx` + `client/src/lib/photoUpload.ts`): a foto é redimensionada/comprimida (JPEG, lado maior 1280 px, q 0,72) logo após a captura, com preview via blob URL; GPS é lido ao abrir a tela (espera máx. 3 s ao confirmar); check-in/out e upload da foto rodam em paralelo com timeout (AbortController); etapa de progresso visível; botões travados durante o envio + trava síncrona contra toque duplo; erro do servidor (4xx) aparece na tela e permite "Tentar novamente" sem ir para a fila; só falha de rede/timeout/5xx/408/429 vai para a fila offline. A foto nunca é enviada sem compressão (imagem inválida => erro na tela).
+- Idempotência da foto de check-in: chave `ci-<visita>-<ação>-<uuid>` gerada por captura e reaproveitada em retentativas e na fila (`QueuedVisit.idempotencyKey/capturedAt`); `visits.start` ignora visita que não está `pending` e `visits.complete` ignora visita já `completed` (reenvio não reinicia horários).
 - Offline: cadastro de lojas/clientes, sincronização de visitas, fila de fotos (IndexedDB), cache de roteiro do dia.
 - Produtos e validades (com lixeira).
 - Auditoria append-only.
@@ -66,6 +69,9 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 ## Decisões importantes
 
 - Isolamento multi-tenant rigoroso no backend (não confiar só no frontend).
+- Hooks de sync (`useVisitSync`, `usePhotoSync`): `useMutation()` muda de identidade a cada render; não usá-lo como dependência de `useEffect`. O efeito roda uma vez, usa ref para as mutations e tem trava `running` (antes disparava dezenas de envios duplicados). Esse padrão ainda pode existir em `useStoreSync`/`useClientSync` (não verificado).
+- Filas offline (`visitQueue`, `photoQueue`) agora lançam erro quando o localStorage está cheio, em vez de perder o item em silêncio; quem enfileira deve tratar.
+- Recarregamento automático do PWA (`controllerchange` em `main.tsx`) espera `window.__gondupUploading` zerar (máx. ~35 s) para não derrubar um envio em andamento.
 - Sessão via cookie + header para compatibilidade com Vercel e clientes PWA.
 - `storeId` nullable em fotos para não bloquear captura.
 - Atribuição de lojas ao promotor é opcional e gerenciável a qualquer momento (sem recriar o usuário).
@@ -78,6 +84,9 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Resquícios do domínio de extintores ainda existem (schema original, alguns limites como `maxExtinguishers`, referências residuais).
 - Conformidade do ponto com a Portaria MTP 671/2021 (REP) não foi validada juridicamente; o módulo é base técnica.
 - Asaas ainda em modo mock; e-mail em modo console por padrão.
+- `store_photos.idempotencyKey` não tem índice único: a deduplicação no servidor é select-then-insert (sujeita a corrida se duas requisições com a mesma chave chegarem juntas). Mitigado no cliente (trava + chave estável); índice único exigiria migração.
+- Limite de corpo de requisição da Vercel (~4,5 MB): `uploadAndCreate` agora recusa `imageBase64` > 6 MB; fotos de check-in ficam em ~80–250 KB.
+- Pós-mudança de fotos de check-in (2026-10-28): validado com testes de navegador (Chromium + stubs de trpc) e `tsc` das libs isoladas; `pnpm check`, `pnpm test` e `pnpm build` completos NÃO foram executados (sem acesso ao registry npm na sessão). Rodar antes de publicar. `api/index.js` versionado já estava defasado em relação ao fonte; o build da Vercel o regenera.
 - Criação sob demanda de algumas tabelas pode adicionar latência no primeiro acesso.
 - Checklists dinâmicos e evidências genéricas estão modelados no schema, mas o fluxo completo de produto ainda é parcial.
 - Google Maps é opcional (`VITE_GOOGLE_MAPS_API_KEY`).

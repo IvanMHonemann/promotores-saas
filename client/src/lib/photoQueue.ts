@@ -30,11 +30,13 @@ function load(): QueuedPhoto[] {
   }
 }
 
-function save(items: QueuedPhoto[]) {
+function save(items: QueuedPhoto[]): boolean {
   try {
     localStorage.setItem(KEY, JSON.stringify(items));
+    return true;
   } catch (e) {
     console.warn("Fila de fotos cheia", e);
+    return false;
   }
 }
 
@@ -42,7 +44,7 @@ export function enqueuePhoto(photo: Omit<QueuedPhoto, "id" | "queuedAt">): Queue
   const item: QueuedPhoto = { ...photo, id: crypto.randomUUID(), queuedAt: new Date().toISOString() };
   const items = load();
   items.push(item);
-  save(items);
+  if (!save(items)) throw new Error("Sem espaço para guardar a foto offline neste aparelho.");
   return item;
 }
 

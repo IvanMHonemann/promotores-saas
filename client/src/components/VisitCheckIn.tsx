@@ -1,10 +1,21 @@
-import { useRef, useState } from "react";
-import { Camera, Check, X, MapPin, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertTriangle, Camera, Check, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { enqueueVisit } from "@/lib/visitQueue";
-import { isOnline } from "@/lib/offlineCache";
+import { enqueuePhoto } from "@/lib/photoQueue";
 import { trpc } from "@/lib/trpc";
+import {
+  errorMessage,
+  isRetryableError,
+  markUploading,
+  prepareCheckInPhoto,
+  startGpsLookup,
+  waitFor,
+  withTimeout,
+  type GpsFix,
+  type PreparedPhoto,
+} from "@/lib/photoUpload";
 
 type Props = {
   action: "start" | "complete";
@@ -15,144 +26,212 @@ type Props = {
   onCancel: () => void;
 };
 
-function toBase64(dataUrl: string): string {
-  const idx = dataUrl.indexOf(",");
-  return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl;
-}
+type Shot = PreparedPhoto & { capturedAt: string; idempotencyKey: string };
 
-/** Resize and compress a data-URL image so the upload is fast on mobile. */
-async function compressImage(dataUrl: string, maxWidth = 1280, quality = 0.72): Promise<string> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > maxWidth) {
-        height = Math.round((height * maxWidth) / width);
-        width = maxWidth;
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        resolve(dataUrl);
-        return;
-      }
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
+const VISIT_TIMEOUT_MS = 20_000;
+const PHOTO_TIMEOUT_MS = 28_000; // a função serverless da Vercel encerra em 30 s
+const GPS_WAIT_MS = 3_000; // antes esperava até 10 s a cada confirmação
 
 export function VisitCheckIn({ action, visitId, storeId, storeName, onDone, onCancel }: Props) {
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [gps, setGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [shot, setShot] = useState<Shot | null>(null);
+  const [processing, setProcessing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const startVisit = trpc.operations.visits.start.useMutation();
-  const uploadPhoto = trpc.storePhotos.uploadAndCreate.useMutation();
-  const completeVisit = trpc.operations.visits.complete.useMutation();
+  const submittingRef = useRef(false); // trava síncrona contra toque duplo
+  const gpsRef = useRef<Promise<GpsFix | null> | null>(null);
+  const shotRef = useRef<Shot | null>(null);
+  const { client } = trpc.useUtils();
 
-  const capture = () => inputRef.current?.click();
-
-  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhoto(reader.result as string);
-    reader.readAsDataURL(file);
-  };
-
-  const getGps = async () => {
-    return new Promise<{ lat: number; lng: number; accuracy: number } | null>((resolve) => {
-      if (!navigator.geolocation) return resolve(null);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    });
-  };
-
-  const confirm = async () => {
-    if (!photo) return toast.error("Tire a foto da fachada para continuar.");
-    setBusy(true);
-    const position = gps || await getGps();
-    // Compress before upload — full camera images are multi-MB and slow on mobile
-    const compressed = await compressImage(photo);
-    const base64 = toBase64(compressed);
-    const payload = {
-      visitId,
-      storeId,
-      storeName,
-      photoBase64: base64,
-      latitude: position?.lat,
-      longitude: position?.lng,
-      accuracy: position?.accuracy,
+  // O GPS começa a ser lido ao abrir a tela, enquanto o promotor tira a foto.
+  useEffect(() => {
+    gpsRef.current = startGpsLookup();
+    return () => {
+      if (shotRef.current) URL.revokeObjectURL(shotRef.current.previewUrl);
     };
+  }, []);
 
+  const replaceShot = (next: Shot | null) => {
+    if (shotRef.current) URL.revokeObjectURL(shotRef.current.previewUrl);
+    shotRef.current = next;
+    setShot(next);
+  };
+
+  const capture = () => {
+    if (busy || processing) return;
+    inputRef.current?.click();
+  };
+
+  // Redimensiona/comprime já na captura: o "Confirmar" fica rápido e a memória não explode com fotos de 12 MP+.
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    setProcessing(true);
     try {
-      if (action === "start") {
-        await startVisit.mutateAsync({ id: visitId, latitude: position?.lat, longitude: position?.lng, accuracy: position?.accuracy });
-      } else {
-        await completeVisit.mutateAsync({ id: visitId, latitude: position?.lat, longitude: position?.lng, accuracy: position?.accuracy });
-      }
-      // Salva foto da fachada vinculada à visita
-      try {
-        await uploadPhoto.mutateAsync({
-          storeId,
-          visitId,
-          capturedAt: new Date().toISOString(),
-          latitude: position?.lat,
-          longitude: position?.lng,
-          accuracy: position?.accuracy,
-          locationStatus: position ? "success" : "unavailable",
-          imageBase64: base64,
-          mimeType: "image/jpeg",
-          idempotencyKey: `visit-${visitId}-${action}-${Date.now()}`.slice(0, 64),
-        });
-      } catch (photoErr) {
-        console.warn("Foto não enviada", photoErr);
-      }
-      toast.success(`${action === "start" ? "Check-in" : "Check-out"} realizado.`);
-      onDone();
-    } catch (e) {
-      enqueueVisit({ action, mimeType: "image/jpeg", ...payload });
-      toast.info("Salvo offline. Será sincronizado ao voltar a conexão.");
-      onDone();
+      const prepared = await prepareCheckInPhoto(file);
+      replaceShot({
+        ...prepared,
+        capturedAt: new Date().toISOString(),
+        // nova foto = nova chave; retentativas da MESMA foto reutilizam a chave e não duplicam no servidor
+        idempotencyKey: `ci-${visitId}-${action}-${crypto.randomUUID().replace(/-/g, "")}`.slice(0, 64),
+      });
+    } catch (err) {
+      replaceShot(null);
+      setError(errorMessage(err, "Não foi possível processar a foto. Tire novamente."));
     } finally {
-      setBusy(false);
+      setProcessing(false);
     }
   };
 
+  const confirm = async () => {
+    if (submittingRef.current) return;
+    const current = shotRef.current;
+    if (!current) {
+      toast.error("Tire a foto da fachada para continuar.");
+      return;
+    }
+    submittingRef.current = true;
+    setBusy(true);
+    setError(null);
+    markUploading(1);
+    try {
+      setStep("Obtendo localização...");
+      const position = gpsRef.current ? await waitFor(gpsRef.current, GPS_WAIT_MS, null) : null;
+
+      const visitInput = { id: visitId, latitude: position?.lat, longitude: position?.lng, accuracy: position?.accuracy };
+      const photoInput = {
+        storeId,
+        visitId,
+        capturedAt: current.capturedAt,
+        latitude: position?.lat,
+        longitude: position?.lng,
+        accuracy: position?.accuracy,
+        locationStatus: position ? ("success" as const) : ("unavailable" as const),
+        imageBase64: current.base64,
+        mimeType: "image/jpeg",
+        idempotencyKey: current.idempotencyKey,
+      };
+
+      setStep(action === "start" ? "Registrando check-in e enviando foto..." : "Registrando check-out e enviando foto...");
+      // Em paralelo: antes eram duas esperas em sequência.
+      const [visitResult, photoResult] = await Promise.allSettled([
+        withTimeout(VISIT_TIMEOUT_MS, (signal) =>
+          action === "start"
+            ? client.operations.visits.start.mutate(visitInput, { signal })
+            : client.operations.visits.complete.mutate(visitInput, { signal }),
+        ),
+        withTimeout(PHOTO_TIMEOUT_MS, (signal) => client.storePhotos.uploadAndCreate.mutate(photoInput, { signal })),
+      ]);
+
+      const label = action === "start" ? "Check-in" : "Check-out";
+
+      if (visitResult.status === "rejected") {
+        if (!isRetryableError(visitResult.reason)) {
+          // O servidor recusou (permissão, visita inexistente...). Não é falta de internet: mostra o motivo e deixa tentar de novo.
+          setError(errorMessage(visitResult.reason, `Não foi possível registrar o ${label.toLowerCase()}.`));
+          return;
+        }
+        // Sem conexão/timeout: guarda tudo (com a mesma chave da foto) para sincronizar depois.
+        enqueueVisit({
+          action,
+          visitId,
+          storeId,
+          storeName,
+          photoBase64: current.base64,
+          mimeType: "image/jpeg",
+          latitude: position?.lat,
+          longitude: position?.lng,
+          accuracy: position?.accuracy,
+          idempotencyKey: current.idempotencyKey,
+          capturedAt: current.capturedAt,
+        });
+        toast.info("Salvo offline. Será sincronizado ao voltar a conexão.");
+        onDone();
+        return;
+      }
+
+      if (photoResult.status === "rejected") {
+        // Check-in já está salvo; a foto não pode se perder.
+        enqueuePhoto({
+          storeId,
+          visitId,
+          capturedAt: current.capturedAt,
+          latitude: position?.lat,
+          longitude: position?.lng,
+          accuracy: position?.accuracy,
+          locationStatus: photoInput.locationStatus,
+          imageBase64: current.base64,
+          mimeType: "image/jpeg",
+          idempotencyKey: current.idempotencyKey,
+        });
+        toast.success(`${label} realizado.`);
+        toast.info("A foto será enviada assim que possível.");
+        onDone();
+        return;
+      }
+
+      toast.success(`${label} realizado.`);
+      onDone();
+    } catch (err) {
+      // Qualquer falha inesperada vira mensagem na tela, nunca tela em branco.
+      console.error("Falha no check-in/check-out", err);
+      setError(errorMessage(err, "Algo deu errado. Tente confirmar novamente."));
+    } finally {
+      markUploading(-1);
+      submittingRef.current = false;
+      setBusy(false);
+      setStep("");
+    }
+  };
+
+  const accent = action === "start" ? "bg-teal-500 hover:bg-teal-400" : "bg-amber-500 hover:bg-amber-400";
+  const locked = busy || processing;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-busy={locked}>
       <div className="w-full max-w-md rounded-2xl bg-slate-900 p-5">
         <h2 className="text-lg font-bold text-white">{action === "start" ? "Check-in" : "Check-out"} — {storeName}</h2>
         <p className="mt-1 text-sm text-slate-400">Tire uma foto da fachada da loja para confirmar.</p>
 
         <input ref={inputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile} />
 
-        {!photo ? (
-          <Button onClick={capture} className={`mt-4 w-full gap-2 text-slate-950 ${action === "start" ? "bg-teal-500 hover:bg-teal-400" : "bg-amber-500 hover:bg-amber-400"}`}>
+        {processing ? (
+          <div className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-950/60 p-6 text-sm text-slate-200" role="status">
+            <Loader2 className="h-4 w-4 animate-spin" /> Processando foto...
+          </div>
+        ) : !shot ? (
+          <Button onClick={capture} className={`mt-4 w-full gap-2 text-slate-950 ${accent}`}>
             <Camera className="h-5 w-5" /> Tirar foto da fachada
           </Button>
         ) : (
           <div className="mt-4">
-            <img src={photo} alt="Fachada" className="w-full rounded-xl" />
+            <img src={shot.previewUrl} alt="Fachada" className="max-h-[50vh] w-full rounded-xl bg-black object-contain" />
             <div className="mt-3 flex gap-2">
-              <Button onClick={capture} variant="outline" className="flex-1">Refazer</Button>
-              <Button onClick={confirm} disabled={busy} className={`flex-1 gap-2 text-slate-950 ${action === "start" ? "bg-teal-500 hover:bg-teal-400" : "bg-amber-500 hover:bg-amber-400"}`}>
+              <Button onClick={capture} variant="outline" className="flex-1" disabled={locked}>Refazer</Button>
+              <Button onClick={() => void confirm()} disabled={locked} className={`flex-1 gap-2 text-slate-950 ${accent}`}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                Confirmar
+                {busy ? "Enviando..." : error ? "Tentar novamente" : "Confirmar"}
               </Button>
             </div>
           </div>
         )}
 
-        <Button onClick={onCancel} variant="ghost" className="mt-3 w-full text-slate-400">
+        {busy && step && (
+          <p className="mt-3 flex items-center justify-center gap-2 text-xs font-medium text-teal-200" role="status">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> {step}
+          </p>
+        )}
+
+        {error && !busy && (
+          <p className="mt-3 flex items-start gap-2 rounded-lg border border-rose-400/40 bg-rose-500/10 p-3 text-sm text-rose-100" role="alert">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {error}
+          </p>
+        )}
+
+        <Button onClick={onCancel} variant="ghost" className="mt-3 w-full text-slate-400" disabled={busy}>
           <X className="mr-2 h-4 w-4" /> Cancelar
         </Button>
       </div>

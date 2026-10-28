@@ -1228,10 +1228,11 @@ export async function createOperationalRouteWithVisits(input: { route: typeof op
   });
 }
 
-export async function listOperationalVisits(companyId: number, options: { date?: string; promoterId?: number; routeId?: number } = {}) {
+export async function listOperationalVisits(companyId: number, options: { id?: number; date?: string; promoterId?: number; routeId?: number } = {}) {
   const database = await getDb();
   if (!database) return [];
   const conditions = [eq(operationalVisits.companyId, requireAccountId(companyId))];
+  if (options.id) conditions.push(eq(operationalVisits.id, options.id));
   if (options.promoterId) conditions.push(eq(operationalVisits.promoterId, options.promoterId));
   if (options.routeId) conditions.push(eq(operationalVisits.routeId, options.routeId));
   if (options.date) conditions.push(eq(operationalRoutes.date, options.date as any));

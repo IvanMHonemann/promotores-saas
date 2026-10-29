@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { CalendarDays, CheckCircle2, Coffee, Loader2, LogIn, LogOut, MapPin, Play } from "lucide-react";
+import { CalendarDays, CheckCircle2, Coffee, Loader2, LogIn, LogOut, MapPin, Play, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useBusy } from "@/components/BusyOverlay";
@@ -24,6 +24,13 @@ const hhmm = (date: Date) => date.toLocaleTimeString("pt-BR", { hour: "2-digit",
 
 function formatDuration(ms: number) {
   const minutes = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${String(m).padStart(2, "0")}min` : `${m} min`;
+}
+
+function formatMinutes(total: number) {
+  const minutes = Math.abs(Math.round(total));
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return h > 0 ? `${h}h ${String(m).padStart(2, "0")}min` : `${m} min`;
@@ -79,6 +86,7 @@ export function PunchPanel() {
       refreshQueue();
       void utils.timeTracking.myHistory.invalidate();
       void utils.timeTracking.shiftStatus.invalidate();
+      void utils.timeTracking.myTimeSummary.invalidate();
     };
     window.addEventListener("online", sync);
     sync();
@@ -101,6 +109,7 @@ export function PunchPanel() {
   const historyQuery = trpc.timeTracking.myHistory.useQuery({ limit: 30 });
   if (historyQuery.data) cacheSet("punch-history", historyQuery.data);
   const history = { ...historyQuery, data: historyQuery.data ?? (!isOnline() ? cacheGet<any[]>("punch-history") : undefined) };
+  const summary = trpc.timeTracking.myTimeSummary.useQuery(undefined, { staleTime: 60_000 });
   const register = trpc.timeTracking.registerEvent.useMutation();
 
   const todayKey = localDayKey(now, timeZone);
@@ -184,7 +193,11 @@ export function PunchPanel() {
       });
       if (isOnline()) {
         toast.success(`${action.type === "clock_in" ? "Entrada" : action.type === "clock_out" ? "Saída" : action.type === "break_start" ? "Início do intervalo" : "Retorno do intervalo"} registrada às ${hhmm(new Date())}.`);
-        await Promise.all([utils.timeTracking.myHistory.invalidate(), utils.timeTracking.shiftStatus.invalidate()]);
+        await Promise.all([
+          utils.timeTracking.myHistory.invalidate(),
+          utils.timeTracking.shiftStatus.invalidate(),
+          utils.timeTracking.myTimeSummary.invalidate(),
+        ]);
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Não foi possível registrar o ponto.";
@@ -204,6 +217,16 @@ export function PunchPanel() {
       : lastType
         ? { text: "Jornada em andamento", dot: "bg-emerald-300", chip: "border-emerald-300/40 bg-emerald-300/15 text-emerald-100" }
         : { text: "Entrada não registrada", dot: "bg-sky-300", chip: "border-sky-300/40 bg-sky-300/15 text-sky-100" };
+
+  const balance = summary.data?.balanceMinutes ?? 0;
+  const isOvertime = balance > 0;
+  const isDebt = balance < 0;
+  const balanceLabel = isOvertime ? "Horas extras" : isDebt ? "Horas a compensar" : "Saldo em dia";
+  const balanceTone = isOvertime
+    ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100"
+    : isDebt
+      ? "border-amber-300/40 bg-amber-400/15 text-amber-100"
+      : "border-white/15 bg-white/5 text-slate-200";
 
   return (
     <section aria-label="Ponto eletrônico" className="overflow-hidden rounded-3xl border border-teal-300/30 bg-gradient-to-br from-slate-800 via-slate-900 to-teal-950 shadow-xl shadow-black/30">
@@ -226,6 +249,19 @@ export function PunchPanel() {
             </span>
           )}
         </div>
+
+        {summary.data && (
+          <div className={`mt-4 flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${balanceTone}`}>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide opacity-80">{summary.data.periodLabel}</p>
+              <p className="mt-0.5 text-base font-black">{balanceLabel}</p>
+            </div>
+            <div className="flex items-center gap-2 text-right">
+              {isOvertime ? <TrendingUp className="h-5 w-5" /> : isDebt ? <TrendingDown className="h-5 w-5" /> : null}
+              <span className="text-lg font-black tabular-nums">{formatMinutes(balance)}</span>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="mt-5 flex h-16 items-center justify-center gap-2 rounded-2xl bg-white/5 text-sm text-slate-200">

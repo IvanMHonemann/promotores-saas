@@ -391,8 +391,14 @@ export const appRouter = router({
       .mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
     companies: router({
       list: platformProcedure.query(() => db.listCompanies()),
-      create: platformProcedure.input(z.object({ companyName: z.string().min(2), userName: z.string().min(2), email: z.string().email(), password: z.string().min(8) })).mutation(async ({ input }) => {
-        try { return await memberAuth.createCompanyWithAdmin(input); }
+      create: platformProcedure.input(z.object({ companyName: z.string().min(2), userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), featureKeys: z.array(entitlementFeatureKey).optional() })).mutation(async ({ ctx, input }) => {
+        try {
+          const created = await memberAuth.createCompanyWithAdmin(input);
+          const selected = new Set(input.featureKeys ?? []);
+          const overrides = Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, selected.has(key)])) as Partial<Record<EntitlementKey, boolean>>;
+          await db.replaceCompanyFeatureOverrides({ companyId: created.companyId, overrides, updatedByPlatformAdminId: ctx.platformAdminId ?? null, reason: "Definido na criação da empresa" });
+          return created;
+        }
         catch (error: any) { if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já está cadastrado." }); throw error; }
       }),
       update: platformProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().min(2).optional(), active: z.boolean().optional() })).mutation(async ({ input }) => { await db.updateCompany(input.id, { name: input.name, active: input.active }); return { success: true } as const; }),

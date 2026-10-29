@@ -53,8 +53,6 @@ export function SidebarNav() {
         { href: "/", label: "Visão geral", icon: LayoutDashboard },
         { href: "/admin/empresas", label: "Empresas", icon: Building2 },
         { href: "/admin/usuarios", label: "Usuários", icon: UsersRound },
-        { href: "/admin/assinaturas", label: "Planos e assinaturas", icon: CreditCard },
-        { href: "/admin/pagamentos", label: "Pagamentos", icon: Wallet },
         { href: "/admin/auditoria", label: "Auditoria geral", icon: ClipboardList },
         { href: "/plataforma/ponto", label: "Ponto eletrônico (teste)", icon: Clock3 },
         { href: "/plataforma/scanner", label: "Scanner e erros", icon: ShieldAlert },
@@ -76,14 +74,19 @@ export function SidebarNav() {
       : [
           { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
           ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: Package }] : []),
-          ...(role === "company_admin" ? [{ href: "/lojas", label: "Lojas", icon: MapPin }] : [{ href: "/lojas", label: "Lojas", icon: MapPin }]),
-          { href: "/#roteiros", label: "Roteiros", icon: CalendarDays },
-          { href: "/cartao-ponto", label: "Cartão-ponto", icon: Clock3 },
+          ...(hasFeature("fieldOperations") ? [
+            { href: "/lojas", label: "Lojas", icon: MapPin },
+            { href: "/#roteiros", label: "Roteiros", icon: CalendarDays },
+          ] : []),
+          ...(hasFeature("timeTracking") ? [{ href: "/cartao-ponto", label: "Cartão-ponto", icon: Clock3 }] : []),
           ...(role === "company_admin" && hasFeature("timeTracking") ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: FileText }] : []),
           { href: "/lixeira", label: "Lixeira", icon: Trash2 },
           ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: UsersRound }] : []),
-          ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList },
-          { href: "/check-in-out", label: "Check-in / Check-out", icon: Camera }] : []),
+          ...(role === "company_admin" && hasFeature("reports") ? [
+            { href: "/auditoria", label: "Auditoria", icon: ClipboardList },
+            { href: "/check-in-out", label: "Check-in / Check-out", icon: Camera },
+          ] : []),
+          ...(role === "company_admin" ? [{ href: "/meus-modulos", label: "Meus módulos", icon: CreditCard }] : []),
         ];
   const close = () => setOpen(false);
   return <>

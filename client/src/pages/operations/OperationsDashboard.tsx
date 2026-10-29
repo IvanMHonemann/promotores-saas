@@ -182,7 +182,7 @@ function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFiel
         <Metric label="Concluídas" value={metrics.completed} icon={CheckCircle2} tone="text-emerald-300" hint="Finalizadas hoje" />
         <Metric className={isCompanyAdmin && hasTimeTracking ? "" : "col-span-2"} label="Em andamento" value={metrics.inProgress} icon={Clock3} tone="text-amber-300" hint="Em execução" />
       </div>}
-      {!hasFieldOperations && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">Roteiros, lojas e visitas não estão liberados para esta empresa. O módulo de operação de campo está disponível nos planos Profissional e Empresarial.</div>}
+      {!hasFieldOperations && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">Roteiros, lojas e visitas não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo de operação de campo.</div>}
       {hasFieldOperations && visitsFailed && <p role="alert" className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">Não foi possível carregar os indicadores de visitas. Atualize o painel e tente novamente.</p>}
 
       {isCompanyAdmin && hasTimeTracking && <PresenceCard entries={presence} loading={presenceLoading} failed={presenceFailed} timeZone={timeZone} />}

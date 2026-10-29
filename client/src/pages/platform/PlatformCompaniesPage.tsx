@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
+import { ENTITLEMENT_CATALOG, type EntitlementKey } from "@shared/entitlements";
 import { toast } from "sonner";
 
 const STATUS_LABEL: Record<string, string> = { trial: "Teste", test: "Teste", active: "Ativa", pending: "Pagamento pendente", overdue: "Em atraso", suspended: "Suspensa", canceled: "Cancelada", expired: "Expirada" };
@@ -38,7 +39,7 @@ export default function PlatformCompaniesPage() {
   const selected = (list.data || []).find((c) => c.id === selectedId) ?? null;
   const refresh = () => { void utils.platformCompanies.overview.invalidate(); void utils.platformCompanies.payments.invalidate(); void utils.platformPayments.list.invalidate(); void utils.platform.companies.list.invalidate(); };
 
-  return <DashboardLayout title="Empresas" description="Plano, validade, pagamentos, bloqueio e exclusão de cada empresa." refreshing={list.isFetching} onRefresh={refresh}>
+  return <DashboardLayout title="Empresas" description="Módulos, validade, bloqueio e exclusão de cada empresa." refreshing={list.isFetching} onRefresh={refresh}>
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
       <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5 text-teal-300" />Empresas ({rows.length})</CardTitle></CardHeader><CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-3"><Input aria-label="Buscar empresa" placeholder="Buscar por nome" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs border-white/15 bg-slate-950/60 text-white" /><label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />Mostrar excluídas</label></div>
@@ -49,7 +50,7 @@ export default function PlatformCompaniesPage() {
           <p className="mt-1 text-xs text-slate-400">{c.planName ?? "Sem plano"} · válido até {day(c.expiresAt)} · último pagamento {day(c.lastPayment)} · {c.activeUsers}/{c.users} usuários</p>
         </button>; })}</div>
       </CardContent></Card>
-      {selected ? <CompanyPanel key={selected.id} company={selected} onChanged={refresh} /> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar plano, validade, pagamentos, bloquear ou excluir.</CardContent></Card>}
+      {selected ? <CompanyPanel key={selected.id} company={selected} onChanged={refresh} /> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir.</CardContent></Card>}
     </div>
   </DashboardLayout>;
 }
@@ -98,6 +99,8 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
       <p className="text-xs text-slate-400">Depois do último dia de validade (mais a tolerância), a empresa perde o acesso às funções comerciais e só vê a tela de regularização.</p>
     </CardContent></Card>
 
+    <CompanyFeaturesCard companyId={c.id} />
+
     <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Wallet className="h-4 w-4 text-teal-300" />Pagamentos</CardTitle></CardHeader><CardContent className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <div><Label>Valor pago (R$)</Label><Input inputMode="decimal" value={pay_.amount} onChange={(e) => setPay({ ...pay_, amount: e.target.value.replace(",", ".") })} className={inp} /></div>
@@ -126,4 +129,34 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
       </>}
     </CardContent></Card>
   </div>;
+}
+
+function CompanyFeaturesCard({ companyId }: { companyId: number }) {
+  const features = trpc.platform.companyFeatures.get.useQuery({ companyId });
+  const setFeatures = trpc.platform.companyFeatures.set.useMutation({
+    onSuccess: () => { toast.success("Módulos atualizados."); void features.refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const [selected, setSelected] = useState<EntitlementKey[]>([]);
+  useMemo(() => {
+    if (features.data?.companyFeatures) {
+      setSelected(ENTITLEMENT_CATALOG.filter((f) => features.data.companyFeatures[f.key]).map((f) => f.key));
+    }
+  }, [features.data]);
+  const toggle = (key: EntitlementKey) => setSelected((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+  const save = () => setFeatures.mutate({
+    companyId,
+    overrides: ENTITLEMENT_CATALOG.map((f) => ({ featureKey: f.key, mode: selected.includes(f.key) ? "allow" as const : "deny" as const })),
+    reason: "Ajuste pelo administrador da plataforma",
+  });
+  return (
+    <Card className="border-white/10 bg-slate-900/70 text-white">
+      <CardHeader><CardTitle className="text-base">Módulos liberados</CardTitle></CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {features.isLoading && <p className="text-slate-400">Carregando...</p>}
+        <div className="grid gap-1">{ENTITLEMENT_CATALOG.map((f) => <label key={f.key} className="flex items-center gap-2"><input type="checkbox" checked={selected.includes(f.key)} onChange={() => toggle(f.key)} />{f.label}</label>)}</div>
+        <Button disabled={setFeatures.isPending} onClick={save} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar módulos</Button>
+      </CardContent>
+    </Card>
+  );
 }

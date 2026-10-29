@@ -106,7 +106,7 @@ export default function PromoterDashboard() {
 
         {hasTimeTracking && <PunchPanel />}
 
-        {!hasTimeTracking && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">O ponto eletrônico e o GPS estão disponíveis nos planos Profissional e Empresarial. Peça ao administrador da empresa para revisar o plano.</div>}
+        {!hasTimeTracking && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">O ponto eletrônico e o GPS não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo.</div>}
         {hasFieldOperations && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
           <div className="rounded-2xl border border-amber-300/40 bg-amber-300/15 p-4 text-sm font-medium text-amber-50">
             {shift.data?.status === "closed"
@@ -151,7 +151,7 @@ export default function PromoterDashboard() {
           </div>
         </section>
 
-        {!hasFieldOperations && <div className="rounded-2xl border border-slate-400/25 bg-slate-400/10 p-4 text-sm text-slate-200">Roteiros e visitas estão disponíveis nos planos Profissional e Empresarial.</div>}
+        {!hasFieldOperations && <div className="rounded-2xl border border-slate-400/25 bg-slate-400/10 p-4 text-sm text-slate-200">Roteiros e visitas não estão liberados para esta empresa.</div>}
         {hasFieldOperations && <section id="roteiro" className="scroll-mt-6">
           <Card>
             <CardHeader>

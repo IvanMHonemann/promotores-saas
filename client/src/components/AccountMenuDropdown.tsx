@@ -87,9 +87,9 @@ export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdo
         </DropdownMenuItem>
         {isCompanyAdmin && (
           <DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
-            <a href="/minha-assinatura">
+            <a href="/meus-modulos">
               <CreditCard className="text-teal-300" />
-              Minha assinatura
+              Meus módulos
             </a>
           </DropdownMenuItem>
         )}

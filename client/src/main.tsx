@@ -7,6 +7,10 @@ import App from "./App";
 import "./index.css";
 
 const FORCE_RELOAD_VERSION = "v14";
+if (typeof window !== "undefined" && window.location.pathname === "/plataforma/teste-check-in-out") {
+  localStorage.removeItem("promotores-saas-act-as");
+  localStorage.removeItem("promotores-saas-auth-user");
+}
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     let refreshing = false;
@@ -84,7 +88,6 @@ const trpcClient = trpc.createClient({
         try {
           const actAs = JSON.parse(localStorage.getItem("promotores-saas-act-as") || "null");
           if (actAs?.id) headers.set("x-act-as-company", String(actAs.id));
-          if (actAs?.memberId) headers.set("x-act-as-member", String(actAs.memberId));
         } catch { /* sem modo "acessar como empresa" */ }
         return globalThis.fetch(input, { ...(init ?? {}), headers, credentials: "include" });
       },

@@ -30,6 +30,11 @@ const entitlementFeatureKey = z.enum(ENTITLEMENT_KEYS);
 const permissionModeSchema = z.enum(["inherit", "allow", "deny"]);
 const featurePermissionListSchema = z.array(z.object({ featureKey: entitlementFeatureKey, mode: permissionModeSchema })).max(ENTITLEMENT_KEYS.length);
 
+type PlatformTestSession = { status: "pending" | "in_progress" | "completed"; photoCount: number; lastPhotoAt: string | null; lastLatitude: number | null; lastLongitude: number | null };
+const platformTestSessions = new Map<number, PlatformTestSession>();
+const platformTestKey = (platformAdminId: number | undefined, fallbackId: number) => platformAdminId ?? fallbackId;
+const getPlatformTestSession = (key: number): PlatformTestSession => platformTestSessions.get(key) ?? { status: "pending", photoCount: 0, lastPhotoAt: null, lastLatitude: null, lastLongitude: null };
+
 
 const productInput = z.object({
   productCode: z.string().trim().min(1).max(64),
@@ -390,22 +395,48 @@ export const appRouter = router({
       .input(z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }))
       .mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
     testing: router({
-      stores: platformProcedure.input(z.object({ companyId: z.number().int().positive() })).query(({ input }) => db.listOperationalStores(input.companyId)),
-      createVisit: platformProcedure.input(z.object({ companyId: z.number().int().positive(), promoterId: z.number().int().positive(), storeId: z.number().int().positive(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).mutation(async ({ ctx, input }) => {
-        const company = await db.getCompanyById(input.companyId);
-        if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
-        const members = await memberAuth.listMemberAccounts(input.companyId);
-        const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
-        if (!promoter) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da empresa." });
-        const stores = await db.listOperationalStores(input.companyId);
-        if (!stores.some((store) => store.id === input.storeId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione uma loja ativa da empresa." });
-        const route = await db.createOperationalRouteWithVisits({
-          route: { companyId: input.companyId, name: "Teste de check-in / check-out", date: new Date(`${input.date}T00:00:00.000Z`), promoterId: input.promoterId, status: "assigned", notes: `Visita criada pelo administrador da plataforma #${ctx.platformAdminId ?? ctx.user.id}` },
-          storeIds: [input.storeId],
-        });
-        const [created] = await db.listOperationalVisits(input.companyId, { routeId: route.id });
-        if (!created) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível preparar a visita de teste." });
-        return { visitId: created.visit.id, storeId: created.store.id, storeName: created.store.name, promoterId: promoter.id };
+      session: platformProcedure.query(({ ctx }) => {
+        const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
+        const session = getPlatformTestSession(key);
+        platformTestSessions.set(key, session);
+        return { visitId: 1, storeId: 1, storeName: "Loja de teste do administrador geral", ...session };
+      }),
+      reset: platformProcedure.mutation(({ ctx }) => {
+        platformTestSessions.delete(platformTestKey(ctx.platformAdminId, ctx.user.id));
+        return { success: true as const };
+      }),
+      start: platformProcedure.input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional() })).mutation(({ ctx, input }) => {
+        if (input.id !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Sessão de sandbox não encontrada." });
+        const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
+        const session = getPlatformTestSession(key);
+        if (session.status === "completed") throw new TRPCError({ code: "BAD_REQUEST", message: "Reinicie a sessão de sandbox para testar novamente." });
+        session.status = "in_progress";
+        session.lastLatitude = input.latitude ?? null;
+        session.lastLongitude = input.longitude ?? null;
+        platformTestSessions.set(key, session);
+        return { visitId: 1, storeId: 1, storeName: "Loja de teste do administrador geral", ...session };
+      }),
+      complete: platformProcedure.input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional() })).mutation(({ ctx, input }) => {
+        if (input.id !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Sessão de sandbox não encontrada." });
+        const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
+        const session = getPlatformTestSession(key);
+        if (session.status !== "in_progress") throw new TRPCError({ code: "BAD_REQUEST", message: "Faça o check-in antes do check-out." });
+        session.status = "completed";
+        session.lastLatitude = input.latitude ?? null;
+        session.lastLongitude = input.longitude ?? null;
+        platformTestSessions.set(key, session);
+        return { visitId: 1, storeId: 1, storeName: "Loja de teste do administrador geral", ...session };
+      }),
+      uploadPhoto: platformProcedure.input(z.object({ storeId: z.number().int().positive().optional().nullable(), visitId: z.number().int().positive().optional(), capturedAt: z.string(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), imageBase64: z.string().min(100).max(6_000_000), mimeType: z.string().default("image/jpeg"), idempotencyKey: z.string().min(8).max(64) })).mutation(({ ctx, input }) => {
+        if (input.visitId !== undefined && input.visitId !== 1) throw new TRPCError({ code: "NOT_FOUND", message: "Sessão de sandbox não encontrada." });
+        const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
+        const session = getPlatformTestSession(key);
+        session.photoCount += 1;
+        session.lastPhotoAt = input.capturedAt;
+        session.lastLatitude = input.latitude ?? null;
+        session.lastLongitude = input.longitude ?? null;
+        platformTestSessions.set(key, session);
+        return { id: session.photoCount, sandbox: true as const };
       }),
     }),
     companies: router({

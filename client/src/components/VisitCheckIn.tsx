@@ -24,6 +24,7 @@ type Props = {
   storeName: string;
   onDone: () => void;
   onCancel: () => void;
+  sandbox?: boolean;
 };
 
 type Shot = PreparedPhoto & { capturedAt: string; idempotencyKey: string };
@@ -39,6 +40,7 @@ export function VisitCheckIn({
   storeName,
   onDone,
   onCancel,
+  sandbox = false,
 }: Props) {
   const [shot, setShot] = useState<Shot | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -148,14 +150,34 @@ export function VisitCheckIn({
       );
       // Em paralelo: antes eram duas esperas em sequência.
       const [visitResult, photoResult] = await Promise.allSettled([
-        withTimeout(VISIT_TIMEOUT_MS, signal =>
-          action === "start"
-            ? client.operations.visits.start.mutate(visitInput, { signal })
-            : client.operations.visits.complete.mutate(visitInput, { signal })
-        ),
-        withTimeout(PHOTO_TIMEOUT_MS, signal =>
-          client.storePhotos.uploadAndCreate.mutate(photoInput, { signal })
-        ),
+        withTimeout<void>(VISIT_TIMEOUT_MS, async signal => {
+          if (sandbox) {
+            if (action === "start")
+              await client.platform.testing.start.mutate(visitInput, {
+                signal,
+              });
+            else
+              await client.platform.testing.complete.mutate(visitInput, {
+                signal,
+              });
+          } else if (action === "start") {
+            await client.operations.visits.start.mutate(visitInput, { signal });
+          } else {
+            await client.operations.visits.complete.mutate(visitInput, {
+              signal,
+            });
+          }
+        }),
+        withTimeout<void>(PHOTO_TIMEOUT_MS, async signal => {
+          if (sandbox)
+            await client.platform.testing.uploadPhoto.mutate(photoInput, {
+              signal,
+            });
+          else
+            await client.storePhotos.uploadAndCreate.mutate(photoInput, {
+              signal,
+            });
+        }),
       ]);
 
       const label = action === "start" ? "Check-in" : "Check-out";
@@ -172,19 +194,29 @@ export function VisitCheckIn({
           return;
         }
         // Sem conexão/timeout: guarda tudo (com a mesma chave da foto) para sincronizar depois.
-        enqueueVisit({
-          action,
-          visitId,
-          storeId,
-          storeName,
-          photoBase64: current.base64,
-          mimeType: "image/jpeg",
-          latitude: position?.lat,
-          longitude: position?.lng,
-          accuracy: position?.accuracy,
-          idempotencyKey: current.idempotencyKey,
-          capturedAt: current.capturedAt,
-        });
+        if (!sandbox) {
+          enqueueVisit({
+            action,
+            visitId,
+            storeId,
+            storeName,
+            photoBase64: current.base64,
+            mimeType: "image/jpeg",
+            latitude: position?.lat,
+            longitude: position?.lng,
+            accuracy: position?.accuracy,
+            idempotencyKey: current.idempotencyKey,
+            capturedAt: current.capturedAt,
+          });
+        }
+        if (sandbox)
+          setError(
+            errorMessage(
+              visitResult.reason,
+              `Não foi possível registrar o ${label.toLowerCase()}.`
+            )
+          );
+        if (sandbox) return;
         toast.info("Salvo offline. Será sincronizado ao voltar a conexão.");
         onDone();
         return;
@@ -192,6 +224,15 @@ export function VisitCheckIn({
 
       if (photoResult.status === "rejected") {
         // Check-in já está salvo; a foto não pode se perder.
+        if (sandbox) {
+          setError(
+            errorMessage(
+              photoResult.reason,
+              `Não foi possível salvar a foto do ${label.toLowerCase()}.`
+            )
+          );
+          return;
+        }
         enqueuePhoto({
           storeId,
           visitId,

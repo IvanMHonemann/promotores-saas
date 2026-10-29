@@ -61,17 +61,7 @@ export async function createContext(opts: CreateExpressContextOptions): Promise<
         if (company) {
           actingAsPlatform = true;
           accountId = company.id;
-          const actAsMember = Number(opts.req.headers["x-act-as-member"]);
-          if (Number.isInteger(actAsMember) && actAsMember > 0) {
-            const members = await import("../memberAuth").then(({ listMemberAccounts }) => listMemberAccounts(company.id));
-            const member = members.find((candidate) => candidate.id === actAsMember && candidate.active && candidate.role === "promoter");
-            if (member) {
-              memberAccountId = member.id;
-              isMember = true;
-              user = { ...user, name: `${member.userName} (teste do administrador da plataforma)`, email: member.email, role: "promoter", companyId: company.id };
-            }
-          }
-          if (!memberAccountId) user = { ...user, name: `${platformAdmin.userName} (administrador da plataforma)`, role: "company_admin", companyId: company.id };
+          user = { ...user, name: `${platformAdmin.userName} (administrador da plataforma)`, role: "company_admin", companyId: company.id };
         }
       }
     } else {

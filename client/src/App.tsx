@@ -61,14 +61,8 @@ function PlatformProtected({ children }: { children: React.ReactNode }) {
 
 function PlatformTestProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const hasTestSession = (() => {
-    try {
-      const actAs = JSON.parse(localStorage.getItem("promotores-saas-act-as") || "null");
-      return Boolean(actAs?.id && actAs?.memberId);
-    } catch { return false; }
-  })();
   if (loading) return <LoadingScreen />;
-  if (!user || (user.role !== "platform_admin" && !hasTestSession)) return <RedirectHome />;
+  if (!user || user.role !== "platform_admin") return <RedirectHome />;
   return <>{children}</>;
 }
 

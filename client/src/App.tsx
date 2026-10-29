@@ -42,7 +42,7 @@ import { useEffect } from "react";
 
 function RedirectHome() { if (typeof window !== "undefined") window.location.replace("/"); return <LoadingScreen />; }
 
-function LoadingScreen() { return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white"><Loader2 className="h-7 w-7 animate-spin text-red-500" /></div>; }
+function LoadingScreen() { return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white"><Loader2 className="h-7 w-7 animate-spin text-teal-300" /></div>; }
 
 function CommercialProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();

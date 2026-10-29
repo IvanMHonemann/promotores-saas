@@ -22,7 +22,7 @@ const navLinks = [
   { href: "#recursos", label: "Recursos" },
   { href: "#operacao", label: "Operação" },
   { href: "#perfis", label: "Perfis" },
-  { href: "/planos", label: "Planos" },
+  { href: "/login", label: "Entrar" },
 ];
 
 const metrics = [
@@ -88,7 +88,7 @@ const roles = [
   },
   {
     title: "Administrador",
-    text: "Controla usuários, planos, limites e a trilha de auditoria da empresa em um único painel.",
+    text: "Controla usuários, módulos liberados e a trilha de auditoria da empresa em um único painel.",
     items: ["Permissões por módulo", "Espelho de ponto", "Assinatura e equipe"],
   },
 ];
@@ -152,7 +152,7 @@ export default function LandingPage() {
             <Button variant="outline" className="border-teal-400/50 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20 hover:text-white" onClick={() => navigate("/login")}>
               Entrar
             </Button>
-            <Button className="bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/cadastro")}>
+            <Button className="bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/login")}>
               Começar
             </Button>
           </div>
@@ -178,7 +178,7 @@ export default function LandingPage() {
             GONDUP reúne jornada, roteiros, lojas e evidências em um único ambiente multiempresa. Supervisione a execução no PDV com a mesma clareza da operação no escritório.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="lg" className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/cadastro")}>
+            <Button size="lg" className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/login")}>
               Criar ambiente
               <ArrowRight className="h-4 w-4" />
             </Button>
@@ -334,12 +334,12 @@ export default function LandingPage() {
             Crie o ambiente da agência, convide a equipe e comece a medir presença, jornada e evidências ainda hoje.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Button size="lg" className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/cadastro")}>
+            <Button size="lg" className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/login")}>
               Criar conta
               <ArrowRight className="h-4 w-4" />
             </Button>
-            <Button size="lg" variant="outline" className="border-white/15 bg-white/5 px-6 text-white hover:bg-white/10" onClick={() => navigate("/planos")}>
-              Comparar planos
+            <Button size="lg" variant="outline" className="border-white/15 bg-white/5 px-6 text-white hover:bg-white/10" onClick={() => navigate("/login")}>
+              Criar conta
             </Button>
           </div>
         </div>
@@ -351,7 +351,7 @@ export default function LandingPage() {
           <p>GONDUP · Gestão inteligente de equipes de campo</p>
           <div className="flex gap-5">
             <button className="hover:text-white" onClick={() => navigate("/login")}>Entrar</button>
-            <button className="hover:text-white" onClick={() => navigate("/planos")}>Planos</button>
+            <button className="hover:text-white" onClick={() => navigate("/login")}>Entrar</button>
           </div>
         </div>
       </footer>

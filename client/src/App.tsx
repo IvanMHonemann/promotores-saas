@@ -11,15 +11,10 @@ import { BusyProvider } from "./components/BusyOverlay";
 // Code-splitting: cada página vira um chunk carregado sob demanda.
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
-const AdminAssinaturasPage = lazy(() => import("./pages/AdminAssinaturasPage"));
-const PlansPage = lazy(() => import("./pages/PlansPage"));
-const PublicPlansPage = lazy(() => import("./pages/PublicPlansPage"));
-const SignupPage = lazy(() => import("./pages/SignupPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
-const UpgradePlanPage = lazy(() => import("./pages/UpgradePlanPage"));
-const MySubscriptionPage = lazy(() => import("./pages/MySubscriptionPage"));
-const PaymentHistoryPage = lazy(() => import("./pages/PaymentHistoryPage"));
+// SignupPage arquivada em _archived
 const MyAccountPage = lazy(() => import("./pages/MyAccountPage"));
+const CompanyModulesPage = lazy(() => import("./pages/CompanyModulesPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
 const PromoterDashboard = lazy(() => import("./pages/promoter/PromoterDashboard"));
 const PromoterClockPage = lazy(() => import("./pages/promoter/PromoterClockPage"));
@@ -33,7 +28,6 @@ const CheckInOutPage = lazy(() => import("./pages/admin/CheckInOutPage"));
 const ProductsPage = lazy(() => import("./pages/ProductsPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
 const PlatformCompaniesPage = lazy(() => import("./pages/platform/PlatformCompaniesPage"));
-const PlatformPaymentsPage = lazy(() => import("./pages/platform/PlatformPaymentsPage"));
 const PlatformAuditPage = lazy(() => import("./pages/platform/PlatformAuditPage"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
@@ -179,9 +173,7 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
               : "Este módulo não está habilitado para sua empresa ou para seu perfil."}
           </p>
           {user.role === "company_admin" ? (
-            <a href="/upgrade" className="mt-5 inline-flex rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white">
-              Ver planos disponíveis
-            </a>
+            <p className="mt-4 text-xs text-slate-400">Peça ao administrador da plataforma para liberar este módulo.</p>
           ) : (
             <p className="mt-4 text-xs text-slate-400">Peça ao administrador da empresa para revisar seu acesso.</p>
           )}
@@ -245,8 +237,7 @@ function Router() {
         }}
       </Route>
       <Route path="/login" component={LoginPage} />
-      <Route path="/cadastro" component={SignupPage} />
-      <Route path="/planos" component={PublicPlansPage} />
+      {/* cadastro público arquivado */}
       <Route path="/produtos"><CommercialProtected><ProductsPage /></CommercialProtected></Route>
       <Route path="/lojas/:storeId"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoreGalleryPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lojas"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoresPage /></FeatureProtected></CommercialProtected></Route>
@@ -258,17 +249,12 @@ function Router() {
       {/* Raiz: visitante → landing; autenticado → painel conforme o perfil */}
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/empresas"><PlatformProtected><PlatformCompaniesPage /></PlatformProtected></Route>
-      <Route path="/admin/pagamentos"><PlatformProtected><PlatformPaymentsPage /></PlatformProtected></Route>
       <Route path="/admin/auditoria"><PlatformProtected><PlatformAuditPage /></PlatformProtected></Route>
       <Route path="/plataforma/ponto"><PlatformProtected><PlatformDashboard section="time" /></PlatformProtected></Route>
       <Route path="/plataforma/scanner"><PlatformProtected><PlatformDashboard section="code-scanner" /></PlatformProtected></Route>
       <Route path="/plataforma/ia"><PlatformProtected><PlatformDashboard section="ai-support" /></PlatformProtected></Route>
       <Route path="/admin/usuarios"><AdminProtected><FeatureProtected featureKey="teamManagement"><AdminUsersPage /></FeatureProtected></AdminProtected></Route>
-      <Route path="/admin/assinaturas"><AdminProtected><AdminAssinaturasPage /></AdminProtected></Route>
-      <Route path="/conta/planos"><CompanyAdminProtected><PlansPage /></CompanyAdminProtected></Route>
-      <Route path="/upgrade"><CompanyAdminProtected><UpgradePlanPage /></CompanyAdminProtected></Route>
-      <Route path="/minha-assinatura"><CompanyAdminProtected><MySubscriptionPage /></CompanyAdminProtected></Route>
-      <Route path="/pagamentos"><CompanyAdminProtected><PaymentHistoryPage /></CompanyAdminProtected></Route>
+      <Route path="/meus-modulos"><CompanyAdminProtected><CompanyModulesPage /></CompanyAdminProtected></Route>
       <Route path="/minha-conta"><AdminProtected><MyAccountPage /></AdminProtected></Route>
       <Route path="/auditoria"><CompanyAdminProtected><FeatureProtected featureKey="reports"><AuditPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/404" component={NotFound} />

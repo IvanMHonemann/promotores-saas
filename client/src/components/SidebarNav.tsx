@@ -53,8 +53,6 @@ export function SidebarNav() {
         { href: "/", label: "Visão geral", icon: LayoutDashboard },
         { href: "/admin/empresas", label: "Empresas", icon: Building2 },
         { href: "/admin/usuarios", label: "Usuários", icon: UsersRound },
-        { href: "/admin/assinaturas", label: "Planos e assinaturas", icon: CreditCard },
-        { href: "/admin/pagamentos", label: "Pagamentos", icon: Wallet },
         { href: "/admin/auditoria", label: "Auditoria geral", icon: ClipboardList },
         { href: "/plataforma/ponto", label: "Ponto eletrônico (teste)", icon: Clock3 },
         { href: "/plataforma/scanner", label: "Scanner e erros", icon: ShieldAlert },

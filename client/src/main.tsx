@@ -84,6 +84,7 @@ const trpcClient = trpc.createClient({
         try {
           const actAs = JSON.parse(localStorage.getItem("promotores-saas-act-as") || "null");
           if (actAs?.id) headers.set("x-act-as-company", String(actAs.id));
+          if (actAs?.memberId) headers.set("x-act-as-member", String(actAs.memberId));
         } catch { /* sem modo "acessar como empresa" */ }
         return globalThis.fetch(input, { ...(init ?? {}), headers, credentials: "include" });
       },

@@ -14,6 +14,7 @@ type AccessCtx = {
   user: { role: string };
   accountId: number;
   memberAccountId?: number | null;
+  actingAsPlatform?: boolean;
 };
 
 export function isCompanyAdmin(ctx: AccessCtx): boolean {
@@ -30,6 +31,7 @@ export function hasFullStoreAccess(ctx: AccessCtx): boolean {
 
 /** Devolve o id do membro a filtrar, ou null para admin/supervisor (sem filtro). */
 export function scopeMemberId(ctx: AccessCtx): number | null {
+  if (ctx.actingAsPlatform) return null;
   if (hasFullStoreAccess(ctx)) return null;
   if (!ctx.memberAccountId) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Seu usuário não está vinculado a um perfil de campo." });

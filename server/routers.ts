@@ -389,6 +389,25 @@ export const appRouter = router({
     reverseGeocodePoint: platformProcedure
       .input(z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }))
       .mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
+    testing: router({
+      stores: platformProcedure.input(z.object({ companyId: z.number().int().positive() })).query(({ input }) => db.listOperationalStores(input.companyId)),
+      createVisit: platformProcedure.input(z.object({ companyId: z.number().int().positive(), promoterId: z.number().int().positive(), storeId: z.number().int().positive(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })).mutation(async ({ ctx, input }) => {
+        const company = await db.getCompanyById(input.companyId);
+        if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+        const members = await memberAuth.listMemberAccounts(input.companyId);
+        const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
+        if (!promoter) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da empresa." });
+        const stores = await db.listOperationalStores(input.companyId);
+        if (!stores.some((store) => store.id === input.storeId)) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione uma loja ativa da empresa." });
+        const route = await db.createOperationalRouteWithVisits({
+          route: { companyId: input.companyId, name: "Teste de check-in / check-out", date: new Date(`${input.date}T00:00:00.000Z`), promoterId: input.promoterId, status: "assigned", notes: `Visita criada pelo administrador da plataforma #${ctx.platformAdminId ?? ctx.user.id}` },
+          storeIds: [input.storeId],
+        });
+        const [created] = await db.listOperationalVisits(input.companyId, { routeId: route.id });
+        if (!created) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível preparar a visita de teste." });
+        return { visitId: created.visit.id, storeId: created.store.id, storeName: created.store.name, promoterId: promoter.id };
+      }),
+    }),
     companies: router({
       list: platformProcedure.query(() => db.listCompanies()),
       create: platformProcedure.input(z.object({ companyName: z.string().min(2), userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), featureKeys: z.array(entitlementFeatureKey).optional() })).mutation(async ({ ctx, input }) => {

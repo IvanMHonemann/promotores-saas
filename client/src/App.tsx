@@ -29,6 +29,7 @@ const ProductsPage = lazy(() => import("./pages/ProductsPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
 const PlatformCompaniesPage = lazy(() => import("./pages/platform/PlatformCompaniesPage"));
 const PlatformAuditPage = lazy(() => import("./pages/platform/PlatformAuditPage"));
+const PlatformCheckInOutTestPage = lazy(() => import("./pages/platform/PlatformCheckInOutTestPage"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -55,6 +56,19 @@ function PlatformProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user || user.role !== "platform_admin") return <RedirectHome />;
+  return <>{children}</>;
+}
+
+function PlatformTestProtected({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  const hasTestSession = (() => {
+    try {
+      const actAs = JSON.parse(localStorage.getItem("promotores-saas-act-as") || "null");
+      return Boolean(actAs?.id && actAs?.memberId);
+    } catch { return false; }
+  })();
+  if (loading) return <LoadingScreen />;
+  if (!user || (user.role !== "platform_admin" && !hasTestSession)) return <RedirectHome />;
   return <>{children}</>;
 }
 
@@ -250,6 +264,7 @@ function Router() {
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/empresas"><PlatformProtected><PlatformCompaniesPage /></PlatformProtected></Route>
       <Route path="/admin/auditoria"><PlatformProtected><PlatformAuditPage /></PlatformProtected></Route>
+      <Route path="/plataforma/teste-check-in-out"><PlatformTestProtected><PlatformCheckInOutTestPage /></PlatformTestProtected></Route>
       <Route path="/plataforma/ponto"><PlatformProtected><PlatformDashboard section="time" /></PlatformProtected></Route>
       <Route path="/plataforma/scanner"><PlatformProtected><PlatformDashboard section="code-scanner" /></PlatformProtected></Route>
       <Route path="/plataforma/ia"><PlatformProtected><PlatformDashboard section="ai-support" /></PlatformProtected></Route>

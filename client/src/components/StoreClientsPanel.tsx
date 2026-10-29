@@ -111,12 +111,10 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
       {!clients.isLoading && list.length === 0 && !form.open && (
         <div className="rounded-2xl border border-dashed border-white/25 bg-slate-800/40 p-6 text-center">
           <p className="text-base font-bold text-white">Nenhum cliente cadastrado nesta loja</p>
-          <p className="mt-1 text-sm text-slate-300">{online ? "Cadastre o cliente para tirar as fotos dentro dele." : "Você pode tirar fotos mesmo sem clientes cadastrados (serão associadas depois)."}</p>
-          {!online && (
-            <div className="mt-4">
-              <PhotoCapture storeId={storeId} storeName={storeName} visitId={visitId} onCaptured={refresh} />
-            </div>
-          )}
+          <p className="mt-1 text-sm text-slate-300">Você pode tirar fotos mesmo sem clientes cadastrados (serão associadas depois).</p>
+          <div className="mt-4">
+            <PhotoCapture storeId={storeId} storeName={storeName} visitId={visitId} onCaptured={refresh} />
+          </div>
         </div>
       )}
 

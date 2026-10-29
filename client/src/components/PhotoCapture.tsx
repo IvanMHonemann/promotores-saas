@@ -27,7 +27,8 @@ type GpsStatus = "pending" | "ok" | "denied";
 type Shot = { dataUrl: string; capturedAt: Date; gps: GpsFix | null; gpsStatus: GpsStatus };
 
 type Props = {
-  storeId: number;
+  /** Loja da foto. Omitir ou passar null para foto sem loja vinculada. */
+  storeId?: number | null;
   storeName: string;
   /** Cliente da loja em que a foto está sendo tirada. */
   storeClientId?: number | null;
@@ -236,7 +237,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
     // Cada foto tem a sua chave: evita o servidor tratar fotos diferentes como repetidas.
     const idempotencyKey = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
     const payload = {
-      storeId,
+      storeId: storeId && storeId > 0 ? storeId : undefined,
       storeClientId: storeClientId ?? undefined,
       visitId: visitId ?? undefined,
       capturedAt: s.capturedAt.toISOString(),

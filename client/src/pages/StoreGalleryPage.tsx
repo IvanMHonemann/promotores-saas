@@ -4,6 +4,7 @@ import { ArrowLeft, Camera, Check, ChevronDown, Download, ListChecks, MapPin, Me
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { StoreClientsPanel, type ClientFilter } from "@/components/StoreClientsPanel";
+import { PhotoCapture } from "@/components/PhotoCapture";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet } from "@/lib/offlineCache";
 import { listPhotos } from "@/lib/photoQueue";
@@ -191,7 +192,7 @@ export default function StoreGalleryPage() {
   const cachedPhotos = useMemo(() => cacheGet<any[]>(`photos-${storeId}`) || [], [storeId, online, photos.data]);
   const displayPhotos = photos.data ?? (!online ? cachedPhotos : []);
 
-  const pending = useMemo(() => listPhotos().filter((p) => p.storeId === storeId), [storeId, online, photos.data]);
+  const pending = useMemo(() => listPhotos().filter((p) => isNoStore ? !p.storeId : p.storeId === storeId), [storeId, isNoStore, online, photos.data]);
 
   const utils = trpc.useUtils();
   const singleDelete = trpc.storePhotos.delete.useMutation({
@@ -362,8 +363,8 @@ export default function StoreGalleryPage() {
 
   return (
     <DashboardLayout
-      title={store?.name || "Galeria da loja"}
-      description={store ? `${store.city}${store.state ? ` · ${store.state}` : ""}` : online ? "Carregando..." : "Loja não disponível offline"}
+      title={isNoStore ? "Sem loja vinculada" : (store?.name || "Galeria da loja")}
+      description={isNoStore ? "Fotos registradas sem selecionar loja" : (store ? `${store.city}${store.state ? ` · ${store.state}` : ""}` : online ? "Carregando..." : "Loja não disponível offline")}
       onRefresh={() => void photos.refetch()}
     >
       <div className={`space-y-5 ${selectMode ? "pb-32" : ""}`}>
@@ -384,6 +385,12 @@ export default function StoreGalleryPage() {
           <p role="status" className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-4 text-sm text-amber-100">
             Sem conexão. Mostrando fotos salvas neste aparelho. Novas fotos são guardadas localmente e enviadas automaticamente quando a internet voltar.
           </p>
+        )}
+        {isNoStore && (
+          <div className="rounded-2xl border border-white/15 bg-slate-800/70 p-4">
+            <p className="mb-3 text-sm text-slate-300">Fotos sem loja e sem cliente. Você pode registrar agora e associar depois, se quiser.</p>
+            <PhotoCapture storeId={null} storeName="Sem loja vinculada" onCaptured={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} />
+          </div>
         )}
         {store && !isNoStore && (
           <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />
@@ -494,7 +501,7 @@ export default function StoreGalleryPage() {
               <Camera className="h-6 w-6" />
             </div>
             <p className="mt-4 text-base font-bold text-white">Nenhuma foto neste período</p>
-            <p className="mt-1 text-sm text-slate-300">Toque em <span className="font-semibold text-teal-300">Tirar foto</span> dentro de um cliente para registrar a primeira ou escolha outro período.</p>
+            <p className="mt-1 text-sm text-slate-300">{isNoStore ? "Toque em Tirar foto acima para registrar a primeira ou escolha outro período." : "Toque em Tirar foto dentro de um cliente para registrar a primeira ou escolha outro período."}</p>
           </div>
         )}
       </div>

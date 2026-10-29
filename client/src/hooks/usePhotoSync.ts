@@ -26,7 +26,7 @@ export function usePhotoSync() {
         for (const photo of pending) {
           try {
             await latest.current.mutateAsync({
-              storeId: photo.storeId,
+              storeId: photo.storeId && photo.storeId > 0 ? photo.storeId : undefined,
               storeClientId: photo.storeClientId,
               visitId: photo.visitId,
               capturedAt: photo.capturedAt,

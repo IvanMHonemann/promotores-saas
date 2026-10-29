@@ -7,7 +7,8 @@ const KEY = "gondup:photo-queue";
 
 export type QueuedPhoto = {
   id: string;
-  storeId: number;
+  /** Ausente ou 0 = foto sem loja vinculada. */
+  storeId?: number | null;
   storeClientId?: number;
   visitId?: number;
   capturedAt: string;

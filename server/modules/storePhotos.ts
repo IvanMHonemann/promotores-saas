@@ -152,6 +152,19 @@ export const storePhotosRouter = router({
       }
     }),
 
+  /** Conta fotos registradas sem loja (para o card da lista). */
+  countWithoutStore: commercialFeatureProcedure("fieldOperations")
+    .query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return { count: 0, lastActivity: null as string | null };
+      await ensureStorePhotosTable(db);
+      const memberId = scopeMemberId(ctx);
+      const own = memberId !== null ? sql` AND promoterId = ${memberId}` : sql``;
+      const res: any = await db.execute(sql`SELECT COUNT(*) AS c, MAX(capturedAt) AS lastAt FROM store_photos WHERE companyId = ${ctx.accountId} AND storeId IS NULL AND uploadStatus = 'uploaded'${own}`);
+      const row = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0] ?? {};
+      return { count: Number(row.c ?? 0), lastActivity: row.lastAt ?? null };
+    }),
+
   /** Lista fotos de uma loja, agrupáveis por data no cliente. */
   listByStore: commercialFeatureProcedure("fieldOperations")
     .input(z.object({

@@ -41,16 +41,17 @@ export default function PromoterClockPage() {
   const typesPresent = new Set(events.map((e) => e.eventType as EventType));
 
   const missingList = useMemo(() => {
-    const result: EventType[] = [];
-    if (!typesPresent.has("clock_in")) result.push("clock_in");
+    const result = new Set<EventType>();
+    // Lista todas as batidas padrão que ainda não existem no dia
+    // (permite preencher entrada + intervalo + saída de uma vez em dia vazio ou incompleto)
+    for (const type of order) {
+      if (!typesPresent.has(type)) result.add(type);
+    }
+    // Caso especial: mais inícios de intervalo do que retornos
     const starts = events.filter((e) => e.eventType === "break_start").length;
     const ends = events.filter((e) => e.eventType === "break_end").length;
-    if (starts > ends) result.push("break_end");
-    else if (typesPresent.has("clock_in") && !typesPresent.has("break_start")) result.push("break_start");
-    if (typesPresent.has("clock_in") && !typesPresent.has("clock_out") && starts <= ends) result.push("clock_out");
-    if (typesPresent.has("clock_in") && !typesPresent.has("break_start") && !result.includes("break_start")) result.push("break_start");
-    if (typesPresent.has("clock_in") && !typesPresent.has("break_end") && !result.includes("break_end")) result.push("break_end");
-    return [...new Set(result)].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    if (starts > ends) result.add("break_end");
+    return [...result].sort((a, b) => order.indexOf(a) - order.indexOf(b));
   }, [events, typesPresent]);
 
   const correction = trpc.timeTracking.requestCorrection.useMutation({

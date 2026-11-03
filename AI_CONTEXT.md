@@ -1,7 +1,7 @@
 # AI_CONTEXT.md
 
 Contexto técnico conciso para continuidade do desenvolvimento.  
-Última atualização: 2026-10-28. Base: `main` (`06c3630`).
+Última atualização: 2026-11-03. Base: `main`.
 
 ## Visão geral
 
@@ -16,7 +16,7 @@ Origem: plataforma anterior de gestão de extintores. O domínio de promotores �
 - Auth: sessões próprias (member + platform admin); cookie + header `x-session-token` / `Authorization: Bearer`
 - Storage: S3-compatible (Cloudflare R2 em uso)
 - Offline/PWA: service worker + filas em IndexedDB (Dexie e filas custom)
-- Deploy: Vercel (`vercel.json` → `api/index.js` serverless, `dist/public`)
+- Deploy: dual — Vercel (serverless via `vercel.json` / `api/index.js`) **e** Node tradicional / Docker (`Dockerfile` + `pnpm start` → `node dist/index.js`). Ver `DEPLOY.md`.
 - Billing: Asaas preparado (mock por padrão)
 - E-mail: provider `console` por padrão (Resend/webhook opcionais)
 
@@ -29,9 +29,9 @@ Origem: plataforma anterior de gestão de extintores. O domínio de promotores �
   - Admin e supervisor: todas as lojas da empresa.
   - Promotor: somente lojas em `promoter_store_assignments`.
   - Cadastro de lojas: apenas admin e supervisor.
-- Fotos: promotor vê as próprias; admin/supervisor vêem as da empresa. `storeId` nullable (“Sem loja vinculada”).
+- Fotos: promotor vê as próprias; admin/supervisor veem as da empresa. `storeId` nullable (“Sem loja vinculada”).
 - Algumas tabelas são criadas sob demanda (`ensure*Table`) para compatibilidade com bancos já existentes.
-- Build: `vite build` + esbuild do server e do entry Vercel.
+- Build: `vite build` (saída em `dist/public`) + esbuild do server (`dist/index.js`) e do entry Vercel.
 
 ### Principais tabelas (`drizzle/schema.ts`)
 
@@ -78,6 +78,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Asaas permanece em mock até integração real.
 - Schema legado de extintores preservado (`schema.original.ts` e algumas colunas/limites) para não quebrar dados antigos.
 - Tabelas auxiliares criadas sob demanda para reduzir dependência de migrações manuais em ambientes já em produção.
+- Servidor inicia HTTP apenas quando não detecta `process.env.VERCEL` (suporte dual serverless / processo tradicional).
 
 ## Problemas conhecidos e pendências
 
@@ -86,7 +87,6 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Asaas ainda em modo mock; e-mail em modo console por padrão.
 - `store_photos.idempotencyKey` não tem índice único: a deduplicação no servidor é select-then-insert (sujeita a corrida se duas requisições com a mesma chave chegarem juntas). Mitigado no cliente (trava + chave estável); índice único exigiria migração.
 - Limite de corpo de requisição da Vercel (~4,5 MB): `uploadAndCreate` agora recusa `imageBase64` > 6 MB; fotos de check-in ficam em ~80–250 KB.
-- Pós-mudança de fotos de check-in (2026-10-28): validado com testes de navegador (Chromium + stubs de trpc) e `tsc` das libs isoladas; `pnpm check`, `pnpm test` e `pnpm build` completos NÃO foram executados (sem acesso ao registry npm na sessão). Rodar antes de publicar. `api/index.js` versionado já estava defasado em relação ao fonte; o build da Vercel o regenera.
 - Criação sob demanda de algumas tabelas pode adicionar latência no primeiro acesso.
 - Checklists dinâmicos e evidências genéricas estão modelados no schema, mas o fluxo completo de produto ainda é parcial.
 - Google Maps é opcional (`VITE_GOOGLE_MAPS_API_KEY`).
@@ -95,9 +95,11 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 ## Deploy e ambientes
 
 - Repositório: `IvanMHonemann/promotores-saas`
-- Projetos Vercel conhecidos: `promotores-saas` (oficial, Git), `promotores-saas-teste` / `promotores-saas-teste-git`
-- Variáveis principais: `EXTERNAL_DATABASE_URL`, `JWT_SECRET`, `SCHEDULE_SECRET`, `S3_*`
+- Vercel: projetos conhecidos `promotores-saas` (oficial), `promotores-saas-teste` / `promotores-saas-teste-git`
+- Tradicional / Docker / ShardCloud: use `Dockerfile` ou `pnpm start`. Guia em `DEPLOY.md`.
+- Variáveis principais: `EXTERNAL_DATABASE_URL`, `JWT_SECRET`, `SCHEDULE_SECRET`, `S3_*`, `PORT`, `NODE_ENV=production`
 - Healthcheck: `/healthz`
+- Storage de fotos permanece no R2/S3 (não precisa migrar arquivos se manter as mesmas credenciais).
 
 ## Como manter este arquivo
 

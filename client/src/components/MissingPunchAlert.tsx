@@ -37,14 +37,17 @@ export default function MissingPunchAlert() {
   const fieldDismiss = useDismiss(isField ? fieldKey : null);
   const adminDismiss = useDismiss(isAdmin ? adminKey : null);
 
+  if (typeof window !== "undefined" && window.location.pathname === "/ponto") return null;
+
   if (isField && mine.data && !fieldDismiss.dismissed) {
+    const day = (mine.data as any).day || "";
     return (
       <div role="alert" className="relative mb-5 flex items-start gap-3 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 pr-14 text-amber-100">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
         <div className="min-w-0 flex-1 text-sm">
           <p className="font-bold">Falta uma batida no seu cartão ponto</p>
           <p>Última marcação: {mine.data.lastLabel} em {fmt(mine.data.lastTime)}. Falta registrar: {mine.data.missing}.</p>
-          <a href="/ponto#correcoes" className="mt-1 inline-block font-semibold underline">Solicitar correção</a>
+          <a href={day ? `/ponto?date=${day}#correcoes` : "/ponto#correcoes"} className="mt-1 inline-block font-semibold underline">Solicitar correção</a>
         </div>
         <button
           type="button"

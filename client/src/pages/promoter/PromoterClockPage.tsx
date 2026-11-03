@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, CalendarDays, CheckCircle2, MapPin, Plus, Send, ShieldCheck, X, Camera, Loader2 } from "lucide-react";
+import { ArrowLeft, CalendarDays, CheckCircle2, MapPin, Plus, Send, ShieldCheck, X, Camera } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +38,7 @@ async function compressImage(file: File): Promise<string> {
     const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const max = 960;
+      const max = 1280;
       let { width, height } = img;
       if (width > max || height > max) {
         const ratio = Math.min(max / width, max / height);
@@ -51,7 +51,7 @@ async function compressImage(file: File): Promise<string> {
       const ctx = canvas.getContext("2d");
       if (!ctx) { reject(new Error("canvas")); return; }
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL("image/jpeg", 0.6));
+      resolve(canvas.toDataURL("image/jpeg", 0.72));
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image")); };
     img.src = url;
@@ -71,8 +71,6 @@ export default function PromoterClockPage() {
   const [missingTimes, setMissingTimes] = useState<Partial<Record<EventType, string>>>({});
   const [hideMissingAlert, setHideMissingAlert] = useState(false);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [sendingBatch, setSendingBatch] = useState(false);
   const utils = trpc.useUtils();
 
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 100, date: selectedDate });
@@ -101,7 +99,6 @@ export default function PromoterClockPage() {
       setJustification("");
       setMissingTimes({});
       setPhotoBase64(null);
-      setPhotoPreview(null);
       setJustificationType("normal");
       void utils.timeTracking.myCorrections.invalidate();
       void utils.timeTracking.myHistory.invalidate();
@@ -111,17 +108,11 @@ export default function PromoterClockPage() {
 
   const handlePhoto = async (file: File | null) => {
     if (!file) return;
-    const instant = URL.createObjectURL(file);
-    setPhotoPreview(instant);
     try {
       const compressed = await compressImage(file);
       setPhotoBase64(compressed);
-      setPhotoPreview(compressed);
     } catch {
       toast.error("Não foi possível processar a foto");
-      setPhotoPreview(null);
-    } finally {
-      URL.revokeObjectURL(instant);
     }
   };
 
@@ -137,28 +128,20 @@ export default function PromoterClockPage() {
       toast.error("Informe o horário de pelo menos uma batida faltante");
       return;
     }
+    // Para abonos (feriado/folga/atestado) pode não ter horário específico
     const typesToSend = toSend.length ? toSend : ["clock_in" as EventType];
-    setSendingBatch(true);
-    try {
-      await Promise.all(typesToSend.map((type) => {
-        const time = missingTimes[type] || "08:00";
-        return correction.mutateAsync({
-          timeEventId: null,
-          requestedType: type,
-          requestedTime: new Date(`${selectedDate}T${time}:00`).toISOString(),
-          justification: reason || justificationLabels[justificationType],
-          justificationType,
-          attachmentBase64: photoBase64 || undefined,
-        } as any);
-      }));
-      toast.success(typesToSend.length > 1
-        ? `${typesToSend.length} pedidos enviados juntos`
-        : "Pedido enviado");
-    } catch (error: any) {
-      toast.error(error?.message || "Não foi possível enviar todos os pedidos");
-    } finally {
-      setSendingBatch(false);
+    for (const type of typesToSend) {
+      const time = missingTimes[type] || "08:00";
+      await correction.mutateAsync({
+        timeEventId: null,
+        requestedType: type,
+        requestedTime: new Date(`${selectedDate}T${time}:00`).toISOString(),
+        justification: reason || justificationLabels[justificationType],
+        justificationType,
+        attachmentBase64: photoBase64 || undefined,
+      } as any);
     }
+    toast.success(`${typesToSend.length} pedido(s) enviado(s)`);
   };
 
   const submitCorrect = (e: React.FormEvent) => {
@@ -178,6 +161,9 @@ export default function PromoterClockPage() {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const date = params.get("date");
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setSelectedDate(date);
     const sectionId = decodeURIComponent(window.location.hash.slice(1));
     if (!sectionId) return;
     const frame = window.requestAnimationFrame(() => {
@@ -224,7 +210,11 @@ export default function PromoterClockPage() {
                     Última marcação: {missingPunch.data.lastLabel} em {new Date(missingPunch.data.lastTime).toLocaleString("pt-BR")}.
                     Falta registrar: {missingPunch.data.missing}.
                   </p>
-                  <a href="#correcoes" className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Corrigir agora</a>
+                  <button type="button" onClick={() => {
+                    const day = (missingPunch.data as any)?.day;
+                    if (day) setSelectedDate(day);
+                    document.getElementById("correcoes")?.scrollIntoView({ behavior: "smooth" });
+                  }} className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Corrigir agora</button>
                   <button type="button" onClick={() => setHideMissingAlert(true)} aria-label="Fechar alerta" className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-lg border border-amber-200/40 bg-amber-400/20 text-amber-50 transition hover:bg-amber-400/40">
                     <X className="h-5 w-5" />
                   </button>
@@ -299,20 +289,17 @@ export default function PromoterClockPage() {
 
                   <div className="space-y-2">
                     <p className="text-sm font-semibold text-slate-200">Comprovante / foto (opcional)</p>
-                    <div className="flex items-center gap-3">
+                    <div className="flex gap-2">
                       <label className="flex h-10 cursor-pointer items-center gap-2 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100 hover:bg-slate-900">
                         <Camera className="h-4 w-4" /> Tirar ou escolher foto
-                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void handlePhoto(e.target.files?.[0] || null)} />
+                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handlePhoto(e.target.files?.[0] || null)} />
                       </label>
-                      {photoPreview && (
-                        <img src={photoPreview} alt="Miniatura do comprovante" className="h-16 w-16 rounded-lg border border-white/15 object-cover" />
-                      )}
+                      {photoBase64 && <span className="self-center text-xs text-emerald-300">Foto anexada</span>}
                     </div>
                   </div>
 
-                  <Button type="submit" disabled={!canSubmitAdd || sendingBatch} className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400">
-                    {sendingBatch ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                    {sendingBatch ? "Enviando todos os horários..." : "Enviar pedido de inclusão"}
+                  <Button type="submit" disabled={!canSubmitAdd} className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400">
+                    <Send className="mr-2 h-4 w-4" /> {correction.isPending ? "Enviando..." : "Enviar pedido de inclusão"}
                   </Button>
                 </form>
               ) : (
@@ -332,20 +319,15 @@ export default function PromoterClockPage() {
 
                   <div className="space-y-2">
                     <p className="text-sm font-semibold text-slate-200">Comprovante / foto (opcional)</p>
-                    <div className="flex items-center gap-3">
-                      <label className="flex h-10 cursor-pointer items-center gap-2 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100 hover:bg-slate-900">
-                        <Camera className="h-4 w-4" /> Tirar ou escolher foto
-                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void handlePhoto(e.target.files?.[0] || null)} />
-                      </label>
-                      {photoPreview && (
-                        <img src={photoPreview} alt="Miniatura do comprovante" className="h-16 w-16 rounded-lg border border-white/15 object-cover" />
-                      )}
-                    </div>
+                    <label className="flex h-10 cursor-pointer items-center gap-2 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100 hover:bg-slate-900">
+                      <Camera className="h-4 w-4" /> Tirar ou escolher foto
+                      <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handlePhoto(e.target.files?.[0] || null)} />
+                    </label>
+                    {photoBase64 && <p className="text-xs text-emerald-300">Foto anexada</p>}
                   </div>
 
-                  <Button type="submit" disabled={correction.isPending || sendingBatch || !selectedEventId || !correctTime || (justification.trim().length < 5 && justificationType === "normal")} className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400">
-                    {correction.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                    {correction.isPending ? "Enviando..." : "Enviar pedido de correção"}
+                  <Button type="submit" disabled={correction.isPending || !selectedEventId || !correctTime || (justification.trim().length < 5 && justificationType === "normal")} className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400">
+                    <Send className="mr-2 h-4 w-4" /> {correction.isPending ? "Enviando..." : "Enviar pedido de correção"}
                   </Button>
                 </form>
               )}

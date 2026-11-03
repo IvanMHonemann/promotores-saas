@@ -117,7 +117,9 @@ export default function TimesheetPage() {
             {(corrections.data || []).map((item: any) => (
               <div key={item.request.id} className="mb-3 rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
                 <p className="font-semibold text-white">{item.employee?.userName || "Promotor"}</p>
+                <p className="text-xs text-teal-300">{({normal:"Correção normal", holiday:"Feriado", day_off:"Folga", medical_certificate:"Atestado médico", other:"Outro"} as any)[item.request.justificationType] || "Correção normal"}</p>
                 <p className="text-slate-300">{item.request.justification}</p>
+                {item.request.attachmentKey && <p className="text-xs text-amber-200">Comprovante anexado</p>}
                 <p className="text-xs text-slate-400">Solicitado: {new Date(item.request.createdAt).toLocaleString("pt-BR")}</p>
                 <div className="mt-2 flex gap-2">
                   <Button size="sm" className="bg-emerald-500 text-white hover:bg-emerald-400" disabled={review.isPending} onClick={() => review.mutate({ id: item.request.id, status: "approved" })}>

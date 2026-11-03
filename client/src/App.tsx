@@ -12,7 +12,6 @@ import { BusyProvider } from "./components/BusyOverlay";
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
-// SignupPage arquivada em _archived
 const MyAccountPage = lazy(() => import("./pages/MyAccountPage"));
 const CompanyModulesPage = lazy(() => import("./pages/CompanyModulesPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
@@ -24,6 +23,7 @@ const StoresPage = lazy(() => import("./pages/StoresPage"));
 const StoreGalleryPage = lazy(() => import("./pages/StoreGalleryPage"));
 const TimesheetPage = lazy(() => import("./pages/admin/TimesheetPage"));
 const TimesheetMirrorPage = lazy(() => import("./pages/admin/TimesheetMirrorPage"));
+const TimesheetArchivePage = lazy(() => import("./pages/admin/TimesheetArchivePage"));
 const CheckInOutPage = lazy(() => import("./pages/admin/CheckInOutPage"));
 const ProductsPage = lazy(() => import("./pages/ProductsPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
@@ -73,7 +73,6 @@ function AdminProtected({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Somente administrador da empresa (não operador/técnico). */
 function CompanyAdminProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
@@ -95,7 +94,6 @@ function isUnauthorizedError(error: unknown): boolean {
   const code = anyErr.data?.code || anyErr.shape?.data?.code;
   if (code === "UNAUTHORIZED") return true;
   if (msg.includes("please login") || msg.includes("10001")) return true;
-  // fallback: stringified search
   try {
     const raw = JSON.stringify(error).toLowerCase();
     if (raw.includes("please login") || raw.includes("10001") || raw.includes("unauthorized")) return true;
@@ -109,7 +107,6 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
     enabled: Boolean(user && user.role !== "platform_admin"),
     retry: false,
   });
-  // Cache entitlements for offline
   const cachedEntitlements = cacheGet<any>("entitlements");
   if (accessQuery.data) cacheSet("entitlements", accessQuery.data);
   const access = {
@@ -119,8 +116,6 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
 
   useEffect(() => {
     if (access.error && isUnauthorizedError(access.error)) {
-      // Sessão do cookie não reconhecida no servidor (comum em preview/Vercel).
-      // Limpa cache local e manda para login em vez de mostrar "módulo não liberado".
       localStorage.removeItem("promotores-saas-auth-user");
       window.location.replace("/login");
     }
@@ -130,8 +125,6 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
   if (!user) return <RedirectHome />;
   if (user.role === "platform_admin") return <>{children}</>;
 
-  // Dashboard e operações de campo: se o usuário está autenticado,
-  // permite o acesso mesmo se a checagem falhar (offline ou erro de rede).
   if ((featureKey === "dashboard" || featureKey === "fieldOperations") && user) {
     if (access.isLoading && isOnline()) return <LoadingScreen />;
     if (access.error && isUnauthorizedError(access.error)) return <LoadingScreen />;
@@ -141,7 +134,6 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
   if (access.isLoading) return <LoadingScreen />;
 
   if (access.error && isUnauthorizedError(access.error)) {
-    // Force redirect on render as well (useEffect may lag on mobile/PWA)
     localStorage.removeItem("promotores-saas-auth-user");
     window.location.replace("/login");
     return <LoadingScreen />;
@@ -149,18 +141,15 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
 
   if (!access.data?.effective[featureKey]) {
     if (featureKey === "timeTracking" && access.data) return <RedirectHome />;
-    // Offline: se temos cache de entitlements, permite acesso
     if (!isOnline() && cachedEntitlements?.effective) {
       return <>{children}</>;
     }
-    // Last-resort: if the error message contains login/10001, force redirect
     const errMsg = String((access.error as any)?.message || (access.error as any)?.shape?.message || "").toLowerCase();
     if (errMsg.includes("please login") || errMsg.includes("10001") || isUnauthorizedError(access.error)) {
       localStorage.removeItem("promotores-saas-auth-user");
       window.location.replace("/login");
       return <LoadingScreen />;
     }
-    // Offline sem cache: mostra aviso mas não bloqueia completamente
     if (!isOnline()) {
       return (
         <main className="flex min-h-screen items-center justify-center bg-slate-950 p-5 text-slate-100">
@@ -197,9 +186,6 @@ function RootRoute() {
   if (loading) return <LoadingScreen />;
   if (!user) return <LandingPage />;
   if (user.role === "platform_admin") return <PlatformDashboard />;
-  // Dashboard é a porta de entrada. Não bloqueia por entitlement aqui;
-  // se a sessão do cookie estiver inválida, o próprio dashboard ou as
-  // chamadas de API redirecionam para login.
   if (user.role === "promoter") return <PromoterDashboard />;
   if (user.companyId) return <OperationsDashboard />;
   return <LandingPage />;
@@ -208,7 +194,6 @@ function RootRoute() {
 function Router() {
   return (
     <Switch>
-      {/* Rotas públicas do GondUp */}
       <Route path="/reset">
         {() => {
           try {
@@ -228,7 +213,6 @@ function Router() {
       <Route path="/clean">
         {() => {
           try {
-            // Limpa tudo: auth, offline queue, offline cache
             const keys = Object.keys(localStorage);
             keys.forEach((k) => {
               if (k.startsWith("gondup:") || k.startsWith("promotores-saas-")) localStorage.removeItem(k);
@@ -245,16 +229,15 @@ function Router() {
         }}
       </Route>
       <Route path="/login" component={LoginPage} />
-      {/* cadastro público arquivado */}
       <Route path="/produtos"><CommercialProtected><ProductsPage /></CommercialProtected></Route>
       <Route path="/lojas/:storeId"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoreGalleryPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lojas"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoresPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lixeira"><CommercialProtected><TrashPage /></CommercialProtected></Route>
       <Route path="/ponto"><PromoterProtected><FeatureProtected featureKey="timeTracking"><PromoterClockPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/espelho-ponto"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetMirrorPage /></FeatureProtected></CompanyAdminProtected></Route>
+      <Route path="/arquivos-historicos"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetArchivePage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/check-in-out"><CompanyAdminProtected><FeatureProtected featureKey="fieldOperations"><CheckInOutPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/cartao-ponto"><AdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetPage /></FeatureProtected></AdminProtected></Route>
-      {/* Raiz: visitante → landing; autenticado → painel conforme o perfil */}
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/empresas"><PlatformProtected><PlatformCompaniesPage /></PlatformProtected></Route>
       <Route path="/admin/auditoria"><PlatformProtected><PlatformAuditPage /></PlatformProtected></Route>

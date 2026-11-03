@@ -191,15 +191,11 @@ function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFiel
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar.</p>
       </div>
 
-      {hasFieldOperations && <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20 sm:grid-cols-4">
-        {isCompanyAdmin && hasTimeTracking && <Metric label="Em atendimento" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Com ponto aberto" />}
-        <Metric label="Visitas hoje" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Planejadas" />
-        <Metric label="Concluídas" value={metrics.completed} icon={CheckCircle2} tone="text-emerald-300" hint="Finalizadas" />
-        <Metric label="Pendentes" value={metrics.pending} icon={Clock3} tone="text-amber-300" hint="Ainda não iniciadas" />
-        <Metric label="Lojas" value={metrics.storeCount} icon={MapPin} tone="text-sky-300" hint="Cadastradas" />
-        <Metric label="Fotos" value={metrics.totalPhotos} icon={ClipboardList} tone="text-emerald-300" hint="Total no sistema" />
-        <Metric label="A vencer" value={metrics.expiring} icon={AlertTriangle} tone="text-amber-300" hint="Próx. 30 dias" />
-        <Metric label="Em andamento" value={metrics.inProgress} icon={Clock3} tone="text-amber-300" hint="Visitas ativas" />
+      {hasFieldOperations && <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
+        {hasTimeTracking && <Metric label="Em atendimento" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Com ponto aberto" href={isCompanyAdmin ? "/check-in-out" : undefined} />}
+        <Metric label="Visitas hoje" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Planejadas" href="#visitas" />
+        <Metric label="Lojas" value={metrics.storeCount} icon={MapPin} tone="text-sky-300" hint="Cadastradas" href="/lojas" />
+        <Metric label="A vencer" value={metrics.expiring} icon={AlertTriangle} tone="text-amber-300" hint="Próx. 30 dias" href="/produtos" />
       </div>}
       {!hasFieldOperations && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">Roteiros, lojas e visitas não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo de operação de campo.</div>}
       {hasFieldOperations && visitsFailed && <p role="alert" className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">Não foi possível carregar os indicadores de visitas. Atualize o painel e tente novamente.</p>}
@@ -257,20 +253,21 @@ function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFiel
   );
 }
 
-function Metric({ label, value, icon: Icon, tone, hint, className = "" }: { label: string; value: number; icon: LucideIcon; tone: string; hint: string; className?: string }) {
+function Metric({ label, value, icon: Icon, tone, hint, href, className = "" }: { label: string; value: number; icon: LucideIcon; tone: string; hint: string; href?: string; className?: string }) {
+  const Tag = href ? "a" : "div";
   return (
-    <div className={`min-h-[142px] bg-[#0b1021] p-4 sm:min-h-[160px] sm:p-6 ${className}`}>
-      <div className="flex h-full items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col self-stretch">
-          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300 sm:text-xs sm:tracking-[.14em]">{label}</p>
-          <p className={`mt-2 text-4xl font-black leading-none ${tone}`}>{value}</p>
-          <p className="mt-auto pt-2 text-xs text-slate-400 sm:text-sm">{hint} <span aria-hidden="true">→</span></p>
+    <Tag href={href} className={`block min-h-[96px] bg-[#0b1021] p-3 transition hover:bg-white/[.06] active:bg-white/10 sm:min-h-[108px] sm:p-4 ${className}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300">{label}</p>
+          <p className={`mt-1 text-3xl font-black leading-none ${tone}`}>{value}</p>
+          <p className="mt-2 text-[11px] text-slate-400">{hint} <span aria-hidden="true">→</span></p>
         </div>
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[.04] sm:h-10 sm:w-10">
-          <Icon className={`h-4 w-4 ${tone} sm:h-5 sm:w-5`} />
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[.04]">
+          <Icon className={`h-4 w-4 ${tone}`} />
         </span>
       </div>
-    </div>
+    </Tag>
   );
 }
 

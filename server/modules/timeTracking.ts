@@ -9,6 +9,7 @@ import { recordAdjustment } from "./timesheetMirror";
 import { findMissingPunches } from "../missingPunch";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
 import { ensureCorrectionExtras, saveCorrectionAttachment } from "./correctionExtras";
+import { storageGetSignedUrl } from "../storage";
 
 const timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 type TimeEventType = z.infer<typeof timeEventType>;
@@ -429,7 +430,8 @@ export const timeTrackingRouter = router({
     pending: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
       const database = await db.getDb();
       if (!database) return [];
-      return database.select({
+      await ensureCorrectionExtras();
+      const rows = await database.select({
         request: timeCorrectionRequests,
         event: timeEvents,
         employee: { userName: memberAccounts.userName },
@@ -439,6 +441,14 @@ export const timeTrackingRouter = router({
         .leftJoin(timeEvents, eq(timeCorrectionRequests.timeEventId, timeEvents.id))
         .where(and(eq(timeCorrectionRequests.companyId, ctx.accountId), eq(timeCorrectionRequests.status, "pending")))
         .orderBy(desc(timeCorrectionRequests.createdAt));
+      return Promise.all(rows.map(async (row) => {
+        const key = (row.request as any).attachmentKey as string | null;
+        let attachmentUrl: string | null = null;
+        if (key) {
+          try { attachmentUrl = await storageGetSignedUrl(key); } catch { attachmentUrl = null; }
+        }
+        return { ...row, attachmentUrl };
+      }));
     }),
 
     review: companyAdminFeatureProcedure("timeTracking")

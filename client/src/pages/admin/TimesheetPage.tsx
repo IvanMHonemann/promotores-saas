@@ -119,7 +119,12 @@ export default function TimesheetPage() {
                 <p className="font-semibold text-white">{item.employee?.userName || "Promotor"}</p>
                 <p className="text-xs text-teal-300">{({normal:"Correção normal", holiday:"Feriado", day_off:"Folga", medical_certificate:"Atestado médico", other:"Outro"} as any)[item.request.justificationType] || "Correção normal"}</p>
                 <p className="text-slate-300">{item.request.justification}</p>
-                {item.request.attachmentKey && <p className="text-xs text-amber-200">Comprovante anexado</p>}
+                {item.attachmentUrl && (
+                  <a href={item.attachmentUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                    <img src={item.attachmentUrl} alt="Comprovante anexado" className="h-24 w-24 rounded-lg border border-white/15 object-cover" />
+                    <span className="mt-1 block text-xs text-amber-200">Abrir comprovante</span>
+                  </a>
+                )}
                 <p className="text-xs text-slate-400">Solicitado: {new Date(item.request.createdAt).toLocaleString("pt-BR")}</p>
                 <div className="mt-2 flex gap-2">
                   <Button size="sm" className="bg-emerald-500 text-white hover:bg-emerald-400" disabled={review.isPending} onClick={() => review.mutate({ id: item.request.id, status: "approved" })}>

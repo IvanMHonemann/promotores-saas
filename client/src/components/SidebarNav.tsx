@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X } from "lucide-react";
+import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X, Archive } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useInstallPrompt } from "@/pwa/hooks";
 import { Download } from "lucide-react";
@@ -81,6 +81,7 @@ export function SidebarNav() {
           ] : []),
           ...(hasFeature("timeTracking") ? [{ href: "/cartao-ponto", label: "Cartão-ponto", icon: Clock3 }] : []),
           ...(role === "company_admin" && hasFeature("timeTracking") ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: FileText }] : []),
+          ...(role === "company_admin" && hasFeature("timeTracking") ? [{ href: "/arquivos-historicos", label: "Arquivos históricos", icon: Archive }] : []),
           { href: "/lixeira", label: "Lixeira", icon: Trash2 },
           ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: UsersRound }] : []),
           ...(role === "company_admin" && hasFeature("reports") ? [

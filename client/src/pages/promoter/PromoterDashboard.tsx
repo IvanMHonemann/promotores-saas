@@ -118,10 +118,9 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20 sm:grid-cols-4">
-          <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-teal-300" href="/lojas" />
-          <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-sky-300" href="/ponto" />
-          <Metric label="Fotos" detail="Registradas" value={photosToday} icon={ClipboardList} tone="text-emerald-300" href="/lojas" />
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
+          <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-sky-300" href="/lojas" />
+          <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-teal-300" href="/ponto" />
           <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" href="/produtos" />
         </div>
 
@@ -238,15 +237,15 @@ function Metric({
 }) {
   const Tag = href ? "a" : "div";
   return (
-    <Tag href={href} className={`block min-h-[142px] bg-[#0b1021] p-4 transition hover:bg-white/5 sm:min-h-[160px] sm:p-6 ${className}`}>
-      <div className="flex h-full items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col self-stretch">
-          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300 sm:text-xs sm:tracking-[.14em]">{label}</p>
-          <p className={`mt-2 text-4xl font-black leading-none ${tone}`}>{value}</p>
-          <p className="mt-auto pt-2 text-xs text-slate-400 sm:text-sm">{detail} <span aria-hidden="true">→</span></p>
+    <Tag href={href} className={`block min-h-[96px] bg-[#0b1021] p-3 transition hover:bg-white/[.06] active:bg-white/10 sm:min-h-[108px] sm:p-4 ${className}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300">{label}</p>
+          <p className={`mt-1 text-3xl font-black leading-none ${tone}`}>{value}</p>
+          <p className="mt-2 text-[11px] text-slate-400">{detail} <span aria-hidden="true">→</span></p>
         </div>
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[.04] sm:h-10 sm:w-10">
-          <Icon className={`h-4 w-4 ${tone} sm:h-5 sm:w-5`} />
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[.04]">
+          <Icon className={`h-4 w-4 ${tone}`} />
         </span>
       </div>
     </Tag>

@@ -12,19 +12,24 @@ import { trpc } from "@/lib/trpc";
 
 
 async function updateApp() {
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#07111f;color:#fff;font-family:system-ui;font-size:18px;";
+  overlay.textContent = "Atualizando aplicativo...";
+  document.body.appendChild(overlay);
   try {
-    if ("serviceWorker" in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
-    }
     if ("caches" in window) {
       const keys = await caches.keys();
       await Promise.all(keys.map((k) => caches.delete(k)));
     }
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
   } catch {
     /* ignore */
   }
-  window.location.href = "/reset";
+  try { localStorage.setItem("gondup_app_version", (window as any).__APP_VERSION || ""); } catch { /* ignore */ }
+  window.location.replace("/?updated=" + Date.now());
 }
 
 type AccountMenuDropdownProps = {

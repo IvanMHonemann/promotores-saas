@@ -216,7 +216,29 @@ export const timeTrackingRouter = router({
 
   myMissingPunch: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
     if (!ctx.accountId || !ctx.memberAccountId) return null;
-    return (await findMissingPunches({ companyId: ctx.accountId, memberId: ctx.memberAccountId }))[0] ?? null;
+    const found = (await findMissingPunches({ companyId: ctx.accountId, memberId: ctx.memberAccountId }))[0];
+    if (!found) return null;
+    const database = await db.getDb();
+    if (!database) return found;
+    // Some se houver pedido pendente ou aprovado para o mesmo dia.
+    // Volta a aparecer só se o pedido for recusado (ou não existir).
+    const pending = await database.select({
+      id: timeCorrectionRequests.id,
+      status: timeCorrectionRequests.status,
+      requestedTime: timeCorrectionRequests.requestedTime,
+    }).from(timeCorrectionRequests)
+      .where(and(
+        eq(timeCorrectionRequests.companyId, ctx.accountId),
+        eq(timeCorrectionRequests.memberAccountId, ctx.memberAccountId),
+        sql`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+      ))
+      .orderBy(desc(timeCorrectionRequests.createdAt))
+      .limit(20);
+    const covered = pending.some((row) => {
+      const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(row.requestedTime));
+      return day === found.day;
+    });
+    return covered ? null : found;
   }),
 
   companyMissingPunches: companyAdminFeatureProcedure("timeTracking").query(({ ctx }) => findMissingPunches({ companyId: ctx.accountId })),

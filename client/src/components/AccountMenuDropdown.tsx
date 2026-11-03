@@ -87,15 +87,10 @@ export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdo
           className="cursor-pointer gap-3 py-2.5 text-teal-200 focus:bg-teal-500/15 focus:text-teal-100"
         >
           <RefreshCw />
-                  <DropdownMenuItem
-          onClick={() => void updateApp()}
-          className="cursor-pointer gap-3 py-2.5 text-teal-200 focus:bg-teal-500/15 focus:text-teal-100"
-        >
-          <RefreshCw />
           Atualizar aplicativo
         </DropdownMenuItem>
         <DropdownMenuSeparator className="bg-white/10" />
-<DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
+        <DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
           <a href="/minha-conta#dados-usuario">
             <UserRound className="text-teal-300" />
             Minha conta

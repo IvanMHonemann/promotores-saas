@@ -62,6 +62,23 @@ async function createApp() {
       return res.status(500).json({ error: "Scheduled maintenance failed" });
     }
   });
+
+  // Arquivamento histórico de espelhos de ponto (meses fechados). Idempotente.
+  app.post("/api/scheduled/archive-timesheets", async (req, res) => {
+    try {
+      const configuredSecret = process.env.SCHEDULE_SECRET;
+      const suppliedSecret = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.headers["x-schedule-secret"];
+      if (!configuredSecret || typeof suppliedSecret !== "string" || !timingSafeTokenEqual(configuredSecret, suppliedSecret)) {
+        return res.status(401).json({ error: "Schedule authentication required" });
+      }
+      const { runTimesheetArchiveJob } = await import("./modules/timesheetArchive");
+      const archive = await runTimesheetArchiveJob({ limitCompanies: 30 });
+      return res.json({ ok: true, archive });
+    } catch (error) {
+      console.error("[Archive] failed:", error);
+      return res.status(500).json({ error: "Timesheet archive failed" });
+    }
+  });
   
   app.post("/api/webhooks/asaas", express.json(), async (req, res) => {
     try {
@@ -84,7 +101,6 @@ async function createApp() {
       if (recorded.duplicate) {
         return res.json({ ok: true, duplicate: true });
       }
-      // Future: map Asaas events to subscription status updates
       return res.json({ ok: true, duplicate: false });
     } catch (error) {
       console.error("[Asaas webhook]", error);

@@ -332,7 +332,7 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
       </CardHeader>
       <CardContent className="space-y-3">
         {!corrections.length && <p className="text-sm text-slate-300">Nenhum pedido de correção pendente.</p>}
-        {corrections.map(({ request, event, employee }: any) => (
+        {corrections.map((item: any) => { const { request, event, employee } = item; return (
           <div key={request.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -341,7 +341,14 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
               </div>
               <Badge variant="outline" className="border-amber-300/40 text-amber-200">Pendente</Badge>
             </div>
-            {request.reason && <p className="mt-3 text-sm text-slate-300">Justificativa: {request.reason}</p>}
+            {request.justification && <p className="mt-3 text-sm text-slate-300">Justificativa: {request.justification}</p>}
+            {request.reason && !request.justification && <p className="mt-3 text-sm text-slate-300">Justificativa: {request.reason}</p>}
+            {item.attachmentUrl && (
+              <a href={item.attachmentUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block">
+                <img src={item.attachmentUrl} alt="Comprovante anexado" className="h-24 w-24 rounded-lg border border-white/15 object-cover" />
+                <span className="mt-1 block text-xs text-amber-200">Abrir comprovante</span>
+              </a>
+            )}
             <div className="mt-4 flex flex-wrap gap-2">
               <Input
                 placeholder="Observação (opcional)"
@@ -353,7 +360,7 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
               <Button size="sm" variant="outline" onClick={() => approve(request.id, "rejected")} disabled={reviewPending}>Recusar</Button>
             </div>
           </div>
-        ))}
+        );})}
       </CardContent>
     </Card>
   );

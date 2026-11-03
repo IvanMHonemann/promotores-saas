@@ -1,1 +1,1 @@
-$(cat /tmp/PromoterClockPage.tsx)
+PLACEHOLDER_WILL_REPLACE

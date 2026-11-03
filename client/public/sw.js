@@ -1,4 +1,4 @@
-const CACHE_NAME = "promotores-saas-shell-v14";
+const CACHE_NAME = "promotores-saas-shell-v15";
 
 self.addEventListener("install", () => {
   self.skipWaiting();

@@ -6,7 +6,7 @@ import superjson from "superjson";
 import App from "./App";
 import "./index.css";
 
-const FORCE_RELOAD_VERSION = "v16";
+const FORCE_RELOAD_VERSION = "v17";
 (window as any).__APP_VERSION = FORCE_RELOAD_VERSION;
 if (typeof window !== "undefined" && window.location.pathname === "/plataforma/teste-check-in-out") {
   localStorage.removeItem("promotores-saas-act-as");
@@ -32,8 +32,8 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (refreshing) return;
       refreshing = true;
+      // Não limpa o cache aqui: limpar no meio do reload (ex.: arrastar a tela) deixa tela branca.
       const reload = () => {
-        // Não recarrega no meio de um envio de foto (check-in/out): espera terminar (máx. ~35 s).
         let waited = 0;
         const tick = () => {
           if (((window as any).__gondupUploading || 0) > 0 && waited < 35_000) {
@@ -41,14 +41,7 @@ if ("serviceWorker" in navigator) {
             setTimeout(tick, 500);
             return;
           }
-          // Limpa cache antes de recarregar para evitar tela branca
-          if ("caches" in window) {
-            caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).finally(() => {
-              (window as any).location.reload();
-            });
-          } else {
-            (window as any).location.reload();
-          }
+          (window as any).location.reload();
         };
         tick();
       };

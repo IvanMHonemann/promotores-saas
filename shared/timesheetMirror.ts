@@ -3,7 +3,10 @@
  * Regras: nada é inventado. Jornada prevista, horas extras e adicional noturno só são calculados quando a
  * empresa configurou o perfil trabalhista do funcionário; caso contrário o relatório informa a ausência.
  * Marcações originais nunca são substituídas: ajustes aparecem separados (original x tratado).
+ * Feriados nacionais são identificados automaticamente: falta de batida é abonada, mas o ponto continua liberado.
  */
+import { getBrazilianHoliday } from "./holidays";
+
 export type MarkType = "clock_in" | "break_start" | "break_end" | "clock_out";
 export const MARK_LABEL: Record<MarkType, string> = { clock_in: "Entrada", break_start: "Início do intervalo", break_end: "Retorno do intervalo", clock_out: "Saída" };
 
@@ -54,6 +57,7 @@ export type DayRow = {
   overtimeMinutes: number | null;
   nightMinutes: number | null;
   issues: string[];
+  holiday?: string | null;
 };
 
 export type MirrorTotals = {
@@ -91,7 +95,6 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
   const labor = input.labor || null;
   const events = [...input.events].sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
   const notes: string[] = [];
-  // Agrupa por turno: uma Entrada abre o turno; marcas seguintes pertencem a ele até a Saída (ou 20 h sem marcar).
   type Shift = { date: string; events: MirrorEvent[] };
   const shifts: Shift[] = [];
   let cur: Shift | null = null;
@@ -115,6 +118,7 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
 
   const days: DayRow[] = [];
   for (let d = input.from; d <= input.to; d = addDay(d, 1)) {
+    const holiday = getBrazilianHoliday(d);
     const dayShifts = byDate.get(d) || [];
     const issues: string[] = [];
     const marks: DayRow["marks"] = [];
@@ -146,14 +150,29 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     if (marks.some((m) => !m.synced)) issues.push("Marcação com sincronização pendente");
     if (marks.some((m) => m.kind === "automatic")) issues.push("Saída automática do sistema (não marcada pelo funcionário)");
     if (marks.some((m) => m.kind === "legacy_adjusted")) issues.push("Ajuste antigo sem registro estruturado do valor original (ver observações da marcação)");
+
     const isWorkday = workdays ? workdays.has(weekdayOf(d)) : null;
-    if (!marks.length && isWorkday) issues.push("Sem marcações em dia previsto — verificar falta, abono ou justificativa (não informados)");
-    const expected = daily != null && isWorkday ? daily : daily != null && !workdays ? null : null;
-    const w = Math.round(worked);
     const hasMarks = marks.length > 0;
+
+    // Feriado nacional: abona falta de batida automaticamente, mas permite ponto normal se houver marcações.
+    if (holiday) {
+      issues.push(`Feriado nacional: ${holiday.name} — abonado automaticamente`);
+    }
+    if (!hasMarks && isWorkday && !holiday) {
+      issues.push("Sem marcações em dia previsto — verificar falta, abono ou justificativa (não informados)");
+    }
+
+    const expected = (daily != null && isWorkday && !holiday) ? daily : (daily != null && !workdays ? null : null);
+    const w = Math.round(worked);
     const diff = expected != null && hasMarks ? w - expected : null;
-    days.push({ date: d, weekday: weekdayOf(d), marks, workedMinutes: w, breakMinutes: Math.round(brk), expectedMinutes: expected, diffMinutes: diff,
-      overtimeMinutes: diff != null ? Math.max(0, diff) : null, nightMinutes: night && hasMarks ? nightMin : null, issues });
+    days.push({
+      date: d, weekday: weekdayOf(d), marks, workedMinutes: w, breakMinutes: Math.round(brk),
+      expectedMinutes: expected, diffMinutes: diff,
+      overtimeMinutes: diff != null ? Math.max(0, diff) : null,
+      nightMinutes: night && hasMarks ? nightMin : null,
+      issues,
+      holiday: holiday?.name ?? null,
+    });
   }
 
   const marked = days.filter((x) => x.marks.length);
@@ -166,18 +185,18 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     overtimeMinutes: configured ? sum((x) => x.overtimeMinutes) : null,
     deficitMinutes: configured ? marked.reduce((a, x) => a + Math.max(0, -(x.diffMinutes || 0)), 0) : null,
     nightMinutes: night ? sum((x) => x.nightMinutes) : null,
-    // Hora noturna reduzida (CLT art. 73 §1º): 52min30s = 1h → minutos noturnos × 60/52,5
     nightReducedMinutes: night ? Math.round(sum((x) => x.nightMinutes) * 60 / 52.5) : null,
     incompleteDays: marked.filter((x) => x.issues.some((i) => i.startsWith("Jornada incompleta") || i.includes("sem entrada") || i.includes("sem saída") || i.includes("sem início"))).length,
     adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
     automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
     pendingSyncMarks: marked.reduce((a, x) => a + x.marks.filter((m) => !m.synced).length, 0),
-    daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday)).length : null,
+    daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday).length : null,
   };
   if (!daily) notes.push("Jornada contratada não configurada para este funcionário: horas previstas, diferenças e horas extras não foram calculadas.");
   if (!workdays) notes.push("Dias de trabalho da semana não configurados: faltas e dias previstos não foram apurados.");
   if (!night) notes.push("Adicional noturno e hora reduzida não configurados: não calculados.");
-  notes.push("Banco de horas, feriados, compensações, abonos e tolerância (CLT art. 58 §1º) dependem de regras/convenção não cadastradas e não foram aplicados.");
+  notes.push("Feriados nacionais são identificados e abonados automaticamente (falta de batida não gera déficit). O ponto continua liberado nesses dias.");
+  notes.push("Banco de horas, compensções, abonos manuais e tolerância (CLT art. 58 §1º) dependem de regras/convenção não cadastradas e não foram aplicados.");
   return { from: input.from, to: input.to, timeZone: tz, days, totals, notes };
 }
 
@@ -202,7 +221,6 @@ export function fmtMark(m: DayRow["marks"][number], tz: string): string {
 }
 
 export const MIRROR_HEADERS = ["Data", "Dia", "Entrada", "Início intervalo", "Retorno intervalo", "Saída", "Trabalhadas", "Intervalo", "Previstas", "Diferença", "Extras", "Adic. noturno", "Ocorrências"];
-/** Tabela única (cabeçalho + linhas de texto) usada por todas as saídas. */
 export function mirrorRows(report: MirrorReport): string[][] {
   const tz = report.timeZone;
   return report.days.map((d) => {

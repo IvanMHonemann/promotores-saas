@@ -2,61 +2,42 @@ import { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const DISMISS_KEY = "gondup_update_banner_dismissed";
+const SEEN_KEY = "gondup_app_version";
 
 async function applyUpdate() {
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#07111f;color:#fff;font-family:system-ui;font-size:18px;";
+  overlay.textContent = "Atualizando aplicativo...";
+  document.body.appendChild(overlay);
   try {
-    if ("serviceWorker" in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
-    }
     if ("caches" in window) {
       const keys = await caches.keys();
       await Promise.all(keys.map((k) => caches.delete(k)));
     }
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
   } catch {
     /* ignore */
   }
-  window.location.href = "/reset";
+  try { localStorage.setItem(SEEN_KEY, (window as any).__APP_VERSION || ""); } catch { /* ignore */ }
+  window.location.replace("/?updated=" + Date.now());
 }
 
 export default function UpdateAvailableBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (sessionStorage.getItem(DISMISS_KEY)) return;
-
-    let cancelled = false;
-    const check = async () => {
-      try {
-        if (!("serviceWorker" in navigator)) return;
-        const reg = await navigator.serviceWorker.getRegistration();
-        if (!reg) return;
-        // Nova versão esperando ou SW diferente do atual
-        if (reg.waiting || (reg.installing && navigator.serviceWorker.controller)) {
-          if (!cancelled) setVisible(true);
-          return;
-        }
-        // Força checagem
-        await reg.update();
-        if (reg.waiting) {
-          if (!cancelled) setVisible(true);
-        }
-      } catch {
-        /* ignore */
-      }
-    };
-    void check();
-
-    const onController = () => {
-      if (!sessionStorage.getItem(DISMISS_KEY)) setVisible(true);
-    };
-    navigator.serviceWorker?.addEventListener("controllerchange", onController);
-    return () => {
-      cancelled = true;
-      navigator.serviceWorker?.removeEventListener("controllerchange", onController);
-    };
+    const current = (window as any).__APP_VERSION as string | undefined;
+    if (!current) return;
+    let seen = "";
+    try { seen = localStorage.getItem(SEEN_KEY) || ""; } catch { /* ignore */ }
+    if (!seen) {
+      try { localStorage.setItem(SEEN_KEY, current); } catch { /* ignore */ }
+      return;
+    }
+    if (seen !== current) setVisible(true);
   }, []);
 
   if (!visible) return null;
@@ -69,14 +50,10 @@ export default function UpdateAvailableBanner() {
       <div className="min-w-0 flex-1">
         <p className="font-bold text-violet-100">Nova versão do aplicativo disponível</p>
         <p className="mt-0.5 text-sm text-violet-200/90">
-          Atualize para carregar as últimas correções e melhorias. O app será recarregado.
+          Atualize para carregar as últimas correções e melhorias. Você continua logado.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            className="bg-violet-400 text-slate-950 hover:bg-violet-300"
-            onClick={() => void applyUpdate()}
-          >
+          <Button size="sm" className="bg-violet-400 text-slate-950 hover:bg-violet-300" onClick={() => void applyUpdate()}>
             Atualizar agora
           </Button>
           <Button
@@ -84,7 +61,7 @@ export default function UpdateAvailableBanner() {
             variant="outline"
             className="border-violet-300/40 text-violet-100 hover:bg-violet-500/20"
             onClick={() => {
-              sessionStorage.setItem(DISMISS_KEY, "1");
+              try { localStorage.setItem(SEEN_KEY, (window as any).__APP_VERSION || ""); } catch { /* ignore */ }
               setVisible(false);
             }}
           >
@@ -97,7 +74,7 @@ export default function UpdateAvailableBanner() {
         aria-label="Fechar aviso"
         className="shrink-0 rounded-lg p-1 text-violet-200 hover:bg-white/10"
         onClick={() => {
-          sessionStorage.setItem(DISMISS_KEY, "1");
+          try { localStorage.setItem(SEEN_KEY, (window as any).__APP_VERSION || ""); } catch { /* ignore */ }
           setVisible(false);
         }}
       >

@@ -102,6 +102,7 @@ export default function PromoterClockPage() {
       setJustificationType("normal");
       void utils.timeTracking.myCorrections.invalidate();
       void utils.timeTracking.myHistory.invalidate();
+      void utils.timeTracking.myMissingPunch.invalidate();
     },
     onError: (error) => toast.error(error.message || "Não foi possível enviar o pedido"),
   });
@@ -161,9 +162,6 @@ export default function PromoterClockPage() {
   };
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const date = params.get("date");
-    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) setSelectedDate(date);
     const sectionId = decodeURIComponent(window.location.hash.slice(1));
     if (!sectionId) return;
     const frame = window.requestAnimationFrame(() => {
@@ -210,11 +208,7 @@ export default function PromoterClockPage() {
                     Última marcação: {missingPunch.data.lastLabel} em {new Date(missingPunch.data.lastTime).toLocaleString("pt-BR")}.
                     Falta registrar: {missingPunch.data.missing}.
                   </p>
-                  <button type="button" onClick={() => {
-                    const day = (missingPunch.data as any)?.day;
-                    if (day) setSelectedDate(day);
-                    document.getElementById("correcoes")?.scrollIntoView({ behavior: "smooth" });
-                  }} className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Corrigir agora</button>
+                  <a href="#correcoes" className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Corrigir agora</a>
                   <button type="button" onClick={() => setHideMissingAlert(true)} aria-label="Fechar alerta" className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-lg border border-amber-200/40 bg-amber-400/20 text-amber-50 transition hover:bg-amber-400/40">
                     <X className="h-5 w-5" />
                   </button>

@@ -1,4 +1,4 @@
-import { Clock3, CreditCard, KeyRound, LogOut, UserRound } from "lucide-react";
+import { Clock3, CreditCard, KeyRound, LogOut, UserRound, RefreshCw } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
   DropdownMenu,
@@ -9,6 +9,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
+
+
+async function updateApp() {
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch {
+    /* ignore */
+  }
+  window.location.href = "/reset";
+}
 
 type AccountMenuDropdownProps = {
   tone?: "dark" | "light";
@@ -65,7 +82,20 @@ export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdo
           {user?.email && <p className="mt-0.5 truncate text-xs font-normal text-slate-400">{user.email}</p>}
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-white/10" />
-        <DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
+        <DropdownMenuItem
+          onClick={() => void updateApp()}
+          className="cursor-pointer gap-3 py-2.5 text-teal-200 focus:bg-teal-500/15 focus:text-teal-100"
+        >
+          <RefreshCw />
+                  <DropdownMenuItem
+          onClick={() => void updateApp()}
+          className="cursor-pointer gap-3 py-2.5 text-teal-200 focus:bg-teal-500/15 focus:text-teal-100"
+        >
+          <RefreshCw />
+          Atualizar aplicativo
+        </DropdownMenuItem>
+        <DropdownMenuSeparator className="bg-white/10" />
+<DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
           <a href="/minha-conta#dados-usuario">
             <UserRound className="text-teal-300" />
             Minha conta

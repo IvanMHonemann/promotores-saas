@@ -6,7 +6,7 @@ import superjson from "superjson";
 import App from "./App";
 import "./index.css";
 
-const FORCE_RELOAD_VERSION = "v14";
+const FORCE_RELOAD_VERSION = "v15";
 if (typeof window !== "undefined" && window.location.pathname === "/plataforma/teste-check-in-out") {
   localStorage.removeItem("promotores-saas-act-as");
   localStorage.removeItem("promotores-saas-auth-user");

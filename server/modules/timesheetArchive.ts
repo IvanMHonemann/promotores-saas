@@ -13,6 +13,7 @@ import { companies, memberAccounts, promoterProfiles, timeEvents } from "../../d
 import { buildMirror, type LaborProfile, type MirrorEvent, MIRROR_HEADERS, mirrorRows, totalsLines, fmtDate } from "../../shared/timesheetMirror";
 import { storagePut, storageGetSignedUrl } from "../storage";
 import { ensureAdjustmentsTable } from "./timesheetMirror";
+import { loadApprovedDayExcuses } from "./correctionExtras";
 
 const TZ = "America/Sao_Paulo";
 const GRACE_DAYS = 5;
@@ -136,6 +137,7 @@ export async function archiveClosedMonth(companyId: number, year: number, month:
   const byMember = new Map<number, typeof eventRows>();
   for (const r of eventRows) byMember.set(r.memberAccountId, [...(byMember.get(r.memberAccountId) || []), r]);
 
+  const excusesByMember = await loadApprovedDayExcuses(companyId, ids, from, to);
   const results: ArchiveResult[] = [];
   for (const m of members) {
     try {
@@ -144,7 +146,7 @@ export async function archiveClosedMonth(companyId: number, year: number, month:
         id: r.id, type: r.eventType, time: (r.deviceTime || r.serverTime).toISOString(),
         receivedAt: r.serverTime.toISOString(), synced: r.synced, notes: r.notes,
       }));
-      const report = buildMirror({ events, from, to, timeZone: TZ, labor });
+      const report = buildMirror({ events, from, to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [] });
       const buf = await buildPdfBuffer({
         companyName: company?.name ?? "", memberName: m.name, employeeCode: m.employeeCode ?? null, from, to, report,
       });

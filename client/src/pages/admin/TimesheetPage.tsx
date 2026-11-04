@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { fullDayExcuseLabel, isFullDayExcuseType } from "@shared/correctionExcuse";
 
 const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Intervalo", break_end: "Retorno", clock_out: "Saída" };
 
@@ -18,6 +19,7 @@ export default function TimesheetPage() {
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { staleTime: 30000 });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { staleTime: 15000 });
   const history = trpc.timeTracking.companyHistory.useQuery({ memberId: selectedId!, month }, { enabled: Boolean(selectedId), staleTime: 10000 });
+  const excuses = trpc.timeTracking.companyApprovedExcuses.useQuery({ memberId: selectedId!, month }, { enabled: Boolean(selectedId), staleTime: 10000 });
   const reviewMany = trpc.timeTracking.correctionRequests.reviewMany.useMutation({
     onSuccess: (data) => { toast.success(`${data.count} horário(s) analisados juntos.`); void corrections.refetch(); },
     onError: (e) => toast.error(e.message || "Não foi possível analisar."),
@@ -77,7 +79,13 @@ export default function TimesheetPage() {
             <CardHeader><CardTitle className="text-base">Marcações de {month}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               {history.isLoading && <p className="text-sm text-slate-400">Carregando...</p>}
-              {!history.isLoading && byDay.length === 0 && <p className="text-sm text-slate-400">Nenhuma marcação neste mês.</p>}
+              {!history.isLoading && byDay.length === 0 && !excuses.data?.length && <p className="text-sm text-slate-400">Nenhuma marcação neste mês.</p>}
+              {(excuses.data || []).filter((item) => !byDay.some(([day]) => day === item.date)).map((item) => (
+                <div key={`excuse-${item.date}`} className="rounded-lg border border-teal-300/20 bg-slate-950/40 p-3">
+                  <p className="text-sm font-semibold text-teal-300">{new Date(item.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</p>
+                  <p className="mt-1 text-sm text-slate-200">{fullDayExcuseLabel(item.type)} — dia abonado{item.justification ? ` · ${item.justification}` : ""}</p>
+                </div>
+              ))}
               {byDay.map(([day, events]) => {
                   let mins = 0;
                   let start: Date | null = null;
@@ -96,6 +104,7 @@ export default function TimesheetPage() {
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-semibold text-teal-300">{new Date(day + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}</p>
                     {mins > 0 && <span className="text-xs text-slate-400">{hours}h{rem.toString().padStart(2, "0")}</span>}
+                    {(excuses.data || []).some((item) => item.date === day) && <span className="text-xs text-teal-300">{fullDayExcuseLabel((excuses.data || []).find((item) => item.date === day)?.type)} — abonado</span>}
                   </div>
                   <div className="space-y-1">
                     {events.map((ev: any) => (
@@ -137,9 +146,11 @@ export default function TimesheetPage() {
                 return (
                   <div key={ids.join("-")} className="mb-3 rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
                     <p className="font-semibold text-white">{first.employee?.userName || "Promotor"}</p>
-                    <p className="text-xs text-teal-300">{({normal:"Correção normal", holiday:"Feriado", day_off:"Folga", medical_certificate:"Atestado médico", other:"Outro"} as any)[first.request.justificationType] || "Correção normal"} · {day}</p>
+                    <p className="text-xs text-teal-300">{isFullDayExcuseType(first.request.justificationType) ? `${fullDayExcuseLabel(first.request.justificationType)} · dia inteiro` : (({normal:"Correção normal", other:"Outro"} as any)[first.request.justificationType] || "Correção normal")} · {day}</p>
                     <div className="mt-2 space-y-1">
-                      {items.slice().sort((a: any, b: any) => new Date(a.request.requestedTime).getTime() - new Date(b.request.requestedTime).getTime()).map((item: any) => (
+                      {isFullDayExcuseType(first.request.justificationType) ? (
+                        <p className="text-slate-200">Abono do dia — sem horários</p>
+                      ) : items.slice().sort((a: any, b: any) => new Date(a.request.requestedTime).getTime() - new Date(b.request.requestedTime).getTime()).map((item: any) => (
                         <p key={item.request.id} className="text-slate-200">{labels[item.request.requestedType] || "Batida"} · {new Date(item.request.requestedTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
                       ))}
                     </div>

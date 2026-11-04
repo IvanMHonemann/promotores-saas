@@ -6,6 +6,7 @@
  * Feriados nacionais são identificados automaticamente: falta de batida é abonada, mas o ponto continua liberado.
  */
 import { getBrazilianHoliday } from "./holidays";
+import { fullDayExcuseLabel, isFullDayExcuseType, type FullDayExcuseType } from "./correctionExcuse";
 
 export type MarkType = "clock_in" | "break_start" | "break_end" | "clock_out";
 export const MARK_LABEL: Record<MarkType, string> = { clock_in: "Entrada", break_start: "Início do intervalo", break_end: "Retorno do intervalo", clock_out: "Saída" };
@@ -58,6 +59,7 @@ export type DayRow = {
   nightMinutes: number | null;
   issues: string[];
   holiday?: string | null;
+  excuse?: { type: FullDayExcuseType; label: string; justification?: string | null } | null;
 };
 
 export type MirrorTotals = {
@@ -90,7 +92,9 @@ function nightOverlap(aMs: number, bMs: number, tz: string, start: number, end: 
   return n;
 }
 
-export function buildMirror(input: { events: MirrorEvent[]; from: string; to: string; timeZone?: string; labor?: LaborProfile | null }): MirrorReport {
+export type DayExcuseInput = { date: string; type: string; justification?: string | null };
+
+export function buildMirror(input: { events: MirrorEvent[]; from: string; to: string; timeZone?: string; labor?: LaborProfile | null; excuses?: DayExcuseInput[] }): MirrorReport {
   const tz = input.timeZone || "America/Sao_Paulo";
   const labor = input.labor || null;
   const events = [...input.events].sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
@@ -115,6 +119,12 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
   const workdays = labor?.workdays && labor.workdays.length ? new Set(labor.workdays) : null;
   const daily = labor?.dailyMinutes && labor.dailyMinutes > 0 ? labor.dailyMinutes : null;
   const night = labor?.nightEnabled && labor.nightStart && labor.nightEnd ? { s: toMin(labor.nightStart), e: toMin(labor.nightEnd) } : null;
+  const excusesByDate = new Map<string, DayExcuseInput>();
+  for (const item of input.excuses || []) {
+    if (item.date >= input.from && item.date <= input.to && isFullDayExcuseType(item.type) && !excusesByDate.has(item.date)) {
+      excusesByDate.set(item.date, item);
+    }
+  }
 
   const days: DayRow[] = [];
   for (let d = input.from; d <= input.to; d = addDay(d, 1)) {
@@ -153,16 +163,25 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
 
     const isWorkday = workdays ? workdays.has(weekdayOf(d)) : null;
     const hasMarks = marks.length > 0;
+    const excuseRow = excusesByDate.get(d);
+    const excuse = excuseRow && isFullDayExcuseType(excuseRow.type)
+      ? { type: excuseRow.type, label: fullDayExcuseLabel(excuseRow.type), justification: excuseRow.justification || null }
+      : null;
+    const excused = Boolean(holiday || excuse);
 
     // Feriado nacional: abona falta de batida automaticamente, mas permite ponto normal se houver marcações.
     if (holiday) {
       issues.push(`Feriado nacional: ${holiday.name} — abonado automaticamente`);
     }
-    if (!hasMarks && isWorkday && !holiday) {
+    if (excuse) {
+      const extra = excuse.justification ? ` — ${excuse.justification}` : "";
+      issues.push(`${excuse.label} — dia abonado${extra}`);
+    }
+    if (!hasMarks && isWorkday && !excused) {
       issues.push("Sem marcações em dia previsto — verificar falta, abono ou justificativa (não informados)");
     }
 
-    const expected = (daily != null && isWorkday && !holiday) ? daily : (daily != null && !workdays ? null : null);
+    const expected = (daily != null && isWorkday && !excused) ? daily : (daily != null && !workdays ? null : null);
     const w = Math.round(worked);
     const diff = expected != null && hasMarks ? w - expected : null;
     days.push({
@@ -172,6 +191,7 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
       nightMinutes: night && hasMarks ? nightMin : null,
       issues,
       holiday: holiday?.name ?? null,
+      excuse,
     });
   }
 
@@ -190,12 +210,13 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
     automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
     pendingSyncMarks: marked.reduce((a, x) => a + x.marks.filter((m) => !m.synced).length, 0),
-    daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday).length : null,
+    daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday && !x.excuse).length : null,
   };
   if (!daily) notes.push("Jornada contratada não configurada para este funcionário: horas previstas, diferenças e horas extras não foram calculadas.");
   if (!workdays) notes.push("Dias de trabalho da semana não configurados: faltas e dias previstos não foram apurados.");
   if (!night) notes.push("Adicional noturno e hora reduzida não configurados: não calculados.");
   notes.push("Feriados nacionais são identificados e abonados automaticamente (falta de batida não gera déficit). O ponto continua liberado nesses dias.");
+  notes.push("Folga, feriado e atestado aprovados na correção de ponto abonam o dia inteiro, sem criar batidas.");
   notes.push("Banco de horas, compensções, abonos manuais e tolerância (CLT art. 58 §1º) dependem de regras/convenção não cadastradas e não foram aplicados.");
   return { from: input.from, to: input.to, timeZone: tz, days, totals, notes };
 }

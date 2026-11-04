@@ -37,6 +37,34 @@ describe("espelho de ponto", () => {
     const r = buildMirror({ events: [], from: "2026-10-05", to: "2026-10-06" });
     expect(r.totals.daysWithoutMarksOnWorkday).toBeNull();
   });
+  it("abona dia inteiro em folga/atestado sem inventar batidas", () => {
+    const r = buildMirror({
+      events: [],
+      from: "2026-10-05",
+      to: "2026-10-06",
+      labor,
+      excuses: [{ date: "2026-10-06", type: "day_off", justification: "Folga combinada" }],
+    });
+    const excused = r.days.find((d) => d.date === "2026-10-06");
+    expect(excused?.marks).toEqual([]);
+    expect(excused?.expectedMinutes).toBeNull();
+    expect(excused?.excuse?.label).toBe("Folga");
+    expect(excused?.issues.join()).toContain("Folga — dia abonado");
+    expect(r.totals.daysWithoutMarksOnWorkday).toBe(1);
+  });
+  it("abona atestado sem gerar previsto nem déficit", () => {
+    const r = buildMirror({
+      events: [],
+      from: "2026-10-05",
+      to: "2026-10-05",
+      labor,
+      excuses: [{ date: "2026-10-05", type: "medical_certificate" }],
+    });
+    expect(r.days[0].excuse?.type).toBe("medical_certificate");
+    expect(r.days[0].expectedMinutes).toBeNull();
+    expect(r.days[0].diffMinutes).toBeNull();
+    expect(r.totals.daysWithoutMarksOnWorkday).toBe(0);
+  });
   it("formatadores", () => {
     expect(fmtMinutes(75)).toBe("01:15");
     expect(fmtMinutes(-5, true)).toBe("-00:05");

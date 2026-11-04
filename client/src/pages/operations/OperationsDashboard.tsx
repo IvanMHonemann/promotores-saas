@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
+import { fullDayExcuseLabel, isFullDayExcuseType } from "@shared/correctionExcuse";
 
 type Section = "overview" | "routes" | "visits";
 type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
@@ -378,12 +379,14 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="font-bold text-slate-100">{employee?.userName || `Promotor #${request.memberAccountId}`}</p>
-                  <p className="mt-1 text-xs text-slate-400">{items.length > 1 ? `${items.length} horários` : "1 horário"} · {day}</p>
+                  <p className="mt-1 text-xs text-slate-400">{isFullDayExcuseType(request.justificationType) ? `${fullDayExcuseLabel(request.justificationType)} · dia inteiro` : items.length > 1 ? `${items.length} horários` : "1 horário"} · {day}</p>
                 </div>
                 <Badge variant="outline" className="border-amber-300/40 text-amber-200">Pendente</Badge>
               </div>
               <div className="mt-3 space-y-1">
-                {items
+                {isFullDayExcuseType(request.justificationType) ? (
+                  <p className="text-sm text-slate-200">Abono do dia — sem horários</p>
+                ) : items
                   .slice()
                   .sort((a: any, b: any) => new Date(a.request.requestedTime).getTime() - new Date(b.request.requestedTime).getTime())
                   .map((item: any) => (

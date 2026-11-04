@@ -6,11 +6,12 @@ import { memberAccounts, timeEvents, timeCorrectionRequests } from "../../drizzl
 import { eq, and, desc, gte, lt, sql } from "drizzle-orm";
 import { auditFromCtx } from "../audit";
 import { recordAdjustment } from "./timesheetMirror";
-async function safeAdjustment(data: Parameters<typeof recordAdjustment>[0]) { try { await safeAdjustment(data); } catch (error) { console.error("adjustment log failed", error); } }
+async function safeAdjustment(data: Parameters<typeof recordAdjustment>[0]) { try { await recordAdjustment(data); } catch (error) { console.error("adjustment log failed", error); } }
 import { findMissingPunches } from "../missingPunch";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
-import { ensureCorrectionExtras, saveCorrectionAttachment } from "./correctionExtras";
+import { ensureCorrectionExtras, loadApprovedDayExcuses, saveCorrectionAttachment } from "./correctionExtras";
 import { storageGetSignedUrl } from "../storage";
+import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, noonInSaoPaulo } from "../../shared/correctionExcuse";
 
 const timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 type TimeEventType = z.infer<typeof timeEventType>;
@@ -34,6 +35,49 @@ function isValidTransition(last: TimeEventType | undefined, next: TimeEventType)
     clock_out: ["clock_in"],
   };
   return transitions[last].includes(next);
+}
+
+async function applyApprovedCorrection(database: NonNullable<Awaited<ReturnType<typeof db.getDb>>>, request: typeof timeCorrectionRequests.$inferSelect, ctx: { accountId: number; memberAccountId?: number | null; user?: { name?: string | null } | null }, opts?: { skipMissing?: boolean }) {
+  if (isFullDayExcuseType(request.justificationType)) return;
+  if (request.timeEventId) {
+    const event = (await database.select().from(timeEvents).where(and(eq(timeEvents.id, request.timeEventId), eq(timeEvents.companyId, ctx.accountId))).limit(1))[0];
+    if (!event) {
+      if (opts?.skipMissing) return;
+      throw new TRPCError({ code: "NOT_FOUND", message: "A marcação original não foi encontrada." });
+    }
+    const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
+    const note = `Ajuste aprovado em ${new Date().toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcionário: ${request.justification}`;
+    await safeAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
+    await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}\n` : ""}${note}` }).where(eq(timeEvents.id, event.id));
+    return;
+  }
+  const note = `Batida incluída via solicitação aprovada em ${new Date().toISOString()}. Motivo: ${request.justification}`;
+  const insertResult = await database.insert(timeEvents).values({
+    companyId: request.companyId,
+    memberAccountId: request.memberAccountId,
+    eventType: request.requestedType,
+    deviceTime: request.requestedTime,
+    serverTime: new Date(),
+    notes: note,
+    synced: true,
+    locationStatus: "unavailable",
+  });
+  const newEventId = Number((insertResult as any)[0]?.insertId);
+  if (newEventId) {
+    await safeAdjustment({
+      companyId: ctx.accountId,
+      timeEventId: newEventId,
+      correctionRequestId: request.id,
+      memberAccountId: request.memberAccountId,
+      originalType: "missing",
+      originalTime: request.requestedTime,
+      correctedType: request.requestedType,
+      correctedTime: request.requestedTime,
+      justification: request.justification,
+      reviewedByMemberId: ctx.memberAccountId ?? null,
+      reviewedByName: ctx.user?.name ?? null,
+    });
+  }
 }
 
 export const timeTrackingRouter = router({
@@ -216,6 +260,17 @@ export const timeTrackingRouter = router({
         .orderBy(timeEvents.serverTime);
     }),
 
+  companyApprovedExcuses: companyAdminFeatureProcedure("timeTracking")
+    .input(z.object({ memberId: z.number().int().positive(), month: z.string().regex(/^\d{4}-\d{2}$/) }))
+    .query(async ({ ctx, input }) => {
+      const from = `${input.month}-01`;
+      const [year, mon] = input.month.split("-").map(Number);
+      const lastDay = new Date(Date.UTC(year, mon, 0)).getUTCDate();
+      const to = `${input.month}-${String(lastDay).padStart(2, "0")}`;
+      const map = await loadApprovedDayExcuses(ctx.accountId, [input.memberId], from, to);
+      return map.get(input.memberId) || [];
+    }),
+
   myMissingPunch: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
     if (!ctx.accountId || !ctx.memberAccountId) return null;
     const found = (await findMissingPunches({ companyId: ctx.accountId, memberId: ctx.memberAccountId }))[0];
@@ -314,7 +369,8 @@ export const timeTrackingRouter = router({
         if (raw) labor = JSON.parse(raw) as LaborProfile;
       } catch { labor = null; }
 
-      const report = buildMirror({ events, from, to, timeZone, labor });
+      const excusesByMember = await loadApprovedDayExcuses(companyId, [memberId], from, to);
+      const report = buildMirror({ events, from, to, timeZone, labor, excuses: excusesByMember.get(memberId) || [] });
       const configured = Boolean(labor?.dailyMinutes && labor.dailyMinutes > 0 && labor.workdays?.length);
       const openToday = report.days.find((day) => day.date === today && day.issues.some((issue) => issue.startsWith("Jornada incompleta")));
 
@@ -366,9 +422,10 @@ export const timeTrackingRouter = router({
   requestCorrection: commercialFeatureProcedure("timeTracking")
     .input(z.object({
       timeEventId: z.number().int().positive().optional().nullable(),
-      requestedType: timeEventType,
-      requestedTime: z.string().datetime(),
-      justification: z.string().min(5),
+      requestedType: timeEventType.optional(),
+      requestedTime: z.string().datetime().optional(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      justification: z.string().max(2000).optional(),
       justificationType: z.enum(["normal", "holiday", "day_off", "medical_certificate", "other"]).optional(),
       attachmentBase64: z.string().optional(),
     }))
@@ -378,23 +435,58 @@ export const timeTrackingRouter = router({
       if (!companyId || !memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário de empresa não identificado." });
       const database = await db.getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+      const jType = input.justificationType || "normal";
+      const fullDay = isFullDayExcuseType(jType);
+      const reason = (input.justification || "").trim() || (fullDay ? fullDayExcuseLabel(jType) : "");
+      if (!fullDay && reason.length < 5) throw new TRPCError({ code: "BAD_REQUEST", message: "Escreva pelo menos 5 caracteres na justificativa." });
+      if (!fullDay && !input.requestedType) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o tipo de marcação." });
+      await ensureCorrectionExtras();
 
       let timeEventId: number | null = null;
-      if (input.timeEventId) {
+      if (fullDay) {
+        timeEventId = null;
+      } else if (input.timeEventId) {
         const event = await database.select().from(timeEvents).where(and(eq(timeEvents.id, input.timeEventId), eq(timeEvents.companyId, companyId), eq(timeEvents.memberAccountId, memberId))).limit(1);
         if (!event[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Marcação não encontrada para este funcionário." });
         timeEventId = input.timeEventId;
       }
 
-      await ensureCorrectionExtras();
+      let requestedTime: Date;
+      if (fullDay) {
+        const day = input.date || (input.requestedTime ? excuseDay(input.requestedTime) : "");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe a data do abono." });
+        requestedTime = noonInSaoPaulo(day);
+      } else {
+        if (!input.requestedTime) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o horário da correção." });
+        requestedTime = new Date(input.requestedTime);
+      }
+
+      if (fullDay) {
+        const day = excuseDay(requestedTime);
+        const existing = await database.select({
+          id: timeCorrectionRequests.id,
+          status: timeCorrectionRequests.status,
+          requestedTime: timeCorrectionRequests.requestedTime,
+          justificationType: timeCorrectionRequests.justificationType,
+        }).from(timeCorrectionRequests).where(and(
+          eq(timeCorrectionRequests.companyId, companyId),
+          eq(timeCorrectionRequests.memberAccountId, memberId),
+          sql`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+        )).orderBy(desc(timeCorrectionRequests.createdAt)).limit(50);
+        if (existing.some((row) => isFullDayExcuseType(row.justificationType) && excuseDay(row.requestedTime) === day)) {
+          throw new TRPCError({ code: "CONFLICT", message: "Já existe um abono pendente ou aprovado para este dia." });
+        }
+      }
+
       const result = await database.insert(timeCorrectionRequests).values({
         companyId,
         memberAccountId: memberId,
         timeEventId,
-        requestedType: input.requestedType,
-        requestedTime: new Date(input.requestedTime),
-        justification: input.justification,
+        requestedType: fullDay ? "clock_in" : input.requestedType!,
+        requestedTime,
+        justification: reason,
         status: "pending",
+        justificationType: jType,
       });
       const insertedRows = await database.select().from(timeCorrectionRequests).where(eq(timeCorrectionRequests.id, Number((result as any)[0]?.insertId))).limit(1);
       const inserted = insertedRows[0];
@@ -406,7 +498,6 @@ export const timeTrackingRouter = router({
         if (input.attachmentBase64) {
           attachmentKey = await saveCorrectionAttachment(companyId, inserted.id, input.attachmentBase64);
         }
-        const jType = input.justificationType || "normal";
         if (attachmentKey) {
           await database.execute(sql`UPDATE time_correction_requests SET justificationType = ${jType}, attachmentKey = ${attachmentKey} WHERE id = ${inserted.id}`);
         } else {
@@ -422,7 +513,7 @@ export const timeTrackingRouter = router({
         module: "time_tracking",
         entityType: "correction_request",
         entityId: inserted.id,
-        description: timeEventId ? "Solicitação de correção de ponto" : "Solicitação de inclusão de batida faltante",
+        description: fullDay ? `Solicitação de abono (${fullDayExcuseLabel(jType)})` : timeEventId ? "Solicitação de correção de ponto" : "Solicitação de inclusão de batida faltante",
       });
       return { ...inserted, justificationType: input.justificationType || "normal", attachmentKey };
     }),
@@ -462,47 +553,11 @@ export const timeTrackingRouter = router({
         if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Solicitação de correção não encontrada." });
         if (request.status !== "pending") throw new TRPCError({ code: "BAD_REQUEST", message: "Esta solicitação já foi analisada." });
 
-        if (input.status === "approved") {
-          if (request.timeEventId) {
-            const event = (await database.select().from(timeEvents).where(and(eq(timeEvents.id, request.timeEventId), eq(timeEvents.companyId, ctx.accountId))).limit(1))[0];
-            if (!event) throw new TRPCError({ code: "NOT_FOUND", message: "A marcação original não foi encontrada." });
-            const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
-            const note = `Ajuste aprovado em ${new Date().toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcionário: ${request.justification}`;
-            await safeAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
-            await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}\n` : ""}${note}` }).where(eq(timeEvents.id, event.id));
-          } else {
-            const note = `Batida incluída via solicitação aprovada em ${new Date().toISOString()}. Motivo: ${request.justification}`;
-            const insertResult = await database.insert(timeEvents).values({
-              companyId: request.companyId,
-              memberAccountId: request.memberAccountId,
-              eventType: request.requestedType,
-              deviceTime: request.requestedTime,
-              serverTime: new Date(),
-              notes: note,
-              synced: true,
-              locationStatus: "unavailable",
-            });
-            const newEventId = Number((insertResult as any)[0]?.insertId);
-            if (newEventId) {
-              await safeAdjustment({
-                companyId: ctx.accountId,
-                timeEventId: newEventId,
-                correctionRequestId: request.id,
-                memberAccountId: request.memberAccountId,
-                originalType: "missing",
-                originalTime: request.requestedTime,
-                correctedType: request.requestedType,
-                correctedTime: request.requestedTime,
-                justification: request.justification,
-                reviewedByMemberId: ctx.memberAccountId ?? null,
-                reviewedByName: ctx.user?.name ?? null,
-              });
-            }
-          }
-        }
+        if (input.status === "approved") await applyApprovedCorrection(database, request, ctx);
 
         await database.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: new Date(), reviewNotes: input.reviewNotes || null }).where(eq(timeCorrectionRequests.id, request.id));
-        await auditFromCtx(ctx, { action: input.status === "approved" ? "update" : "security", module: "time_tracking", entityType: "correction_request", entityId: request.id, description: `Solicitação de correção ${input.status === "approved" ? "aprovada" : "rejeitada"}${!request.timeEventId ? " (inclusão de batida)" : ""}`, newData: { status: input.status, reviewNotes: input.reviewNotes || null } });
+        const excuse = isFullDayExcuseType(request.justificationType);
+        await auditFromCtx(ctx, { action: input.status === "approved" ? "update" : "security", module: "time_tracking", entityType: "correction_request", entityId: request.id, description: `Solicitação de correção ${input.status === "approved" ? "aprovada" : "rejeitada"}${excuse ? ` (abono ${fullDayExcuseLabel(request.justificationType)})` : !request.timeEventId ? " (inclusão de batida)" : ""}`, newData: { status: input.status, reviewNotes: input.reviewNotes || null } });
         return { success: true as const };
       }),
 
@@ -516,45 +571,7 @@ export const timeTrackingRouter = router({
           const rows = await database.select().from(timeCorrectionRequests).where(and(eq(timeCorrectionRequests.id, id), eq(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
           const request = rows[0];
           if (!request || request.status !== "pending") continue;
-          if (input.status === "approved") {
-            if (request.timeEventId) {
-              const event = (await database.select().from(timeEvents).where(and(eq(timeEvents.id, request.timeEventId), eq(timeEvents.companyId, ctx.accountId))).limit(1))[0];
-              if (event) {
-                const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
-                const note = `Ajuste aprovado em ${new Date().toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcionário: ${request.justification}`;
-                await safeAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
-                await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}\n` : ""}${note}` }).where(eq(timeEvents.id, event.id));
-              }
-            } else {
-              const note = `Batida incluída via solicitação aprovada em ${new Date().toISOString()}. Motivo: ${request.justification}`;
-              const insertResult = await database.insert(timeEvents).values({
-                companyId: request.companyId,
-                memberAccountId: request.memberAccountId,
-                eventType: request.requestedType,
-                deviceTime: request.requestedTime,
-                serverTime: new Date(),
-                notes: note,
-                synced: true,
-                locationStatus: "unavailable",
-              });
-              const newEventId = Number((insertResult as any)[0]?.insertId);
-              if (newEventId) {
-                await safeAdjustment({
-                  companyId: ctx.accountId,
-                  timeEventId: newEventId,
-                  correctionRequestId: request.id,
-                  memberAccountId: request.memberAccountId,
-                  originalType: "missing",
-                  originalTime: request.requestedTime,
-                  correctedType: request.requestedType,
-                  correctedTime: request.requestedTime,
-                  justification: request.justification,
-                  reviewedByMemberId: ctx.memberAccountId ?? null,
-                  reviewedByName: ctx.user?.name ?? null,
-                });
-              }
-            }
-          }
+          if (input.status === "approved") await applyApprovedCorrection(database, request, ctx, { skipMissing: true });
           await database.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: new Date(), reviewNotes: input.reviewNotes || null }).where(eq(timeCorrectionRequests.id, request.id));
           done += 1;
         }

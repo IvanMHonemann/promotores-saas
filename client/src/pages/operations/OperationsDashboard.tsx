@@ -80,10 +80,11 @@ export default function OperationsDashboard() {
 
   const review = trpc.timeTracking.correctionRequests.review.useMutation({
     onSuccess: (_, variables) => {
+      if ((variables as any).__batch) return;
       toast.success(variables.status === "approved" ? "Correção aprovada e aplicada ao ponto." : "Pedido de correção recusado.");
       void utils.timeTracking.correctionRequests.pending.invalidate();
     },
-    onError: () => toast.error("Não foi possível analisar o pedido de correção."),
+    onError: (error) => toast.error(error.message || "Não foi possível analisar o pedido de correção."),
   });
   const reviewMany = trpc.timeTracking.correctionRequests.reviewMany.useMutation({
     onSuccess: (data, variables) => {
@@ -128,7 +129,22 @@ export default function OperationsDashboard() {
   }, []);
 
   const approve = (id: number, status: "approved" | "rejected") => review.mutate({ id, status, reviewNotes: reviewNotes[id]?.trim() || undefined });
-  const approveMany = (ids: number[], status: "approved" | "rejected") => reviewMany.mutate({ ids, status, reviewNotes: reviewNotes[ids[0]]?.trim() || undefined });
+  const [approving, setApproving] = useState(false);
+  const approveMany = async (ids: number[], status: "approved" | "rejected") => {
+    const notes = reviewNotes[ids[0]]?.trim() || undefined;
+    setApproving(true);
+    try {
+      for (const id of ids) {
+        await review.mutateAsync({ id, status, reviewNotes: notes, __batch: true } as any);
+      }
+      toast.success(status === "approved" ? `${ids.length} horários aprovados.` : `${ids.length} horários recusados.`);
+      void utils.timeTracking.correctionRequests.pending.invalidate();
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível analisar o pedido.");
+    } finally {
+      setApproving(false);
+    }
+  };
   const visibleSection = hasFieldOperations ? section : "overview";
   const title = visibleSection === "routes" ? (isCompanyAdmin ? "Lojas" : "Roteiros") : visibleSection === "visits" ? "Visitas" : isCompanyAdmin ? "Central da empresa" : isSupervisor ? "Painel do supervisor" : "Operação de campo";
   const description = visibleSection === "routes"
@@ -390,8 +406,8 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
                   onChange={(e) => setReviewNotes((prev: any) => ({ ...prev, [ids[0]]: e.target.value }))}
                   className="max-w-xs"
                 />
-                <Button size="sm" onClick={() => (ids.length > 1 ? approveMany(ids, "approved") : approve(ids[0], "approved"))} disabled={reviewPending}>Aprovar</Button>
-                <Button size="sm" variant="outline" onClick={() => (ids.length > 1 ? approveMany(ids, "rejected") : approve(ids[0], "rejected"))} disabled={reviewPending}>Recusar</Button>
+                <Button type="button" size="sm" onClick={() => void (ids.length > 1 ? approveMany(ids, "approved") : approve(ids[0], "approved"))} disabled={reviewPending}>{reviewPending ? "Aguarde..." : "Aprovar"}</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => void (ids.length > 1 ? approveMany(ids, "rejected") : approve(ids[0], "rejected"))} disabled={reviewPending}>{reviewPending ? "Aguarde..." : "Recusar"}</Button>
               </div>
             </div>
           );

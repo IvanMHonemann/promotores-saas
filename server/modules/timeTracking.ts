@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { commercialFeatureProcedure, companyAdminFeatureProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { memberAccounts, timeEvents, timeCorrectionRequests } from "../../drizzle/schema";
-import { eq, and, desc, gte, lt, sql } from "drizzle-orm";
+import { eq, and, desc, gte, lt, inArray, sql } from "drizzle-orm";
 import { auditFromCtx } from "../audit";
 import { recordAdjustment } from "./timesheetMirror";
 async function safeAdjustment(data: Parameters<typeof recordAdjustment>[0]) { try { await recordAdjustment(data); } catch (error) { console.error("adjustment log failed", error); } }
@@ -298,7 +298,32 @@ export const timeTrackingRouter = router({
     return covered ? null : found;
   }),
 
-  companyMissingPunches: companyAdminFeatureProcedure("timeTracking").query(({ ctx }) => findMissingPunches({ companyId: ctx.accountId })),
+  companyMissingPunches: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
+    const found = await findMissingPunches({ companyId: ctx.accountId });
+    if (!found.length) return found;
+    const database = await db.getDb();
+    if (!database) return found;
+    const memberIds = [...new Set(found.map((m) => m.memberId))];
+    const rows = await database.select({
+      memberAccountId: timeCorrectionRequests.memberAccountId,
+      requestedTime: timeCorrectionRequests.requestedTime,
+    }).from(timeCorrectionRequests)
+      .where(and(
+        eq(timeCorrectionRequests.companyId, ctx.accountId),
+        inArray(timeCorrectionRequests.memberAccountId, memberIds),
+        sql`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+      ))
+      .orderBy(desc(timeCorrectionRequests.createdAt))
+      .limit(500);
+    const covered = new Set<string>();
+    for (const row of rows) {
+      const day = excuseDay(row.requestedTime);
+      covered.add(`${row.memberAccountId}:${day}`);
+    }
+    // Esconde o alerta se houver pedido pendente ou aprovado cobrindo o mesmo dia.
+    // Volta a aparecer só se o pedido for recusado (ou não existir).
+    return found.filter((m) => !covered.has(`${m.memberId}:${m.day}`));
+  }),
 
   myHistory: commercialFeatureProcedure("timeTracking")
     .input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional())

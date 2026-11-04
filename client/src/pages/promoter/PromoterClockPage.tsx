@@ -350,6 +350,9 @@ export default function PromoterClockPage() {
                         </Badge>
                       </div>
                       <p className="mt-1 text-slate-300">{request.justification}</p>
+                      {request.status === "rejected" && (
+                        <p className="mt-1 text-xs font-semibold text-rose-300">Recusado{request.reviewNotes ? `: ${request.reviewNotes}` : ""}</p>
+                      )}
                     </div>
                   ))}
                 </div>

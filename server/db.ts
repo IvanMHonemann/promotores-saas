@@ -1256,6 +1256,51 @@ export async function updateOperationalVisit(companyId: number, id: number, data
   return rows[0];
 }
 
+
+/** Fecha automaticamente visitas em andamento de dias anteriores (esquecidas após o expediente). */
+export async function autoCloseStaleVisits(companyId: number, promoterId: number, today: string) {
+  const database = await getDb();
+  if (!database) return [];
+  const company = requireAccountId(companyId);
+  const open = await database
+    .select({
+      visit: operationalVisits,
+      routeDate: operationalRoutes.date,
+      storeName: operationalStores.name,
+    })
+    .from(operationalVisits)
+    .innerJoin(operationalRoutes, eq(operationalVisits.routeId, operationalRoutes.id))
+    .innerJoin(operationalStores, eq(operationalVisits.storeId, operationalStores.id))
+    .where(
+      and(
+        eq(operationalVisits.companyId, company),
+        eq(operationalVisits.promoterId, promoterId),
+        eq(operationalVisits.status, "in_progress"),
+        sql`${operationalRoutes.date} < ${today}`,
+      ),
+    );
+
+  const closed: Array<{ id: number; storeName: string | null; routeDate: string }> = [];
+  for (const row of open) {
+    const routeDate = String(row.routeDate).slice(0, 10);
+    // 18:00 no fuso de Brasília do dia da visita
+    const actualEnd = new Date(`${routeDate}T21:00:00.000Z`);
+    const note = "Check-out automático: visita de dia anterior não encerrada após o expediente.";
+    const existingNotes = row.visit.notes ? String(row.visit.notes) : "";
+    const notes = existingNotes.includes(note) ? existingNotes : (existingNotes ? `${existingNotes}\n${note}` : note);
+    await database
+      .update(operationalVisits)
+      .set({
+        status: "completed",
+        actualEnd,
+        notes,
+      })
+      .where(and(eq(operationalVisits.id, row.visit.id), eq(operationalVisits.companyId, company)));
+    closed.push({ id: row.visit.id, storeName: row.storeName ?? null, routeDate });
+  }
+  return closed;
+}
+
 /* Inventário e validade de produtos isolados por empresa. */
 let _inventoryReady: Promise<void> | null = null;
 /**

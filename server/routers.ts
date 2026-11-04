@@ -24,6 +24,7 @@ import { scopeMemberId, assertStoreAccess, setPromoterStoreAssignments, getPromo
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 import { runPersistentGemini } from "./aiGithubService";
+import { todayInZone } from "../shared/expiry";
 
 const emptyToNull = (value?: string) => value?.trim() || null;
 const companyUserRole = z.enum(["company_admin", "supervisor", "promoter"]);
@@ -912,24 +913,33 @@ export const appRouter = router({
     }),
     visits: router({
       today: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional()).query(async ({ ctx, input }) => {
-        const date = input?.date || new Date().toISOString().slice(0, 10);
+        const date = input?.date || todayInZone();
         const promoterId = scopeMemberId(ctx) ?? undefined;
-        if (promoterId) await db.materializeWeeklyRoutes(ctx.accountId, promoterId, date);
+        if (promoterId) {
+          await db.autoCloseStaleVisits(ctx.accountId, promoterId, date);
+          await db.materializeWeeklyRoutes(ctx.accountId, promoterId, date);
+        }
         return db.listOperationalVisits(ctx.accountId, { date, promoterId: promoterId ?? undefined });
       }),
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), routeId: z.number().int().positive().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
       start: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional() })).mutation(async ({ ctx, input }) => {
-        const [owned] = await db.listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? undefined });
+        const promoterId = scopeMemberId(ctx);
+        const today = todayInZone();
+        // Fecha automaticamente visitas de dias anteriores que ficaram abertas (esquecidas após o expediente).
+        if (promoterId != null) {
+          await db.autoCloseStaleVisits(ctx.accountId, promoterId, today);
+        }
+
+        const [owned] = await db.listOperationalVisits(ctx.accountId, { id: input.id, promoterId: promoterId ?? undefined });
         if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "Visita não encontrada para esta empresa." });
-        if (scopeMemberId(ctx) !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Visita não pertence ao promotor autenticado." });
+        if (promoterId !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Visita não pertence ao promotor autenticado." });
         // Reenvio (toque duplo, timeout seguido de fila offline): não reinicia nem reabre uma visita já iniciada/concluída.
         if (owned.visit.status !== "pending") return owned;
 
-        // Bloqueia check-in em outra loja enquanto houver uma visita em andamento para o promotor.
-        const promoterId = scopeMemberId(ctx);
+        // Bloqueia check-in somente se houver outra visita em andamento no mesmo dia.
         if (promoterId != null) {
-          const promoterVisits = await db.listOperationalVisits(ctx.accountId, { promoterId });
-          const openVisit = promoterVisits.find((v) => v.visit.status === "in_progress" && v.visit.id !== input.id);
+          const todayVisits = await db.listOperationalVisits(ctx.accountId, { promoterId, date: today });
+          const openVisit = todayVisits.find((v) => v.visit.status === "in_progress" && v.visit.id !== input.id);
           if (openVisit) {
             const storeName = openVisit.store?.name || "a loja atual";
             throw new TRPCError({

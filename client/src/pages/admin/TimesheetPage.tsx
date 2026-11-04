@@ -18,6 +18,10 @@ export default function TimesheetPage() {
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { staleTime: 30000 });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { staleTime: 15000 });
   const history = trpc.timeTracking.companyHistory.useQuery({ memberId: selectedId!, month }, { enabled: Boolean(selectedId), staleTime: 10000 });
+  const reviewMany = trpc.timeTracking.correctionRequests.reviewMany.useMutation({
+    onSuccess: (data) => { toast.success(`${data.count} horário(s) analisados juntos.`); void corrections.refetch(); },
+    onError: (e) => toast.error(e.message || "Não foi possível analisar."),
+  });
   const review = trpc.timeTracking.correctionRequests.review.useMutation({
     onSuccess: () => { toast.success("Solicitação analisada."); void corrections.refetch(); },
     onError: (e) => toast.error(e.message || "Não foi possível analisar."),
@@ -113,29 +117,51 @@ export default function TimesheetPage() {
         <Card className="border-amber-300/25 bg-amber-300/5 text-white">
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Clock className="h-4 w-4 text-amber-300" />Solicitações de correção</CardTitle></CardHeader>
           <CardContent>
-            {(corrections.data || []).length === 0 && <p className="text-sm text-slate-400">Nenhuma solicitação pendente.</p>}
-            {(corrections.data || []).map((item: any) => (
-              <div key={item.request.id} className="mb-3 rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
-                <p className="font-semibold text-white">{item.employee?.userName || "Promotor"}</p>
-                <p className="text-xs text-teal-300">{({normal:"Correção normal", holiday:"Feriado", day_off:"Folga", medical_certificate:"Atestado médico", other:"Outro"} as any)[item.request.justificationType] || "Correção normal"}</p>
-                <p className="text-slate-300">{item.request.justification}</p>
-                {item.attachmentUrl && (
-                  <a href={item.attachmentUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
-                    <img src={item.attachmentUrl} alt="Comprovante anexado" className="h-24 w-24 rounded-lg border border-white/15 object-cover" />
-                    <span className="mt-1 block text-xs text-amber-200">Abrir comprovante</span>
-                  </a>
-                )}
-                <p className="text-xs text-slate-400">Solicitado: {new Date(item.request.createdAt).toLocaleString("pt-BR")}</p>
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" className="bg-emerald-500 text-white hover:bg-emerald-400" disabled={review.isPending} onClick={() => review.mutate({ id: item.request.id, status: "approved" })}>
-                    <Check className="mr-1 h-3.5 w-3.5" /> Aprovar
-                  </Button>
-                  <Button size="sm" variant="outline" className="border-rose-300/40 text-rose-200" disabled={review.isPending} onClick={() => review.mutate({ id: item.request.id, status: "rejected" })}>
-                    <X className="mr-1 h-3.5 w-3.5" /> Recusar
-                  </Button>
-                </div>
-              </div>
-            ))}
+            {(() => {
+              const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Início do intervalo", break_end: "Fim do intervalo", clock_out: "Saída" };
+              const dayKey = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+              const groups = new Map<string, any[]>();
+              for (const item of corrections.data || []) {
+                const key = `${item.request.memberAccountId}:${dayKey(item.request.requestedTime)}`;
+                const list = groups.get(key) || [];
+                list.push(item);
+                groups.set(key, list);
+              }
+              const grouped = [...groups.values()];
+              if (!grouped.length) return <p className="text-sm text-slate-400">Nenhuma solicitação pendente.</p>;
+              return grouped.map((items) => {
+                const first = items[0];
+                const ids = items.map((item: any) => item.request.id);
+                const photo = items.find((item: any) => item.attachmentUrl);
+                const day = new Date(first.request.requestedTime).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+                return (
+                  <div key={ids.join("-")} className="mb-3 rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
+                    <p className="font-semibold text-white">{first.employee?.userName || "Promotor"}</p>
+                    <p className="text-xs text-teal-300">{({normal:"Correção normal", holiday:"Feriado", day_off:"Folga", medical_certificate:"Atestado médico", other:"Outro"} as any)[first.request.justificationType] || "Correção normal"} · {day}</p>
+                    <div className="mt-2 space-y-1">
+                      {items.slice().sort((a: any, b: any) => new Date(a.request.requestedTime).getTime() - new Date(b.request.requestedTime).getTime()).map((item: any) => (
+                        <p key={item.request.id} className="text-slate-200">{labels[item.request.requestedType] || "Batida"} · {new Date(item.request.requestedTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-slate-300">{first.request.justification}</p>
+                    {photo?.attachmentUrl && (
+                      <a href={photo.attachmentUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                        <img src={photo.attachmentUrl} alt="Comprovante anexado" className="h-24 w-24 rounded-lg border border-white/15 object-cover" />
+                        <span className="mt-1 block text-xs text-amber-200">Abrir comprovante</span>
+                      </a>
+                    )}
+                    <div className="mt-2 flex gap-2">
+                      <Button size="sm" className="bg-emerald-500 text-white hover:bg-emerald-400" disabled={review.isPending || reviewMany.isPending} onClick={() => ids.length > 1 ? reviewMany.mutate({ ids, status: "approved" }) : review.mutate({ id: ids[0], status: "approved" })}>
+                        <Check className="mr-1 h-3.5 w-3.5" /> Aprovar
+                      </Button>
+                      <Button size="sm" variant="outline" className="border-rose-300/40 text-rose-200" disabled={review.isPending || reviewMany.isPending} onClick={() => ids.length > 1 ? reviewMany.mutate({ ids, status: "rejected" }) : review.mutate({ id: ids[0], status: "rejected" })}>
+                        <X className="mr-1 h-3.5 w-3.5" /> Recusar
+                      </Button>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </CardContent>
         </Card>
       </div>

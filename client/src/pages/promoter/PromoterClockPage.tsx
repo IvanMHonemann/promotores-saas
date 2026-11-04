@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { LocationLabel } from "./geolocation";
 import { localDayKey } from "@/components/PunchPanel";
-import { fullDayExcuseLabel, isFullDayExcuseType } from "@shared/correctionExcuse";
+import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 
 type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
 type JustificationType = "normal" | "holiday" | "day_off" | "medical_certificate" | "other";
@@ -73,6 +73,7 @@ export default function PromoterClockPage() {
   const [hideMissingAlert, setHideMissingAlert] = useState(false);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const utils = trpc.useUtils();
 
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 100, date: selectedDate });
@@ -130,15 +131,27 @@ export default function PromoterClockPage() {
 
   const submitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (sending || correction.isPending) return;
     const reason = justification.trim();
+    const open = (corrections.data || []).map((row) => row.request).filter((request) => request.status === "pending" || request.status === "approved");
+    const dayOpen = open.filter((request) => new Date(request.requestedTime).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === selectedDate);
     if (isFullDay) {
-      await correction.mutateAsync({
-        timeEventId: null,
-        date: selectedDate,
-        justification: reason || fullDayExcuseLabel(justificationType),
-        justificationType,
-        attachmentBase64: photoBase64 || undefined,
-      } as any);
+      if (dayOpen.some((request) => looksLikeFullDayExcuse(request))) {
+        toast.error("Já existe um abono pendente ou aprovado para este dia");
+        return;
+      }
+      setSending(true);
+      try {
+        await correction.mutateAsync({
+          timeEventId: null,
+          date: selectedDate,
+          justification: reason || fullDayExcuseLabel(justificationType),
+          justificationType,
+          attachmentBase64: photoBase64 || undefined,
+        } as any);
+      } finally {
+        setSending(false);
+      }
       return;
     }
     if (reason.length < 5) {
@@ -150,27 +163,43 @@ export default function PromoterClockPage() {
       toast.error("Informe o horário de pelo menos uma batida faltante");
       return;
     }
-    for (const type of toSend) {
-      const time = missingTimes[type];
-      if (!time) continue;
-      await correction.mutateAsync({
-        timeEventId: null,
-        requestedType: type,
-        requestedTime: new Date(`${selectedDate}T${time}:00`).toISOString(),
-        justification: reason,
-        justificationType,
-        attachmentBase64: photoBase64 || undefined,
-      } as any);
+    const already = toSend.filter((type) => dayOpen.some((request) => !looksLikeFullDayExcuse(request) && request.requestedType === type && !request.timeEventId));
+    if (already.length) {
+      toast.error(`Já existe pedido para: ${already.map((type) => labels[type]).join(", ")}`);
+      return;
     }
-    toast.success(`${toSend.length} pedido(s) enviado(s)`);
+    setSending(true);
+    try {
+      for (const type of toSend) {
+        const time = missingTimes[type];
+        if (!time) continue;
+        await correction.mutateAsync({
+          timeEventId: null,
+          requestedType: type,
+          requestedTime: new Date(`${selectedDate}T${time}:00`).toISOString(),
+          justification: reason,
+          justificationType,
+          attachmentBase64: photoBase64 || undefined,
+        } as any);
+      }
+      toast.success(`${toSend.length} pedido(s) enviado(s)`);
+    } finally {
+      setSending(false);
+    }
   };
 
   const submitCorrect = (e: React.FormEvent) => {
     e.preventDefault();
+    if (sending || correction.isPending) return;
     const eventId = Number(selectedEventId);
     if (!eventId || !correctTime || (justification.trim().length < 5 && justificationType === "normal")) return;
     const original = events.find((item) => item.id === eventId);
     if (!original) return;
+    const already = (corrections.data || []).some(({ request }) => (request.status === "pending" || request.status === "approved") && request.timeEventId === eventId);
+    if (already) {
+      toast.error("Já existe um pedido pendente ou aprovado para esta batida");
+      return;
+    }
     correction.mutate({
       timeEventId: eventId,
       requestedType: original.eventType as EventType,
@@ -190,8 +219,8 @@ export default function PromoterClockPage() {
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
-  const canSubmitAdd = !correction.isPending && (isFullDay || (missingList.some((t) => missingTimes[t]) && justification.trim().length >= 5));
-  const dayExcuse = useMemo(() => corrections.data?.map((row) => row.request).find((request) => isFullDayExcuseType(request.justificationType) && request.status !== "rejected" && new Date(request.requestedTime).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === selectedDate), [corrections.data, selectedDate]);
+  const dayExcuse = useMemo(() => corrections.data?.map((row) => row.request).find((request) => looksLikeFullDayExcuse(request) && request.status !== "rejected" && new Date(request.requestedTime).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === selectedDate), [corrections.data, selectedDate]);
+  const canSubmitAdd = !sending && !correction.isPending && !dayExcuse && (isFullDay || (missingList.some((t) => missingTimes[t]) && justification.trim().length >= 5));
 
   return (
     <DashboardLayout title="Cartão ponto" description="Histórico, localização e pedidos de correção.">
@@ -224,7 +253,7 @@ export default function PromoterClockPage() {
               </div>
               {dayExcuse && (
                 <div className="mt-4 rounded-xl border border-teal-300/30 bg-teal-400/10 p-4">
-                  <p className="font-bold text-teal-100">{fullDayExcuseLabel(dayExcuse.justificationType)} neste dia</p>
+                  <p className="font-bold text-teal-100">{fullDayExcuseLabel(inferFullDayExcuseType(dayExcuse))} neste dia</p>
                   <p className="mt-1 text-sm text-teal-50/90">
                     {dayExcuse.status === "approved" ? "Abono aprovado: o dia inteiro fica justificado, sem batidas." : "Pedido de abono pendente de análise. Horários não são necessários."}
                   </p>
@@ -303,7 +332,9 @@ export default function PromoterClockPage() {
 
               {mode === "add" ? (
                 <form onSubmit={submitAdd} className="space-y-4">
-                  {isFullDay ? (
+                  {isFullDay && dayExcuse ? (
+                    <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Já existe um abono {dayExcuse.status === "approved" ? "aprovado" : "pendente"} neste dia.</p>
+                  ) : isFullDay ? (
                     <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Data do abono: {new Date(`${selectedDate}T12:00:00`).toLocaleDateString("pt-BR")}. Horários não são necessários.</p>
                   ) : missingList.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Nenhuma batida faltante detectada neste dia.</p>
@@ -333,7 +364,7 @@ export default function PromoterClockPage() {
                   </div>
 
                   <Button type="submit" disabled={!canSubmitAdd} className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400">
-                    <Send className="mr-2 h-4 w-4" /> {correction.isPending ? "Enviando..." : isFullDay ? "Enviar pedido de abono" : "Enviar pedido de inclusão"}
+                    <Send className="mr-2 h-4 w-4" /> {sending || correction.isPending ? "Enviando..." : isFullDay ? "Enviar pedido de abono" : "Enviar pedido de inclusão"}
                   </Button>
                 </form>
               ) : (
@@ -360,7 +391,7 @@ export default function PromoterClockPage() {
                     {photoPreview && <img src={photoPreview} alt="Miniatura do comprovante" className="h-16 w-16 rounded-lg border border-white/15 object-cover" />}
                   </div>
 
-                  <Button type="submit" disabled={correction.isPending || !selectedEventId || !correctTime || (justification.trim().length < 5 && justificationType === "normal")} className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400">
+                  <Button type="submit" disabled={sending || correction.isPending || !selectedEventId || !correctTime || (justification.trim().length < 5 && justificationType === "normal")} className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400">
                     <Send className="mr-2 h-4 w-4" /> {correction.isPending ? "Enviando..." : "Enviar pedido de correção"}
                   </Button>
                 </form>
@@ -374,10 +405,10 @@ export default function PromoterClockPage() {
                     <div key={request.id} className="rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-semibold text-slate-100">
-                          {isFullDayExcuseType(request.justificationType)
-                            ? `${fullDayExcuseLabel(request.justificationType)} · ${new Date(request.requestedTime).toLocaleDateString("pt-BR")}`
+                          {looksLikeFullDayExcuse(request)
+                            ? `${fullDayExcuseLabel(inferFullDayExcuseType(request))} · ${new Date(request.requestedTime).toLocaleDateString("pt-BR")}`
                             : `${labels[request.requestedType as EventType] ?? request.requestedType} · ${new Date(request.requestedTime).toLocaleString("pt-BR")}`}
-                          {isFullDayExcuseType(request.justificationType) ? <span className="ml-2 text-xs text-teal-300">(dia inteiro)</span> : !request.timeEventId ? <span className="ml-2 text-xs text-teal-300">(inclusão)</span> : null}
+                          {looksLikeFullDayExcuse(request) ? <span className="ml-2 text-xs text-teal-300">(dia inteiro)</span> : !request.timeEventId ? <span className="ml-2 text-xs text-teal-300">(inclusão)</span> : null}
                         </span>
                         <Badge variant="outline" className={request.status === "approved" ? "border-emerald-300 text-emerald-300" : request.status === "rejected" ? "border-red-300 text-red-300" : "border-amber-300 text-amber-300"}>
                           {request.status === "approved" ? "Aprovado" : request.status === "rejected" ? "Recusado" : "Pendente"}

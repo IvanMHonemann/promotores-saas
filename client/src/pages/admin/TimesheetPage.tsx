@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { fullDayExcuseLabel, isFullDayExcuseType } from "@shared/correctionExcuse";
+import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 
 const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Intervalo", break_end: "Retorno", clock_out: "Saída" };
 
@@ -146,9 +146,9 @@ export default function TimesheetPage() {
                 return (
                   <div key={ids.join("-")} className="mb-3 rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
                     <p className="font-semibold text-white">{first.employee?.userName || "Promotor"}</p>
-                    <p className="text-xs text-teal-300">{isFullDayExcuseType(first.request.justificationType) ? `${fullDayExcuseLabel(first.request.justificationType)} · dia inteiro` : (({normal:"Correção normal", other:"Outro"} as any)[first.request.justificationType] || "Correção normal")} · {day}</p>
+                    <p className="text-xs text-teal-300">{looksLikeFullDayExcuse(first.request) ? `${fullDayExcuseLabel(inferFullDayExcuseType(first.request))} · dia inteiro` : (({normal:"Correção normal", other:"Outro"} as any)[first.request.justificationType] || "Correção normal")} · {day}</p>
                     <div className="mt-2 space-y-1">
-                      {isFullDayExcuseType(first.request.justificationType) ? (
+                      {looksLikeFullDayExcuse(first.request) ? (
                         <p className="text-slate-200">Abono do dia — sem horários</p>
                       ) : items.slice().sort((a: any, b: any) => new Date(a.request.requestedTime).getTime() - new Date(b.request.requestedTime).getTime()).map((item: any) => (
                         <p key={item.request.id} className="text-slate-200">{labels[item.request.requestedType] || "Batida"} · {new Date(item.request.requestedTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>

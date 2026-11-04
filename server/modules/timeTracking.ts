@@ -11,7 +11,7 @@ import { findMissingPunches } from "../missingPunch";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
 import { ensureCorrectionExtras, loadApprovedDayExcuses, saveCorrectionAttachment } from "./correctionExtras";
 import { storageGetSignedUrl } from "../storage";
-import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, noonInSaoPaulo } from "../../shared/correctionExcuse";
+import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
 
 const timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 type TimeEventType = z.infer<typeof timeEventType>;
@@ -38,7 +38,7 @@ function isValidTransition(last: TimeEventType | undefined, next: TimeEventType)
 }
 
 async function applyApprovedCorrection(database: NonNullable<Awaited<ReturnType<typeof db.getDb>>>, request: typeof timeCorrectionRequests.$inferSelect, ctx: { accountId: number; memberAccountId?: number | null; user?: { name?: string | null } | null }, opts?: { skipMissing?: boolean }) {
-  if (isFullDayExcuseType(request.justificationType)) return;
+  if (looksLikeFullDayExcuse(request)) return;
   if (request.timeEventId) {
     const event = (await database.select().from(timeEvents).where(and(eq(timeEvents.id, request.timeEventId), eq(timeEvents.companyId, ctx.accountId))).limit(1))[0];
     if (!event) {
@@ -461,20 +461,35 @@ export const timeTrackingRouter = router({
         requestedTime = new Date(input.requestedTime);
       }
 
+      const existing = await database.select({
+        id: timeCorrectionRequests.id,
+        status: timeCorrectionRequests.status,
+        requestedTime: timeCorrectionRequests.requestedTime,
+        requestedType: timeCorrectionRequests.requestedType,
+        timeEventId: timeCorrectionRequests.timeEventId,
+        justificationType: timeCorrectionRequests.justificationType,
+        justification: timeCorrectionRequests.justification,
+      }).from(timeCorrectionRequests).where(and(
+        eq(timeCorrectionRequests.companyId, companyId),
+        eq(timeCorrectionRequests.memberAccountId, memberId),
+        sql`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+      )).orderBy(desc(timeCorrectionRequests.createdAt)).limit(100);
+
       if (fullDay) {
         const day = excuseDay(requestedTime);
-        const existing = await database.select({
-          id: timeCorrectionRequests.id,
-          status: timeCorrectionRequests.status,
-          requestedTime: timeCorrectionRequests.requestedTime,
-          justificationType: timeCorrectionRequests.justificationType,
-        }).from(timeCorrectionRequests).where(and(
-          eq(timeCorrectionRequests.companyId, companyId),
-          eq(timeCorrectionRequests.memberAccountId, memberId),
-          sql`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
-        )).orderBy(desc(timeCorrectionRequests.createdAt)).limit(50);
-        if (existing.some((row) => isFullDayExcuseType(row.justificationType) && excuseDay(row.requestedTime) === day)) {
+        if (existing.some((row) => looksLikeFullDayExcuse(row) && excuseDay(row.requestedTime) === day)) {
           throw new TRPCError({ code: "CONFLICT", message: "Já existe um abono pendente ou aprovado para este dia." });
+        }
+      } else {
+        const day = excuseDay(requestedTime);
+        const samePunch = existing.some((row) =>
+          !looksLikeFullDayExcuse(row)
+          && excuseDay(row.requestedTime) === day
+          && row.requestedType === input.requestedType
+          && (row.timeEventId ?? null) === (timeEventId ?? null)
+        );
+        if (samePunch) {
+          throw new TRPCError({ code: "CONFLICT", message: "Já existe um pedido pendente ou aprovado para esta batida neste dia." });
         }
       }
 

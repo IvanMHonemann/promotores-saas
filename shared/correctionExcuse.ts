@@ -11,6 +11,21 @@ export function isFullDayExcuseType(value: string | null | undefined): value is 
   return value === "holiday" || value === "day_off" || value === "medical_certificate";
 }
 
+export function inferFullDayExcuseType(row: { justificationType?: string | null; justification?: string | null }): FullDayExcuseType | null {
+  if (isFullDayExcuseType(row.justificationType)) return row.justificationType;
+  const text = String(row.justification || "").toLowerCase();
+  if (/\batestado\b/.test(text)) return "medical_certificate";
+  if (/\bferiado\b/.test(text)) return "holiday";
+  if (/\bfolga\b/.test(text)) return "day_off";
+  return null;
+}
+
+/** Pedidos antigos podem ter o tipo só no texto da justificativa. */
+export function looksLikeFullDayExcuse(row: { justificationType?: string | null; justification?: string | null; timeEventId?: number | null }): boolean {
+  if (isFullDayExcuseType(row.justificationType)) return true;
+  return !row.timeEventId && inferFullDayExcuseType(row) != null;
+}
+
 export function fullDayExcuseLabel(value: string | null | undefined): string {
   return isFullDayExcuseType(value) ? FULL_DAY_EXCUSE_LABELS[value] : "Abono";
 }

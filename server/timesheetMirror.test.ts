@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildMirror, mirrorRows, fmtMinutes, maskCpf } from "../shared/timesheetMirror";
 import { expiryStatus, addDays } from "../shared/expiry";
+import { inferFullDayExcuseType, looksLikeFullDayExcuse } from "../shared/correctionExcuse";
 
 const ev = (id: number, type: any, time: string, extra: any = {}) => ({ id, type, time, receivedAt: time, synced: true, ...extra });
 const labor = { dailyMinutes: 480, workdays: [1, 2, 3, 4, 5], nightEnabled: true, nightStart: "22:00", nightEnd: "05:00" };
@@ -64,6 +65,11 @@ describe("espelho de ponto", () => {
     expect(r.days[0].expectedMinutes).toBeNull();
     expect(r.days[0].diffMinutes).toBeNull();
     expect(r.totals.daysWithoutMarksOnWorkday).toBe(0);
+  });
+  it("reconhece abono antigo só pelo texto da justificativa", () => {
+    expect(inferFullDayExcuseType({ justification: "Feriado" })).toBe("holiday");
+    expect(looksLikeFullDayExcuse({ justification: "Feriado", timeEventId: null })).toBe(true);
+    expect(looksLikeFullDayExcuse({ justification: "esqueceu a entrada", timeEventId: null })).toBe(false);
   });
   it("formatadores", () => {
     expect(fmtMinutes(75)).toBe("01:15");

@@ -6,6 +6,7 @@ import { memberAccounts, timeEvents, timeCorrectionRequests } from "../../drizzl
 import { eq, and, desc, gte, lt, sql } from "drizzle-orm";
 import { auditFromCtx } from "../audit";
 import { recordAdjustment } from "./timesheetMirror";
+async function safeAdjustment(data: Parameters<typeof recordAdjustment>[0]) { try { await safeAdjustment(data); } catch (error) { console.error("adjustment log failed", error); } }
 import { findMissingPunches } from "../missingPunch";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
 import { ensureCorrectionExtras, saveCorrectionAttachment } from "./correctionExtras";
@@ -467,7 +468,7 @@ export const timeTrackingRouter = router({
             if (!event) throw new TRPCError({ code: "NOT_FOUND", message: "A marcação original não foi encontrada." });
             const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
             const note = `Ajuste aprovado em ${new Date().toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcionário: ${request.justification}`;
-            await recordAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
+            await safeAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
             await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}\n` : ""}${note}` }).where(eq(timeEvents.id, event.id));
           } else {
             const note = `Batida incluída via solicitação aprovada em ${new Date().toISOString()}. Motivo: ${request.justification}`;
@@ -483,7 +484,7 @@ export const timeTrackingRouter = router({
             });
             const newEventId = Number((insertResult as any)[0]?.insertId);
             if (newEventId) {
-              await recordAdjustment({
+              await safeAdjustment({
                 companyId: ctx.accountId,
                 timeEventId: newEventId,
                 correctionRequestId: request.id,
@@ -521,7 +522,7 @@ export const timeTrackingRouter = router({
               if (event) {
                 const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
                 const note = `Ajuste aprovado em ${new Date().toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcionário: ${request.justification}`;
-                await recordAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
+                await safeAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
                 await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}\n` : ""}${note}` }).where(eq(timeEvents.id, event.id));
               }
             } else {
@@ -538,7 +539,7 @@ export const timeTrackingRouter = router({
               });
               const newEventId = Number((insertResult as any)[0]?.insertId);
               if (newEventId) {
-                await recordAdjustment({
+                await safeAdjustment({
                   companyId: ctx.accountId,
                   timeEventId: newEventId,
                   correctionRequestId: request.id,

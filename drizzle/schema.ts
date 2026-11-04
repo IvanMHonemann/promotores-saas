@@ -364,6 +364,8 @@ export const timeCorrectionRequests = mysqlTable("time_correction_requests", {
   reviewNotes: text("reviewNotes"),
   reviewedAt: timestamp("reviewedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  justificationType: varchar("justificationType", { length: 32 }).default("normal"),
+  attachmentKey: varchar("attachmentKey", { length: 512 }),
 }, (table) => ({
   companyIdx: index("time_corrections_company_idx").on(table.companyId),
   memberIdx: index("time_corrections_member_idx").on(table.memberAccountId),

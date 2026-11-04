@@ -63,7 +63,19 @@ export const appRouter = router({
   storePhotos: storePhotosRouter,
   storeClients: storeClientsRouter,
   entitlements: router({
-    mine: companyBillingProcedure.query(({ ctx }) => {
+    mine: companyBillingProcedure.query(async ({ ctx }) => {
+      if (ctx.actingAsPlatform) {
+        const base = await getCompanyEntitlementBase(ctx.accountId);
+        const effective = Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, true])) as Record<EntitlementKey, boolean>;
+        return {
+          ...base,
+          memberAccountId: 0,
+          role: "company_admin" as CompanyRole,
+          memberOverrides: {},
+          effective,
+          effectiveFeatureKeys: [...ENTITLEMENT_KEYS],
+        };
+      }
       if (!ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário da empresa não encontrado." });
       return getMemberEntitlementSnapshot(ctx.accountId, ctx.memberAccountId, ctx.user.role as CompanyRole);
     }),

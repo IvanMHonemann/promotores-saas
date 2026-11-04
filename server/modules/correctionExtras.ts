@@ -8,7 +8,7 @@ import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import * as db from "../db";
 import { timeCorrectionRequests } from "../../drizzle/schema";
 import { storagePut } from "../storage";
-import { excuseDay, isFullDayExcuseType } from "../../shared/correctionExcuse";
+import { excuseDay, inferFullDayExcuseType, looksLikeFullDayExcuse } from "../../shared/correctionExcuse";
 import type { DayExcuseInput } from "../../shared/timesheetMirror";
 
 let ready: Promise<void> | null = null;
@@ -51,12 +51,14 @@ export async function loadApprovedDayExcuses(companyId: number, memberIds: numbe
     lt(timeCorrectionRequests.requestedTime, end),
   ));
   for (const row of rows) {
-    if (!isFullDayExcuseType(row.justificationType)) continue;
+    if (!looksLikeFullDayExcuse(row)) continue;
     const date = excuseDay(row.requestedTime);
     if (date < from || date > to) continue;
+    const type = inferFullDayExcuseType(row);
+    if (!type) continue;
     const list = map.get(row.memberAccountId) || [];
     if (list.some((item) => item.date === date)) continue;
-    list.push({ date, type: row.justificationType, justification: row.justification });
+    list.push({ date, type, justification: row.justification });
     map.set(row.memberAccountId, list);
   }
   return map;

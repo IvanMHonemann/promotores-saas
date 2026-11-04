@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ActingAsBanner from "@/components/ActingAsBanner";
 import MissingPunchAlert from "@/components/MissingPunchAlert";
+import RejectedCorrectionAlert from "@/components/RejectedCorrectionAlert";
 import UpdateAvailableBanner from "@/components/UpdateAvailableBanner";
 import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { SidebarMenuButton, SidebarNav } from "@/components/SidebarNav";
@@ -49,6 +50,7 @@ export default function DashboardLayout({ title, description, children, refreshi
           </header>
           <ActingAsBanner />
           <UpdateAvailableBanner />
+          <RejectedCorrectionAlert />
           <MissingPunchAlert />
           {children}
         </section>

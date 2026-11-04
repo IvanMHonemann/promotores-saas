@@ -4,9 +4,12 @@
  * - attachmentKey (foto de comprovante/atestado no S3)
  * Colunas criadas sob demanda para não quebrar o schema existente.
  */
-import { sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import * as db from "../db";
+import { timeCorrectionRequests } from "../../drizzle/schema";
 import { storagePut } from "../storage";
+import { excuseDay, inferFullDayExcuseType, looksLikeFullDayExcuse } from "../../shared/correctionExcuse";
+import type { DayExcuseInput } from "../../shared/timesheetMirror";
 
 let ready: Promise<void> | null = null;
 
@@ -29,4 +32,34 @@ export async function saveCorrectionAttachment(companyId: number, requestId: num
   const key = `corrections/${companyId}/${requestId}_${Date.now()}.jpg`;
   const { key: stored } = await storagePut(key, buf, mime);
   return stored;
+}
+
+/** Abonos de dia inteiro aprovados (folga, feriado, atestado), sem batidas inventadas. */
+export async function loadApprovedDayExcuses(companyId: number, memberIds: number[], from: string, to: string): Promise<Map<number, DayExcuseInput[]>> {
+  const map = new Map<number, DayExcuseInput[]>();
+  if (!memberIds.length) return map;
+  const database = await db.getDb();
+  if (!database) return map;
+  await ensureCorrectionExtras();
+  const start = new Date(Date.parse(`${from}T00:00:00Z`) - 15 * 3600000);
+  const end = new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 3600000);
+  const rows = await database.select().from(timeCorrectionRequests).where(and(
+    eq(timeCorrectionRequests.companyId, companyId),
+    inArray(timeCorrectionRequests.memberAccountId, memberIds),
+    eq(timeCorrectionRequests.status, "approved"),
+    gte(timeCorrectionRequests.requestedTime, start),
+    lt(timeCorrectionRequests.requestedTime, end),
+  ));
+  for (const row of rows) {
+    if (!looksLikeFullDayExcuse(row)) continue;
+    const date = excuseDay(row.requestedTime);
+    if (date < from || date > to) continue;
+    const type = inferFullDayExcuseType(row);
+    if (!type) continue;
+    const list = map.get(row.memberAccountId) || [];
+    if (list.some((item) => item.date === date)) continue;
+    list.push({ date, type, justification: row.justification });
+    map.set(row.memberAccountId, list);
+  }
+  return map;
 }

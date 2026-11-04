@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildMirror, mirrorRows, fmtMinutes, maskCpf } from "../shared/timesheetMirror";
 import { expiryStatus, addDays } from "../shared/expiry";
+import { inferFullDayExcuseType, looksLikeFullDayExcuse } from "../shared/correctionExcuse";
 
 const ev = (id: number, type: any, time: string, extra: any = {}) => ({ id, type, time, receivedAt: time, synced: true, ...extra });
 const labor = { dailyMinutes: 480, workdays: [1, 2, 3, 4, 5], nightEnabled: true, nightStart: "22:00", nightEnd: "05:00" };
@@ -36,6 +37,39 @@ describe("espelho de ponto", () => {
   it("não conta dia sem marcação como falta sem configuração", () => {
     const r = buildMirror({ events: [], from: "2026-10-05", to: "2026-10-06" });
     expect(r.totals.daysWithoutMarksOnWorkday).toBeNull();
+  });
+  it("abona dia inteiro em folga/atestado sem inventar batidas", () => {
+    const r = buildMirror({
+      events: [],
+      from: "2026-10-05",
+      to: "2026-10-06",
+      labor,
+      excuses: [{ date: "2026-10-06", type: "day_off", justification: "Folga combinada" }],
+    });
+    const excused = r.days.find((d) => d.date === "2026-10-06");
+    expect(excused?.marks).toEqual([]);
+    expect(excused?.expectedMinutes).toBeNull();
+    expect(excused?.excuse?.label).toBe("Folga");
+    expect(excused?.issues.join()).toContain("Folga — dia abonado");
+    expect(r.totals.daysWithoutMarksOnWorkday).toBe(1);
+  });
+  it("abona atestado sem gerar previsto nem déficit", () => {
+    const r = buildMirror({
+      events: [],
+      from: "2026-10-05",
+      to: "2026-10-05",
+      labor,
+      excuses: [{ date: "2026-10-05", type: "medical_certificate" }],
+    });
+    expect(r.days[0].excuse?.type).toBe("medical_certificate");
+    expect(r.days[0].expectedMinutes).toBeNull();
+    expect(r.days[0].diffMinutes).toBeNull();
+    expect(r.totals.daysWithoutMarksOnWorkday).toBe(0);
+  });
+  it("reconhece abono antigo só pelo texto da justificativa", () => {
+    expect(inferFullDayExcuseType({ justification: "Feriado" })).toBe("holiday");
+    expect(looksLikeFullDayExcuse({ justification: "Feriado", timeEventId: null })).toBe(true);
+    expect(looksLikeFullDayExcuse({ justification: "esqueceu a entrada", timeEventId: null })).toBe(false);
   });
   it("formatadores", () => {
     expect(fmtMinutes(75)).toBe("01:15");

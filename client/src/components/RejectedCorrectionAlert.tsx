@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { XCircle, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 
 const DISMISS_PREFIX = "dismissed-rejected:";
 
@@ -69,7 +70,9 @@ export default function RejectedCorrectionAlert() {
             <div className="min-w-0 flex-1 text-sm">
               <p className="font-bold">Pedido de correção recusado</p>
               <p className="mt-1">
-                {items.length} horário(s) de {dateLabel} {items.length > 1 ? "foram recusados" : "foi recusado"}.
+                {items.some((item) => looksLikeFullDayExcuse(item))
+                  ? `O pedido de abono de ${dateLabel} foi recusado.`
+                  : `${items.length} horário(s) de ${dateLabel} ${items.length > 1 ? "foram recusados" : "foi recusado"}.`}
               </p>
               {note && <p className="mt-1 text-rose-100/90">Observação: {note}</p>}
               <a href={`/ponto?date=${day}#correcoes`} className="mt-1 inline-block font-semibold underline">

@@ -6,6 +6,7 @@ import * as db from "../db";
 import { companies, memberAccounts, promoterProfiles, timeEvents } from "../../drizzle/schema";
 import { auditFromCtx } from "../audit";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
+import { loadApprovedDayExcuses } from "./correctionExtras";
 
 const TZ = "America/Sao_Paulo";
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -145,6 +146,7 @@ export const timesheetMirrorRouter = router({
         const laborRows: any[] = ((await database.execute(sql`SELECT settingKey, settingValue FROM system_settings WHERE accountId = ${ctx.accountId} AND settingKey LIKE 'labor\\_profile:%'`)) as any)[0];
         for (const r of laborRows) { try { laborByMember.set(Number(String(r.settingKey).split(":")[1]), JSON.parse(r.settingValue)); } catch { /* ignora perfil corrompido */ } }
       }
+      const excusesByMember = await loadApprovedDayExcuses(ctx.accountId, memberIds, input.from, input.to);
       const results = members.map((m) => {
         const events: MirrorEvent[] = (eventsByMember.get(m.id) || []).map((r) => {
           const a = adjByEvent.get(r.id);
@@ -157,7 +159,7 @@ export const timesheetMirrorRouter = router({
           };
         });
         const labor = laborByMember.get(m.id) ?? null;
-        return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: labor ? { ...labor } : null, report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor }) };
+        return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: labor ? { ...labor } : null, report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [] }) };
       });
       void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "timesheet_mirror", description: `Gerou espelho de ponto ${input.from} a ${input.to} (${results.length} funcionário(s))`, newData: { from: input.from, to: input.to, memberIds: results.map((r) => r.member.id) } });
       return { company: { name: company?.name ?? "", legal: legal ?? null }, generatedAt: new Date().toISOString(), timeZone: TZ, results };

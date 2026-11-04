@@ -85,6 +85,13 @@ export default function OperationsDashboard() {
     },
     onError: () => toast.error("Não foi possível analisar o pedido de correção."),
   });
+  const reviewMany = trpc.timeTracking.correctionRequests.reviewMany.useMutation({
+    onSuccess: (data, variables) => {
+      toast.success(variables.status === "approved" ? `${data.count} horário(s) aprovados juntos.` : `${data.count} horário(s) recusados.`);
+      void utils.timeTracking.correctionRequests.pending.invalidate();
+    },
+    onError: () => toast.error("Não foi possível analisar o pedido de correção."),
+  });
   const createStore = trpc.operations.stores.create.useMutation({
     onSuccess: () => {
       toast.success("Loja cadastrada.");
@@ -121,6 +128,7 @@ export default function OperationsDashboard() {
   }, []);
 
   const approve = (id: number, status: "approved" | "rejected") => review.mutate({ id, status, reviewNotes: reviewNotes[id]?.trim() || undefined });
+  const approveMany = (ids: number[], status: "approved" | "rejected") => reviewMany.mutate({ ids, status, reviewNotes: reviewNotes[ids[0]]?.trim() || undefined });
   const visibleSection = hasFieldOperations ? section : "overview";
   const title = visibleSection === "routes" ? (isCompanyAdmin ? "Lojas" : "Roteiros") : visibleSection === "visits" ? "Visitas" : isCompanyAdmin ? "Central da empresa" : isSupervisor ? "Painel do supervisor" : "Operação de campo";
   const description = visibleSection === "routes"
@@ -180,7 +188,7 @@ export default function OperationsDashboard() {
   );
 }
 
-function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
+function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
   const activePromoters = presence.filter((entry: CompanyPresenceEntry) => entry.active).length;
   return (
     <div className="space-y-6">
@@ -248,7 +256,7 @@ function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFiel
         </a>
       </div>}
 
-      {isCompanyAdmin && hasTimeTracking && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} reviewPending={reviewPending} />}
+      {isCompanyAdmin && hasTimeTracking && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} approveMany={approveMany} reviewPending={reviewPending} />}
     </div>
   );
 }
@@ -322,45 +330,72 @@ function PresenceCard({ entries, loading, failed, timeZone }: { entries: Company
   );
 }
 
-function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve, reviewPending }: any) {
+function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve, approveMany, reviewPending }: any) {
+  const dayKey = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const groups = new Map<string, any[]>();
+  for (const item of corrections) {
+    const req = item.request;
+    const key = `${req.memberAccountId}:${dayKey(req.requestedTime)}`;
+    const list = groups.get(key) || [];
+    list.push(item);
+    groups.set(key, list);
+  }
+  const grouped = [...groups.values()];
   return (
     <Card className="border-amber-300/30 bg-amber-300/10">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-white">
-          <Bell className="text-amber-300" /> Notificações de correção <Badge className="bg-amber-500 text-slate-950">{corrections.length}</Badge>
+          <Bell className="text-amber-300" /> Notificações de correção <Badge className="bg-amber-500 text-slate-950">{grouped.length}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {!corrections.length && <p className="text-sm text-slate-300">Nenhum pedido de correção pendente.</p>}
-        {corrections.map((item: any) => { const { request, event, employee } = item; return (
-          <div key={request.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-bold text-slate-100">{employee?.userName || `Promotor #${request.memberAccountId}`}</p>
-                <p className="mt-1 text-xs text-slate-400">{request.eventType ? eventLabels[request.eventType] : "Inclusão de batida"} · {new Date(request.requestedTime).toLocaleString("pt-BR")}</p>
+        {!grouped.length && <p className="text-sm text-slate-300">Nenhum pedido de correção pendente.</p>}
+        {grouped.map((items) => {
+          const first = items[0];
+          const { request, employee } = first;
+          const ids = items.map((item: any) => item.request.id);
+          const photo = items.find((item: any) => item.attachmentUrl);
+          const day = new Date(request.requestedTime).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+          return (
+            <div key={ids.join("-")} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-bold text-slate-100">{employee?.userName || `Promotor #${request.memberAccountId}`}</p>
+                  <p className="mt-1 text-xs text-slate-400">{items.length > 1 ? `${items.length} horários` : "1 horário"} · {day}</p>
+                </div>
+                <Badge variant="outline" className="border-amber-300/40 text-amber-200">Pendente</Badge>
               </div>
-              <Badge variant="outline" className="border-amber-300/40 text-amber-200">Pendente</Badge>
+              <div className="mt-3 space-y-1">
+                {items
+                  .slice()
+                  .sort((a: any, b: any) => new Date(a.request.requestedTime).getTime() - new Date(b.request.requestedTime).getTime())
+                  .map((item: any) => (
+                    <p key={item.request.id} className="text-sm text-slate-200">
+                      {eventLabels[item.request.requestedType] || "Batida"} · {new Date(item.request.requestedTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                      {!item.request.timeEventId && <span className="ml-2 text-xs text-teal-300">inclusão</span>}
+                    </p>
+                  ))}
+              </div>
+              {request.justification && <p className="mt-3 text-sm text-slate-300">Justificativa: {request.justification}</p>}
+              {photo?.attachmentUrl && (
+                <a href={photo.attachmentUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block">
+                  <img src={photo.attachmentUrl} alt="Comprovante anexado" className="h-24 w-24 rounded-lg border border-white/15 object-cover" />
+                  <span className="mt-1 block text-xs text-amber-200">Abrir comprovante</span>
+                </a>
+              )}
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Input
+                  placeholder="Observação (opcional)"
+                  value={reviewNotes[ids[0]] || ""}
+                  onChange={(e) => setReviewNotes((prev: any) => ({ ...prev, [ids[0]]: e.target.value }))}
+                  className="max-w-xs"
+                />
+                <Button size="sm" onClick={() => (ids.length > 1 ? approveMany(ids, "approved") : approve(ids[0], "approved"))} disabled={reviewPending}>Aprovar</Button>
+                <Button size="sm" variant="outline" onClick={() => (ids.length > 1 ? approveMany(ids, "rejected") : approve(ids[0], "rejected"))} disabled={reviewPending}>Recusar</Button>
+              </div>
             </div>
-            {request.justification && <p className="mt-3 text-sm text-slate-300">Justificativa: {request.justification}</p>}
-            {request.reason && !request.justification && <p className="mt-3 text-sm text-slate-300">Justificativa: {request.reason}</p>}
-            {item.attachmentUrl && (
-              <a href={item.attachmentUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block">
-                <img src={item.attachmentUrl} alt="Comprovante anexado" className="h-24 w-24 rounded-lg border border-white/15 object-cover" />
-                <span className="mt-1 block text-xs text-amber-200">Abrir comprovante</span>
-              </a>
-            )}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Input
-                placeholder="Observação (opcional)"
-                value={reviewNotes[request.id] || ""}
-                onChange={(e) => setReviewNotes((prev: any) => ({ ...prev, [request.id]: e.target.value }))}
-                className="max-w-xs"
-              />
-              <Button size="sm" onClick={() => approve(request.id, "approved")} disabled={reviewPending}>Aprovar</Button>
-              <Button size="sm" variant="outline" onClick={() => approve(request.id, "rejected")} disabled={reviewPending}>Recusar</Button>
-            </div>
-          </div>
-        );})}
+          );
+        })}
       </CardContent>
     </Card>
   );

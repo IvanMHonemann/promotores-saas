@@ -916,8 +916,8 @@ export const appRouter = router({
         const date = input?.date || todayInZone();
         const promoterId = scopeMemberId(ctx) ?? undefined;
         if (promoterId) {
-          await db.autoCloseStaleVisits(ctx.accountId, promoterId, date);
-          await db.materializeWeeklyRoutes(ctx.accountId, promoterId, date);
+          try { await db.autoCloseStaleVisits(ctx.accountId, promoterId, date); } catch (e) { console.warn("[visits] autoClose", e); }
+          try { await db.materializeWeeklyRoutes(ctx.accountId, promoterId, date); } catch (e) { console.warn("[visits] materialize", e); }
         }
         return db.listOperationalVisits(ctx.accountId, { date, promoterId: promoterId ?? undefined });
       }),

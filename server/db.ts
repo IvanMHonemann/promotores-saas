@@ -1257,48 +1257,56 @@ export async function updateOperationalVisit(companyId: number, id: number, data
 }
 
 
-/** Fecha automaticamente visitas em andamento de dias anteriores (esquecidas após o expediente). */
+/** Fecha automaticamente visitas em andamento de dias anteriores (esquecidas após o expediente).
+ *  Nunca lança: uma falha aqui não pode impedir a listagem do roteiro do dia. */
 export async function autoCloseStaleVisits(companyId: number, promoterId: number, today: string) {
-  const database = await getDb();
-  if (!database) return [];
-  const company = requireAccountId(companyId);
-  const open = await database
-    .select({
-      visit: operationalVisits,
-      routeDate: operationalRoutes.date,
-      storeName: operationalStores.name,
-    })
-    .from(operationalVisits)
-    .innerJoin(operationalRoutes, eq(operationalVisits.routeId, operationalRoutes.id))
-    .innerJoin(operationalStores, eq(operationalVisits.storeId, operationalStores.id))
-    .where(
-      and(
-        eq(operationalVisits.companyId, company),
-        eq(operationalVisits.promoterId, promoterId),
-        eq(operationalVisits.status, "in_progress"),
-        sql`${operationalRoutes.date} < ${today}`,
-      ),
-    );
-
-  const closed: Array<{ id: number; storeName: string | null; routeDate: string }> = [];
-  for (const row of open) {
-    const routeDate = String(row.routeDate).slice(0, 10);
-    // 18:00 no fuso de Brasília do dia da visita
-    const actualEnd = new Date(`${routeDate}T21:00:00.000Z`);
-    const note = "Check-out automático: visita de dia anterior não encerrada após o expediente.";
-    const existingNotes = row.visit.notes ? String(row.visit.notes) : "";
-    const notes = existingNotes.includes(note) ? existingNotes : (existingNotes ? `${existingNotes}\n${note}` : note);
-    await database
-      .update(operationalVisits)
-      .set({
-        status: "completed",
-        actualEnd,
-        notes,
+  try {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return [];
+    const database = await getDb();
+    if (!database) return [];
+    const company = requireAccountId(companyId);
+    // Busca abertas e filtra a data em JS (evita comparação de DATE problemática no SQL).
+    const open = await database
+      .select({
+        visit: operationalVisits,
+        routeDate: operationalRoutes.date,
+        storeName: operationalStores.name,
       })
-      .where(and(eq(operationalVisits.id, row.visit.id), eq(operationalVisits.companyId, company)));
-    closed.push({ id: row.visit.id, storeName: row.storeName ?? null, routeDate });
+      .from(operationalVisits)
+      .innerJoin(operationalRoutes, eq(operationalVisits.routeId, operationalRoutes.id))
+      .innerJoin(operationalStores, eq(operationalVisits.storeId, operationalStores.id))
+      .where(
+        and(
+          eq(operationalVisits.companyId, company),
+          eq(operationalVisits.promoterId, promoterId),
+          eq(operationalVisits.status, "in_progress"),
+        ),
+      );
+
+    const closed: Array<{ id: number; storeName: string | null; routeDate: string }> = [];
+    for (const row of open) {
+      const routeDate = String(row.routeDate).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(routeDate) || routeDate >= today) continue;
+      // 18:00 no fuso de Brasília do dia da visita
+      const actualEnd = new Date(`${routeDate}T21:00:00.000Z`);
+      const note = "Check-out automático: visita de dia anterior não encerrada após o expediente.";
+      const existingNotes = row.visit.notes ? String(row.visit.notes) : "";
+      const notes = existingNotes.includes(note) ? existingNotes : (existingNotes ? `${existingNotes}\n${note}` : note);
+      await database
+        .update(operationalVisits)
+        .set({
+          status: "completed",
+          actualEnd,
+          notes,
+        })
+        .where(and(eq(operationalVisits.id, row.visit.id), eq(operationalVisits.companyId, company)));
+      closed.push({ id: row.visit.id, storeName: row.storeName ?? null, routeDate });
+    }
+    return closed;
+  } catch (error) {
+    console.warn("[visits] autoCloseStaleVisits failed", error);
+    return [];
   }
-  return closed;
 }
 
 /* Inventário e validade de produtos isolados por empresa. */

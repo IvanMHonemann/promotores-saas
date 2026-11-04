@@ -174,7 +174,8 @@ export default function OperationsDashboard() {
           reviewNotes={reviewNotes}
           setReviewNotes={setReviewNotes}
           approve={approve}
-          reviewPending={review.isPending}
+          approveMany={approveMany}
+          reviewPending={review.isPending || approving}
           alerts={alertsQuery.data || []}
           alertsLoading={alertsQuery.isLoading}
           alertsError={alertsQuery.isError}
@@ -406,8 +407,14 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
                   onChange={(e) => setReviewNotes((prev: any) => ({ ...prev, [ids[0]]: e.target.value }))}
                   className="max-w-xs"
                 />
-                <Button type="button" size="sm" onClick={() => void (ids.length > 1 ? approveMany(ids, "approved") : approve(ids[0], "approved"))} disabled={reviewPending}>{reviewPending ? "Aguarde..." : "Aprovar"}</Button>
-                <Button type="button" size="sm" variant="outline" onClick={() => void (ids.length > 1 ? approveMany(ids, "rejected") : approve(ids[0], "rejected"))} disabled={reviewPending}>{reviewPending ? "Aguarde..." : "Recusar"}</Button>
+                <Button type="button" size="sm" className="cursor-pointer bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={() => {
+                  if (ids.length > 1 && approveMany) void approveMany(ids, "approved");
+                  else ids.forEach((id: number) => approve(id, "approved"));
+                }} disabled={reviewPending}>{reviewPending ? "Aguarde..." : "Aprovar"}</Button>
+                <Button type="button" size="sm" variant="outline" className="cursor-pointer" onClick={() => {
+                  if (ids.length > 1 && approveMany) void approveMany(ids, "rejected");
+                  else ids.forEach((id: number) => approve(id, "rejected"));
+                }} disabled={reviewPending}>{reviewPending ? "Aguarde..." : "Recusar"}</Button>
               </div>
             </div>
           );

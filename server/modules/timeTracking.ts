@@ -504,5 +504,61 @@ export const timeTrackingRouter = router({
         await auditFromCtx(ctx, { action: input.status === "approved" ? "update" : "security", module: "time_tracking", entityType: "correction_request", entityId: request.id, description: `Solicitação de correção ${input.status === "approved" ? "aprovada" : "rejeitada"}${!request.timeEventId ? " (inclusão de batida)" : ""}`, newData: { status: input.status, reviewNotes: input.reviewNotes || null } });
         return { success: true as const };
       }),
+
+    reviewMany: companyAdminFeatureProcedure("timeTracking")
+      .input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(20), status: z.enum(["approved", "rejected"]), reviewNotes: z.string().max(1000).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        const database = await db.getDb();
+        if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+        let done = 0;
+        for (const id of input.ids) {
+          const rows = await database.select().from(timeCorrectionRequests).where(and(eq(timeCorrectionRequests.id, id), eq(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
+          const request = rows[0];
+          if (!request || request.status !== "pending") continue;
+          if (input.status === "approved") {
+            if (request.timeEventId) {
+              const event = (await database.select().from(timeEvents).where(and(eq(timeEvents.id, request.timeEventId), eq(timeEvents.companyId, ctx.accountId))).limit(1))[0];
+              if (event) {
+                const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
+                const note = `Ajuste aprovado em ${new Date().toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcionário: ${request.justification}`;
+                await recordAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
+                await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}\n` : ""}${note}` }).where(eq(timeEvents.id, event.id));
+              }
+            } else {
+              const note = `Batida incluída via solicitação aprovada em ${new Date().toISOString()}. Motivo: ${request.justification}`;
+              const insertResult = await database.insert(timeEvents).values({
+                companyId: request.companyId,
+                memberAccountId: request.memberAccountId,
+                eventType: request.requestedType,
+                deviceTime: request.requestedTime,
+                serverTime: new Date(),
+                notes: note,
+                synced: true,
+                locationStatus: "unavailable",
+              });
+              const newEventId = Number((insertResult as any)[0]?.insertId);
+              if (newEventId) {
+                await recordAdjustment({
+                  companyId: ctx.accountId,
+                  timeEventId: newEventId,
+                  correctionRequestId: request.id,
+                  memberAccountId: request.memberAccountId,
+                  originalType: "missing",
+                  originalTime: request.requestedTime,
+                  correctedType: request.requestedType,
+                  correctedTime: request.requestedTime,
+                  justification: request.justification,
+                  reviewedByMemberId: ctx.memberAccountId ?? null,
+                  reviewedByName: ctx.user?.name ?? null,
+                });
+              }
+            }
+          }
+          await database.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: new Date(), reviewNotes: input.reviewNotes || null }).where(eq(timeCorrectionRequests.id, request.id));
+          done += 1;
+        }
+        await auditFromCtx(ctx, { action: input.status === "approved" ? "update" : "security", module: "time_tracking", entityType: "correction_request", entityId: input.ids[0], description: `${done} solicitação(ões) de correção ${input.status === "approved" ? "aprovadas" : "rejeitadas"} em lote`, newData: { status: input.status, ids: input.ids, reviewNotes: input.reviewNotes || null } });
+        return { success: true as const, count: done };
+      }),
   }),
 });

@@ -1,4 +1,4 @@
-import { wrapText } from "@shared/address";
+import { pickStampLocation, wrapText } from "@shared/address";
 import { reverseGeocode } from "@/lib/geocode";
 import { compressCanvas, compressImageFile } from "@/lib/imageCompress";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "@shared/uploadLimits";
@@ -13,9 +13,14 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 
 
-/** Endereço completo para o carimbo; se não houver internet/serviço, mantém a coordenada legível. */
-async function stampLocation(lat: number, lng: number): Promise<string> {
-  return (await reverseGeocode(lat, lng)) || `GPS ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+/** Endereço completo para o carimbo; se o GPS vier só com cidade/CEP, usa o endereço cadastrado da loja. */
+async function stampLocation(lat: number, lng: number, storeAddress?: string | null): Promise<string> {
+  const geocoded = await reverseGeocode(lat, lng);
+  return pickStampLocation({
+    geocoded,
+    storeAddress,
+    coordsFallback: `GPS ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+  });
 }
 
 type GpsFix = { lat: number; lng: number; accuracy: number };
@@ -26,6 +31,8 @@ type Props = {
   /** Loja da foto. Omitir ou passar null para foto sem loja vinculada. */
   storeId?: number | null;
   storeName: string;
+  /** Endereço cadastrado da loja (rua/bairro). Usado no carimbo se o GPS vier incompleto. */
+  storeAddress?: string | null;
   /** Cliente da loja em que a foto está sendo tirada. */
   storeClientId?: number | null;
   clientName?: string | null;
@@ -84,7 +91,7 @@ function applyWatermark(
   });
 }
 
-export function PhotoCapture({ storeId, storeName, storeClientId, clientName, visitId, onCaptured }: Props) {
+export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, clientName, visitId, onCaptured }: Props) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -225,7 +232,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
 
   const saveShot = async (s: Shot): Promise<void> => {
     const promoter = user?.name || user?.email || "Promotor";
-    const location = s.gps ? await stampLocation(s.gps.lat, s.gps.lng) : "Local não disponível";
+    const location = s.gps ? await stampLocation(s.gps.lat, s.gps.lng, storeAddress) : (storeAddress?.trim() || "Local não disponível");
     const lines = [
       `Promotor: ${promoter}`,
       `Local: ${location}`,

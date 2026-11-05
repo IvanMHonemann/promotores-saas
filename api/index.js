@@ -8743,18 +8743,65 @@ function formatCep(cep) {
   const d = (cep || "").replace(/\D/g, "");
   return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : cep?.trim() || void 0;
 }
+function streetFromAddress(a) {
+  if (!a) return void 0;
+  return a.road || a.pedestrian || a.residential || a.footway || a.path || a.cycleway || void 0;
+}
+function cityFromAddress(a) {
+  if (!a) return void 0;
+  return a.city || a.town || a.village || a.municipality || a.hamlet || void 0;
+}
+function bairroFromAddress(a) {
+  if (!a) return void 0;
+  const city = cityFromAddress(a);
+  const candidates = [a.suburb, a.neighbourhood, a.neighborhood, a.quarter, a.city_district, a.district];
+  for (const c of candidates) {
+    const t2 = c?.trim();
+    if (t2 && (!city || t2.toLowerCase() !== city.toLowerCase())) return t2;
+  }
+  return void 0;
+}
 function formatBrAddress(a, displayName) {
   if (!a) return displayName?.trim() || null;
-  const street = a.road || a.pedestrian || a.residential || a.footway;
-  const streetPart = street ? a.house_number ? `${street}, ${a.house_number}` : street : void 0;
-  const bairro = a.suburb || a.neighbourhood || a.quarter || a.city_district || a.district;
-  const city = a.city || a.town || a.village || a.municipality || a.hamlet;
+  const street = streetFromAddress(a);
+  let streetPart = street ? a.house_number ? `${street}, ${a.house_number}` : street : void 0;
+  if (streetPart && a.approximateStreet) streetPart = `pr\xF3ximo a ${streetPart}`;
+  const bairro = bairroFromAddress(a);
+  const city = cityFromAddress(a);
   const uf = stateToUf(a.state, a["ISO3166-2-lvl4"]);
   const cityPart = city ? uf ? `${city}-${uf}` : city : uf;
   const cep = formatCep(a.postcode);
-  const head = [streetPart, bairro && bairro !== city ? bairro : void 0].filter(Boolean).join(" - ");
+  const head = [streetPart, bairro].filter(Boolean).join(" - ");
   const parts = [head || void 0, cityPart, cep ? `CEP ${cep}` : void 0].filter(Boolean);
-  return parts.length ? parts.join(", ") : displayName?.trim() || null;
+  if (parts.length) return parts.join(", ");
+  return displayName?.trim() || null;
+}
+function mergeAddressParts(base, extra) {
+  const out = { ...base };
+  const baseStreet = streetFromAddress(base);
+  const extraStreet = streetFromAddress(extra);
+  if (!baseStreet && extraStreet) {
+    out.road = extra.road || extra.pedestrian || extra.residential || extra.footway || extra.path || extra.cycleway;
+    if (extra.house_number && !out.house_number) out.house_number = extra.house_number;
+    if (extra.approximateStreet) out.approximateStreet = true;
+  } else if (baseStreet && out.approximateStreet && extraStreet && !extra.approximateStreet) {
+    out.road = extra.road || extraStreet;
+    out.house_number = extra.house_number || out.house_number;
+    delete out.approximateStreet;
+  }
+  if (!bairroFromAddress(out)) {
+    const b = bairroFromAddress(extra) || extra.suburb || extra.neighbourhood || extra.neighborhood || extra.quarter;
+    if (b) out.suburb = b;
+  }
+  if (!cityFromAddress(out)) {
+    const c = cityFromAddress(extra);
+    if (c) out.city = c;
+  }
+  if (!out.state && extra.state) out.state = extra.state;
+  if (!out["ISO3166-2-lvl4"] && extra["ISO3166-2-lvl4"]) out["ISO3166-2-lvl4"] = extra["ISO3166-2-lvl4"];
+  if (!out.postcode && extra.postcode) out.postcode = extra.postcode;
+  if (!out.house_number && extra.house_number) out.house_number = extra.house_number;
+  return out;
 }
 
 // server/geocoding.ts
@@ -8765,6 +8812,7 @@ var addressCache = /* @__PURE__ */ new Map();
 var inFlight = /* @__PURE__ */ new Map();
 var requestQueue = Promise.resolve();
 var lastRequestStartedAt = 0;
+var NOMINATIM_UA = "GondUp/1.0 (https://gondup.com.br; contato@gondup.com.br)";
 function coordinateKey(latitude, longitude) {
   return `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
 }
@@ -8841,32 +8889,143 @@ var brCache = /* @__PURE__ */ new Map();
 var BR_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
 var lastNominatimAt = 0;
 var nominatimQueue = Promise.resolve();
+function needsEnrichment(parts) {
+  return !streetFromAddress(parts) || !bairroFromAddress(parts);
+}
+async function nominatimParts(latitude, longitude, fetchImpl) {
+  const run = nominatimQueue.then(async () => {
+    const wait = 1100 - (Date.now() - lastNominatimAt);
+    if (wait > 0) await delay(wait);
+    lastNominatimAt = Date.now();
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR&email=contato@gondup.com.br`;
+    const res = await fetchImpl(url, {
+      headers: { accept: "application/json", "user-agent": NOMINATIM_UA },
+      signal: AbortSignal.timeout(6e3)
+    });
+    if (!res.ok) {
+      console.warn(`[geocoding] Nominatim HTTP ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    return data.address ? { ...data.address } : null;
+  });
+  nominatimQueue = run.then(() => void 0, () => void 0);
+  return run;
+}
+async function photonParts(latitude, longitude, fetchImpl) {
+  try {
+    const url = `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}&lang=en`;
+    const res = await fetchImpl(url, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5e3)
+    });
+    if (!res.ok) {
+      console.warn(`[geocoding] Photon HTTP ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    const p = data.features?.[0]?.properties;
+    if (!p) return null;
+    const road = p.street || (p.type === "street" ? p.name : void 0) || void 0;
+    if (!road && !p.city && !p.postcode) return null;
+    const out = {
+      road,
+      house_number: p.housenumber,
+      suburb: p.district && p.district !== p.city ? p.district : void 0,
+      city: p.city,
+      state: p.state,
+      postcode: p.postcode,
+      approximateStreet: !!road
+      // Photon = rua próxima, não necessariamente o ponto exato
+    };
+    if (p.countrycode === "BR" && p.state) {
+    }
+    return out;
+  } catch (error) {
+    console.warn("[geocoding] Photon falhou", error instanceof Error ? error.name : "erro");
+    return null;
+  }
+}
+async function viaCepParts(cep, fetchImpl) {
+  const digits = cep.replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  try {
+    const res = await fetchImpl(`https://viacep.com.br/ws/${digits}/json/`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5e3)
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.erro || !data.logradouro && !data.bairro && !data.localidade) return null;
+    return {
+      road: data.logradouro || void 0,
+      suburb: data.bairro || void 0,
+      city: data.localidade || void 0,
+      state: data.uf || void 0,
+      postcode: data.cep || formatCep(digits),
+      approximateStreet: false
+    };
+  } catch (error) {
+    console.warn("[geocoding] ViaCEP falhou", error instanceof Error ? error.name : "erro");
+    return null;
+  }
+}
+async function brasilApiParts(cep, fetchImpl) {
+  const digits = cep.replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  try {
+    const res = await fetchImpl(`https://brasilapi.com.br/api/cep/v2/${digits}`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5e3)
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.street && !data.neighborhood && !data.city) return null;
+    return {
+      road: data.street || void 0,
+      suburb: data.neighborhood || void 0,
+      city: data.city || void 0,
+      state: data.state || void 0,
+      postcode: formatCep(data.cep || digits),
+      approximateStreet: false
+    };
+  } catch (error) {
+    console.warn("[geocoding] BrasilAPI falhou", error instanceof Error ? error.name : "erro");
+    return null;
+  }
+}
 async function reverseGeocodeBr(latitude, longitude, fetchImpl = fetch) {
-  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) return null;
+  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) {
+    return null;
+  }
   const key = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
   const hit = brCache.get(key);
   if (hit && hit.expiresAt > Date.now() && hit.address) return hit.address;
-  let address = null;
+  let parts = {};
   try {
-    const run = nominatimQueue.then(async () => {
-      const wait = 1100 - (Date.now() - lastNominatimAt);
-      if (wait > 0) await delay(wait);
-      lastNominatimAt = Date.now();
-      const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR`;
-      const res = await fetchImpl(url, { headers: { accept: "application/json", "user-agent": "GondUp/1.0 (https://promotores-saas.vercel.app)" }, signal: AbortSignal.timeout(6e3) });
-      if (!res.ok) {
-        console.warn(`[geocoding] Nominatim HTTP ${res.status}`);
-        return null;
-      }
-      const data = await res.json();
-      return formatBrAddress(data.address, data.display_name);
-    });
-    nominatimQueue = run.then(() => void 0, () => void 0);
-    address = await run;
+    const nom = await nominatimParts(latitude, longitude, fetchImpl);
+    if (nom) parts = nom;
   } catch (error) {
     console.warn("[geocoding] Nominatim falhou", error instanceof Error ? error.name : "erro");
   }
-  if (!address) address = (await reverseGeocodeAddress(latitude, longitude).catch(() => ({ address: null }))).address;
+  if (needsEnrichment(parts)) {
+    const photon = await photonParts(latitude, longitude, fetchImpl);
+    if (photon) parts = mergeAddressParts(parts, photon);
+  }
+  const cep = formatCep(parts.postcode);
+  if (cep && needsEnrichment(parts)) {
+    const via = await viaCepParts(cep, fetchImpl);
+    if (via) parts = mergeAddressParts(parts, via);
+  }
+  if (cep && needsEnrichment(parts)) {
+    const br = await brasilApiParts(cep, fetchImpl);
+    if (br) parts = mergeAddressParts(parts, br);
+  }
+  let address = formatBrAddress(parts);
+  if (!address || !streetFromAddress(parts)) {
+    const geo = await reverseGeocodeAddress(latitude, longitude).catch(() => ({ address: null }));
+    if (geo.address) address = geo.address;
+  }
   if (address) {
     if (brCache.size >= MAX_CACHE_ENTRIES) {
       const k = brCache.keys().next().value;

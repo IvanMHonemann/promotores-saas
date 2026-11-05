@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { humanizeValue } from "@/lib/labels";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -58,7 +59,8 @@ function parseDetails(value: unknown): Record<string, unknown> {
 function coordinateKey(latitude: number, longitude: number) {
   return `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
 }
-function displayValue(value: unknown) {
+function displayValue(raw: unknown) {
+  const value = humanizeValue(raw);
   if (value == null || value === "") return "—";
   if (typeof value === "object") return JSON.stringify(value, null, 2);
   if (typeof value === "boolean") return value ? "Sim" : "Não";
@@ -192,7 +194,7 @@ export default function AuditPage() {
           const pointAddressKey = hasPointCoordinates ? coordinateKey(Number(details.latitude), Number(details.longitude)) : null;
           const pointAddress = pointAddressKey ? addresses[pointAddressKey] : undefined;
           const pointAddressLabel = pointAddress?.status === "ready" ? pointAddress.address : pointAddress?.status === "not_configured" ? "Endereço ainda não configurado" : pointAddress?.status === "not_found" ? "Endereço não localizado" : pointAddress?.status === "error" ? "Endereço indisponível no momento" : "Consultando endereço…";
-          const detailEntries = Object.entries(details).filter(([key, value]) => value != null && value !== "" && !(row.module === "time_tracking" && ["latitude", "longitude", "locationstatus", "location_status"].includes(key.toLowerCase())));
+          const detailEntries = Object.entries(details).filter(([key, value]) => value != null && value !== "" && !/(\(id\)|(^|[\s_])id)$/i.test(key.trim()) && !(row.module === "time_tracking" && ["latitude", "longitude", "locationstatus", "location_status"].includes(key.toLowerCase())));
           const actionLabel = ACTION_LABEL[row.action] || row.action.replaceAll("_", " ");
           return <Card key={row.activityId} className="min-w-0 overflow-hidden border-white/10 bg-slate-900/70 text-white">
             <CardContent className="min-w-0 p-4 sm:p-5">
@@ -212,7 +214,7 @@ export default function AuditPage() {
                 {hasPointCoordinates && <div className="min-w-0 rounded-lg bg-slate-950/40 px-3 py-2"><dt className="break-words text-[11px] font-semibold uppercase tracking-wide text-slate-400">Endereço da batida</dt><dd className="mt-1 min-w-0 break-words text-sm leading-relaxed text-slate-200">{pointAddressLabel}</dd>{pointAddress?.status === "ready" && <dd className="mt-1 text-[10px] text-slate-500">Powered by <a href="https://www.geoapify.com/" target="_blank" rel="noreferrer" className="text-teal-200 underline">Geoapify</a> · dados <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="text-teal-200 underline">© OpenStreetMap contributors</a></dd>}</div>}
                 {detailEntries.map(([key, value]) => {
                   const isFileUrl = key === "arquivoUrl" && typeof value === "string";
-                  return <div key={key} className="min-w-0 rounded-lg bg-slate-950/40 px-3 py-2"><dt className="break-words text-[11px] font-semibold uppercase tracking-wide text-slate-400">{key.replaceAll("_", " ")}</dt><dd className="mt-1 min-w-0 break-words text-sm leading-relaxed text-slate-200">{isFileUrl ? <a href={value as string} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 break-all text-teal-200 underline decoration-teal-200/40 underline-offset-2">Abrir arquivo</a> : displayValue(value)}</dd></div>;
+                  return <div key={key} className="min-w-0 rounded-lg bg-slate-950/40 px-3 py-2"><dt className="break-words text-[11px] font-semibold uppercase tracking-wide text-slate-400">{key.replaceAll("_", " ").replace(/([a-z])([A-Z])/g, "$1 $2")}</dt><dd className="mt-1 min-w-0 break-words text-sm leading-relaxed text-slate-200">{isFileUrl ? <a href={value as string} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 break-all text-teal-200 underline decoration-teal-200/40 underline-offset-2">Abrir arquivo</a> : displayValue(value)}</dd></div>;
                 })}
               </dl>}
             </CardContent>

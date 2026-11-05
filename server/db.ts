@@ -895,6 +895,29 @@ export async function createOperationalStore(input: typeof operationalStores.$in
   return rows[0];
 }
 
+/** Atualiza dados de uma loja da própria empresa. Retorna false se a loja não existir nesta empresa. */
+export async function updateOperationalStore(companyId: number, id: number, patch: Partial<Pick<typeof operationalStores.$inferInsert, "name" | "city" | "state" | "address">>) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const where = and(eq(operationalStores.id, id), eq(operationalStores.companyId, requireAccountId(companyId)), eq(operationalStores.active, true));
+  const found = await database.select({ id: operationalStores.id }).from(operationalStores).where(where).limit(1);
+  if (!found[0]) return false;
+  const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+  if (Object.keys(clean).length) await database.update(operationalStores).set(clean as any).where(where);
+  return true;
+}
+
+/** Desativa (arquiva) a loja: some das listas, mas fotos, visitas e histórico continuam guardados. */
+export async function archiveOperationalStore(companyId: number, id: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const where = and(eq(operationalStores.id, id), eq(operationalStores.companyId, requireAccountId(companyId)), eq(operationalStores.active, true));
+  const found = await database.select({ id: operationalStores.id, name: operationalStores.name }).from(operationalStores).where(where).limit(1);
+  if (!found[0]) return null;
+  await database.update(operationalStores).set({ active: false } as any).where(where);
+  return found[0];
+}
+
 export async function listOperationalRoutes(companyId: number, options: { date?: string; promoterId?: number } = {}) {
   const database = await getDb();
   if (!database) return [];
@@ -1299,7 +1322,11 @@ export async function listInventoryProducts(companyId: number, filters: Inventor
   const limit = addDays(today, 30);
   const conditions = [eq(inventoryProducts.companyId, company)];
   const search = filters.search?.trim();
-  if (search) conditions.push(or(like(inventoryProducts.productCode, `%${search}%`), like(inventoryProducts.description, `%${search}%`))!);
+  if (search) {
+    // Busca sem diferenciar maiúsculas/minúsculas (TiDB usa collation binária por padrão) e com % e _ tratados como texto.
+    const pattern = `%${search.toLowerCase().replace(/[\\%_]/g, ch => `\\${ch}`)}%`;
+    conditions.push(or(sql`LOWER(${inventoryProducts.productCode}) LIKE ${pattern}`, sql`LOWER(${inventoryProducts.description}) LIKE ${pattern}`)!);
+  }
   if (filters.expiry === "expired") conditions.push(sql`${inventoryProducts.expirationDate} < ${today}`);
   if (filters.expiry === "near") conditions.push(sql`${inventoryProducts.expirationDate} >= ${today} AND ${inventoryProducts.expirationDate} <= ${limit}`);
   if (filters.expiry === "valid") conditions.push(sql`${inventoryProducts.expirationDate} > ${limit}`);

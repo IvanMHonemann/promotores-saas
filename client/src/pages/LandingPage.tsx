@@ -18,11 +18,14 @@ import { useLocation } from "wouter";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 
+// Link de contato comercial (WhatsApp, e-mail ou formulário). Defina VITE_CONTACT_URL na hospedagem.
+const CONTACT_URL = (import.meta.env.VITE_CONTACT_URL as string | undefined) || "";
+const openContact = () => { if (CONTACT_URL) window.open(CONTACT_URL, "_blank", "noopener"); else document.getElementById("contato")?.scrollIntoView({ behavior: "smooth" }); };
+
 const navLinks = [
   { href: "#recursos", label: "Recursos" },
   { href: "#operacao", label: "Operação" },
   { href: "#perfis", label: "Perfis" },
-  { href: "/login", label: "Entrar" },
 ];
 
 const metrics = [
@@ -152,8 +155,8 @@ export default function LandingPage() {
             <Button variant="outline" className="border-teal-400/50 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20 hover:text-white" onClick={() => navigate("/login")}>
               Entrar
             </Button>
-            <Button className="bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/login")}>
-              Começar
+            <Button className="bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={openContact}>
+              Fale conosco
             </Button>
           </div>
         </div>
@@ -178,8 +181,8 @@ export default function LandingPage() {
             GONDUP reúne jornada, roteiros, lojas e evidências em um único ambiente multiempresa. Supervisione a execução no PDV com a mesma clareza da operação no escritório.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="lg" className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/login")}>
-              Criar ambiente
+            <Button size="lg" className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={openContact}>
+              Solicitar demonstração
               <ArrowRight className="h-4 w-4" />
             </Button>
             <Button
@@ -327,19 +330,19 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto max-w-6xl px-5 pb-20 sm:px-8">
+      <section id="contato" className="relative z-10 mx-auto max-w-6xl px-5 pb-20 sm:px-8">
         <div className="overflow-hidden rounded-[2rem] border border-teal-300/20 bg-[linear-gradient(135deg,rgba(45,212,191,0.16),rgba(5,11,20,0.9)_42%,rgba(8,47,73,0.55))] px-6 py-12 text-center sm:px-12">
           <h2 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Coloque sua operação de campo no mesmo ritmo da gestão.</h2>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-slate-300">
-            Crie o ambiente da agência, convide a equipe e comece a medir presença, jornada e evidências ainda hoje.
+            Fale com a gente para criar o ambiente da agência, convide a equipe e comece a medir presença, jornada e evidências ainda hoje.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Button size="lg" className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={() => navigate("/login")}>
-              Criar conta
+            <Button size="lg" className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={openContact}>
+              Fale conosco
               <ArrowRight className="h-4 w-4" />
             </Button>
             <Button size="lg" variant="outline" className="border-white/15 bg-white/5 px-6 text-white hover:bg-white/10" onClick={() => navigate("/login")}>
-              Criar conta
+              Já sou cliente
             </Button>
           </div>
         </div>

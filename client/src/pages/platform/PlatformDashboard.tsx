@@ -51,24 +51,37 @@ function CodeScannerView() {
   const [scanComplete, setScanComplete] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const [signals, setSignals] = useState([
-    { id: 1, name: "Client Router / Wouter", type: "frontend", status: "ok", latency: "12ms", details: "Nenhuma rota quebrada detectada. Todas as páginas carregam corretamente." },
-    { id: 2, name: "tRPC API Endpoints", type: "backend", status: "ok", latency: "34ms", details: "Comunicação client-server estável. Validações de payload Zod ativas." },
-    { id: 3, name: "Geolocalização / GPS Ponto", type: "sensor", status: "warning", latency: "180ms", details: "Aviso: Alguns dispositivos móveis bloqueiam permissão HTTPS de geolocalização se o certificado SSL expirar ou exigir permissão manual." },
-    { id: 4, name: "localStorage / Sessão Auth", type: "storage", status: "ok", latency: "2ms", details: "Tokens JWT e estado de autenticação sincronizados sem corrupção." },
-    { id: 5, name: "Streamdown AI Markdown Renderer", type: "ui", status: "ok", latency: "8ms", details: "Renderização de respostas da IA funcionando sem estouro de buffer." },
-    { id: 6, name: "Banco de dados MySQL / Drizzle", type: "database", status: "ok", latency: "42ms", details: "Pool de conexões ativo. Nenhuma falha de migração ou deadlock detectado." }
-  ]);
+  type Signal = { id: number; name: string; type: string; status: "ok" | "warning" | "pending"; latency: string; details: string };
+  const initialSignals: Signal[] = [
+    { id: 1, name: "Servidor (healthz)", type: "backend", status: "pending", latency: "—", details: "Ainda não verificado. Clique em Executar verificação." },
+    { id: 2, name: "API e banco de dados", type: "backend", status: "pending", latency: "—", details: "Ainda não verificado." },
+    { id: 3, name: "Permissão de GPS neste navegador", type: "sensor", status: "pending", latency: "—", details: "Ainda não verificado." },
+    { id: 4, name: "Armazenamento local do navegador", type: "storage", status: "pending", latency: "—", details: "Ainda não verificado." },
+  ];
+  const [signals, setSignals] = useState<Signal[]>(initialSignals);
 
-  const runScan = () => {
+  // Verificações reais feitas a partir deste navegador (sem valores inventados).
+  const timed = async (url: string) => { const t = performance.now(); const r = await fetch(url, { credentials: "include", cache: "no-store" }); return { r, ms: `${Math.round(performance.now() - t)} ms` }; };
+  const runScan = async () => {
     setScanning(true);
     setScanComplete(false);
-    toast.info("Iniciando varredura profunda no código e funções do site...");
-    setTimeout(() => {
-      setScanning(false);
-      setScanComplete(true);
-      toast.success("Scanner concluído! Todos os sinalizadores e funções foram validados em tempo real.");
-    }, 2000);
+    const next = initialSignals.map(s => ({ ...s }));
+    try { const { r, ms } = await timed("/healthz"); next[0] = { ...next[0], status: r.ok ? "ok" : "warning", latency: ms, details: r.ok ? "Servidor respondeu normalmente." : `Servidor respondeu com erro ${r.status}.` }; }
+    catch { next[0] = { ...next[0], status: "warning", details: "Sem resposta do servidor (verifique a conexão)." }; }
+    try { const { r, ms } = await timed("/api/trpc/auth.me"); next[1] = { ...next[1], status: r.ok ? "ok" : "warning", latency: ms, details: r.ok ? "API respondeu e consultou a sessão no banco." : `API respondeu com erro ${r.status}.` }; }
+    catch { next[1] = { ...next[1], status: "warning", details: "Sem resposta da API." }; }
+    try {
+      const perm = await (navigator.permissions?.query({ name: "geolocation" as PermissionName }));
+      const state = perm?.state;
+      next[2] = { ...next[2], status: state === "denied" ? "warning" : "ok", details: state === "granted" ? "GPS liberado neste navegador." : state === "denied" ? "GPS bloqueado neste navegador." : "O navegador vai pedir permissão ao usar o GPS." };
+    } catch { next[2] = { ...next[2], status: "warning", details: "Este navegador não informa o estado da permissão de GPS." }; }
+    try { localStorage.setItem("__scan", "1"); localStorage.removeItem("__scan"); next[3] = { ...next[3], status: "ok", details: "Leitura e gravação funcionando." }; }
+    catch { next[3] = { ...next[3], status: "warning", details: "Armazenamento local bloqueado (modo privado?)." }; }
+    setSignals(next);
+    setScanning(false);
+    setScanComplete(true);
+    const problems = next.filter(s => s.status === "warning").length;
+    if (problems) toast.warning(`Verificação concluída com ${problems} ponto(s) de atenção.`); else toast.success("Verificação concluída sem problemas.");
   };
 
   const filteredSignals = signals.filter(s => 
@@ -82,13 +95,13 @@ function CodeScannerView() {
       <div className="rounded-3xl border border-teal-300/25 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/40 p-5 sm:p-7">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <Badge className="border border-teal-300/30 bg-teal-300/10 text-teal-200">Diagnóstico em Tempo Real</Badge>
-            <h2 className="mt-2 text-2xl font-black text-white">Scanner de Código & Detector de Bugs</h2>
-            <p className="mt-1 text-sm text-slate-300">Monitore a integridade do código fonte, rotas, APIs, sensores e serviços do site.</p>
+            <Badge className="border border-teal-300/30 bg-teal-300/10 text-teal-200">Diagnóstico</Badge>
+            <h2 className="mt-2 text-2xl font-black text-white">Verificação do sistema</h2>
+            <p className="mt-1 text-sm text-slate-300">Testa servidor, API, GPS e armazenamento a partir deste navegador.</p>
           </div>
           <Button onClick={runScan} disabled={scanning} className="gap-2 bg-teal-300 text-slate-950 hover:bg-teal-200">
             {scanning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {scanning ? "Escaneando código..." : "Executar Varredura Agora"}
+            {scanning ? "Verificando..." : "Executar verificação"}
           </Button>
         </div>
       </div>
@@ -106,7 +119,7 @@ function CodeScannerView() {
           />
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" /> 6 sinalizadores ativos em tempo real
+          {signals.length} verificações
         </div>
       </div>
 
@@ -126,7 +139,7 @@ function CodeScannerView() {
               </div>
               <div className="text-right">
                 <Badge className={signal.status === "warning" ? "bg-amber-400/20 text-amber-300 border-amber-400/40" : "bg-emerald-400/20 text-emerald-300 border-emerald-400/40"}>
-                  {signal.status === "warning" ? "Atenção" : "Operacional"}
+                  {signal.status === "warning" ? "Atenção" : signal.status === "pending" ? "Não verificado" : "Operacional"}
                 </Badge>
                 <p className="mt-1 text-[11px] text-slate-400">Latência: {signal.latency}</p>
               </div>
@@ -198,7 +211,7 @@ function PersistentAIChat() {
   return <section className="mb-6 space-y-4">
     <div className="rounded-3xl border border-teal-300/20 bg-slate-900/80 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · suporte inteligente</p><h2 className="mt-1 text-xl font-bold">Converse, investigue e continue tarefas</h2><p className="mt-1 text-sm text-slate-300">O histórico fica salvo neste dispositivo. A IA lê o código atual antes de propor alterações.</p></div>
+        <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · suporte inteligente</p><h2 className="mt-1 text-xl font-bold">Converse, investigue e continue tarefas</h2><p className="mt-1 text-sm text-slate-300">O histórico fica salvo neste dispositivo. A IA pode sugerir alterações, que só entram no site depois de revisadas e aprovadas.</p></div>
         <Badge className="border border-emerald-300/30 bg-emerald-300/10 text-emerald-200"><span className="mr-1.5 h-2 w-2 rounded-full bg-emerald-300" />Monitor ativo</Badge>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">{health.map(({ label, value, tone, icon: Icon }) => <div key={label} className="rounded-xl border border-white/10 bg-slate-950/40 p-3"><div className="flex items-center gap-2 text-xs text-slate-400"><Icon className={`h-3.5 w-3.5 ${tone}`} />{label}</div><p className={`mt-1 text-sm font-semibold ${tone}`}>{value}</p></div>)}</div>

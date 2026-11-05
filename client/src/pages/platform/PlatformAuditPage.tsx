@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { translateAction, translateModule } from "@/lib/labels";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,7 +19,7 @@ export default function PlatformAuditPage() {
     <Card className="border-white/10 bg-slate-900/70 text-white"><CardContent className="space-y-3 p-4">
       <div className="flex flex-wrap gap-3"><Input aria-label="Buscar" placeholder="Buscar na descrição" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} className="max-w-xs border-white/15 bg-slate-950/60 text-white" />
         <select aria-label="Empresa" value={companyId} onChange={(e) => { setPage(1); setCompanyId(e.target.value); }} className="h-10 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm"><option value="">Todas as empresas</option>{(companies.data || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
-      <div className="space-y-2">{items.map((r) => <div key={r.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-3 text-sm"><p className="font-semibold">{r.description}</p><p className="text-xs text-slate-400">{new Date(r.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} · {r.userName || "—"} · {r.module}/{r.action}{r.companyId ? ` · empresa #${r.companyId}` : " · plataforma"}</p></div>)}{!items.length && !list.isLoading && <p className="text-center text-sm text-slate-400">Nenhum registro.</p>}</div>
+      <div className="space-y-2">{items.map((r) => <div key={r.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-3 text-sm"><p className="font-semibold">{r.description}</p><p className="text-xs text-slate-400">{new Date(r.createdAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} · {r.userName || "—"} · {translateModule(r.module)} · {translateAction(r.action)}{r.companyId ? ` · ${(companies.data || []).find((c: any) => c.id === r.companyId)?.name || `empresa ${r.companyId}`}` : " · plataforma"}</p></div>)}{!items.length && !list.isLoading && <p className="text-center text-sm text-slate-400">Nenhum registro.</p>}</div>
       <div className="flex items-center justify-between text-sm text-slate-300"><span>{total} registro(s)</span><div className="flex items-center gap-2"><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)} className="border-white/20 text-white">Anterior</Button><span>{page}/{pages}</span><Button size="sm" variant="outline" disabled={page >= pages} onClick={() => setPage(page + 1)} className="border-white/20 text-white">Próxima</Button></div></div>
     </CardContent></Card>
   </DashboardLayout>;

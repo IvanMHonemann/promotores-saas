@@ -10,6 +10,7 @@ import {
 
 export type CompanyEntitlementBase = {
   companyId: number;
+  companyName: string | null;
   planId: number | null;
   planName: string;
   planFeatureKeys: EntitlementKey[];
@@ -27,8 +28,10 @@ export async function getCompanyEntitlementBase(companyId: number): Promise<Comp
   const companyOverrides = await db.getCompanyFeatureOverrides(companyId);
   const planSet = new Set(rawKeys);
   const companyFeatures = Object.fromEntries(ENTITLEMENT_KEYS.map((key) => [key, companyOverrides[key] ?? planSet.has(key)])) as Record<EntitlementKey, boolean>;
+  const company = await db.getCompanyById(companyId).catch(() => undefined);
   return {
     companyId,
+    companyName: company?.name ?? null,
     planId: plan?.id == null ? null : Number(plan.id),
     planName: String(plan?.name ?? "Sem plano"),
     planFeatureKeys: rawKeys,

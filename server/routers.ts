@@ -828,6 +828,20 @@ export const appRouter = router({
         if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
         return db.createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
       }),
+      update: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), name: z.string().trim().min(2).max(255).optional(), city: z.string().trim().min(2).max(255).optional(), state: z.string().trim().length(2).optional().or(z.literal("")), address: z.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
+        if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem editar lojas." });
+        const { id, ...patch } = input;
+        const ok = await db.updateOperationalStore(ctx.accountId, id, { ...patch, state: patch.state === undefined ? undefined : (patch.state ? patch.state.toUpperCase() : null) as any });
+        if (!ok) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada." });
+        await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", entityId: id, description: `Loja editada: ${patch.name ?? `#${id}`}`, newData: patch });
+        return { success: true as const };
+      }),
+      archive: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        const store = await db.archiveOperationalStore(ctx.accountId, input.id);
+        if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada." });
+        await auditFromCtx(ctx, { action: "delete", module: "stores", entityType: "store", entityId: input.id, description: `Loja removida da lista: ${store.name}` });
+        return { success: true as const };
+      }),
     }),
     routes: router({
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {

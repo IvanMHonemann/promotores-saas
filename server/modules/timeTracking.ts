@@ -39,7 +39,9 @@ function isValidTransition(last: TimeEventType | undefined, next: TimeEventType)
   return transitions[last].includes(next);
 }
 
-async function applyApprovedCorrection(database: NonNullable<Awaited<ReturnType<typeof db.getDb>>>, request: typeof timeCorrectionRequests.$inferSelect, ctx: { accountId: number; memberAccountId?: number | null; user?: { name?: string | null } | null }, opts?: { skipMissing?: boolean }) {
+type Db = NonNullable<Awaited<ReturnType<typeof db.getDb>>>;
+type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+async function applyApprovedCorrection(database: DbOrTx, request: typeof timeCorrectionRequests.$inferSelect, ctx: { accountId: number; memberAccountId?: number | null; user?: { name?: string | null } | null }, opts?: { skipMissing?: boolean }) {
   if (looksLikeFullDayExcuse(request)) return;
   if (request.timeEventId) {
     const event = (await database.select().from(timeEvents).where(and(eq(timeEvents.id, request.timeEventId), eq(timeEvents.companyId, ctx.accountId))).limit(1))[0];
@@ -599,9 +601,12 @@ export const timeTrackingRouter = router({
         if (!request) throw new TRPCError({ code: "NOT_FOUND", message: "Solicitação de correção não encontrada." });
         if (request.status !== "pending") throw new TRPCError({ code: "BAD_REQUEST", message: "Esta solicitação já foi analisada." });
 
-        if (input.status === "approved") await applyApprovedCorrection(database, request, ctx);
-
-        await database.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: new Date(), reviewNotes: input.reviewNotes || null }).where(eq(timeCorrectionRequests.id, request.id));
+        // Correção e mudança de status juntas: se uma falhar, nada é gravado (evita batida alterada com solicitação ainda pendente).
+        await database.transaction(async (tx) => {
+          const claimed: any = await tx.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: new Date(), reviewNotes: input.reviewNotes || null }).where(and(eq(timeCorrectionRequests.id, request.id), eq(timeCorrectionRequests.status, "pending")));
+          if (Number(claimed?.[0]?.affectedRows ?? 1) === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Esta solicitação já foi analisada." });
+          if (input.status === "approved") await applyApprovedCorrection(tx, request, ctx);
+        });
         const excuse = isFullDayExcuseType(request.justificationType);
         await auditFromCtx(ctx, { action: input.status === "approved" ? "update" : "security", module: "time_tracking", entityType: "correction_request", entityId: request.id, description: `Solicitação de correção ${input.status === "approved" ? "aprovada" : "rejeitada"}${excuse ? ` (abono ${fullDayExcuseLabel(request.justificationType)})` : !request.timeEventId ? " (inclusão de batida)" : ""}`, newData: { status: input.status, reviewNotes: input.reviewNotes || null } });
         return { success: true as const };
@@ -617,9 +622,13 @@ export const timeTrackingRouter = router({
           const rows = await database.select().from(timeCorrectionRequests).where(and(eq(timeCorrectionRequests.id, id), eq(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
           const request = rows[0];
           if (!request || request.status !== "pending") continue;
-          if (input.status === "approved") await applyApprovedCorrection(database, request, ctx, { skipMissing: true });
-          await database.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: new Date(), reviewNotes: input.reviewNotes || null }).where(eq(timeCorrectionRequests.id, request.id));
-          done += 1;
+          const applied = await database.transaction(async (tx) => {
+            const claimed: any = await tx.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: new Date(), reviewNotes: input.reviewNotes || null }).where(and(eq(timeCorrectionRequests.id, request.id), eq(timeCorrectionRequests.status, "pending")));
+            if (Number(claimed?.[0]?.affectedRows ?? 1) === 0) return false;
+            if (input.status === "approved") await applyApprovedCorrection(tx, request, ctx, { skipMissing: true });
+            return true;
+          });
+          if (applied) done += 1;
         }
         await auditFromCtx(ctx, { action: input.status === "approved" ? "update" : "security", module: "time_tracking", entityType: "correction_request", entityId: input.ids[0], description: `${done} solicitação(ões) de correção ${input.status === "approved" ? "aprovadas" : "rejeitadas"} em lote`, newData: { status: input.status, ids: input.ids, reviewNotes: input.reviewNotes || null } });
         return { success: true as const, count: done };

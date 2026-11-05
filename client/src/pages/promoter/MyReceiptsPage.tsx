@@ -10,7 +10,7 @@ import { downloadBase64, fmtDateTimeSP } from "@/lib/downloadBase64";
 const LABEL: Record<string, string> = { clock_in: "Entrada", break_start: "Início do intervalo", break_end: "Retorno do intervalo", clock_out: "Saída" };
 const ORIGIN: Record<string, string> = { original: "Marcação original", adjustment: "Ajuste aprovado", inclusion: "Inclusão aprovada" };
 
-/** Comprovantes de registro de ponto do próprio funcionário (Portaria MTP 671, arts. 79 e 80). */
+/** Comprovantes de batida do próprio funcionário. */
 export default function MyReceiptsPage() {
   const [days, setDays] = useState(30);
   const list = trpc.pontoLegal.myReceipts.useQuery({ days });
@@ -31,14 +31,14 @@ export default function MyReceiptsPage() {
   };
 
   return (
-    <DashboardLayout title="Meus comprovantes de ponto" description="Cada batida gera um comprovante com número (NSR) e código de verificação.">
+    <DashboardLayout title="Meus comprovantes de ponto" description="Cada batida gera um comprovante com número em sequência e um código de segurança.">
       <div className="space-y-4">
         <Card className="border-teal-300/30 bg-teal-950/40 text-white">
           <CardContent className="flex gap-3 p-4 text-sm text-teal-50">
             <ShieldCheck className="h-5 w-5 shrink-0 text-teal-300" />
             <p>
-              O comprovante prova que você registrou o ponto naquele horário. Ele traz o <b>NSR</b> (número sequencial do registro na empresa)
-              e um <b>código hash</b>: se alguém mudasse a batida depois, o código deixaria de conferir. Guarde os que achar importantes —
+              O comprovante prova que você registrou o ponto naquele horário. Ele traz o <b>número da batida</b>
+              e um <b>código de segurança</b>: se alguém mudasse o registro depois, o código deixaria de conferir. Guarde os que achar importantes —
               o PDF pode ser baixado a qualquer momento nesta tela.
             </p>
           </CardContent>
@@ -60,11 +60,11 @@ export default function MyReceiptsPage() {
                 <div className="min-w-0">
                   <p className="font-semibold">{LABEL[r.eventType] || r.eventType} · {fmtDateTimeSP(r.markedAt)}</p>
                   <p className="text-xs text-slate-400">
-                    {r.nsr ? `NSR ${String(r.nsr).padStart(9, "0")}` : ORIGIN[r.origin] || ""}
+                    {r.nsr ? `Nº ${String(r.nsr).padStart(9, "0")}` : ORIGIN[r.origin] || ""}
                     {r.offline ? " · feita offline" : ""}
                     {r.superseded ? " · substituída por ajuste aprovado (a original continua guardada)" : ""}
                   </p>
-                  {r.recordHash && <p className="truncate font-mono text-[10px] text-slate-500">hash {r.recordHash}</p>}
+                  {r.recordHash && <p className="truncate font-mono text-[10px] text-slate-500">cód. {r.recordHash.slice(0, 16)}…</p>}
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="secondary" disabled={pdf.isPending} onClick={() => void baixar(r.id)}><Download className="mr-1 h-4 w-4" />PDF</Button>

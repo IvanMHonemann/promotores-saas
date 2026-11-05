@@ -181,8 +181,10 @@ export default function StoreGalleryPage() {
   const store = stores.data?.find((s) => s.id === storeId) ?? cacheGet<any[]>("stores")?.find((s) => s.id === storeId);
 
   const today = new Date().toISOString().slice(0, 10);
-  const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000 });
-  const activeVisit = visits.data?.find((v: any) => v.visit?.status === "in_progress" && v.store?.id === storeId);
+  const entitlements = trpc.entitlements.mine.useQuery(undefined, { staleTime: 60_000 });
+  const hasVisitCheckIn = Boolean(entitlements.data?.effective?.visitCheckIn);
+  const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000, enabled: hasVisitCheckIn });
+  const activeVisit = hasVisitCheckIn ? visits.data?.find((v: any) => v.visit?.status === "in_progress" && v.store?.id === storeId) : undefined;
 
   const photos = trpc.storePhotos.listByStore.useQuery(
     { storeId: isNoStore ? undefined : storeId, from: from || undefined, to: to || undefined, storeClientId: typeof clientFilter === "number" ? clientFilter : undefined, withoutClient: clientFilter === "none" ? true : undefined },

@@ -5,6 +5,7 @@ export const ENTITLEMENT_KEYS = [
   "alerts",
   "timeTracking",
   "fieldOperations",
+  "visitCheckIn",
   "products",
   "reports",
   "teamManagement",
@@ -26,7 +27,8 @@ export const ENTITLEMENT_CATALOG: ReadonlyArray<{
   { key: "pointsOfSale", label: "Pontos de venda", description: "Gestão e limites de lojas e pontos de venda cadastrados." },
   { key: "alerts", label: "Alertas", description: "Alertas operacionais e de vencimento." },
   { key: "timeTracking", label: "Ponto eletrônico com GPS", description: "Marcações de jornada, localização e histórico." },
-  { key: "fieldOperations", label: "Lojas, roteiros e visitas", description: "Cadastro de lojas, planejamento de roteiros e visitas em campo." },
+  { key: "fieldOperations", label: "Lojas, roteiros e fotos", description: "Cadastro de lojas, planejamento de roteiros e fotos da operação em campo." },
+  { key: "visitCheckIn", label: "Check-in e check-out de visitas", description: "Registro de entrada/saída na loja com foto e GPS, status da visita e acompanhamento da execução." },
   { key: "products", label: "Produtos e validades", description: "Cadastro de produtos por loja e indústria, controle de validade, lote e alertas de vencimento." },
   { key: "reports", label: "Relatórios e auditoria", description: "Histórico do que foi feito em campo, relatórios e exportação." },
   { key: "teamManagement", label: "Gestão da equipe", description: "Cadastro de usuários e permissões individuais." },
@@ -36,15 +38,15 @@ export const ENTITLEMENT_CATALOG: ReadonlyArray<{
 
 export const PLAN_FEATURES: Readonly<Record<"start" | "profissional" | "empresarial", readonly EntitlementKey[]>> = {
   start: ["dashboard", "clients", "pointsOfSale", "alerts", "products"],
-  profissional: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "products", "reports", "teamManagement"],
-  empresarial: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "products", "reports", "teamManagement", "backup", "offline"],
+  profissional: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "teamManagement"],
+  empresarial: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "teamManagement", "backup", "offline"],
 };
 
 const ALL_FEATURES = [...ENTITLEMENT_KEYS];
 const SUPERVISOR_CEILING: EntitlementKey[] = [
-  "dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "products", "reports", "offline",
+  "dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "offline",
 ];
-const PROMOTER_CEILING: EntitlementKey[] = ["dashboard", "timeTracking", "fieldOperations", "products"];
+const PROMOTER_CEILING: EntitlementKey[] = ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn", "products"];
 
 export const ROLE_FEATURE_CEILING: Readonly<Record<CompanyRole, readonly EntitlementKey[]>> = {
   company_admin: ALL_FEATURES,
@@ -54,8 +56,8 @@ export const ROLE_FEATURE_CEILING: Readonly<Record<CompanyRole, readonly Entitle
 
 export const ROLE_FEATURE_DEFAULTS: Readonly<Record<CompanyRole, readonly EntitlementKey[]>> = {
   company_admin: ALL_FEATURES,
-  supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "products"],
-  promoter: ["dashboard", "timeTracking", "fieldOperations", "products"],
+  supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products"],
+  promoter: ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn", "products"],
 };
 
 export function resolveEntitlements(input: {

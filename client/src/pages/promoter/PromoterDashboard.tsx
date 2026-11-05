@@ -36,6 +36,7 @@ export default function PromoterDashboard() {
   const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
   const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
   const hasProducts = Boolean(access.data?.effective?.products);
+  const hasVisitCheckIn = Boolean(access.data?.effective?.visitCheckIn);
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
   const visitsQuery = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations, staleTime: 0, refetchOnWindowFocus: true });
   useEffect(() => {
@@ -92,6 +93,7 @@ export default function PromoterDashboard() {
   const inProgress = rows.filter(({ visit }) => visit.status === "in_progress").length;
   const canManageVisits = canManageFieldVisits({
     hasFieldOperations,
+    hasVisitCheckIn,
     hasTimeTracking,
     shiftActive: Boolean(shift.data?.active),
     shiftLoading: shift.isLoading,
@@ -111,7 +113,7 @@ export default function PromoterDashboard() {
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-2xl font-black text-white sm:text-3xl">Olá, {firstName}</h2>
-            <p className="mt-1 text-sm text-slate-200">{hasTimeTracking ? "Bata o ponto aqui e siga para o seu roteiro de hoje." : "Siga o roteiro de hoje e registre as visitas nas lojas."}</p>
+            <p className="mt-1 text-sm text-slate-200">{hasTimeTracking ? "Bata o ponto aqui e siga para o seu roteiro de hoje." : hasVisitCheckIn ? "Siga o roteiro de hoje e registre as visitas nas lojas." : hasFieldOperations ? "Consulte o roteiro e registre fotos nas lojas." : "Alertas e tarefas do dia."}</p>
           </div>
           {hasFieldOperations && <a href="#roteiro" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15">
             <ClipboardList className="h-4 w-4 text-teal-300" /> Meu roteiro
@@ -119,10 +121,10 @@ export default function PromoterDashboard() {
         </header>
 
         {access.isLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
-        {!access.isLoading && <PromoterGuide hasTimeTracking={hasTimeTracking} hasFieldOperations={hasFieldOperations} />}
+        {!access.isLoading && <PromoterGuide hasTimeTracking={hasTimeTracking} hasFieldOperations={hasFieldOperations} hasVisitCheckIn={hasVisitCheckIn} />}
         {hasTimeTracking && <PunchPanel />}
 
-        {hasFieldOperations && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
+        {hasFieldOperations && hasVisitCheckIn && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
           <div className="rounded-2xl border border-amber-300/40 bg-amber-300/15 p-4 text-sm font-medium text-amber-50">
             {shift.data?.status === "closed"
               ? "Sua jornada foi encerrada. O roteiro continua disponível para consulta."
@@ -188,9 +190,9 @@ export default function PromoterDashboard() {
                         {store.address || store.city}{store.state ? ` — ${store.state}` : ""}
                       </p>
                     </div>
-                    <Badge variant="outline" className="border-white/20 text-slate-200">{visitStatus[visit.status] || visit.status}</Badge>
+                    {hasVisitCheckIn && <Badge variant="outline" className="border-white/20 text-slate-200">{visitStatus[visit.status] || visit.status}</Badge>}
                   </div>
-                  {visit.status === "pending" && (
+                  {hasVisitCheckIn && visit.status === "pending" && (
                     <Button
                       className="mt-3 w-full bg-teal-500 text-slate-950 hover:bg-teal-400"
                       onClick={() => {
@@ -205,7 +207,7 @@ export default function PromoterDashboard() {
                       Check-in (foto da fachada)
                     </Button>
                   )}
-                  {visit.status === "in_progress" && (
+                  {hasVisitCheckIn && visit.status === "in_progress" && (
                     <>
                       <VisitTimer startTime={visit.actualStart} />
                       <Button className="mt-3 w-full bg-amber-500 text-slate-950 hover:bg-amber-400" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>

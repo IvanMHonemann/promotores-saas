@@ -76,6 +76,7 @@ export function SidebarNav() {
         { href: "/admin/usuarios", label: "Usuários", icon: UsersRound },
         { href: "/admin/auditoria", label: "Auditoria geral", icon: ClipboardList },
         { href: "/plataforma/ponto", label: "Ponto eletrônico (teste)", icon: Clock3 },
+        { href: "/plataforma/ponto-legal", label: "Ponto legal (plataforma)", icon: ShieldAlert },
         { href: "/plataforma/teste-check-in-out", label: "Testar check-in / check-out", icon: Camera },
         { href: "/plataforma/scanner", label: "Erros ao vivo", icon: ShieldAlert },
         { href: "/plataforma/ia", label: "Suporte com IA", icon: Sparkles },

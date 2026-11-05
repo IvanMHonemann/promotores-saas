@@ -874,6 +874,7 @@ export async function ensureSeedPlans() {
       }
     }
   }
+  await ensureVisitCheckInFeature();
   await ensureProductsFeature();
 }
 
@@ -891,6 +892,45 @@ export async function ensureProductsFeature() {
     if (!isMissingEntitlementsTable(error)) throw error;
   }
 }
+
+/** Garante o módulo visitCheckIn nos planos/overrides que já tinham fieldOperations (default ON, sem mudar clientes atuais). */
+export async function ensureVisitCheckInFeature() {
+  const database = await getDb();
+  if (!database) return;
+  try {
+    await database.execute(sql`
+      INSERT INTO subscription_plan_features (planId, featureKey, enabled)
+      SELECT planId, 'visitCheckIn', enabled FROM subscription_plan_features spf
+      WHERE featureKey = 'fieldOperations'
+        AND NOT EXISTS (
+          SELECT 1 FROM subscription_plan_features x
+          WHERE x.planId = spf.planId AND x.featureKey = 'visitCheckIn'
+        )
+    `);
+    await database.execute(sql`
+      INSERT INTO subscription_plan_features (planId, featureKey, enabled)
+      SELECT p.id, 'visitCheckIn', 0 FROM subscription_plans p
+      WHERE NOT EXISTS (
+        SELECT 1 FROM subscription_plan_features x
+        WHERE x.planId = p.id AND x.featureKey = 'visitCheckIn'
+      )
+    `);
+    await database.execute(sql`
+      INSERT INTO company_feature_overrides (companyId, featureKey, enabled, reason)
+      SELECT o.companyId, 'visitCheckIn', o.enabled, 'Backfill: check-in/out alinhado a lojas e roteiros'
+      FROM company_feature_overrides o
+      WHERE o.featureKey = 'fieldOperations'
+        AND NOT EXISTS (
+          SELECT 1 FROM company_feature_overrides x
+          WHERE x.companyId = o.companyId AND x.featureKey = 'visitCheckIn'
+        )
+    `);
+  } catch (error) {
+    if (!isMissingEntitlementsTable(error)) throw error;
+  }
+}
+
+
 
 
 /* Núcleo operacional de promotores — usa as tabelas novas e permanece separado do legado. */

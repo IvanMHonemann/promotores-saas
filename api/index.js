@@ -1167,6 +1167,7 @@ var init_entitlements = __esm({
       "alerts",
       "timeTracking",
       "fieldOperations",
+      "visitCheckIn",
       "products",
       "reports",
       "teamManagement",
@@ -1175,8 +1176,8 @@ var init_entitlements = __esm({
     ];
     PLAN_FEATURES = {
       start: ["dashboard", "clients", "pointsOfSale", "alerts", "products"],
-      profissional: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "products", "reports", "teamManagement"],
-      empresarial: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "products", "reports", "teamManagement", "backup", "offline"]
+      profissional: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "teamManagement"],
+      empresarial: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "teamManagement", "backup", "offline"]
     };
     ALL_FEATURES = [...ENTITLEMENT_KEYS];
     SUPERVISOR_CEILING = [
@@ -1186,11 +1187,12 @@ var init_entitlements = __esm({
       "alerts",
       "timeTracking",
       "fieldOperations",
+      "visitCheckIn",
       "products",
       "reports",
       "offline"
     ];
-    PROMOTER_CEILING = ["dashboard", "timeTracking", "fieldOperations", "products"];
+    PROMOTER_CEILING = ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn", "products"];
     ROLE_FEATURE_CEILING = {
       company_admin: ALL_FEATURES,
       supervisor: SUPERVISOR_CEILING,
@@ -1198,8 +1200,8 @@ var init_entitlements = __esm({
     };
     ROLE_FEATURE_DEFAULTS = {
       company_admin: ALL_FEATURES,
-      supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "products"],
-      promoter: ["dashboard", "timeTracking", "fieldOperations", "products"]
+      supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products"],
+      promoter: ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn", "products"]
     };
   }
 });
@@ -1382,6 +1384,7 @@ __export(db_exports, {
   ensureProductsFeature: () => ensureProductsFeature,
   ensureSeedPlans: () => ensureSeedPlans,
   ensureTrashTable: () => ensureTrashTable,
+  ensureVisitCheckInFeature: () => ensureVisitCheckInFeature,
   findPaymentEventByEventId: () => findPaymentEventByEventId,
   getCompanyById: () => getCompanyById,
   getCompanyFeatureOverrides: () => getCompanyFeatureOverrides,
@@ -2096,6 +2099,7 @@ async function ensureSeedPlans() {
       }
     }
   }
+  await ensureVisitCheckInFeature();
   await ensureProductsFeature();
 }
 async function ensureProductsFeature() {
@@ -2106,6 +2110,41 @@ async function ensureProductsFeature() {
       INSERT INTO subscription_plan_features (planId, featureKey, enabled)
       SELECT p.id, 'products', 1 FROM subscription_plans p
       WHERE NOT EXISTS (SELECT 1 FROM subscription_plan_features x WHERE x.planId = p.id AND x.featureKey = 'products')
+    `);
+  } catch (error) {
+    if (!isMissingEntitlementsTable(error)) throw error;
+  }
+}
+async function ensureVisitCheckInFeature() {
+  const database2 = await getDb();
+  if (!database2) return;
+  try {
+    await database2.execute(sql2`
+      INSERT INTO subscription_plan_features (planId, featureKey, enabled)
+      SELECT planId, 'visitCheckIn', enabled FROM subscription_plan_features spf
+      WHERE featureKey = 'fieldOperations'
+        AND NOT EXISTS (
+          SELECT 1 FROM subscription_plan_features x
+          WHERE x.planId = spf.planId AND x.featureKey = 'visitCheckIn'
+        )
+    `);
+    await database2.execute(sql2`
+      INSERT INTO subscription_plan_features (planId, featureKey, enabled)
+      SELECT p.id, 'visitCheckIn', 0 FROM subscription_plans p
+      WHERE NOT EXISTS (
+        SELECT 1 FROM subscription_plan_features x
+        WHERE x.planId = p.id AND x.featureKey = 'visitCheckIn'
+      )
+    `);
+    await database2.execute(sql2`
+      INSERT INTO company_feature_overrides (companyId, featureKey, enabled, reason)
+      SELECT o.companyId, 'visitCheckIn', o.enabled, 'Backfill: check-in/out alinhado a lojas e roteiros'
+      FROM company_feature_overrides o
+      WHERE o.featureKey = 'fieldOperations'
+        AND NOT EXISTS (
+          SELECT 1 FROM company_feature_overrides x
+          WHERE x.companyId = o.companyId AND x.featureKey = 'visitCheckIn'
+        )
     `);
   } catch (error) {
     if (!isMissingEntitlementsTable(error)) throw error;
@@ -7929,10 +7968,8 @@ function buildReceiptData(input) {
   const marked = e.deviceTime || e.serverTime;
   const fmt2 = (d) => new Intl.DateTimeFormat("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(d);
   const pendingNotes = [];
-  if (!input.employer.document) pendingNotes.push("CNPJ/CPF do empregador n\xE3o cadastrado (Espelho de ponto > Dados da empresa).");
-  if (!e.workerCpf) pendingNotes.push("CPF do trabalhador n\xE3o cadastrado no perfil trabalhista.");
-  if (!input.inpiNumber) pendingNotes.push("Registro do programa no INPI ainda n\xE3o conclu\xEDdo.");
-  pendingNotes.push("Assinatura digital ICP-Brasil pendente: este comprovante ainda n\xE3o \xE9 assinado eletronicamente.");
+  if (!input.employer.document) pendingNotes.push("CNPJ/CPF da empresa ainda n\xE3o cadastrado \u2014 pe\xE7a ao administrador para completar em Espelho de ponto \u2192 Dados da empresa.");
+  if (!e.workerCpf) pendingNotes.push("Seu CPF ainda n\xE3o est\xE1 no cadastro \u2014 pe\xE7a ao administrador para completar.");
   const gps = e.latitude != null && e.longitude != null ? `GPS ${Number(e.latitude).toFixed(6)}, ${Number(e.longitude).toFixed(6)}` : "";
   return {
     eventId: e.id,
@@ -7969,7 +8006,7 @@ async function buildReceiptPdf(r) {
   let y = 14;
   doc.setFont("helvetica", "bold").setFontSize(13).text("Comprovante de Registro de Ponto do Trabalhador", M, y);
   y += 6;
-  doc.setFont("helvetica", "normal").setFontSize(8).setTextColor(90).text("Portaria MTP n\xBA 671/2021, art. 79 \u2014 emitido pelo GondUp", M, y);
+  doc.setFont("helvetica", "normal").setFontSize(8).setTextColor(90).text("Comprovante de batida \u2014 emitido pelo GondUp", M, y);
   doc.setTextColor(0);
   y += 8;
   const line = (label, value) => {
@@ -7978,7 +8015,7 @@ async function buildReceiptPdf(r) {
     doc.setFont("helvetica", "normal").text(lines, M + 43, y);
     y += Math.max(1, lines.length) * 4.6;
   };
-  line("NSR", r.nsr != null ? String(r.nsr).padStart(9, "0") : "sem NSR");
+  line("N\xFAmero da batida", r.nsr != null ? String(r.nsr).padStart(9, "0") : "sem n\xFAmero");
   line("Marca\xE7\xE3o", `${r.eventLabel}${r.origin !== "original" ? " (tratamento, n\xE3o \xE9 marca\xE7\xE3o original)" : ""}`);
   line("Data e hora", `${r.markedLocal} (${r.timeZone})`);
   line("Gravado no servidor", r.recordedLocal);
@@ -7988,17 +8025,17 @@ async function buildReceiptPdf(r) {
   line("Trabalhador", r.workerName);
   line("CPF", r.workerCpf || "n\xE3o cadastrado");
   if (r.accuracy != null) line("Precis\xE3o do GPS", `${Math.round(Number(r.accuracy))} m`);
-  line("Registro INPI", r.inpiNumber || "pendente");
+  if (r.inpiNumber) line("Registro do sistema", r.inpiNumber);
   if (r.offline) line("Observa\xE7\xE3o", "Marca\xE7\xE3o feita sem internet e enviada depois.");
   y += 2;
-  doc.setFont("helvetica", "bold").text("C\xF3digo hash (SHA-256)", M, y);
+  doc.setFont("helvetica", "bold").text("C\xF3digo de seguran\xE7a da batida", M, y);
   y += 4.5;
-  doc.setFont("courier", "normal").setFontSize(7.5).text(doc.splitTextToSize(r.hash || "n\xE3o selado", 128), M, y);
+  doc.setFont("courier", "normal").setFontSize(7.5).text(doc.splitTextToSize(r.hash || "ainda sem c\xF3digo", 128), M, y);
   y += 9;
   doc.setFont("helvetica", "normal").setFontSize(7).setTextColor(90);
   const foot = [
-    "O hash identifica esta marca\xE7\xE3o de forma \xFAnica e \xE9 encadeado com a marca\xE7\xE3o anterior: qualquer altera\xE7\xE3o posterior \xE9 detect\xE1vel.",
-    ...r.sealedLegacy ? ["Marca\xE7\xE3o anterior \xE0 vers\xE3o com selo; selada retroativamente."] : [],
+    "Este c\xF3digo identifica a batida e a liga \xE0 anterior. Se algu\xE9m alterar o registro depois, o c\xF3digo deixa de bater.",
+    ...r.sealedLegacy ? ["Batida antiga: o lacre foi aplicado quando essa prote\xE7\xE3o entrou no sistema."] : [],
     ...r.pendingNotes
   ];
   for (const f of foot) {
@@ -8011,14 +8048,14 @@ async function buildReceiptPdf(r) {
 function receiptEmailHtml(r) {
   const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const rows4 = [
-    ["NSR", r.nsr != null ? String(r.nsr).padStart(9, "0") : "-"],
+    ["N\xFAmero da batida", r.nsr != null ? String(r.nsr).padStart(9, "0") : "-"],
     ["Marca\xE7\xE3o", r.eventLabel],
     ["Data e hora", `${r.markedLocal} (${r.timeZone})`],
-    ["Empregador", `${r.employerName}${r.employerDocument ? ` \u2014 ${r.employerDocument}` : ""}`],
+    ["Empresa", `${r.employerName}${r.employerDocument ? ` \u2014 ${r.employerDocument}` : ""}`],
     ["Local", r.workplace],
-    ["Trabalhador", `${r.workerName}${r.workerCpf ? ` \u2014 CPF ${r.workerCpf}` : ""}`],
-    ["Registro INPI", r.inpiNumber || "pendente"],
-    ["Hash SHA-256", r.hash || "-"]
+    ["Funcion\xE1rio", `${r.workerName}${r.workerCpf ? ` \u2014 CPF ${r.workerCpf}` : ""}`],
+    ...r.inpiNumber ? [["Registro do sistema", r.inpiNumber]] : [],
+    ["C\xF3digo de seguran\xE7a", r.hash || "-"]
   ];
   return `<h2 style="margin:0 0 8px">Comprovante de Registro de Ponto</h2>
 <table style="border-collapse:collapse;font-size:14px">${rows4.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;font-weight:bold;vertical-align:top">${esc(k)}</td><td style="padding:4px 0;word-break:break-all">${esc(v)}</td></tr>`).join("")}</table>
@@ -8116,15 +8153,37 @@ function fileResponse(content, fileName) {
   return { fileName, base64: toLatin1(content).toString("base64"), mimeType: "text/plain;charset=iso-8859-1" };
 }
 var pontoLegalRouter = router({
-  /** Situação do sistema para a tela do administrador (o que já está pronto e o que depende do Ivan/advogado). */
+  /** Situação para a empresa cliente: só o que ela pode cadastrar (sem pendências do dono da plataforma). */
   status: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
-    const dev = developerInfo();
     const employer = await employerOf(ctx.accountId);
+    const database2 = await getDb();
+    let workersMissingCpf = 0;
+    let workersMissingSchedule = 0;
+    if (database2) {
+      const members = await database2.select({ id: memberAccounts2.id, role: memberAccounts2.role, active: memberAccounts2.active }).from(memberAccounts2).where(eq9(memberAccounts2.companyId, ctx.accountId));
+      for (const m of members) {
+        if (!m.active || m.role === "company_admin") continue;
+        const labor = await readJson2(`labor_profile:${m.id}`, ctx.accountId);
+        if (onlyDigits(labor?.cpf).length !== 11) workersMissingCpf += 1;
+        if (!Number(labor?.dailyMinutes || 0)) workersMissingSchedule += 1;
+      }
+    }
     return {
       employerDocument: Boolean(employer.document),
       employerName: employer.name,
+      employerAddress: Boolean(employer.workplace),
+      workersMissingCpf,
+      workersMissingSchedule,
+      emailEnabled: Boolean(process.env.RESEND_API_KEY || process.env.EMAIL_WEBHOOK_URL)
+    };
+  }),
+  /** Pendências do dono do GondUp (INPI, documento do desenvolvedor, certificado) — só platform_admin. */
+  platformStatus: platformProcedure.query(async () => {
+    const dev = developerInfo();
+    return {
       inpiNumber: dev.inpiNumber,
       developerDocument: Boolean(dev.document),
+      developerName: dev.name,
       signature: false,
       emailEnabled: Boolean(process.env.RESEND_API_KEY || process.env.EMAIL_WEBHOOK_URL)
     };
@@ -8230,7 +8289,7 @@ var pontoLegalRouter = router({
       sealedLegacy: legacy,
       sealedAt: state?.initializedAt ?? null,
       problems: [
-        ...stateMismatch ? [{ id: 0, nsr: null, kind: "gap", message: `\xDAltimo NSR registrado (${state.lastNsr}) difere do \xFAltimo encontrado (${result.lastNsr}): pode ter havido exclus\xE3o.` }] : [],
+        ...stateMismatch ? [{ id: 0, nsr: null, kind: "gap", message: `A contagem de batidas n\xE3o fecha (esperado at\xE9 ${state.lastNsr}, encontrado ${result.lastNsr}): pode ter faltado alguma batida.` }] : [],
         ...result.problems
       ].slice(0, 100),
       totalProblems: result.problems.length + (stateMismatch ? 1 : 0)
@@ -8260,10 +8319,8 @@ var pontoLegalRouter = router({
       punches: rows4.map((r) => ({ nsr: Number(r.nsr), markedAt: r.deviceTime || r.serverTime, recordedAt: r.serverTime, cpf: r.workerCpf, timeZone: r.timeZone || TZ3, collector: r.collectorId || "02", offline: Boolean(r.offline), hash: r.recordHash }))
     });
     const warnings = [
-      ...!employer.document ? ["CNPJ/CPF da empresa n\xE3o cadastrado (Espelho de ponto > Dados da empresa)."] : [],
-      ...rows4.some((r) => !r.workerCpf) ? [`${rows4.filter((r) => !r.workerCpf).length} marca\xE7\xE3o(\xF5es) sem CPF do funcion\xE1rio (cadastre no perfil trabalhista; vale para as pr\xF3ximas).`] : [],
-      ...!dev.inpiNumber ? ["Sem n\xFAmero de registro no INPI: campo preenchido com zeros."] : [],
-      "Arquivo sem assinatura digital (.p7s): depende do certificado ICP-Brasil do desenvolvedor."
+      ...!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto \u2192 Dados da empresa."] : [],
+      ...rows4.some((r) => !r.workerCpf) ? [`${rows4.filter((r) => !r.workerCpf).length} batida(s) sem CPF do funcion\xE1rio. Complete o cadastro no Espelho de ponto (vale para as pr\xF3ximas batidas).`] : []
     ];
     void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "afd", description: `Gerou AFD ${input.from} a ${input.to} (${rows4.length} marca\xE7\xF5es)`, newData: { from: input.from, to: input.to, count: rows4.length } });
     return { ...fileResponse(afd.content, afd.fileName), count: rows4.length, warnings };
@@ -8324,11 +8381,10 @@ var pontoLegalRouter = router({
       workers
     });
     const warnings = [
-      ...!employer.document ? ["CNPJ/CPF da empresa n\xE3o cadastrado."] : [],
-      ...missingCpf.length ? [`Sem CPF no perfil trabalhista: ${missingCpf.slice(0, 10).join(", ")}${missingCpf.length > 10 ? "\u2026" : ""}.`] : [],
-      ...workers.some((w) => !w.contract) ? ["H\xE1 funcion\xE1rios sem jornada contratual configurada (registro 04 obrigat\xF3rio na primeira entrada)."] : [],
-      "Hor\xE1rio contratual sai s\xF3 com a dura\xE7\xE3o (os hor\xE1rios de entrada/sa\xEDda previstos ainda n\xE3o s\xE3o cadastrados no sistema).",
-      "Arquivo sem assinatura digital (.p7s): depende do certificado ICP-Brasil."
+      ...!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto \u2192 Dados da empresa."] : [],
+      ...missingCpf.length ? [`Sem CPF no cadastro: ${missingCpf.slice(0, 10).join(", ")}${missingCpf.length > 10 ? "\u2026" : ""}. Complete no Espelho de ponto.`] : [],
+      ...workers.some((w) => !w.contract) ? ["H\xE1 funcion\xE1rio sem hor\xE1rio de trabalho cadastrado. Preencha a jornada no Espelho de ponto."] : [],
+      "O arquivo usa s\xF3 a carga hor\xE1ria di\xE1ria; os hor\xE1rios previstos de entrada e sa\xEDda ainda n\xE3o s\xE3o cadastrados no sistema."
     ];
     void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "aej", description: `Gerou AEJ ${input.from} a ${input.to} (${workers.length} funcion\xE1rio(s))`, newData: { from: input.from, to: input.to } });
     return { ...fileResponse(aej.content, aej.fileName), count: workers.length, warnings };
@@ -10300,7 +10356,7 @@ var appRouter = router({
         return listOperationalVisits(ctx.accountId, { date: date3, promoterId: promoterId ?? void 0 });
       }),
       list: commercialFeatureProcedure("fieldOperations").input(z11.object({ date: z11.string().optional(), routeId: z11.number().int().positive().optional(), promoterId: z11.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
-      start: commercialFeatureProcedure("fieldOperations").input(z11.object({ id: z11.number().int().positive(), latitude: z11.number().optional(), longitude: z11.number().optional(), accuracy: z11.number().optional() })).mutation(async ({ ctx, input }) => {
+      start: commercialFeatureProcedure("visitCheckIn").input(z11.object({ id: z11.number().int().positive(), latitude: z11.number().optional(), longitude: z11.number().optional(), accuracy: z11.number().optional() })).mutation(async ({ ctx, input }) => {
         const promoterId = scopeMemberId(ctx);
         const today = todayInZone();
         if (promoterId != null) {
@@ -10323,7 +10379,7 @@ var appRouter = router({
         }
         return updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: /* @__PURE__ */ new Date(), startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
       }),
-      complete: commercialFeatureProcedure("fieldOperations").input(z11.object({ id: z11.number().int().positive(), latitude: z11.number().optional(), longitude: z11.number().optional(), accuracy: z11.number().optional(), notes: z11.string().optional() })).mutation(async ({ ctx, input }) => {
+      complete: commercialFeatureProcedure("visitCheckIn").input(z11.object({ id: z11.number().int().positive(), latitude: z11.number().optional(), longitude: z11.number().optional(), accuracy: z11.number().optional(), notes: z11.string().optional() })).mutation(async ({ ctx, input }) => {
         const [owned] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? void 0 });
         if (!owned) throw new TRPCError16({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
         if (owned.visit.status === "completed") return owned;

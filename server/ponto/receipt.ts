@@ -54,10 +54,9 @@ export function buildReceiptData(input: {
   const marked = e.deviceTime || e.serverTime;
   const fmt = (d: Date) => new Intl.DateTimeFormat("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(d);
   const pendingNotes: string[] = [];
-  if (!input.employer.document) pendingNotes.push("CNPJ/CPF do empregador não cadastrado (Espelho de ponto > Dados da empresa).");
-  if (!e.workerCpf) pendingNotes.push("CPF do trabalhador não cadastrado no perfil trabalhista.");
-  if (!input.inpiNumber) pendingNotes.push("Registro do programa no INPI ainda não concluído.");
-  pendingNotes.push("Assinatura digital ICP-Brasil pendente: este comprovante ainda não é assinado eletronicamente.");
+  if (!input.employer.document) pendingNotes.push("CNPJ/CPF da empresa ainda não cadastrado — peça ao administrador para completar em Espelho de ponto → Dados da empresa.");
+  if (!e.workerCpf) pendingNotes.push("Seu CPF ainda não está no cadastro — peça ao administrador para completar.");
+  // Pendências do dono do sistema (INPI, certificado) não aparecem para o funcionário/empresa.
   const gps = e.latitude != null && e.longitude != null ? `GPS ${Number(e.latitude).toFixed(6)}, ${Number(e.longitude).toFixed(6)}` : "";
   return {
     eventId: e.id,
@@ -95,7 +94,7 @@ export async function buildReceiptPdf(r: ReceiptData): Promise<Buffer> {
   let y = 14;
   doc.setFont("helvetica", "bold").setFontSize(13).text("Comprovante de Registro de Ponto do Trabalhador", M, y);
   y += 6;
-  doc.setFont("helvetica", "normal").setFontSize(8).setTextColor(90).text("Portaria MTP nº 671/2021, art. 79 — emitido pelo GondUp", M, y);
+  doc.setFont("helvetica", "normal").setFontSize(8).setTextColor(90).text("Comprovante de batida — emitido pelo GondUp", M, y);
   doc.setTextColor(0);
   y += 8;
   const line = (label: string, value: string) => {
@@ -104,7 +103,7 @@ export async function buildReceiptPdf(r: ReceiptData): Promise<Buffer> {
     doc.setFont("helvetica", "normal").text(lines, M + 43, y);
     y += Math.max(1, lines.length) * 4.6;
   };
-  line("NSR", r.nsr != null ? String(r.nsr).padStart(9, "0") : "sem NSR");
+  line("Número da batida", r.nsr != null ? String(r.nsr).padStart(9, "0") : "sem número");
   line("Marcação", `${r.eventLabel}${r.origin !== "original" ? " (tratamento, não é marcação original)" : ""}`);
   line("Data e hora", `${r.markedLocal} (${r.timeZone})`);
   line("Gravado no servidor", r.recordedLocal);
@@ -114,15 +113,15 @@ export async function buildReceiptPdf(r: ReceiptData): Promise<Buffer> {
   line("Trabalhador", r.workerName);
   line("CPF", r.workerCpf || "não cadastrado");
   if (r.accuracy != null) line("Precisão do GPS", `${Math.round(Number(r.accuracy))} m`);
-  line("Registro INPI", r.inpiNumber || "pendente");
+  if (r.inpiNumber) line("Registro do sistema", r.inpiNumber);
   if (r.offline) line("Observação", "Marcação feita sem internet e enviada depois.");
   y += 2;
-  doc.setFont("helvetica", "bold").text("Código hash (SHA-256)", M, y); y += 4.5;
-  doc.setFont("courier", "normal").setFontSize(7.5).text(doc.splitTextToSize(r.hash || "não selado", 128) as string[], M, y); y += 9;
+  doc.setFont("helvetica", "bold").text("Código de segurança da batida", M, y); y += 4.5;
+  doc.setFont("courier", "normal").setFontSize(7.5).text(doc.splitTextToSize(r.hash || "ainda sem código", 128) as string[], M, y); y += 9;
   doc.setFont("helvetica", "normal").setFontSize(7).setTextColor(90);
   const foot = [
-    "O hash identifica esta marcação de forma única e é encadeado com a marcação anterior: qualquer alteração posterior é detectável.",
-    ...(r.sealedLegacy ? ["Marcação anterior à versão com selo; selada retroativamente."] : []),
+    "Este código identifica a batida e a liga à anterior. Se alguém alterar o registro depois, o código deixa de bater.",
+    ...(r.sealedLegacy ? ["Batida antiga: o lacre foi aplicado quando essa proteção entrou no sistema."] : []),
     ...r.pendingNotes,
   ];
   for (const f of foot) { const ls = doc.splitTextToSize(`• ${f}`, 128) as string[]; doc.text(ls, M, y); y += ls.length * 3.4; }
@@ -132,14 +131,14 @@ export async function buildReceiptPdf(r: ReceiptData): Promise<Buffer> {
 export function receiptEmailHtml(r: ReceiptData): string {
   const esc = (v: unknown) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const rows: Array<[string, string]> = [
-    ["NSR", r.nsr != null ? String(r.nsr).padStart(9, "0") : "-"],
+    ["Número da batida", r.nsr != null ? String(r.nsr).padStart(9, "0") : "-"],
     ["Marcação", r.eventLabel],
     ["Data e hora", `${r.markedLocal} (${r.timeZone})`],
-    ["Empregador", `${r.employerName}${r.employerDocument ? ` — ${r.employerDocument}` : ""}`],
+    ["Empresa", `${r.employerName}${r.employerDocument ? ` — ${r.employerDocument}` : ""}`],
     ["Local", r.workplace],
-    ["Trabalhador", `${r.workerName}${r.workerCpf ? ` — CPF ${r.workerCpf}` : ""}`],
-    ["Registro INPI", r.inpiNumber || "pendente"],
-    ["Hash SHA-256", r.hash || "-"],
+    ["Funcionário", `${r.workerName}${r.workerCpf ? ` — CPF ${r.workerCpf}` : ""}`],
+    ...(r.inpiNumber ? [["Registro do sistema", r.inpiNumber] as [string, string]] : []),
+    ["Código de segurança", r.hash || "-"],
   ];
   return `<h2 style="margin:0 0 8px">Comprovante de Registro de Ponto</h2>
 <table style="border-collapse:collapse;font-size:14px">${rows.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;font-weight:bold;vertical-align:top">${esc(k)}</td><td style="padding:4px 0;word-break:break-all">${esc(v)}</td></tr>`).join("")}</table>

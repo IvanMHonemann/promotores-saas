@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolveEntitlements, PLAN_FEATURES } from "../shared/entitlements";
 import { buildCompanyGroups } from "../client/src/lib/sidebarGroups";
 import { buildSetupSteps } from "../client/src/components/SetupChecklist";
-import { canManageFieldVisits, TIME_TRACKING_PATHS } from "../client/src/lib/visitAccess";
+import { canManageFieldVisits, TIME_TRACKING_PATHS, VISIT_CHECKIN_PATHS } from "../client/src/lib/visitAccess";
 
 const src = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 
@@ -18,7 +18,6 @@ describe("módulo ponto desligado — menu e rotas", () => {
     for (const forbidden of ["Cartão-ponto", "Espelho de ponto", "Férias", "Ponto: prova legal", "Arquivos históricos"]) {
       expect(labels).not.toContain(forbidden);
     }
-    // Check-in/out de visitas permanece (fieldOperations + reports)
     expect(labels).toContain("Check-in / Check-out");
   });
 
@@ -29,7 +28,6 @@ describe("módulo ponto desligado — menu e rotas", () => {
       expect(app, path).toContain(`path="${path}"`);
       expect(app, path).toContain('featureKey="timeTracking"');
     }
-    // Links do promotor só entram com hasFeature("timeTracking")
     expect(nav).toContain('hasFeature("timeTracking")');
     expect(nav).toContain("/meus-comprovantes");
     expect(nav).toContain("/meu-espelho");
@@ -43,13 +41,15 @@ describe("módulo ponto desligado — menu e rotas", () => {
     });
     expect(result.timeTracking).toBe(false);
     expect(result.fieldOperations).toBe(true);
+    expect(result.visitCheckIn).toBe(true);
   });
 });
 
 describe("check-in de visita sem ponto", () => {
-  it("libera visitas quando fieldOperations está on e ponto off", () => {
+  it("libera visitas quando field+check-in on e ponto off", () => {
     expect(canManageFieldVisits({
       hasFieldOperations: true,
+      hasVisitCheckIn: true,
       hasTimeTracking: false,
       shiftActive: false,
       shiftLoading: false,
@@ -59,21 +59,23 @@ describe("check-in de visita sem ponto", () => {
   it("com ponto ligado, exige jornada ativa", () => {
     expect(canManageFieldVisits({
       hasFieldOperations: true,
+      hasVisitCheckIn: true,
       hasTimeTracking: true,
       shiftActive: false,
     })).toBe(false);
     expect(canManageFieldVisits({
       hasFieldOperations: true,
+      hasVisitCheckIn: true,
       hasTimeTracking: true,
       shiftActive: true,
     })).toBe(true);
   });
 
-  it("servidor de visitas NÃO exige jornada aberta (só fieldOperations)", () => {
+  it("servidor de start/complete usa visitCheckIn e não exige jornada", () => {
     const routers = src("server/routers.ts");
-    // A mutation start usa fieldOperations, sem assert de timeTracking/shift
-    expect(routers).toMatch(/start:\s*commercialFeatureProcedure\("fieldOperations"\)/);
-    const startBlock = routers.slice(routers.indexOf('start: commercialFeatureProcedure("fieldOperations")'));
+    expect(routers).toMatch(/start:\s*commercialFeatureProcedure\("visitCheckIn"\)/);
+    expect(routers).toMatch(/complete:\s*commercialFeatureProcedure\("visitCheckIn"\)/);
+    const startBlock = routers.slice(routers.indexOf('start: commercialFeatureProcedure("visitCheckIn")'));
     const snippet = startBlock.slice(0, 2500);
     expect(snippet).not.toMatch(/timeTracking|shiftStatus|clock_in_required|jornada/i);
   });
@@ -81,6 +83,7 @@ describe("check-in de visita sem ponto", () => {
   it("dashboard do promotor usa canManageFieldVisits", () => {
     const dash = src("client/src/pages/promoter/PromoterDashboard.tsx");
     expect(dash).toContain("canManageFieldVisits");
+    expect(dash).toContain("hasVisitCheckIn");
     expect(dash).not.toContain("hasFieldOperations && active && !shift.isLoading");
   });
 });
@@ -92,7 +95,7 @@ describe("alertas e checklist sem ponto", () => {
   });
 
   it("checklist não fala em batida quando ponto está off", () => {
-    const steps = buildSetupSteps({ stores: 1, promoters: 1, routes: 1, activity: false, hasTimeTracking: false });
+    const steps = buildSetupSteps({ stores: 1, promoters: 1, routes: 1, activity: false, hasTimeTracking: false, hasVisitCheckIn: true });
     expect(steps.find((s) => s.key === "activity")?.label).toBe("Receber a primeira foto de visita");
     expect(steps.find((s) => s.key === "activity")?.label).not.toMatch(/batida/i);
   });

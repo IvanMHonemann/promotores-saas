@@ -34,6 +34,7 @@ export function buildCompanyGroups(role: string | undefined, hasFeature: (key: s
 /** Item ativo para a rota atual (pathname + hash). */
 export function isItemActive(href: string, pathname: string, hash: string): boolean {
   const [path, frag] = href.split("#");
+  if (href === "/#inicio") return pathname === "/" && (hash === "" || hash === "#" || hash === "#inicio");
   if (frag) return pathname === (path || "/") && hash === `#${frag}`;
   return pathname === path || (path !== "/" && pathname.startsWith(`${path}/`));
 }

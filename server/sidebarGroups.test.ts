@@ -26,6 +26,9 @@ describe("menu lateral da empresa", () => {
   it("detecta item ativo", () => {
     expect(isItemActive("/#roteiros", "/", "#roteiros")).toBe(true);
     expect(isItemActive("/#inicio", "/", "#roteiros")).toBe(false);
+    expect(isItemActive("/#inicio", "/", "")).toBe(true);
+    expect(isItemActive("/#inicio", "/", "#inicio")).toBe(true);
+    expect(isItemActive("/#inicio", "/lojas", "")).toBe(false);
     expect(isItemActive("/lojas", "/lojas/12", "")).toBe(true);
   });
 });

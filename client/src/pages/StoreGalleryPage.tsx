@@ -569,7 +569,7 @@ export default function StoreGalleryPage() {
                 <Share2 className="mr-1.5 h-4 w-4" /> {prefetching > 0 ? "Preparando..." : "Enviar"}
               </Button>
               <Button className="h-11 bg-slate-600 font-bold text-white hover:bg-slate-500" onClick={downloadSelected} disabled={selected.size === 0}>
-                <Download className="mr-1.5 h-4 w-4" /> {selected.size === 1 ? "Baixar foto" : "Baixar"}
+                <Download className="mr-1.5 h-4 w-4" /> {selected.size >= 2 ? "Baixar tudo (.zip)" : "Baixar foto"}
               </Button>
               <Button className="h-11 bg-rose-500 font-bold text-white hover:bg-rose-400" onClick={deleteSelected} disabled={selected.size === 0 || bulkDelete.isPending}>
                 <Trash2 className="mr-1.5 h-4 w-4" /> Excluir

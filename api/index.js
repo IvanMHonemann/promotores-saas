@@ -10237,8 +10237,15 @@ async function runMissingPunchAlerts() {
   const { memberAccounts: memberAccounts3 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
   const { sendEmail: sendEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
   const missing = await findMissingPunches2();
+  const { getCompanyEntitlementBase: getCompanyEntitlementBase2 } = await Promise.resolve().then(() => (init_entitlements2(), entitlements_exports));
+  const companyPonto = /* @__PURE__ */ new Map();
   let notified = 0;
   for (const m of missing) {
+    if (!companyPonto.has(m.companyId)) {
+      const base = await getCompanyEntitlementBase2(m.companyId);
+      companyPonto.set(m.companyId, Boolean(base.companyFeatures.timeTracking));
+    }
+    if (!companyPonto.get(m.companyId)) continue;
     const key = `missing_punch_notified:${m.memberId}:${m.day}`;
     if (await dbm.getSetting(key, m.companyId, "")) continue;
     const when = new Date(m.lastTime).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });

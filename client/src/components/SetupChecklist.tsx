@@ -6,12 +6,13 @@ export type SetupStep = { key: string; label: string; hint: string; href: string
 const KEY = "gondup-setup-checklist-dismissed";
 
 /** Passos da implantação (admin). Some sozinho quando tudo estiver feito, ou se a pessoa fechar. */
-export function buildSetupSteps(c: { stores: number; promoters: number; routes: number; activity: boolean }): SetupStep[] {
+export function buildSetupSteps(c: { stores: number; promoters: number; routes: number; activity: boolean; hasTimeTracking?: boolean }): SetupStep[] {
+  const withPonto = c.hasTimeTracking !== false;
   return [
     { key: "stores", label: "Cadastrar as lojas", hint: "Onde a equipe trabalha.", href: "/lojas", done: c.stores > 0 },
     { key: "promoters", label: "Convidar os promotores", hint: "Cada um recebe o próprio acesso.", href: "/admin/usuarios", done: c.promoters > 0 },
     { key: "routes", label: "Montar o primeiro roteiro", hint: "Quais lojas cada promotor visita e em que dias.", href: "/#roteiros", done: c.routes > 0 },
-    { key: "activity", label: "Receber a primeira batida ou foto", hint: "Peça para um promotor entrar pelo celular e testar.", href: "/check-in-out", done: c.activity },
+    { key: "activity", label: withPonto ? "Receber a primeira batida ou foto" : "Receber a primeira foto de visita", hint: "Peça para um promotor entrar pelo celular e testar.", href: "/check-in-out", done: c.activity },
   ];
 }
 

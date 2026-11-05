@@ -163,7 +163,7 @@ export default function OperationsDashboard() {
       {visibleSection === "overview" && (
         <Overview
           isSupervisor={isSupervisor}
-          setupSteps={buildSetupSteps({ stores: (stores.data || []).length, promoters: (promoters.data || []).length, routes: (routes.data || []).length, activity: (presence.data || []).length > 0 || metrics.totalPhotos > 0 })}
+          setupSteps={buildSetupSteps({ stores: (stores.data || []).length, promoters: (promoters.data || []).length, routes: (routes.data || []).length, activity: (hasTimeTracking ? (presence.data || []).length > 0 : false) || metrics.totalPhotos > 0, hasTimeTracking })}
           setupReady={!stores.isLoading && !promoters.isLoading && !routes.isLoading && !storesWithStats.isLoading}
           accessLoading={access.isLoading}
           isPromoter={user?.role === "promoter"}
@@ -220,7 +220,7 @@ function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, a
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7">
         <p className="text-xs font-bold uppercase tracking-[.18em] text-teal-300">Visão geral</p>
         <h2 className="mt-2 text-2xl font-black sm:text-4xl">Operação de campo</h2>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar.</p>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{hasTimeTracking ? "Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar." : "Organize roteiros e veja a execução das visitas em um só lugar."}</p>
       </div>
       {isCompanyAdmin && hasFieldOperations && setupReady && <SetupChecklist steps={setupSteps} />}
       {isSupervisor && hasFieldOperations && <AttentionCard pendingVisits={metrics.pending} expiring={metrics.expiring} />}

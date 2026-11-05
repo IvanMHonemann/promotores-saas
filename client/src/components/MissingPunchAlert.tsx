@@ -27,8 +27,14 @@ export default function MissingPunchAlert() {
   const role = user?.role;
   const isAdmin = role === "company_admin";
   const isField = role === "promoter"; // supervisor não bate ponto
-  const mine = trpc.timeTracking.myMissingPunch.useQuery(undefined, { enabled: isField, staleTime: 15_000, refetchOnWindowFocus: true, retry: false });
-  const all = trpc.timeTracking.companyMissingPunches.useQuery(undefined, { enabled: isAdmin, staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false, retry: false });
+  const entitlements = trpc.entitlements.mine.useQuery(undefined, {
+    enabled: Boolean(user && user.role !== "platform_admin"),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const hasTimeTracking = Boolean(entitlements.data?.effective?.timeTracking);
+  const mine = trpc.timeTracking.myMissingPunch.useQuery(undefined, { enabled: isField && hasTimeTracking, staleTime: 15_000, refetchOnWindowFocus: true, retry: false });
+  const all = trpc.timeTracking.companyMissingPunches.useQuery(undefined, { enabled: isAdmin && hasTimeTracking, staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false, retry: false });
 
   const fieldKey = mine.data ? `missing-punch:${mine.data.memberId}:${mine.data.lastTime}` : null;
   const adminKey = all.data?.length

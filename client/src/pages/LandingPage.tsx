@@ -19,27 +19,28 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import ContactChat from "@/components/ContactChat";
 import FloatingContactButton from "@/components/FloatingContactButton";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 
 const navLinks = [
   { href: "#recursos", label: "Recursos" },
   { href: "#operacao", label: "Operação" },
   { href: "#perfis", label: "Perfis" },
+  { href: "#faq", label: "Dúvidas" },
 ];
 
 const metrics = [
   { value: "GPS", label: "Ponto com localização" },
-  { value: "PWA", label: "Campo mesmo offline" },
+  { value: "Offline", label: "Registra sem sinal" },
   { value: "3", label: "Perfis por empresa" },
-  { value: "24/7", label: "Auditoria da jornada" },
+  { value: "Foto", label: "Prova de execução" },
 ];
 
 const features = [
   {
     icon: Clock3,
     title: "Ponto eletrônico com GPS",
-    text: "Entrada, intervalo e saída com sequência validada, geolocalização e chave de idempotência para evitar marcações duplicadas.",
+    text: "Entrada, intervalo e saída com GPS e foto. Acabe com o ponto \"de casa\": a marcação mostra onde o promotor estava, sem registros duplicados.",
   },
   {
     icon: Route,
@@ -54,7 +55,7 @@ const features = [
   {
     icon: Camera,
     title: "Fotos e evidências",
-    text: "Capture merchandising na gôndola com data, local e retenção controlada para a gestão revisar o que aconteceu na loja.",
+    text: "Prova de execução: a foto da gôndola sai com data, hora, endereço e loja carimbados, pronta para enviar ao cliente pelo WhatsApp.",
   },
   {
     icon: ClipboardCheck,
@@ -69,12 +70,12 @@ const features = [
   {
     icon: ShieldCheck,
     title: "Auditoria e espelho de ponto",
-    text: "Trilha append-only, cartão de ponto e espelho da jornada para conferência gerencial sem perder o isolamento por empresa.",
+    text: "Espelho de ponto pronto para o RH, cartão-ponto e histórico de alterações para conferir a jornada sem planilhas.",
   },
   {
     icon: WifiOff,
     title: "Operação mobile e offline",
-    text: "PWA pensado para o chão de loja: o promotor registra o essencial mesmo com sinal instável e sincroniza depois.",
+    text: "App pensado para o chão de loja: o promotor registra o essencial mesmo com sinal instável e sincroniza depois.",
   },
 ];
 
@@ -93,6 +94,25 @@ const roles = [
     title: "Administrador",
     text: "Controla usuários, módulos liberados e a trilha de auditoria da empresa em um único painel.",
     items: ["Permissões por módulo", "Espelho de ponto", "Assinatura e equipe"],
+  },
+];
+
+export const faqs = [
+  {
+    q: "Funciona sem internet?",
+    a: "Sim. O promotor registra ponto, fotos e visitas mesmo com sinal fraco ou sem sinal. Os registros ficam guardados no celular e são enviados automaticamente quando a conexão volta.",
+  },
+  {
+    q: "Precisa instalar algum aplicativo?",
+    a: "Não precisa de loja de aplicativos. O GondUp abre no navegador do celular e pode ser adicionado à tela inicial (Android e iPhone) para funcionar como um app.",
+  },
+  {
+    q: "Como é a implantação?",
+    a: "Criamos o ambiente da sua empresa, você cadastra lojas, clientes e a equipe, e cada promotor recebe o acesso para entrar pelo celular. Se surgir dúvida, é só chamar a gente pelo chat.",
+  },
+  {
+    q: "Os dados são meus? E a LGPD?",
+    a: "Sim, os dados são da sua empresa. Cada empresa tem um ambiente separado, e cada pessoa só vê o que o perfil dela permite. Os detalhes do tratamento de dados estão na nossa Política de Privacidade.",
   },
 ];
 
@@ -123,6 +143,10 @@ export default function LandingPage() {
 
   const [contactOpen, setContactOpen] = useState(false);
   const openContact = () => setContactOpen(true);
+  useEffect(() => {
+    document.body.dataset.page = "landing"; // esconde o indicador "Online" do app na página inicial
+    return () => { delete document.body.dataset.page; };
+  }, []);
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#050b14] text-slate-100">
       <div className="pointer-events-none absolute inset-0">
@@ -136,11 +160,11 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
           <img
             src="/gondup-icon.png"
-            alt="GONDUP"
+            alt="GondUp"
             className="h-16 w-auto object-contain sm:h-[4.5rem]"
             draggable={false}
           />
-          <nav className="hidden items-center gap-7 text-sm font-medium text-slate-400 md:flex">
+          <nav className="hidden items-center gap-7 text-sm font-medium text-slate-300 md:flex">
             {navLinks.map((link) =>
               link.href.startsWith("#") ? (
                 <button key={link.href} className="transition hover:text-white" onClick={() => scrollTo(link.href.slice(1))}>
@@ -168,29 +192,29 @@ export default function LandingPage() {
         <div>
           <img
             src="/gondup-lockup.png"
-            alt="GONDUP — Da gôndola ao trade. Seu próximo upgrade."
-            className="h-auto w-full max-w-[34rem] object-contain object-left"
+            alt="GondUp — Da gôndola ao trade. Seu próximo upgrade."
+            className="hidden h-auto w-full max-w-[34rem] object-contain object-left sm:block"
             draggable={false}
           />
-          <span className="mt-8 inline-flex items-center gap-2 rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">
+          <span className="inline-flex sm:mt-8 items-center gap-2 rounded-full border border-teal-300/25 bg-teal-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">
             <Radio className="h-3.5 w-3.5" />
             Plataforma de trade marketing
           </span>
-          <h1 className="mt-6 max-w-3xl text-4xl font-black leading-[1.05] tracking-tight text-white sm:text-6xl">
+          <h1 className="mt-5 max-w-3xl text-[2.1rem] sm:mt-6 sm:text-4xl font-black leading-[1.05] tracking-tight text-white sm:text-6xl">
             Controle total da equipe em campo, da gôndola ao ponto.
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">
-            GONDUP reúne jornada, roteiros, lojas e evidências em um único ambiente multiempresa. Supervisione a execução no PDV com a mesma clareza da operação no escritório.
+          <p className="mt-5 max-w-xl text-base leading-7 text-slate-300 sm:mt-6 sm:text-lg sm:leading-8">
+            Ponto com GPS e foto contra marcação falsa, fotos da gôndola como prova de execução e espelho de ponto pronto para o RH. Tudo no celular do promotor, sem planilhas.
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button size="lg" className="bg-teal-400 px-6 text-slate-950 hover:bg-teal-300" onClick={openContact}>
+          <div className="mt-7 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap">
+            <Button size="lg" className="w-full bg-teal-400 px-6 sm:w-auto text-slate-950 hover:bg-teal-300" onClick={openContact}>
               Solicitar demonstração
               <ArrowRight className="h-4 w-4" />
             </Button>
             <Button
               size="lg"
               variant="outline"
-              className="border-white/15 bg-white/5 px-6 text-white hover:bg-white/10"
+              className="w-full border-white/15 bg-white/5 px-6 text-white hover:bg-white/10 sm:w-auto"
               onClick={() => scrollTo("recursos")}
             >
               Ver funcionalidades
@@ -203,22 +227,22 @@ export default function LandingPage() {
           <article className="relative overflow-hidden rounded-[1.8rem] border border-white/10 bg-slate-950/80 shadow-2xl shadow-teal-950/40 backdrop-blur">
             <div className="flex items-center justify-between border-b border-white/8 px-5 py-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-300">Operação ao vivo</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-300">Exemplo ilustrativo</p>
                 <p className="mt-1 text-lg font-bold text-white">Painel de campo</p>
               </div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Sincronizado
+                Exemplo
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3 p-5">
               <div className="rounded-2xl border border-white/8 bg-white/5 p-4">
-                <p className="text-xs text-slate-400">Visitas do dia</p>
+                <p className="text-xs text-slate-300">Visitas do dia</p>
                 <p className="mt-2 text-3xl font-black text-white">42</p>
                 <p className="mt-1 text-xs text-teal-300">31 concluídas</p>
               </div>
               <div className="rounded-2xl border border-white/8 bg-white/5 p-4">
-                <p className="text-xs text-slate-400">Promotores ativos</p>
+                <p className="text-xs text-slate-300">Promotores ativos</p>
                 <p className="mt-2 text-3xl font-black text-white">18</p>
                 <p className="mt-1 text-xs text-cyan-300">12 em loja agora</p>
               </div>
@@ -232,13 +256,14 @@ export default function LandingPage() {
                 <div key={row.name} className="flex items-center justify-between rounded-xl border border-white/6 bg-white/[0.03] px-4 py-3">
                   <div>
                     <p className="text-sm font-semibold text-white">{row.name}</p>
-                    <p className="text-xs text-slate-400">{row.detail}</p>
+                    <p className="text-xs text-slate-300">{row.detail}</p>
                   </div>
                   <span className="text-xs font-medium text-teal-200">{row.status}</span>
                 </div>
               ))}
             </div>
           </article>
+          <p className="relative mt-3 text-center text-xs text-slate-300">Números e lojas fictícios, apenas para ilustrar o painel.</p>
         </div>
       </section>
 
@@ -247,7 +272,7 @@ export default function LandingPage() {
           {metrics.map((item) => (
             <div key={item.label}>
               <p className="text-2xl font-black tracking-tight text-white sm:text-3xl">{item.value}</p>
-              <p className="mt-1 text-sm text-slate-400">{item.label}</p>
+              <p className="mt-1 text-sm text-slate-300">{item.label}</p>
             </div>
           ))}
         </div>
@@ -258,7 +283,7 @@ export default function LandingPage() {
         <h2 className="mt-3 max-w-3xl text-3xl font-black tracking-tight text-white sm:text-5xl">
           Tudo o que a operação de merchandising precisa, no mesmo sistema.
         </h2>
-        <p className="mt-4 max-w-2xl text-base leading-7 text-slate-400">
+        <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
           Do cadastro da loja à conferência do ponto, cada módulo foi pensado para agências que precisam de presença, prova e controle.
         </p>
         <div className="mt-12 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -268,7 +293,7 @@ export default function LandingPage() {
                 <Icon className="h-5 w-5" />
               </div>
               <h3 className="mt-5 text-lg font-bold text-white">{title}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-400">{text}</p>
+              <p className="mt-3 text-sm leading-6 text-slate-300">{text}</p>
             </article>
           ))}
         </div>
@@ -285,7 +310,7 @@ export default function LandingPage() {
                   <span className="mt-0.5 font-mono text-sm font-bold text-teal-300">{item.step}</span>
                   <div>
                     <h3 className="text-lg font-bold text-white">{item.title}</h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-400">{item.text}</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-300">{item.text}</p>
                   </div>
                 </div>
               ))}
@@ -295,17 +320,17 @@ export default function LandingPage() {
             <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
               <MapPinned className="h-6 w-6 text-teal-300" />
               <p className="mt-4 font-semibold text-white">Geolocalização na marcação</p>
-              <p className="mt-2 text-sm leading-6 text-slate-400">Cada evento de ponto registra coordenadas, precisão e status da localização.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">Cada evento de ponto registra coordenadas, precisão e status da localização.</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
               <Fingerprint className="h-6 w-6 text-teal-300" />
               <p className="mt-4 font-semibold text-white">Sequência protegida</p>
-              <p className="mt-2 text-sm leading-6 text-slate-400">Não há saída sem entrada, nem intervalo invertido. A jornada segue uma máquina de estados.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">Não há saída sem entrada, nem intervalo invertido. A jornada segue uma máquina de estados.</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-5 sm:col-span-2">
               <Smartphone className="h-6 w-6 text-teal-300" />
               <p className="mt-4 font-semibold text-white">Feito para o celular do promotor</p>
-              <p className="mt-2 text-sm leading-6 text-slate-400">Interface mobile-first para bater ponto, abrir a visita e enviar a foto da gôndola em poucos toques.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">Interface mobile-first para bater ponto, abrir a visita e enviar a foto da gôndola em poucos toques.</p>
             </div>
           </div>
         </div>
@@ -318,7 +343,7 @@ export default function LandingPage() {
           {roles.map((role) => (
             <article key={role.title} className="rounded-3xl border border-white/10 bg-white/[0.035] p-7">
               <h3 className="text-2xl font-black text-white">{role.title}</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-400">{role.text}</p>
+              <p className="mt-3 text-sm leading-6 text-slate-300">{role.text}</p>
               <ul className="mt-6 space-y-2">
                 {role.items.map((item) => (
                   <li key={item} className="flex items-center gap-2 text-sm text-slate-200">
@@ -329,6 +354,33 @@ export default function LandingPage() {
               </ul>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section id="faq" className="relative z-10 mx-auto max-w-3xl px-5 pb-20 sm:px-8">
+        <p className="text-xs font-bold uppercase tracking-[0.22em] text-teal-300">Dúvidas frequentes</p>
+        <h2 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">Perguntas frequentes</h2>
+        <div className="mt-8 space-y-3">
+          {faqs.map((item) => (
+            <details key={item.q} className="group rounded-2xl border border-white/10 bg-white/[0.035] p-5 open:border-teal-300/30">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-bold text-white">
+                {item.q}
+                <span className="text-teal-300 transition group-open:rotate-45" aria-hidden>+</span>
+              </summary>
+              <p className="mt-3 text-sm leading-6 text-slate-300">{item.a}</p>
+            </details>
+          ))}
+          <details className="group rounded-2xl border border-white/10 bg-white/[0.035] p-5 open:border-teal-300/30">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-bold text-white">
+              Quanto custa?
+              <span className="text-teal-300 transition group-open:rotate-45" aria-hidden>+</span>
+            </summary>
+            <p className="mt-3 text-sm leading-6 text-slate-300">
+              Planos sob medida conforme o tamanho da equipe.{" "}
+              <button type="button" onClick={openContact} className="font-bold text-teal-300 underline underline-offset-4 hover:text-teal-200">Fale conosco</button>{" "}
+              e montamos a proposta para a sua operação.
+            </p>
+          </details>
         </div>
       </section>
 
@@ -351,9 +403,9 @@ export default function LandingPage() {
       </section>
 
       <footer className="relative z-10 border-t border-white/8 px-5 pb-28 pt-8 sm:pb-8">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 sm:flex-row">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-300 sm:flex-row">
           <BrandLogo variant="dark" height={28} />
-          <p>GONDUP · Gestão inteligente de equipes de campo</p>
+          <p>GondUp · Gestão inteligente de equipes de campo</p>
           <div className="flex gap-5">
             <button className="hover:text-white" onClick={() => navigate("/login")}>Entrar</button>
             <button className="hover:text-white" onClick={() => navigate("/termos")}>Termos de Uso</button>

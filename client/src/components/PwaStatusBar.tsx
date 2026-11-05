@@ -31,7 +31,7 @@ export function PwaStatusBar() {
   return (
     <>
       <div
-        className={`fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow backdrop-blur print:hidden ${
+        className={`pwa-online-pill fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow backdrop-blur print:hidden ${
           isOnline ? "border-emerald-400/40 bg-emerald-500/90 text-white" : "border-rose-300/40 bg-rose-500/90 text-white"
         }`}
       >

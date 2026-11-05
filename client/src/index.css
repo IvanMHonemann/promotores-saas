@@ -344,3 +344,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   appearance: none;
   -webkit-appearance: none;
 }
+
+/* Página inicial: esconde o indicador de conexão do app */
+body[data-page="landing"] .pwa-online-pill { display: none !important; }

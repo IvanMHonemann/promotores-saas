@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { companies, companySubscriptions, memberAccounts, memberSessions, payments, subscriptionPlans, systemSettings } from "../drizzle/schema.original";
-import { MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, markCompanyPaid, resolveMonthlyAmount, resolveGraceDays } from "./paymentReminder";
+import { MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, BILLING_DAY_KEY, markCompanyPaid, resolveMonthlyAmount, resolveGraceDays, ensureBillingDay } from "./paymentReminder";
 import { DEFAULT_OVERDUE_GRACE_DAYS } from "./subscriptionAccess";
 
 const BR = "-03:00";
@@ -84,6 +84,7 @@ export async function setCompanyPlan(input: { companyId: number; planId: number;
     // tolerância explícita (padrão 5 dias): acesso até o fim do dia de validade + graceDays
     gracePeriodEndsAt: end ? addDaysDate(end, Math.max(0, input.graceDays ?? DEFAULT_OVERDUE_GRACE_DAYS)) : null,
   } as any).where(eq(companies.id, input.companyId));
+  if (input.endsAt) await ensureBillingDay(input.companyId, input.endsAt);
   return { success: true as const };
 }
 
@@ -215,6 +216,8 @@ export async function setCompanyBilling(input: {
       subscriptionExpiresAt: end,
       gracePeriodEndsAt: addDaysDate(end, grace),
     });
+    // Âncora do dia de cobrança (ex.: 31) para não perder o dia ao atravessar meses curtos.
+    await db.setSetting(BILLING_DAY_KEY, String(Number(input.dueDate.slice(8, 10))), input.companyId);
   }
   return { success: true as const, monthlyAmount: await resolveMonthlyAmount(input.companyId), graceDays: await resolveGraceDays(input.companyId) };
 }

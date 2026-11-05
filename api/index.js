@@ -4519,13 +4519,17 @@ var init_pixBrcode = __esm({
 // server/paymentReminder.ts
 var paymentReminder_exports = {};
 __export(paymentReminder_exports, {
+  BILLING_DAY_KEY: () => BILLING_DAY_KEY,
   BLOCK_AFTER_OVERDUE_KEY: () => BLOCK_AFTER_OVERDUE_KEY,
   MONTHLY_AMOUNT_KEY: () => MONTHLY_AMOUNT_KEY,
   PRE_DUE_REMINDER_DAYS: () => PRE_DUE_REMINDER_DAYS,
   addCalendarMonthsIso: () => addCalendarMonthsIso,
   calendarDaysUntil: () => calendarDaysUntil,
+  ensureBillingDay: () => ensureBillingDay,
   getPaymentReminder: () => getPaymentReminder,
   markCompanyPaid: () => markCompanyPaid,
+  nextDueAfterMarkPaid: () => nextDueAfterMarkPaid,
+  resolveBillingDay: () => resolveBillingDay,
   resolveGraceDays: () => resolveGraceDays,
   resolveMonthlyAmount: () => resolveMonthlyAmount,
   todayIsoBR: () => todayIsoBR
@@ -4538,14 +4542,17 @@ function calendarDaysUntil(dueIso, todayIso = todayIsoBR()) {
   const b = Date.parse(`${dueIso}T12:00:00-03:00`);
   return Math.round((b - a) / 864e5);
 }
-function addCalendarMonthsIso(isoDate, months) {
+function addCalendarMonthsIso(isoDate, months, anchorDay) {
   const [y, m, d] = isoDate.split("-").map(Number);
-  const base = new Date(Date.UTC(y, m - 1, d));
-  const targetMonth = base.getUTCMonth() + months;
-  const probe = new Date(Date.UTC(base.getUTCFullYear(), targetMonth, 1));
+  const day = anchorDay && anchorDay >= 1 && anchorDay <= 31 ? anchorDay : d;
+  const probe = new Date(Date.UTC(y, m - 1 + months, 1));
   const lastDay = new Date(Date.UTC(probe.getUTCFullYear(), probe.getUTCMonth() + 1, 0)).getUTCDate();
-  probe.setUTCDate(Math.min(d, lastDay));
+  probe.setUTCDate(Math.min(day, lastDay));
   return probe.toISOString().slice(0, 10);
+}
+function nextDueAfterMarkPaid(currentDueIso, anchorDay) {
+  const day = anchorDay && anchorDay >= 1 && anchorDay <= 31 ? anchorDay : Number(currentDueIso.slice(8, 10));
+  return addCalendarMonthsIso(currentDueIso, 1, day);
 }
 function toIsoDate(value) {
   if (!value) return null;
@@ -4561,6 +4568,24 @@ function monthLabel(iso) {
   const [y, m] = iso.split("-").map(Number);
   const names = ["janeiro", "fevereiro", "mar\xE7o", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
   return `${names[(m || 1) - 1]}/${y}`;
+}
+async function resolveBillingDay(companyId, fallbackDueIso) {
+  const raw = (await getSetting(BILLING_DAY_KEY, companyId, "")).trim();
+  const n = Number(raw);
+  if (Number.isInteger(n) && n >= 1 && n <= 31) return n;
+  if (fallbackDueIso && /^\d{4}-\d{2}-\d{2}/.test(fallbackDueIso)) {
+    const day = Number(fallbackDueIso.slice(8, 10));
+    if (day >= 1 && day <= 31) return day;
+  }
+  return null;
+}
+async function ensureBillingDay(companyId, dueIso) {
+  const existing = await resolveBillingDay(companyId, null);
+  if (existing) return existing;
+  const day = Number(dueIso.slice(8, 10));
+  const safe = Math.min(31, Math.max(1, day || 1));
+  await setSetting(BILLING_DAY_KEY, String(safe), companyId);
+  return safe;
 }
 async function resolveMonthlyAmount(companyId) {
   const custom = (await getSetting(MONTHLY_AMOUNT_KEY, companyId, "")).trim();
@@ -4693,9 +4718,10 @@ async function markCompanyPaid(input) {
   const amount = (input.amount && /^\d+(\.\d{1,2})?$/.test(input.amount) ? Number(input.amount).toFixed(2) : null) || await resolveMonthlyAmount(input.companyId);
   if (!amount) throw new Error("Informe o valor mensal da empresa antes de marcar como pago.");
   const currentDue = toIsoDate(company.subscriptionExpiresAt);
-  const base = currentDue && currentDue > today ? currentDue : today;
-  const periodTo = addCalendarMonthsIso(base, 1);
-  const periodFrom = today;
+  if (!currentDue) throw new Error("Defina o vencimento da empresa antes de marcar como pago.");
+  const anchor = await ensureBillingDay(input.companyId, currentDue);
+  const periodTo = nextDueAfterMarkPaid(currentDue, anchor);
+  const periodFrom = currentDue;
   const grace = input.graceDays ?? await resolveGraceDays(input.companyId);
   return registerCompanyPayment2({
     companyId: input.companyId,
@@ -4709,7 +4735,7 @@ async function markCompanyPaid(input) {
     note: input.note ?? "Marcado como pago (Pix manual)."
   });
 }
-var PRE_DUE_REMINDER_DAYS, MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, BR_TZ;
+var PRE_DUE_REMINDER_DAYS, MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, BILLING_DAY_KEY, BR_TZ;
 var init_paymentReminder = __esm({
   "server/paymentReminder.ts"() {
     "use strict";
@@ -4719,6 +4745,7 @@ var init_paymentReminder = __esm({
     PRE_DUE_REMINDER_DAYS = [5, 3, 1];
     MONTHLY_AMOUNT_KEY = "monthly_amount";
     BLOCK_AFTER_OVERDUE_KEY = "block_after_overdue_days";
+    BILLING_DAY_KEY = "billing_day";
     BR_TZ = "America/Sao_Paulo";
   }
 });
@@ -4823,6 +4850,7 @@ async function setCompanyPlan(input) {
     // tolerância explícita (padrão 5 dias): acesso até o fim do dia de validade + graceDays
     gracePeriodEndsAt: end ? addDaysDate(end, Math.max(0, input.graceDays ?? DEFAULT_OVERDUE_GRACE_DAYS)) : null
   }).where(eq9(companies.id, input.companyId));
+  if (input.endsAt) await ensureBillingDay(input.companyId, input.endsAt);
   return { success: true };
 }
 async function registerCompanyPayment(input) {
@@ -4940,6 +4968,7 @@ async function setCompanyBilling(input) {
       subscriptionExpiresAt: end,
       gracePeriodEndsAt: addDaysDate(end, grace)
     });
+    await setSetting(BILLING_DAY_KEY, String(Number(input.dueDate.slice(8, 10))), input.companyId);
   }
   return { success: true, monthlyAmount: await resolveMonthlyAmount(input.companyId), graceDays: await resolveGraceDays(input.companyId) };
 }

@@ -6,6 +6,7 @@ import { DEFAULT_OVERDUE_GRACE_DAYS } from "./subscriptionAccess";
 export const PRE_DUE_REMINDER_DAYS = [5, 3, 1] as const;
 export const MONTHLY_AMOUNT_KEY = "monthly_amount";
 export const BLOCK_AFTER_OVERDUE_KEY = "block_after_overdue_days";
+export const BILLING_DAY_KEY = "billing_day";
 
 const BR_TZ = "America/Sao_Paulo";
 
@@ -20,14 +21,29 @@ export function calendarDaysUntil(dueIso: string, todayIso = todayIsoBR()): numb
   return Math.round((b - a) / 86400000);
 }
 
-export function addCalendarMonthsIso(isoDate: string, months: number): string {
+/**
+ * Soma meses de calendário. Se o dia âncora não existir no mês destino (ex.: 31 em fevereiro),
+ * usa o último dia desse mês — mas o âncora (ex.: 31) é preservado para o mês seguinte.
+ */
+export function addCalendarMonthsIso(isoDate: string, months: number, anchorDay?: number): string {
   const [y, m, d] = isoDate.split("-").map(Number);
-  const base = new Date(Date.UTC(y, m - 1, d));
-  const targetMonth = base.getUTCMonth() + months;
-  const probe = new Date(Date.UTC(base.getUTCFullYear(), targetMonth, 1));
+  const day = anchorDay && anchorDay >= 1 && anchorDay <= 31 ? anchorDay : d;
+  const probe = new Date(Date.UTC(y, m - 1 + months, 1));
   const lastDay = new Date(Date.UTC(probe.getUTCFullYear(), probe.getUTCMonth() + 1, 0)).getUTCDate();
-  probe.setUTCDate(Math.min(d, lastDay));
+  probe.setUTCDate(Math.min(day, lastDay));
   return probe.toISOString().slice(0, 10);
+}
+
+/**
+ * Próximo vencimento após "Marcar como pago": sempre vencimento original + 1 mês
+ * (dias em atraso ou pagamento antecipado não mudam a âncora). Um pagamento = +1 mês.
+ * Ex.: venceu 10/11, pago 14/11 → próximo 10/12; pago 05/11 → também 10/12.
+ */
+export function nextDueAfterMarkPaid(currentDueIso: string, anchorDay?: number): string {
+  const day = anchorDay && anchorDay >= 1 && anchorDay <= 31
+    ? anchorDay
+    : Number(currentDueIso.slice(8, 10));
+  return addCalendarMonthsIso(currentDueIso, 1, day);
 }
 
 function toIsoDate(value: unknown): string | null {
@@ -46,6 +62,27 @@ function monthLabel(iso: string): string {
   const [y, m] = iso.split("-").map(Number);
   const names = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
   return `${names[(m || 1) - 1]}/${y}`;
+}
+
+
+export async function resolveBillingDay(companyId: number, fallbackDueIso?: string | null): Promise<number | null> {
+  const raw = (await db.getSetting(BILLING_DAY_KEY, companyId, "")).trim();
+  const n = Number(raw);
+  if (Number.isInteger(n) && n >= 1 && n <= 31) return n;
+  if (fallbackDueIso && /^\d{4}-\d{2}-\d{2}/.test(fallbackDueIso)) {
+    const day = Number(fallbackDueIso.slice(8, 10));
+    if (day >= 1 && day <= 31) return day;
+  }
+  return null;
+}
+
+export async function ensureBillingDay(companyId: number, dueIso: string): Promise<number> {
+  const existing = await resolveBillingDay(companyId, null);
+  if (existing) return existing;
+  const day = Number(dueIso.slice(8, 10));
+  const safe = Math.min(31, Math.max(1, day || 1));
+  await db.setSetting(BILLING_DAY_KEY, String(safe), companyId);
+  return safe;
 }
 
 export async function resolveMonthlyAmount(companyId: number): Promise<string | null> {
@@ -215,7 +252,11 @@ export async function getPaymentReminder(companyId: number, now = new Date()): P
   return { ...base, phase: "none", show: false, dismissable: true, message: "" };
 }
 
-/** Marca como pago: registra pagamento e avança a validade em 1 mês a partir do maior entre hoje e o vencimento atual. */
+/**
+ * Marca como pago: registra o Pix e avança a validade em exatamente 1 mês a partir do
+ * vencimento original (não da data do pagamento). Dias em atraso ou pagamento antecipado
+ * não “empurram” o ciclo — o cliente não ganha dias extras por pagar atrasado.
+ */
 export async function markCompanyPaid(input: {
   companyId: number;
   amount?: string | null;
@@ -232,9 +273,12 @@ export async function markCompanyPaid(input: {
   if (!amount) throw new Error("Informe o valor mensal da empresa antes de marcar como pago.");
 
   const currentDue = toIsoDate(company.subscriptionExpiresAt);
-  const base = currentDue && currentDue > today ? currentDue : today;
-  const periodTo = addCalendarMonthsIso(base, 1);
-  const periodFrom = today;
+  if (!currentDue) throw new Error("Defina o vencimento da empresa antes de marcar como pago.");
+
+  const anchor = await ensureBillingDay(input.companyId, currentDue);
+  // Sempre original + 1 mês (um pagamento = um mês), independentemente de atraso ou antecipação.
+  const periodTo = nextDueAfterMarkPaid(currentDue, anchor);
+  const periodFrom = currentDue;
 
   const grace = input.graceDays ?? (await resolveGraceDays(input.companyId));
   return registerCompanyPayment({

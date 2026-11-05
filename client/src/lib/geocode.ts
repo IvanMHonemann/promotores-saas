@@ -5,7 +5,8 @@ import { formatBrAddress } from "@shared/address";
 import { authFetch } from "./authFetch";
 
 const client = createTRPCClient<AppRouter>({ links: [httpLink({ url: "/api/trpc", transformer: superjson, fetch: authFetch as any })] });
-const CACHE_KEY = "gondup:geocode:v3";
+/** v4: invalida caches antigos que só tinham "Cidade-UF, CEP …" sem rua/bairro. */
+const CACHE_KEY = "gondup:geocode:v4";
 const memory = new Map<string, Promise<string | null>>();
 
 function cacheGet(key: string): string | null {
@@ -30,8 +31,9 @@ async function viaBrowser(lat: number, lng: number): Promise<string | null> {
 }
 
 /**
- * Endereço completo (rua, nº, bairro, cidade-UF, CEP). Primeiro pelo servidor (cache + User-Agent
- * identificado, sem bloqueio do Nominatim), depois direto do aparelho. null se nada funcionar.
+ * Endereço completo (rua, nº, bairro, cidade-UF, CEP). Primeiro pelo servidor (Nominatim +
+ * Photon + ViaCEP/BrasilAPI, cache e User-Agent identificado), depois direto do aparelho.
+ * null se nada funcionar.
  */
 export function reverseGeocode(lat: number, lng: number): Promise<string | null> {
   const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
@@ -44,7 +46,7 @@ export function reverseGeocode(lat: number, lng: number): Promise<string | null>
     try {
       address = (await Promise.race([
         client.geo.reverse.mutate({ latitude: lat, longitude: lng }),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 9000)),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 12000)),
       ])).address;
     } catch { /* offline ou servidor lento: tenta no aparelho */ }
     if (!address) { try { address = await viaBrowser(lat, lng); } catch { /* sem internet */ } }

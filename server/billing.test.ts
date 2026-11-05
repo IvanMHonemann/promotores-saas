@@ -83,6 +83,67 @@ describe("checkSubscriptionAccess", () => {
     expect(r.allowed).toBe(false);
   });
 
+  describe("pending (aguardando pagamento) com prazo de tolerância", () => {
+    const day = 24 * 3600 * 1000;
+
+    it("permite pending dentro de 7 dias do início", async () => {
+      vi.mocked(db.getCompanyById).mockResolvedValue({
+        id: 1, subscriptionStatus: "pending", subscriptionStartedAt: new Date(Date.now() - 3 * day),
+      } as any);
+      const r = await checkSubscriptionAccess(1);
+      expect(r.allowed).toBe(true);
+      expect(r.status).toBe("pending");
+      expect(r.graceUntil).toBeInstanceOf(Date);
+    });
+
+    it("bloqueia pending após 7 dias do início", async () => {
+      vi.mocked(db.getCompanyById).mockResolvedValue({
+        id: 1, subscriptionStatus: "pending", subscriptionStartedAt: new Date(Date.now() - 8 * day),
+      } as any);
+      const r = await checkSubscriptionAccess(1);
+      expect(r.allowed).toBe(false);
+      expect(r.status).toBe("pending");
+      expect(r.reason).toContain("fale com o suporte");
+    });
+
+    it("respeita tolerância explícita definida pela plataforma (mais tardia que 7 dias)", async () => {
+      vi.mocked(db.getCompanyById).mockResolvedValue({
+        id: 1, subscriptionStatus: "pending",
+        subscriptionStartedAt: new Date(Date.now() - 20 * day),
+        gracePeriodEndsAt: new Date(Date.now() + 2 * day),
+      } as any);
+      expect((await checkSubscriptionAccess(1)).allowed).toBe(true);
+    });
+
+    it("sem nenhuma data conhecida, usa a criação da empresa", async () => {
+      vi.mocked(db.getCompanyById).mockResolvedValue({
+        id: 1, subscriptionStatus: "pending", createdAt: new Date(Date.now() - 30 * day),
+      } as any);
+      expect((await checkSubscriptionAccess(1)).allowed).toBe(false);
+    });
+
+    it("sem datas e sem criação, bloqueia", async () => {
+      vi.mocked(db.getCompanyById).mockResolvedValue({ id: 1, subscriptionStatus: "pending" } as any);
+      expect((await checkSubscriptionAccess(1)).allowed).toBe(false);
+    });
+
+    it("usa a assinatura mais recente quando a empresa não tem status", async () => {
+      vi.mocked(db.getCompanyById).mockResolvedValue({ id: 1 } as any);
+      vi.mocked(db.getLatestCompanySubscription).mockResolvedValue({
+        status: "pending", startsAt: new Date(Date.now() - 10 * day).toISOString().slice(0, 10),
+      } as any);
+      expect((await checkSubscriptionAccess(1)).allowed).toBe(false);
+    });
+
+    it("registrar pagamento (status active no futuro) volta a liberar", async () => {
+      vi.mocked(db.getCompanyById).mockResolvedValue({
+        id: 1, subscriptionStatus: "active", subscriptionStartedAt: new Date(Date.now() - 30 * day),
+        subscriptionExpiresAt: new Date(Date.now() + 30 * day),
+      } as any);
+      expect((await checkSubscriptionAccess(1)).allowed).toBe(true);
+    });
+  });
+
   it("empresa inexistente", async () => {
     vi.mocked(db.getCompanyById).mockResolvedValue(undefined);
     const r = await checkSubscriptionAccess(999);

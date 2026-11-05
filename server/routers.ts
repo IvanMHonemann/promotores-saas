@@ -13,7 +13,7 @@ import { checkRateLimit, getClientIp } from "./_core/rateLimit";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { checkSubscriptionAccess } from "./subscriptionAccess";
+import { checkSubscriptionAccess, MANUAL_BILLING_MESSAGE } from "./subscriptionAccess";
 import * as planLimits from "./planLimits";
 import * as asaas from "./asaas";
 import * as db from "./db";
@@ -722,7 +722,7 @@ export const appRouter = router({
    */
     /** Planos e assinatura da empresa (acesso mesmo com bloqueio para regularização). */
   billing: router({
-    access: companyBillingProcedure.query(async ({ ctx }) => checkSubscriptionAccess(ctx.accountId)),
+    access: companyBillingProcedure.query(async ({ ctx }) => ({ ...(await checkSubscriptionAccess(ctx.accountId)), supportMessage: MANUAL_BILLING_MESSAGE })),
     plans: companyBillingProcedure.query(async () => {
       await db.ensureSeedPlans();
       // Upgrade: lista planos ativos (inclui o atual, mesmo se não estiver "availableForNew")
@@ -739,87 +739,9 @@ export const appRouter = router({
       return { ...resolved, plan, effective };
     }),
     payments: companyBillingProcedure.query(async ({ ctx }) => db.listPaymentsForCompany(ctx.accountId)),
-    mockCheckout: companyAdminProcedure.input(z.object({
-      planId: z.number().int().positive(),
-      outcome: z.enum(["approved", "pending", "overdue", "canceled"]).default("approved"),
-    })).mutation(async ({ ctx, input }) => {
-      const result = await db.applyMockCheckout({ companyId: ctx.accountId, planId: input.planId, outcome: input.outcome });
-      if (input.outcome === "approved" && ctx.user.email) {
-        void (async () => {
-          try {
-            const plans = await db.listSubscriptionPlans();
-            const plan = plans.find((p: any) => p.id === input.planId);
-            const company = await db.getCompanyById(ctx.accountId);
-            const companyName = company?.name || `Empresa #${ctx.accountId}`;
-            const planName = plan?.name || `Plano #${input.planId}`;
-            const amount = plan?.price != null ? String(plan.price) : null;
-            await emailService.emailPlanChanged({
-              to: ctx.user.email!,
-              userName: ctx.user.name || ctx.user.email || "Cliente",
-              companyName,
-              planName,
-              status: "active",
-              amount,
-              periodEnd: (result as any)?.periodEnd || null,
-              isUpgrade: true,
-            });
-            await emailService.emailAdminPlanChanged({
-              companyName,
-              userName: ctx.user.name || ctx.user.email || "Cliente",
-              email: ctx.user.email!,
-              planName,
-              status: "active",
-              amount,
-              isUpgrade: true,
-            });
-          } catch (err) {
-            console.warn("[email] upgrade notify failed", err);
-          }
-        })();
-      }
-      return result;
-    }),
-    mockCheckoutOpen: companyBillingProcedure.input(z.object({
-      planId: z.number().int().positive(),
-      outcome: z.enum(["approved", "pending", "overdue", "canceled"]).default("approved"),
-    })).mutation(async ({ ctx, input }) => {
-      if (ctx.user.role !== "company_admin") {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Somente o administrador da empresa pode assinar." });
-      }
-      const result = await db.applyMockCheckout({ companyId: ctx.accountId, planId: input.planId, outcome: input.outcome });
-      if (input.outcome === "approved" && ctx.user.email) {
-        void (async () => {
-          try {
-            const plans = await db.listSubscriptionPlans();
-            const plan = plans.find((p: any) => p.id === input.planId);
-            const planName = plan?.name || `Plano #${input.planId}`;
-            const amount = plan?.price != null ? String(plan.price) : null;
-            const companyName = `Empresa #${ctx.accountId}`;
-            await emailService.emailPlanChanged({
-              to: ctx.user.email!,
-              userName: ctx.user.name || ctx.user.email || "Cliente",
-              companyName,
-              planName,
-              status: "active",
-              amount,
-              isUpgrade: true,
-            });
-            await emailService.emailAdminPlanChanged({
-              companyName,
-              userName: ctx.user.name || ctx.user.email || "Cliente",
-              email: ctx.user.email!,
-              planName,
-              status: "active",
-              amount,
-              isUpgrade: true,
-            });
-          } catch (err) {
-            console.warn("[email] upgrade open notify failed", err);
-          }
-        })();
-      }
-      return result;
-    }),
+    // Cobrança MANUAL: não há ativação/renovação de plano pelo próprio cliente.
+    // A única via de ativação é platformCompanies.registerPayment (administrador da plataforma).
+    // (mockCheckout/mockCheckoutOpen foram removidos: permitiam ativar plano pago sem pagar.)
   }),
 
 

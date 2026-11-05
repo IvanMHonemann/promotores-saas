@@ -20,6 +20,13 @@ const statusLabel = (s: string, start: string, end: string) => {
   return "Em andamento";
 };
 
+function isoDate(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value.slice(0, 10);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
 export default function VacationsPage() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState<number | "all">(new Date().getMonth() + 1);
@@ -49,7 +56,7 @@ export default function VacationsPage() {
   });
 
   const openNew = () => { setEditing(null); setForm({ memberAccountId: "", startDate: "", endDate: "", notes: "" }); setOpen(true); };
-  const openEdit = (row: any) => { setEditing(row); setForm({ memberAccountId: String(row.memberAccountId), startDate: row.startDate, endDate: row.endDate, notes: row.notes || "" }); setOpen(true); };
+  const openEdit = (row: any) => { setEditing(row); setForm({ memberAccountId: String(row.memberAccountId), startDate: isoDate(row.startDate), endDate: isoDate(row.endDate), notes: row.notes || "" }); setOpen(true); };
 
   const save = () => {
     if (!form.memberAccountId || !form.startDate || !form.endDate) return toast.error("Preencha funcionário e datas.");
@@ -69,14 +76,20 @@ export default function VacationsPage() {
   const byMonth = useMemo(() => {
     const map: Record<number, any[]> = {};
     for (const row of calendar.data || []) {
-      const start = new Date(row.startDate + "T00:00:00");
-      const end = new Date(row.endDate + "T00:00:00");
+      const startIso = isoDate(row.startDate);
+      const endIso = isoDate(row.endDate);
+      if (!startIso || !endIso) continue;
+      const start = new Date(startIso + "T00:00:00");
+      const end = new Date(endIso + "T00:00:00");
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
       const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
       const last = new Date(end.getFullYear(), end.getMonth(), 1);
-      while (cursor <= last) {
+      let guard = 0;
+      while (cursor <= last && guard < 24) {
         const m = cursor.getMonth() + 1;
         (map[m] ||= []).push(row);
         cursor.setMonth(cursor.getMonth() + 1);
+        guard += 1;
       }
     }
     return map;
@@ -109,7 +122,7 @@ export default function VacationsPage() {
                 {(byMonth[m] || []).length === 0 ? <p className="text-slate-400">Nenhuma férias.</p> : (byMonth[m] || []).map((r) => (
                   <div key={r.id} className="flex items-center justify-between py-1">
                     <span>{r.memberName}</span>
-                    <span className="text-slate-300">{r.startDate.slice(8)}–{r.endDate.slice(8)}</span>
+                    <span className="text-slate-300">{isoDate(r.startDate).slice(8)}–{isoDate(r.endDate).slice(8)}</span>
                   </div>
                 ))}
               </div>
@@ -145,7 +158,7 @@ export default function VacationsPage() {
               <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-3">
                 <div>
                   <p className="font-semibold">{row.memberName}</p>
-                  <p className="text-slate-300">{row.startDate} a {row.endDate} · {row.days} dias · {statusLabel(row.status, row.startDate, row.endDate)}</p>
+                  <p className="text-slate-300">{isoDate(row.startDate)} a {isoDate(row.endDate)} · {row.days} dias · {statusLabel(row.status, isoDate(row.startDate), isoDate(row.endDate))}</p>
                   {row.notes && <p className="text-xs text-slate-400">{row.notes}</p>}
                   <p className="text-xs text-slate-500">Criado por #{row.createdByMemberAccountId}{row.updatedByMemberAccountId ? ` · editado por #${row.updatedByMemberAccountId}` : ""}{row.cancelledByMemberAccountId ? ` · cancelado por #${row.cancelledByMemberAccountId}` : ""}</p>
                 </div>

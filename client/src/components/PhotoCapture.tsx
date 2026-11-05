@@ -1,3 +1,4 @@
+import { formatBrAddress, wrapText } from "@shared/address";
 import { compressCanvas, compressImageFile } from "@/lib/imageCompress";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "@shared/uploadLimits";
 import { useEffect, useRef, useState } from "react";
@@ -11,16 +12,41 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 
 
-async function reverseGeocode(lat: number, lng: number): Promise<string> {
+const GEO_CACHE_KEY = "gondup:geocode:v2";
+let lastGeocodeAt = 0;
+function geoCacheGet(key: string): string | null {
+  try { return (JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || "{}") as Record<string, string>)[key] ?? null; } catch { return null; }
+}
+function geoCacheSet(key: string, value: string) {
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=pt-BR`);
-    if (!res.ok) return "Local não disponível";
+    const all = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || "{}") as Record<string, string>;
+    const keys = Object.keys(all);
+    if (keys.length > 300) delete all[keys[0]];
+    all[key] = value;
+    localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(all));
+  } catch { /* armazenamento cheio: segue sem cache */ }
+}
+
+/** Endereço completo (rua, número, bairro, cidade-UF, CEP) via Nominatim, com cache e no máx. 1 consulta/s. */
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`; // ~11 m
+  const cached = geoCacheGet(key);
+  if (cached) return cached;
+  try {
+    const wait = 1100 - (Date.now() - lastGeocodeAt);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    lastGeocodeAt = Date.now();
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR`;
+    const res = await fetch(url, { signal: AbortSignal.timeout?.(6000), headers: { Accept: "application/json" } });
+    if (!res.ok) return `GPS ${coords}`;
     const data = await res.json();
-    const addr = data.address || {};
-    const parts = [addr.road, addr.suburb || addr.neighbourhood, addr.city || addr.town || addr.village, addr.state].filter(Boolean);
-    return parts.slice(0, 3).join(", ") || data.display_name || "Local não disponível";
+    const address = formatBrAddress(data.address, data.display_name);
+    if (!address) return `GPS ${coords}`;
+    geoCacheSet(key, address);
+    return address;
   } catch {
-    return "Local não disponível";
+    return `GPS ${coords}`; // sem internet ou serviço fora: mantém a coordenada legível
   }
 }
 
@@ -65,9 +91,12 @@ function applyWatermark(
       const lineH = fontSize + 10;
       const padX = 8;
       const padY = 4;
-      const startY = height - (lineH * lines.length) - 16;
       ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
       ctx.textBaseline = "top";
+      // Quebra linhas longas (ex.: endereço completo) para caberem na foto.
+      const maxTextW = width - 24 - padX * 2;
+      lines = lines.flatMap(l => wrapText(l, maxTextW, t => ctx.measureText(t).width));
+      const startY = height - (lineH * lines.length) - 16;
       lines.forEach((line, i) => {
         const y = startY + i * lineH;
         const metrics = ctx.measureText(line);

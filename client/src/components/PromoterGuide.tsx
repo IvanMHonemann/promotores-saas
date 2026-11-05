@@ -3,13 +3,14 @@ import { X } from "lucide-react";
 
 const KEY = "gondup-promoter-guide-dismissed";
 
-/** Guia de 3 passos para o promotor (some quando ele fecha). */
-export default function PromoterGuide({ hasTimeTracking, hasFieldOperations }: { hasTimeTracking: boolean; hasFieldOperations: boolean }) {
+/** Guia de passos para o promotor (some quando ele fecha). */
+export default function PromoterGuide({ hasTimeTracking, hasFieldOperations, hasVisitCheckIn }: { hasTimeTracking: boolean; hasFieldOperations: boolean; hasVisitCheckIn: boolean }) {
   const [hidden, setHidden] = useState(() => typeof window !== "undefined" && window.localStorage.getItem(KEY) === "1");
   if (hidden) return null;
   const steps = [
     hasTimeTracking && { t: "Bata a entrada", d: "Ao chegar, toque em Entrada aqui em cima." },
-    hasFieldOperations && { t: "Faça as visitas do roteiro", d: "Em cada loja, faça o Check-in, tire as fotos e depois o Check-out." },
+    hasVisitCheckIn && { t: "Faça as visitas do roteiro", d: "Em cada loja, faça o Check-in, tire as fotos e depois o Check-out." },
+    hasFieldOperations && !hasVisitCheckIn && { t: "Consulte o roteiro e tire fotos", d: "Veja as lojas do dia e registre fotos na galeria de cada loja." },
     hasTimeTracking && { t: "Bata a saída", d: "No fim do dia, toque em Saída para encerrar a jornada." },
   ].filter(Boolean) as { t: string; d: string }[];
   if (steps.length === 0) return null;

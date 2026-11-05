@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMirror, mirrorRows, fmtMinutes, maskCpf } from "../shared/timesheetMirror";
+import { buildMirror, mirrorRows, fmtMinutes, maskCpf, fmtCpf } from "../shared/timesheetMirror";
 import { expiryStatus, addDays } from "../shared/expiry";
 import { inferFullDayExcuseType, looksLikeFullDayExcuse } from "../shared/correctionExcuse";
 
@@ -32,7 +32,13 @@ describe("espelho de ponto", () => {
     const adj = { originalType: "clock_out", originalTime: "2026-10-07T08:30:00Z", justification: "esqueceu" };
     const r = buildMirror({ events: [ev(1, "clock_in", "2026-10-07T01:00:00Z"), ev(2, "clock_out", "2026-10-07T09:00:00Z", { adjustment: adj })], from: "2026-10-06", to: "2026-10-06" });
     expect(r.totals.adjustedMarks).toBe(1);
+    expect(mirrorRows(r)[0][5]).toContain("*"); // Saída ajustada
     expect(mirrorRows(r)[0][12]).toContain("esqueceu");
+  });
+  it("marca DSR em domingo sem batida", () => {
+    const r = buildMirror({ events: [], from: "2026-10-04", to: "2026-10-04", labor }); // domingo
+    expect(r.days[0].weekday).toBe(0);
+    expect(r.days[0].issues.join()).toContain("DSR");
   });
   it("não conta dia sem marcação como falta sem configuração", () => {
     const r = buildMirror({ events: [], from: "2026-10-05", to: "2026-10-06" });
@@ -75,6 +81,7 @@ describe("espelho de ponto", () => {
     expect(fmtMinutes(75)).toBe("01:15");
     expect(fmtMinutes(-5, true)).toBe("-00:05");
     expect(maskCpf("12345678901")).toBe("***.456.789-**");
+    expect(fmtCpf("12345678901")).toBe("123.456.789-01");
   });
 });
 

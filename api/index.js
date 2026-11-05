@@ -3519,6 +3519,9 @@ function buildMirror(input) {
     if (!hasMarks && isWorkday && !excused) {
       issues.push("Sem marca\xE7\xF5es em dia previsto \u2014 verificar falta, abono ou justificativa (n\xE3o informados)");
     }
+    if (!hasMarks && weekdayOf(d) === 0 && !isWorkday && !holiday && !onVacation && !excuse) {
+      issues.push("DSR (descanso semanal remunerado)");
+    }
     const expected = daily != null && isWorkday && !excused ? daily : daily != null && !workdays ? null : null;
     const w = Math.round(worked);
     const diff = expected != null && hasMarks ? w - expected : null;
@@ -3577,8 +3580,14 @@ function fmtMinutes(min, signed = false) {
 }
 function fmtMark(m, tz) {
   const t2 = localParts(m.time, tz);
-  const tag = m.kind === "adjusted" ? " (ajustada)" : m.kind === "legacy_adjusted" ? " (ajuste antigo)" : m.kind === "automatic" ? " (autom\xE1tica)" : "";
-  return `${t2.hm}${tag}${m.synced ? "" : " (pend. sinc.)"}`;
+  const included = m.kind === "adjusted" && !m.originalLabel;
+  let tag = "";
+  if (m.kind === "automatic") tag = "A";
+  else if (m.kind === "legacy_adjusted") tag = "#";
+  else if (included) tag = "+";
+  else if (m.kind === "adjusted") tag = "*";
+  const sync = m.synced ? "" : "?";
+  return `${t2.hm}${tag}${sync}`;
 }
 function adjustmentText(m, tz) {
   const to = localParts(m.time, tz).hm;
@@ -4625,6 +4634,7 @@ var init_timesheetMirror2 = __esm({
       jobTitle: z2.string().trim().max(120).nullish(),
       admissionDate: dateStr2.nullish(),
       cpf: z2.string().trim().max(14).nullish(),
+      pis: z2.string().trim().max(20).nullish(),
       dailyMinutes: z2.number().int().min(0).max(1440).nullish(),
       intervalMinutes: z2.number().int().min(0).max(600).nullish(),
       workdays: z2.array(z2.number().int().min(0).max(6)).max(7).nullish(),
@@ -7705,6 +7715,8 @@ var pontoLegalRouter = router({
       report: m.report,
       documentHash: m.documentHash,
       employer: m.employer,
+      member: { id: m.member.id, name: m.member.name, employeeCode: m.member.employeeCode ?? null },
+      labor: m.labor,
       worker: { name: m.member.name, cpf: m.labor?.cpf ?? null, jobTitle: m.labor?.jobTitle ?? null, admissionDate: m.labor?.admissionDate ?? null },
       acceptance: acc ? { decision: acc.decision, acceptedAt: acc.acceptedAt, documentHash: acc.documentHash, comment: acc.comment, stillValid: acc.documentHash === m.documentHash } : null
     };

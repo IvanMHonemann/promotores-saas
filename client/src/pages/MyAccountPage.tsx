@@ -29,7 +29,7 @@ export default function MyAccountPage() {
   const entitlements = trpc.entitlements.mine.useQuery(undefined, {
     enabled: Boolean(user && !isPlatformAdmin),
   });
-  const canViewTimeBank = Boolean(entitlements.data?.effective.timeTracking);
+  const canViewTimeBank = Boolean(entitlements.data?.effective?.timeTracking);
   const summary = trpc.timeTracking.myTimeSummary.useQuery(undefined, {
     enabled: Boolean(user && !isPlatformAdmin && canViewTimeBank),
   });

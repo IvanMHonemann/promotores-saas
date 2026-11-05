@@ -9,6 +9,7 @@ import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { SidebarMenuButton, SidebarNav } from "@/components/SidebarNav";
 import { SyncIndicator } from "@/components/SyncIndicator";
 import { BrandLogo } from "@/components/BrandLogo";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 type Props = {
   title: string;
@@ -50,9 +51,13 @@ export default function DashboardLayout({ title, description, children, refreshi
           </header>
           <ActingAsBanner />
           <UpdateAvailableBanner />
-          <RejectedCorrectionAlert />
-          <MissingPunchAlert />
-          {children}
+          <ErrorBoundary resetKey="layout-alerts">
+            <RejectedCorrectionAlert />
+            <MissingPunchAlert />
+          </ErrorBoundary>
+          <ErrorBoundary resetKey="page">
+            {children}
+          </ErrorBoundary>
         </section>
       </div>
     </main>

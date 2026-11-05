@@ -46,7 +46,7 @@ export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdo
   const extras = trpc.auth.profileExtras.useQuery(undefined, {
     enabled: Boolean(user),
   });
-  const canViewTimeBank = Boolean(entitlements.data?.effective.timeTracking);
+  const canViewTimeBank = Boolean(entitlements.data?.effective?.timeTracking);
 
   const initials = (user?.name || user?.email || "U")
     .split(/[\s@._]+/)

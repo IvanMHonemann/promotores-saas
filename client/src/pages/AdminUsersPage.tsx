@@ -46,7 +46,7 @@ export default function AdminUsersPage() {
   const utils = trpc.useUtils();
   const list = trpc.companyUsers.list.useQuery(undefined, { staleTime: 10000 });
   const access = trpc.entitlements.mine.useQuery(undefined, { staleTime: 60000 });
-  const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
+  const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
   const stores = trpc.operations.stores.list.useQuery(undefined, { staleTime: 30000, enabled: hasFieldOperations, retry: false });
   const weekly = trpc.operations.routes.weekly.useQuery(undefined, { staleTime: 15000, enabled: hasFieldOperations, retry: false });
   const [q, setQ] = useState("");

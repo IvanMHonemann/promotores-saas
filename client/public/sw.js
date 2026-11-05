@@ -1,4 +1,4 @@
-const CACHE_NAME = "promotores-saas-shell-v17";
+const CACHE_NAME = "promotores-saas-shell-v18";
 
 const OFFLINE_HTML = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GondUp</title></head><body style="margin:0;background:#07111f;color:#fff;font-family:system-ui;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center;padding:24px"><div><p style="font-size:18px;margin:0 0 8px">Não foi possível carregar o app.</p><p style="color:#94a3b8;margin:0 0 16px">Puxe de novo ou toque no botão.</p><button onclick="location.reload()" style="background:#5eead4;color:#042f2e;border:0;border-radius:10px;padding:12px 18px;font-weight:700">Tentar de novo</button></div></body></html>`;
 

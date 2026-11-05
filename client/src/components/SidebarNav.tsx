@@ -54,7 +54,7 @@ export function SidebarNav() {
     return () => window.removeEventListener("promotores:open-sidebar", openMenu);
   }, []);
   const role = user?.role;
-  const hasFeature = (key: EntitlementKey) => Boolean(entitlements.data?.effective[key]);
+  const hasFeature = (key: EntitlementKey) => Boolean(entitlements.data?.effective?.[key]);
   const toggle = (label: string) => setExpanded((prev) => ({ ...prev, [label]: !prev[label] }));
 
   const links: NavItem[] = role === "platform_admin"

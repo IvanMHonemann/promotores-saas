@@ -17,8 +17,14 @@ export default function RejectedCorrectionAlert() {
   // Só no Início e no Cartão ponto: nas outras telas o aviso atrapalhava o trabalho.
   const visibleHere = location === "/" || location === "/ponto";
   const isField = user?.role === "promoter" || user?.role === "supervisor";
+  const entitlements = trpc.entitlements.mine.useQuery(undefined, {
+    enabled: Boolean(user && user.role !== "platform_admin"),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const hasTimeTracking = Boolean(entitlements.data?.effective?.timeTracking);
   const corrections = trpc.timeTracking.myCorrections.useQuery(undefined, {
-    enabled: isField && visibleHere,
+    enabled: isField && visibleHere && hasTimeTracking,
     staleTime: 15_000,
     refetchOnWindowFocus: true,
   });

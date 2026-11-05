@@ -10,6 +10,10 @@ describe("checklist de implantação", () => {
     expect(steps.map((s) => s.done)).toEqual([true, false, false, false]);
     expect(buildSetupSteps({ stores: 1, promoters: 1, routes: 1, activity: true }).every((s) => s.done)).toBe(true);
   });
+  it("sem ponto, o passo de atividade fala só em foto", () => {
+    expect(buildSetupSteps({ stores: 0, promoters: 0, routes: 0, activity: false, hasTimeTracking: false }).find((s) => s.key === "activity")?.label).toMatch(/foto/i);
+    expect(buildSetupSteps({ stores: 0, promoters: 0, routes: 0, activity: false, hasTimeTracking: false }).find((s) => s.key === "activity")?.label).not.toMatch(/batida/i);
+  });
 });
 
 describe("confirmações", () => {

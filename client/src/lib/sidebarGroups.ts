@@ -13,7 +13,7 @@ export function buildCompanyGroups(role: string | undefined, hasFeature: (key: s
       ...(field && admin && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: "camera" }] : []),
       ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: "package" }] : []),
     ] },
-    { id: "equipe", title: "Equipe e ponto", items: [
+    { id: "equipe", title: time ? "Equipe e ponto" : "Equipe", items: [
       ...(admin && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: "users" }] : []),
       ...(time ? [{ href: "/cartao-ponto", label: "Cartão-ponto", icon: "clock" }] : []),
       ...(time && admin ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: "file" }] : []),

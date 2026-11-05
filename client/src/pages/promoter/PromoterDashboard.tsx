@@ -14,6 +14,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { getCurrentPosition } from "./geolocation";
 import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 import PromoterGuide from "@/components/PromoterGuide";
+import { canManageFieldVisits } from "@/lib/visitAccess";
 
 const visitStatus: Record<string, string> = {
   pending: "Pendente",
@@ -87,21 +88,28 @@ export default function PromoterDashboard() {
   const firstName = user?.name?.trim().split(/\s+/)[0] || "promotor";
   const completed = rows.filter(({ visit }) => visit.status === "completed").length;
   const inProgress = rows.filter(({ visit }) => visit.status === "in_progress").length;
-  const canManageVisits = hasFieldOperations && active && !shift.isLoading && !shift.error && !startVisit.isPending && !completeVisit.isPending;
+  const canManageVisits = canManageFieldVisits({
+    hasFieldOperations,
+    hasTimeTracking,
+    shiftActive: Boolean(shift.data?.active),
+    shiftLoading: shift.isLoading,
+    shiftError: Boolean(shift.error),
+    mutationPending: startVisit.isPending || completeVisit.isPending,
+  });
 
   const openVisit = rows.find(({ visit }) => visit.status === "in_progress");
 
   return (
     <DashboardLayout
       title="Painel inicial"
-      description="Ponto, roteiro e alertas do dia."
+      description={hasTimeTracking ? "Ponto, roteiro e alertas do dia." : "Roteiro e alertas do dia."}
       onRefresh={() => window.location.reload()}
     >
       <div className="space-y-5">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-2xl font-black text-white sm:text-3xl">Olá, {firstName}</h2>
-            <p className="mt-1 text-sm text-slate-200">Bata o ponto aqui e siga para o seu roteiro de hoje.</p>
+            <p className="mt-1 text-sm text-slate-200">{hasTimeTracking ? "Bata o ponto aqui e siga para o seu roteiro de hoje." : "Siga o roteiro de hoje e registre as visitas nas lojas."}</p>
           </div>
           {hasFieldOperations && <a href="#roteiro" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15">
             <ClipboardList className="h-4 w-4 text-teal-300" /> Meu roteiro
@@ -112,7 +120,6 @@ export default function PromoterDashboard() {
         {!access.isLoading && <PromoterGuide hasTimeTracking={hasTimeTracking} hasFieldOperations={hasFieldOperations} />}
         {hasTimeTracking && <PunchPanel />}
 
-        {!access.isLoading && !hasTimeTracking && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">O ponto eletrônico e o GPS não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo.</div>}
         {hasFieldOperations && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
           <div className="rounded-2xl border border-amber-300/40 bg-amber-300/15 p-4 text-sm font-medium text-amber-50">
             {shift.data?.status === "closed"
@@ -121,9 +128,9 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
+        <div className={`grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 ${hasTimeTracking ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
           <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-sky-300" href="/lojas" />
-          <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-teal-300" href="/ponto" />
+          {hasTimeTracking && <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-teal-300" href="/ponto" />}
           <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" href="/produtos" />
         </div>
 

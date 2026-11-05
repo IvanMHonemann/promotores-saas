@@ -21,6 +21,7 @@ export function buildCompanyGroups(role: string | undefined, hasFeature: (key: s
     ] },
     { id: "relatorios", title: "Relatórios", items: [
       ...(admin && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: "audit" }] : []),
+      ...(admin && time ? [{ href: "/ponto-legal", label: "Ponto: prova legal", icon: "shield" }] : []),
       ...(admin && time ? [{ href: "/arquivos-historicos", label: "Arquivos históricos", icon: "archive" }] : []),
     ] },
   ];

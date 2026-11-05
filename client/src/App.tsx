@@ -29,6 +29,9 @@ const StoreGalleryPage = lazy(() => import("./pages/StoreGalleryPage"));
 const TimesheetPage = lazy(() => import("./pages/admin/TimesheetPage"));
 const VacationsPage = lazy(() => import("./pages/admin/VacationsPage"));
 const MyVacationsPage = lazy(() => import("./pages/promoter/MyVacationsPage"));
+const MyReceiptsPage = lazy(() => import("./pages/promoter/MyReceiptsPage"));
+const MyMirrorPage = lazy(() => import("./pages/promoter/MyMirrorPage"));
+const PontoLegalPage = lazy(() => import("./pages/admin/PontoLegalPage"));
 const TimesheetMirrorPage = lazy(() => import("./pages/admin/TimesheetMirrorPage"));
 const TimesheetArchivePage = lazy(() => import("./pages/admin/TimesheetArchivePage"));
 const CheckInOutPage = lazy(() => import("./pages/admin/CheckInOutPage"));
@@ -272,6 +275,9 @@ function Router() {
       <Route path="/check-in-out"><CompanyAdminProtected><FeatureProtected featureKey="fieldOperations"><CheckInOutPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/cartao-ponto"><AdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetPage /></FeatureProtected></AdminProtected></Route>
       <Route path="/ferias"><AdminProtected><FeatureProtected featureKey="timeTracking"><VacationsPage /></FeatureProtected></AdminProtected></Route>
+      <Route path="/meus-comprovantes"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyReceiptsPage /></FeatureProtected></PromoterProtected></Route>
+      <Route path="/meu-espelho"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyMirrorPage /></FeatureProtected></PromoterProtected></Route>
+      <Route path="/ponto-legal"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><PontoLegalPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/minhas-ferias"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyVacationsPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/empresas"><PlatformProtected><PlatformCompaniesPage /></PlatformProtected></Route>

@@ -2,10 +2,11 @@ import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, CheckCircle2, FileSignature } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileSignature, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { currentMonthSP, fmtDateTimeSP, fmtMinutes } from "@/lib/downloadBase64";
+import { buildMirrorPdf, download, fileBase, type MirrorData } from "@/lib/mirrorExport";
 
 const brDate = (iso: string) => iso.split("-").reverse().join("/");
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
@@ -15,6 +16,7 @@ export default function MyMirrorPage() {
   const [month, setMonth] = useState(currentMonthSP(-1));
   const [comment, setComment] = useState("");
   const [read, setRead] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const utils = trpc.useUtils();
   const q = trpc.pontoLegal.myMirror.useQuery({ month });
   const accept = trpc.pontoLegal.acceptMirror.useMutation();
@@ -30,13 +32,70 @@ export default function MyMirrorPage() {
     } catch (e: any) { toast.error(e?.message || "Não foi possível registrar."); }
   };
 
+  const downloadPdf = async () => {
+    if (!data) return;
+    setPdfBusy(true);
+    try {
+      const payload: MirrorData = {
+        company: {
+          name: data.employer?.name || "Empresa",
+          legal: {
+            legalName: data.employer?.name || "",
+            document: data.employer?.document || "",
+            establishment: "",
+            address: "",
+          },
+        },
+        generatedAt: new Date().toISOString(),
+        timeZone: "America/Sao_Paulo",
+        results: [{
+          member: {
+            id: data.member?.id ?? 0,
+            name: data.worker?.name || data.member?.name || "Funcionário",
+            role: "promoter",
+            employeeCode: data.member?.employeeCode ?? null,
+          },
+          labor: data.labor ?? {
+            jobTitle: data.worker?.jobTitle ?? null,
+            admissionDate: data.worker?.admissionDate ?? null,
+            cpf: data.worker?.cpf ?? null,
+          },
+          report: data.report,
+          documentHash: data.documentHash,
+          acceptance: data.acceptance
+            ? {
+                decision: data.acceptance.decision,
+                acceptedAt: data.acceptance.acceptedAt,
+                documentHash: data.acceptance.documentHash,
+                comment: data.acceptance.comment,
+                stillValid: data.acceptance.stillValid,
+              }
+            : null,
+        }],
+      };
+      const blob = await buildMirrorPdf(payload);
+      download(new File([blob], `${fileBase(payload, payload.results[0])}.pdf`, { type: "application/pdf" }));
+      toast.success("PDF do espelho baixado.");
+    } catch (e: any) {
+      toast.error(e?.message || "Não foi possível gerar o PDF.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   const acc = data?.acceptance;
   return (
     <DashboardLayout title="Meu espelho de ponto" description="Confira suas marcações do mês e confirme que estão corretas.">
       <div className="space-y-4">
-        <div className="flex items-center gap-2 text-white">
+        <div className="flex flex-wrap items-center gap-2 text-white">
           <label htmlFor="mes" className="text-sm">Mês:</label>
           <input id="mes" type="month" value={month} max={currentMonthSP()} onChange={(e) => { setMonth(e.target.value); setRead(false); }} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1 text-sm" />
+          {data && (
+            <Button size="sm" variant="outline" disabled={pdfBusy} onClick={() => void downloadPdf()} className="border-white/20 text-white">
+              {pdfBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FileText className="mr-1 h-4 w-4" />}
+              Baixar PDF
+            </Button>
+          )}
         </div>
         {q.isLoading && <p className="text-slate-400">Carregando...</p>}
         {q.error && <p className="text-rose-300">{q.error.message}</p>}
@@ -73,7 +132,7 @@ export default function MyMirrorPage() {
                           <td className="p-1">
                             {d.marks.map((m: any, i: number) => (
                               <span key={i} className={`mr-2 inline-block ${m.kind === "adjusted" ? "text-amber-200" : ""}`} title={m.originalTime ? `Original: ${hhmm(m.originalTime)} — ${m.justification || ""}` : undefined}>
-                                {m.label.split(" ")[0]} {hhmm(m.time)}{m.kind === "adjusted" ? "*" : ""}
+                                {m.label.split(" ")[0]} {hhmm(m.time)}{m.kind === "adjusted" ? "*" : ""}{m.kind === "automatic" ? "A" : ""}
                               </span>
                             ))}
                           </td>
@@ -84,7 +143,7 @@ export default function MyMirrorPage() {
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs text-slate-400">* Horário ajustado por correção aprovada. Passe o dedo/mouse para ver o horário original — ele nunca é apagado.</p>
+                <p className="text-xs text-slate-400">* Horário ajustado por correção aprovada. A = saída automática. Passe o dedo/mouse para ver o horário original — ele nunca é apagado.</p>
               </CardContent>
             </Card>
             <Card className="border-white/10 bg-slate-900/70 text-white">

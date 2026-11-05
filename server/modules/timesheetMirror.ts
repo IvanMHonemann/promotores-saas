@@ -62,6 +62,7 @@ const laborSchema = z.object({
   jobTitle: z.string().trim().max(120).nullish(),
   admissionDate: dateStr.nullish(),
   cpf: z.string().trim().max(14).nullish(),
+  pis: z.string().trim().max(20).nullish(),
   dailyMinutes: z.number().int().min(0).max(1440).nullish(),
   intervalMinutes: z.number().int().min(0).max(600).nullish(),
   workdays: z.array(z.number().int().min(0).max(6)).max(7).nullish(),

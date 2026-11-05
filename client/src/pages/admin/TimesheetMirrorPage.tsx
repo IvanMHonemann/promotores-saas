@@ -138,7 +138,7 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
   const member = useMemo(() => promoters.find((p) => String(p.id) === who), [promoters, who]);
   const stored = member?.labor || {};
   const lv = labor && labor.id === who ? labor.v : {
-    jobTitle: stored.jobTitle ?? "", admissionDate: stored.admissionDate ?? "", cpf: stored.cpf ?? "",
+    jobTitle: stored.jobTitle ?? "", admissionDate: stored.admissionDate ?? "", cpf: stored.cpf ?? "", pis: stored.pis ?? "",
     dailyHours: stored.dailyMinutes ? String(stored.dailyMinutes / 60) : "", intervalMinutes: stored.intervalMinutes != null ? String(stored.intervalMinutes) : "",
     workdays: stored.workdays ?? [], nightEnabled: Boolean(stored.nightEnabled), nightStart: stored.nightStart ?? "22:00", nightEnd: stored.nightEnd ?? "05:00",
   };
@@ -146,7 +146,7 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
   const submitLabor = () => {
     const h = lv.dailyHours === "" ? null : Math.round(Number(String(lv.dailyHours).replace(",", ".")) * 60);
     saveLabor.mutate({ memberId: Number(who), profile: {
-      jobTitle: lv.jobTitle || null, admissionDate: lv.admissionDate || null, cpf: lv.cpf || null,
+      jobTitle: lv.jobTitle || null, admissionDate: lv.admissionDate || null, cpf: lv.cpf || null, pis: lv.pis || null,
       dailyMinutes: h && h > 0 ? h : null, intervalMinutes: lv.intervalMinutes === "" ? null : Number(lv.intervalMinutes),
       workdays: lv.workdays.length ? lv.workdays : null, nightEnabled: lv.nightEnabled, nightStart: lv.nightStart, nightEnd: lv.nightEnd,
     } });
@@ -167,6 +167,7 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
         <div className="grid gap-3 md:grid-cols-3">
           <div><Label>Cargo/função</Label><Input value={lv.jobTitle} onChange={(e) => setLv({ jobTitle: e.target.value })} className={field} /></div>
           <div><Label>CPF</Label><Input value={lv.cpf} onChange={(e) => setLv({ cpf: e.target.value })} placeholder="000.000.000-00" className={field} /></div>
+          <div><Label>PIS/PASEP</Label><Input value={lv.pis} onChange={(e) => setLv({ pis: e.target.value })} placeholder="00000000000" className={field} /></div>
           <div><Label>Data de admissão</Label><Input type="date" value={lv.admissionDate} onChange={(e) => setLv({ admissionDate: e.target.value })} className={field} /></div>
           <div><Label>Jornada diária (horas)</Label><Input inputMode="decimal" value={lv.dailyHours} onChange={(e) => setLv({ dailyHours: e.target.value })} placeholder="Ex.: 8 ou 7,33" className={field} /></div>
           <div><Label>Intervalo previsto (min)</Label><Input inputMode="numeric" value={lv.intervalMinutes} onChange={(e) => setLv({ intervalMinutes: e.target.value })} className={field} /></div>

@@ -175,7 +175,10 @@ export const pontoLegalRouter = router({
       const acc = (await latestAcceptances(ctx.accountId, input.month, [ctx.memberAccountId])).get(ctx.memberAccountId) ?? null;
       return {
         month: input.month, from: m.from, to: m.to, timeZone: TZ, report: m.report, documentHash: m.documentHash,
-        employer: m.employer, worker: { name: m.member.name, cpf: m.labor?.cpf ?? null, jobTitle: m.labor?.jobTitle ?? null, admissionDate: m.labor?.admissionDate ?? null },
+        employer: m.employer,
+        member: { id: m.member.id, name: m.member.name, employeeCode: m.member.employeeCode ?? null },
+        labor: m.labor,
+        worker: { name: m.member.name, cpf: m.labor?.cpf ?? null, jobTitle: m.labor?.jobTitle ?? null, admissionDate: m.labor?.admissionDate ?? null },
         acceptance: acc ? { decision: acc.decision, acceptedAt: acc.acceptedAt, documentHash: acc.documentHash, comment: acc.comment, stillValid: acc.documentHash === m.documentHash } : null,
       };
     }),

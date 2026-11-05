@@ -6,6 +6,7 @@
 import { inArray, sql } from "drizzle-orm";
 import * as db from "./db";
 import { memberAccounts, promoterProfiles } from "../drizzle/schema";
+import { ensurePunchLedger } from "./ponto/ledger";
 
 const TZ = "America/Sao_Paulo";
 const LABEL: Record<string, string> = { clock_in: "Entrada", break_start: "Início do intervalo", break_end: "Retorno do intervalo" };
@@ -21,16 +22,23 @@ export type MissingPunch = { memberId: number; companyId: number; name: string; 
 export async function findMissingPunches(opts: { companyId?: number; memberId?: number } = {}): Promise<MissingPunch[]> {
   const database = await db.getDb();
   if (!database) return [];
+  await ensurePunchLedger();
   // Só a ÚLTIMA marcação de cada funcionário (nos últimos 14 dias), em uma consulta; depois dados de membros em lote.
   const since = new Date(Date.now() - 14 * 86400000);
-  const filters = [sql`te.serverTime >= ${since}`];
+  const filters = [sql`COALESCE(te.deviceTime, te.serverTime) >= ${since}`];
   if (opts.companyId) filters.push(sql`te.companyId = ${opts.companyId}`);
   if (opts.memberId) filters.push(sql`te.memberAccountId = ${opts.memberId}`);
   const where = sql.join(filters, sql` AND `);
   const [raw]: any = await database.execute(sql`
     SELECT te.id, te.companyId, te.memberAccountId, te.eventType, te.serverTime, te.deviceTime
     FROM time_events te
-    JOIN (SELECT memberAccountId, MAX(id) AS maxId FROM time_events te WHERE ${where} GROUP BY memberAccountId) lastev ON lastev.maxId = te.id
+    JOIN (
+      SELECT id AS maxId FROM (
+        SELECT te.id, ROW_NUMBER() OVER (PARTITION BY te.memberAccountId ORDER BY COALESCE(te.deviceTime, te.serverTime) DESC, te.id DESC) AS rn
+        FROM time_events te
+        WHERE ${where} AND NOT EXISTS (SELECT 1 FROM time_events r WHERE r.companyId = te.companyId AND r.replacesEventId = te.id)
+      ) ranked WHERE ranked.rn = 1
+    ) lastev ON lastev.maxId = te.id
     WHERE te.eventType <> 'clock_out'`);
   const open: Array<{ companyId: number; memberAccountId: number; eventType: string; t: Date }> = (raw as any[]).map((r) => ({ companyId: Number(r.companyId), memberAccountId: Number(r.memberAccountId), eventType: String(r.eventType), t: new Date(r.deviceTime || r.serverTime) }));
   if (!open.length) return [];

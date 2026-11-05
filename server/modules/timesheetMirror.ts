@@ -7,7 +7,7 @@ import { companies, memberAccounts, promoterProfiles, timeEvents } from "../../d
 import { auditFromCtx } from "../audit";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
 import { loadApprovedDayExcuses } from "./correctionExtras";
-import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, OPTIONAL_HOLIDAYS_SETTING } from "./mirrorData";
+import { loadAdjustmentsByEvent, loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, OPTIONAL_HOLIDAYS_SETTING, toMirrorEvents } from "./mirrorData";
 import { readTimeAlert } from "../../shared/punchTime";
 
 const TZ = "America/Sao_Paulo";
@@ -140,12 +140,7 @@ export const timesheetMirrorRouter = router({
       const eventRows = await loadMirrorEventRows(ctx.accountId, memberIds, input.from, input.to);
       const eventsByMember = new Map<number, typeof eventRows>();
       for (const r of eventRows) eventsByMember.set(r.memberAccountId, [...(eventsByMember.get(r.memberAccountId) || []), r]);
-      const evIds = eventRows.map((r) => r.id);
-      const adjByEvent = new Map<number, any>();
-      if (evIds.length) {
-        const adjRows: any[] = ((await database.execute(sql`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${ctx.accountId} AND memberAccountId IN (${sql.join(memberIds.map((id) => sql`${id}`), sql`, `)}) ORDER BY id`)) as any)[0];
-        for (const a of adjRows) if (!adjByEvent.has(Number(a.timeEventId))) adjByEvent.set(Number(a.timeEventId), a);
-      }
+      const adjByEvent = await loadAdjustmentsByEvent(ctx.accountId, memberIds);
       const laborByMember = new Map<number, LaborProfile>();
       if (memberIds.length) {
         const laborRows: any[] = ((await database.execute(sql`SELECT settingKey, settingValue FROM system_settings WHERE accountId = ${ctx.accountId} AND settingKey LIKE 'labor\\_profile:%'`)) as any)[0];
@@ -155,17 +150,7 @@ export const timesheetMirrorRouter = router({
       const vacationsByMember = await loadMemberVacations(ctx.accountId, memberIds, input.from, input.to);
       const options = await loadMirrorOptions(ctx.accountId);
       const results = members.map((m) => {
-        const events: MirrorEvent[] = (eventsByMember.get(m.id) || []).map((r) => {
-          const a = adjByEvent.get(r.id);
-          const notes = r.notes || "";
-          return {
-            id: r.id, type: r.eventType, time: (r.deviceTime || r.serverTime).toISOString(), receivedAt: r.serverTime.toISOString(), synced: r.synced, notes,
-            automatic: /automática/i.test(notes) && /^auto-clock-out:/.test(r.idempotencyKey || ""),
-            adjustment: a ? { originalType: a.originalType, originalTime: new Date(a.originalTime).toISOString(), justification: a.justification, reviewedBy: a.reviewedByName, reviewedAt: a.createdAt ? new Date(a.createdAt).toISOString() : null } : null,
-            legacyAdjustment: !a && /Ajuste aprovado em/.test(notes),
-            timeAlert: readTimeAlert(notes),
-          };
-        });
+        const events: MirrorEvent[] = toMirrorEvents(eventsByMember.get(m.id) || [], adjByEvent);
         const labor = laborByMember.get(m.id) ?? null;
         return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: labor ? { ...labor } : null, report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [], vacations: vacationsByMember.get(m.id) || [], options }) };
       });

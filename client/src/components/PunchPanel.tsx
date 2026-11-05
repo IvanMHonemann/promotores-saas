@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { CalendarDays, CheckCircle2, Coffee, Loader2, LogIn, LogOut, MapPin, Play, TrendingDown, TrendingUp } from "lucide-react";
+import { CalendarDays, CheckCircle2, FileCheck2, Coffee, Loader2, LogIn, LogOut, MapPin, Play, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useBusy } from "@/components/BusyOverlay";
@@ -100,6 +100,7 @@ export function PunchPanel() {
   const [now, setNow] = useState(() => new Date());
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lastReceipt, setLastReceipt] = useState<{ nsr: number } | null>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
@@ -164,7 +165,8 @@ export function PunchPanel() {
 
   const punch = async (action: Action) => {
     if (busy) return;
-    if (action.type === "clock_out" && !window.confirm("Encerrar a jornada de hoje? Depois da saída não é possível bater novas marcações no dia.")) return;
+    if (action.type === "clock_out" && !window.confirm("Encerrar a jornada agora? Se precisar voltar ao trabalho hoje, você poderá bater uma nova entrada (ela fica sinalizada para o seu gestor).")) return;
+    if (action.type === "clock_in" && closed && !window.confirm("Você já encerrou uma jornada hoje. Deseja iniciar uma NOVA jornada? A entrada será registrada normalmente e marcada para conferência do gestor.")) return;
     setBusy(true);
     setError("");
     try {
@@ -190,7 +192,8 @@ export function PunchPanel() {
           return;
         }
         setLabel("Registrando ponto...");
-        await register.mutateAsync(payload);
+        const saved: any = await register.mutateAsync(payload);
+        if (saved?.nsr) setLastReceipt({ nsr: saved.nsr });
       });
       if (isOnline()) {
         toast.success(`${action.type === "clock_in" ? "Entrada" : action.type === "clock_out" ? "Saída" : action.type === "break_start" ? "Início do intervalo" : "Retorno do intervalo"} registrada às ${hhmm(new Date())}.`);
@@ -278,6 +281,9 @@ export function PunchPanel() {
             <div>
               <p className="text-base font-bold text-white">Bom descanso! Jornada encerrada às {hhmm(eventTime(last))}.</p>
               <p className="text-sm text-slate-200">Total trabalhado hoje: <strong className="text-white">{formatDuration(workedMs)}</strong></p>
+              <button type="button" onClick={() => void punch(ACTIONS.clock_in)} disabled={busy} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-emerald-300/50 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60">
+                <LogIn className="h-3.5 w-3.5" /> Voltei a trabalhar: bater nova entrada
+              </button>
             </div>
           </div>
         ) : (
@@ -307,6 +313,12 @@ export function PunchPanel() {
           </div>
         )}
 
+        {lastReceipt && (
+          <p className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-teal-300/40 bg-teal-400/10 p-3 text-xs text-teal-50">
+            <span><FileCheck2 className="mr-1 inline h-4 w-4" />Marcação registrada com NSR {lastReceipt.nsr}. Seu comprovante já está disponível.</span>
+            <Link href="/meus-comprovantes" className="shrink-0 font-bold text-teal-200 underline">Ver comprovante</Link>
+          </p>
+        )}
         {error && <p role="alert" className="mt-3 rounded-xl border border-rose-300/40 bg-rose-400/15 p-3 text-sm font-semibold text-rose-100">{error}</p>}
 
         <ol className="mt-5 grid grid-cols-4 gap-2" aria-label="Marcações de hoje">

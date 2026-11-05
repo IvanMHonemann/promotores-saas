@@ -5,7 +5,9 @@
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import * as db from "../db";
 import { timeEvents, vacationSchedules } from "../../drizzle/schema";
-import type { MirrorOptions, VacationRange } from "../../shared/timesheetMirror";
+import type { MirrorEvent, MirrorOptions, VacationRange } from "../../shared/timesheetMirror";
+import { readTimeAlert } from "../../shared/punchTime";
+import { effectiveRows, ensurePunchLedger } from "../ponto/ledger";
 
 /** Horário efetivo da marcação — o MESMO usado no cálculo do espelho (deviceTime, senão serverTime). */
 export const effectiveEventTime = sql`COALESCE(${timeEvents.deviceTime}, ${timeEvents.serverTime})`;
@@ -27,9 +29,11 @@ export async function loadMirrorEventRows(companyId: number, memberIds: number[]
   const database = await db.getDb();
   if (!database) return [];
   const { start, end } = mirrorWindow(from, to);
-  return database.select().from(timeEvents)
+  await ensurePunchLedger();
+  // Marcações substituídas por ajuste aprovado ficam no banco (e no AFD), mas não entram no cálculo.
+  return effectiveRows(await database.select().from(timeEvents)
     .where(and(eq(timeEvents.companyId, companyId), inArray(timeEvents.memberAccountId, memberIds), gte(effectiveEventTime, start), lt(effectiveEventTime, end)))
-    .orderBy(effectiveEventTime);
+    .orderBy(effectiveEventTime));
 }
 
 /** Férias programadas (status "scheduled") que tocam o período, por funcionário. Falha na tabela = sem férias (não derruba o espelho). */
@@ -67,4 +71,41 @@ export const OPTIONAL_HOLIDAYS_SETTING = "mirror_optional_holidays_as_holiday";
 export async function loadMirrorOptions(companyId: number): Promise<MirrorOptions> {
   const raw = await db.getSetting(OPTIONAL_HOLIDAYS_SETTING, companyId, "");
   return { optionalHolidaysAsHoliday: raw === "1" || raw === "true" };
+}
+
+/** Ajustes estruturados (time_event_adjustments) por id do registro que os contém. */
+export async function loadAdjustmentsByEvent(companyId: number, memberIds: number[]): Promise<Map<number, any>> {
+  const map = new Map<number, any>();
+  if (!memberIds.length) return map;
+  const database = await db.getDb();
+  if (!database) return map;
+  try {
+    const { ensureAdjustmentsTable } = await import("./timesheetMirror");
+    await ensureAdjustmentsTable();
+    const rows: any[] = ((await database.execute(sql`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${companyId} AND memberAccountId IN (${sql.join(memberIds.map((id) => sql`${id}`), sql`, `)}) ORDER BY id`)) as any)[0];
+    for (const a of rows) if (!map.has(Number(a.timeEventId))) map.set(Number(a.timeEventId), a);
+  } catch (error) {
+    console.warn("[mirror] ajustes indisponíveis", error);
+  }
+  return map;
+}
+
+/** Converte linhas de time_events no formato do espelho (marcação original x tratada). */
+export function toMirrorEvents(rows: Array<typeof timeEvents.$inferSelect>, adjByEvent: Map<number, any>): MirrorEvent[] {
+  return rows.map((r) => {
+    const a = adjByEvent.get(r.id);
+    const notes = r.notes || "";
+    const inclusion = r.origin === "inclusion";
+    return {
+      id: r.id, type: r.eventType, time: (r.deviceTime || r.serverTime).toISOString(), receivedAt: r.serverTime.toISOString(), synced: r.synced, notes,
+      automatic: /automática/i.test(notes) && /^auto-clock-out:/.test(r.idempotencyKey || ""),
+      adjustment: a
+        ? { originalType: a.originalType, originalTime: new Date(a.originalTime).toISOString(), justification: a.justification, reviewedBy: a.reviewedByName, reviewedAt: a.createdAt ? new Date(a.createdAt).toISOString() : null }
+        : inclusion || r.origin === "adjustment"
+          ? { originalType: (inclusion ? "missing" : r.eventType) as any, originalTime: (r.deviceTime || r.serverTime).toISOString(), justification: r.reason || "", reviewedBy: r.recordedByName, reviewedAt: r.serverTime.toISOString() }
+          : null,
+      legacyAdjustment: !a && r.origin === "original" && /Ajuste aprovado em/.test(notes),
+      timeAlert: readTimeAlert(notes),
+    };
+  });
 }

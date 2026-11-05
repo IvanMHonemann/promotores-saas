@@ -2,6 +2,7 @@ import { neutralizeCsvFormula } from "../shared/csv";
 import { MEMBER_COOKIE_NAME } from "@shared/const";
 import { timeTrackingRouter } from "./modules/timeTracking";
 import { timesheetMirrorRouter } from "./modules/timesheetMirror";
+import { pontoLegalRouter } from "./ponto/router";
 import { timesheetArchiveRouter } from "./modules/timesheetArchive";
 import { vacationsRouter } from "./modules/vacations";
 import { platformCompaniesRouter } from "./modules/platformCompanies";
@@ -61,6 +62,7 @@ export const appRouter = router({
   system: systemRouter,
   timeTracking: timeTrackingRouter,
   timesheetMirror: timesheetMirrorRouter,
+  pontoLegal: pontoLegalRouter,
   timesheetArchive: timesheetArchiveRouter,
   vacations: vacationsRouter,
   platformCompanies: platformCompaniesRouter,

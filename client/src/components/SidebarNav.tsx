@@ -14,7 +14,7 @@ import { buildCompanyGroups, isItemActive, loadGroupState, saveGroupState, type 
 
 const groupIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard, store: MapPin, calendar: CalendarDays, camera: Camera, package: Package, users: UsersRound,
-  clock: Clock3, file: FileText, palm: Palmtree, audit: ClipboardList, archive: Archive, card: CreditCard, trash: Trash2,
+  clock: Clock3, file: FileText, palm: Palmtree, audit: ClipboardList, archive: Archive, shield: ShieldAlert, card: CreditCard, trash: Trash2,
 };
 
 const roleLabels: Record<string, string> = {
@@ -87,6 +87,8 @@ export function SidebarNav() {
           ...(hasFeature("timeTracking") ? [
             { href: "/ponto", label: "Cartão ponto", icon: Clock3 },
             { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
+            { href: "/meus-comprovantes", label: "Meus comprovantes", icon: FileText },
+            { href: "/meu-espelho", label: "Meu espelho do mês", icon: FileText },
             { href: "/minhas-ferias", label: "Minhas férias", icon: Palmtree },
           ] : []),
           { href: "/lojas", label: "Lojas", icon: MapPin },

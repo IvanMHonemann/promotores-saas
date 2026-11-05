@@ -10,7 +10,7 @@ describe("menu lateral da empresa", () => {
     expect(labels(r)).toEqual([
       ["Operação", ["Visão geral", "Lojas", "Roteiros", "Check-in / Check-out", "Produtos e validades"]],
       ["Equipe e ponto", ["Promotores e equipe", "Cartão-ponto", "Espelho de ponto", "Férias"]],
-      ["Relatórios", ["Auditoria", "Arquivos históricos"]],
+      ["Relatórios", ["Auditoria", "Ponto: prova legal", "Arquivos históricos"]],
     ]);
     expect(r.account.items.map((i) => i.label)).toEqual(["Meus módulos", "Lixeira"]);
   });

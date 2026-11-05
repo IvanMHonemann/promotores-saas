@@ -18,6 +18,12 @@ export type AccessDecision = {
   expiresAt?: Date | null;
 };
 
+/** Mensagem exibida ao cliente: a cobrança é manual (sem pagamento automático). */
+export const MANUAL_BILLING_MESSAGE = "Para contratar ou renovar, fale com o suporte.";
+
+/** Dias de tolerância para o status "pending" (aguardando o primeiro pagamento), contados do início da assinatura. */
+export const PENDING_GRACE_DAYS = 7;
+
 function parseDate(value: unknown): Date | null {
   if (!value) return null;
   const d = value instanceof Date ? value : new Date(String(value));
@@ -44,6 +50,8 @@ export async function checkSubscriptionAccess(companyId: number): Promise<Access
   let expiresAt = parseDate(company.subscriptionExpiresAt);
   let trialEndsAt = parseDate(company.trialEndsAt);
   let graceUntil = parseDate(company.gracePeriodEndsAt);
+  // Início do período "pendente": início da assinatura registrada na empresa; senão, criação da empresa.
+  let pendingSince = parseDate(company.subscriptionStartedAt) || parseDate(company.createdAt);
 
   if (!status) {
     const sub = await db.getLatestCompanySubscription(companyId);
@@ -60,6 +68,7 @@ export async function checkSubscriptionAccess(companyId: number): Promise<Access
     expiresAt = parseDate(sub.currentPeriodEnd) || parseDate(sub.endsAt);
     trialEndsAt = parseDate(sub.trialEndsAt);
     graceUntil = parseDate(sub.gracePeriodEndsAt);
+    pendingSince = parseDate(sub.startsAt) || parseDate(sub.createdAt) || pendingSince;
   }
 
   const now = new Date();
@@ -83,9 +92,17 @@ export async function checkSubscriptionAccess(companyId: number): Promise<Access
         return { allowed: false, status: "overdue", expiresAt, graceUntil: grace, reason: "Assinatura vencida." };
       }
       return { allowed: true, status, expiresAt };
-    case "pending":
-      // permite uso enquanto pendente (aguardando pagamento inicial)
-      return { allowed: true, status, expiresAt, reason: "Pagamento pendente." };
+    case "pending": {
+      // Aguardando pagamento: acesso por tempo limitado. Prazo = o mais tardio entre a tolerância explícita
+      // (gracePeriodEndsAt, definida pelo administrador da plataforma) e PENDING_GRACE_DAYS dias após o início
+      // da assinatura (subscriptionStartedAt / startsAt). Sem nenhuma data conhecida, bloqueia.
+      const defaultDeadline = pendingSince ? new Date(pendingSince.getTime() + PENDING_GRACE_DAYS * 24 * 3600 * 1000) : null;
+      const deadline = graceUntil && defaultDeadline ? (graceUntil > defaultDeadline ? graceUntil : defaultDeadline) : (graceUntil || defaultDeadline);
+      if (deadline && now <= deadline) {
+        return { allowed: true, status, expiresAt, graceUntil: deadline, reason: "Pagamento pendente." };
+      }
+      return { allowed: false, status, expiresAt, graceUntil: deadline, reason: `Pagamento pendente há mais de ${PENDING_GRACE_DAYS} dias. ${MANUAL_BILLING_MESSAGE}` };
+    }
     case "overdue": {
       const grace = graceUntil || (expiresAt ? new Date(expiresAt.getTime() + 3 * 24 * 3600 * 1000) : null);
       if (grace && now <= grace) {

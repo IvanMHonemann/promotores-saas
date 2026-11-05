@@ -38,6 +38,11 @@ async function github(path: string, init: RequestInit = {}) {
   return parsed;
 }
 
+export function buildAiBranchName(now: Date = new Date()) {
+  const stamp = now.toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  return `ai/suporte-${stamp}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 async function readFile(path: string, ref: string) {
   const file = await github(`/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(ref)}`) as GithubFile;
   return { path, sha: file.sha, content: Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8") };
@@ -48,7 +53,7 @@ async function askGemini(prompt: string, files: Array<{ path: string; content: s
   if (!apiKey) throw new Error("GEMINI_API_KEY não está configurada na Vercel.");
   const context = files.length ? files.map((file) => `\n--- ${file.path} ---\n${file.content}`).join("\n") : "(nenhum arquivo precisa ser consultado para esta conversa)";
   const conversation = history.slice(-12).map((message) => `${message.role === "user" ? "Usuário" : "Assistente"}: ${message.content}`).join("\n");
-  const system = `Você é o assistente de IA e engenheiro de software do GondUp. Converse naturalmente e responda em português brasileiro, sempre levando em conta exatamente o que o usuário escreveu e o histórico fornecido. Você deve responder perguntas, explicar conceitos, sugerir ideias e ajudar o usuário mesmo quando ele não pedir nenhuma alteração no código.\n\nVocê pode alterar SOMENTE estes arquivos: ${editableFiles.join(", ")}.\nSe o usuário estiver apenas conversando ou fazendo uma pergunta, retorne changes vazio e responda diretamente, sem dizer que alguma alteração foi feita. Só inclua changes quando o usuário pedir explicitamente uma alteração no site ou no código. Quando for solicitada uma alteração, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conteúdo parcial. Não invente arquivos nem diga que publicou algo: o servidor criará um commit real depois de validar sua resposta. Preserve o funcionamento existente e não remova recursos sem pedido explícito.\n\nRetorne SOMENTE JSON válido no formato:\n{"reply":"resposta objetiva","changes":[{"path":"arquivo permitido","content":"conteúdo completo","reason":"motivo"}]}\n\nHistórico recente da conversa:\n${conversation || "(primeira mensagem)"}\n\nCódigo atual:${context}`;
+  const system = `Você é o assistente de IA e engenheiro de software do GondUp. Converse naturalmente e responda em português brasileiro, sempre levando em conta exatamente o que o usuário escreveu e o histórico fornecido. Você deve responder perguntas, explicar conceitos, sugerir ideias e ajudar o usuário mesmo quando ele não pedir nenhuma alteração no código.\n\nVocê pode alterar SOMENTE estes arquivos: ${editableFiles.join(", ")}.\nSe o usuário estiver apenas conversando ou fazendo uma pergunta, retorne changes vazio e responda diretamente, sem dizer que alguma alteração foi feita. Só inclua changes quando o usuário pedir explicitamente uma alteração no site ou no código. Quando for solicitada uma alteração, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conteúdo parcial. Não invente arquivos nem diga que publicou algo: o servidor abrirá um Pull Request para revisão humana depois de validar sua resposta; nada é publicado sem o merge de uma pessoa. Preserve o funcionamento existente e não remova recursos sem pedido explícito.\n\nRetorne SOMENTE JSON válido no formato:\n{"reply":"resposta objetiva","changes":[{"path":"arquivo permitido","content":"conteúdo completo","reason":"motivo"}]}\n\nHistórico recente da conversa:\n${conversation || "(primeira mensagem)"}\n\nCódigo atual:${context}`;
   const responseSchema = {
     type: "OBJECT",
     properties: {
@@ -134,13 +139,28 @@ export async function runPersistentGemini(prompt: string, history: ChatMessage[]
     treeEntries.push({ path: change.path, mode: "100644", type: "blob", sha: blob.sha });
   }
   const tree = await github(`/repos/${OWNER}/${REPO}/git/trees`, { method: "POST", body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: treeEntries }) });
-  const commit = await github(`/repos/${OWNER}/${REPO}/git/commits`, { method: "POST", body: JSON.stringify({ message: `feat(ai): ${prompt.slice(0, 72).replace(/\n/g, " ")}`, tree: tree.sha, parents: [baseCommitSha] }) });
-  await github(`/repos/${OWNER}/${REPO}/git/refs/heads/${encodeURIComponent(BRANCH)}`, { method: "PATCH", body: JSON.stringify({ sha: commit.sha, force: false }) });
+  const summary = prompt.slice(0, 72).replace(/\n/g, " ").trim();
+  const commit = await github(`/repos/${OWNER}/${REPO}/git/commits`, { method: "POST", body: JSON.stringify({ message: `feat(ai): ${summary}`, tree: tree.sha, parents: [baseCommitSha] }) });
+  // NUNCA grava na branch principal: cria uma branch própria e abre um Pull Request para revisão e merge humano.
+  const aiBranch = buildAiBranchName();
+  if (aiBranch === BRANCH) throw new Error("Nome de branch inválido para a alteração da IA.");
+  await github(`/repos/${OWNER}/${REPO}/git/refs`, { method: "POST", body: JSON.stringify({ ref: `refs/heads/${aiBranch}`, sha: commit.sha }) });
+  const pr = await github(`/repos/${OWNER}/${REPO}/pulls`, {
+    method: "POST",
+    body: JSON.stringify({
+      title: `feat(ai): ${summary}`,
+      head: aiBranch,
+      base: BRANCH,
+      body: `Alteração proposta pelo assistente de IA (suporte inteligente).\n\n**Pedido:** ${prompt.slice(0, 1000)}\n\n**Arquivos alterados:**\n${changes.map((change) => `- \`${change.path}\`${change.reason ? `: ${change.reason}` : ""}`).join("\n")}\n\n⚠️ Revise o código antes do merge. Nada é publicado até que uma pessoa faça o merge deste PR.`,
+    }),
+  });
   return {
-    reply: `${result.reply || "Alteração preparada."}\n\nCommit criado com sucesso. A Vercel foi acionada para publicar a nova versão; confirme o resultado no site após o deployment concluir.`,
+    reply: `${result.reply || "Alteração preparada."}\n\nAbri um Pull Request para revisão: ${pr.html_url}. Nada foi publicado ainda; uma pessoa precisa revisar e fazer o merge.`,
     changed: true as const,
     commitSha: commit.sha,
     commitUrl: `https://github.com/${OWNER}/${REPO}/commit/${commit.sha}`,
+    pullRequestUrl: pr.html_url as string,
+    branch: aiBranch,
     files: changes.map((change) => change.path),
   };
 }

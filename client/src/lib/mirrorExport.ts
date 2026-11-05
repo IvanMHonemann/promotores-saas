@@ -98,6 +98,31 @@ export function buildMirrorHtml(data: MirrorData, autoPrint = true): string {
 }
 
 /* ---------------- PDF (jsPDF) ---------------- */
+/**
+ * As fontes padrão do jsPDF (Helvetica) só suportam Windows-1252. Qualquer outro caractere
+ * (ex.: "→", "−", emojis) sai como lixo e quebra a medição de largura (letras espaçadas e texto
+ * saindo da célula). Converte o que tem equivalente e remove o resto.
+ */
+const PDF_REPLACEMENTS: Record<string, string> = {
+  "→": "->", "←": "<-", "↔": "<->", "−": "-", "‐": "-", "‑": "-", "‒": "-", "≥": ">=", "≤": "<=", "≠": "!=", "✓": "OK", "✔": "OK", "✗": "X", "✘": "X",
+  "\u00a0": " ", "\u2009": " ", "\u202f": " ", "\u200b": "", "\t": " ",
+};
+const CP1252_EXTRA = "€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ";
+export function pdfSafe(text: string): string {
+  let out = "";
+  for (const ch of String(text ?? "").normalize("NFC")) {
+    const code = ch.codePointAt(0)!;
+    if (PDF_REPLACEMENTS[ch] !== undefined) out += PDF_REPLACEMENTS[ch];
+    else if (ch === "\n") out += " ";
+    else if ((code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff) || CP1252_EXTRA.includes(ch)) out += ch;
+    else {
+      const base = ch.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (base !== ch && /^[\x20-\x7e]+$/.test(base)) out += base;
+    }
+  }
+  return out;
+}
+
 const PDF_HEADERS = ["Data", "Dia", "Entrada", "Iníc. int.", "Ret. int.", "Saída", "Trab.", "Interv.", "Prev.", "Dif.", "Extras", "Ad. not.", "Ocorrências"];
 
 async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolean) {
@@ -105,7 +130,7 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   if (!first) doc.addPage("a4", "landscape");
 
   // Larguras: mais espaço para Ocorrências, cabeçalhos abreviados cabem em 1 linha
-  const widths = [15, 8, 18, 20, 20, 18, 15, 13, 13, 13, 13, 15];
+  const widths = [19, 8, 18, 20, 20, 18, 15, 13, 13, 13, 13, 15];
   const obsW = W - 2 * M - widths.reduce((a, b) => a + b, 0);
   const cols = [...widths, obsW];
 
@@ -114,7 +139,7 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
 
   const footer = () => {
     doc.setFontSize(7).setTextColor(100);
-    doc.text(`${data.company.name} · Espelho de ponto · ${r.member.name} · emitido em ${stamp(data)} · página ${doc.getNumberOfPages()}`, M, H - 5);
+    doc.text(pdfSafe(`${data.company.name} · Espelho de ponto · ${r.member.name} · emitido em ${stamp(data)} · página ${doc.getNumberOfPages()}`), M, H - 5);
     doc.setTextColor(0);
   };
 
@@ -139,7 +164,7 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
 
   const drawHead = () => {
     doc.setFontSize(7.5).setFont("helvetica", "bold").setFillColor(226, 232, 240);
-    const headerLines = PDF_HEADERS.map((h, i) => doc.splitTextToSize(h, cols[i] - 2) as string[]);
+    const headerLines = PDF_HEADERS.map((h, i) => doc.splitTextToSize(pdfSafe(h), cols[i] - 2) as string[]);
     const headerH = Math.max(...headerLines.map(l => l.length), 1) * 3.2 + 2;
     let x = M;
     doc.rect(M, y, W - 2 * M, headerH, "F");
@@ -160,15 +185,15 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
     if (left[i]) {
       doc.setFont("helvetica", "bold").text(`${left[i][0]}:`, M, y);
-      doc.setFont("helvetica", "normal").text(left[i][1], M + 28, y, { maxWidth: 100 });
+      doc.setFont("helvetica", "normal").text(pdfSafe(left[i][1]), M + 28, y, { maxWidth: 100 });
     }
     if (right[i]) {
       doc.setFont("helvetica", "bold").text(`${right[i][0]}:`, 150, y);
-      doc.setFont("helvetica", "normal").text(right[i][1], 150 + 32, y, { maxWidth: 105 });
+      doc.setFont("helvetica", "normal").text(pdfSafe(right[i][1]), 150 + 32, y, { maxWidth: 105 });
     }
     y += 4.6;
   }
-  doc.setFont("helvetica", "bold").text(`Período: ${periodLabel(r.report)}    Emitido em: ${stamp(data)}`, M, y + 1);
+  doc.setFont("helvetica", "bold").text(pdfSafe(`Período: ${periodLabel(r.report)}    Emitido em: ${stamp(data)}`), M, y + 1);
   y += 6;
 
   // Tabela
@@ -177,7 +202,7 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   doc.setFontSize(7.5);
 
   for (const row of mirrorRows(r.report)) {
-    const lines = row.map((c, i) => doc.splitTextToSize(c || "—", cols[i] - 2) as string[]);
+    const lines = row.map((c, i) => doc.splitTextToSize(pdfSafe(c || "—"), cols[i] - 2) as string[]);
     const h = Math.max(...lines.map((l) => l.length), 1) * 3.3 + 2;
     ensureTable(h);
     let x = M;
@@ -201,8 +226,8 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   doc.setFontSize(8);
   for (const [k, v] of totals) {
     ensurePlain(4.5);
-    doc.setFont("helvetica", "normal").text(k, M, y, { maxWidth: 160 });
-    doc.setFont("helvetica", "bold").text(String(v), M + 170, y);
+    doc.setFont("helvetica", "normal").text(pdfSafe(k), M, y, { maxWidth: 160 });
+    doc.setFont("helvetica", "bold").text(pdfSafe(String(v)), M + 170, y);
     y += 4.2;
   }
 
@@ -210,7 +235,7 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   y += 3;
   doc.setFont("helvetica", "normal").setFontSize(7.5);
   const notes = [...r.report.notes.map((n) => `• ${n}`), LEGEND, DISCLAIMER]
-    .flatMap((n) => doc.splitTextToSize(n, W - 2 * M) as string[]);
+    .flatMap((n) => doc.splitTextToSize(pdfSafe(n), W - 2 * M) as string[]);
   for (const line of notes) {
     ensurePlain(3.8);
     doc.text(line, M, y);

@@ -241,13 +241,29 @@ export function fmtMark(m: DayRow["marks"][number], tz: string): string {
   return `${t.hm}${tag}${m.synced ? "" : " (pend. sinc.)"}`;
 }
 
+/**
+ * Texto da ocorrência de uma marcação ajustada. Evita caracteres fora do Latin-1 (como "→"),
+ * que as fontes padrão do PDF não suportam.
+ * - batida incluída (esquecida): não existia marcação original, então não há "original → novo".
+ * - mesmo tipo: "original HH:MM para HH:MM".
+ * - tipo alterado: "original <tipo> HH:MM para <tipo> HH:MM".
+ */
+export function adjustmentText(m: DayRow["marks"][number], tz: string): string {
+  const to = localParts(m.time, tz).hm;
+  const why = `Justificativa: ${m.justification}${m.reviewedBy ? ` (por ${m.reviewedBy})` : ""}`;
+  if (!m.originalLabel) return `${m.label}: batida incluída manualmente às ${to}. ${why}`;
+  const from = localParts(m.originalTime!, tz).hm;
+  if (m.originalLabel !== m.label) return `${m.label}: original ${m.originalLabel} ${from} para ${m.label} ${to}. ${why}`;
+  return `${m.label}: original ${from} para ${to}. ${why}`;
+}
+
 export const MIRROR_HEADERS = ["Data", "Dia", "Entrada", "Início intervalo", "Retorno intervalo", "Saída", "Trabalhadas", "Intervalo", "Previstas", "Diferença", "Extras", "Adic. noturno", "Ocorrências"];
 export function mirrorRows(report: MirrorReport): string[][] {
   const tz = report.timeZone;
   return report.days.map((d) => {
     const pick = (t: MarkType) => d.marks.filter((m) => m.type === t).map((m) => fmtMark(m, tz)).join(" / ") || "—";
     const has = d.marks.length > 0;
-    const adj = d.marks.filter((m) => m.kind === "adjusted").map((m) => `${m.label}: original ${localParts(m.originalTime!, tz).hm} → ${localParts(m.time, tz).hm}. Justificativa: ${m.justification}${m.reviewedBy ? ` (por ${m.reviewedBy})` : ""}`);
+    const adj = d.marks.filter((m) => m.kind === "adjusted").map((m) => adjustmentText(m, tz));
     const issues = [...d.issues, ...adj].join("; ") || "";
     return [fmtDate(d.date), WEEKDAYS[d.weekday], pick("clock_in"), pick("break_start"), pick("break_end"), pick("clock_out"),
       has ? fmtMinutes(d.workedMinutes) : "—", has ? fmtMinutes(d.breakMinutes) : "—", fmtMinutes(d.expectedMinutes), fmtMinutes(d.diffMinutes, true), fmtMinutes(d.overtimeMinutes), fmtMinutes(d.nightMinutes), issues];

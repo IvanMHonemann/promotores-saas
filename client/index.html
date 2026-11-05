@@ -33,10 +33,7 @@
       }, 6000);
     </script>
     <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
+    <!-- Analytics (Umami): injetado em build por vite.config.ts somente se VITE_ANALYTICS_ENDPOINT e VITE_ANALYTICS_WEBSITE_ID existirem. -->
   </body>
 
 </html>

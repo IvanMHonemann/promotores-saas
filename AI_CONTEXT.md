@@ -1,7 +1,7 @@
 # AI_CONTEXT.md
 
 Contexto técnico conciso para continuidade do desenvolvimento.  
-Última atualização: 2026-11-03. Base: `main`.
+Última atualização: 2026-11-04. Base: `main` + branch `feat/vacation-schedules`.
 
 ## Visão geral
 
@@ -35,13 +35,14 @@ Origem: plataforma anterior de gestão de extintores. O domínio de promotores �
 
 ### Principais tabelas (`drizzle/schema.ts`)
 
-`companies`, `memberAccounts`, `promoterProfiles`, `clients`, `brands`, `retailChains`, `stores`, `teams`, `routes`, `weeklyRouteSchedules`, `visits`, `timeEvents`, `timeCorrectionRequests`, `storePhotos`, `visitPhotos`, `inventoryProducts`, `checklists` (+ questions/responses), `evidences`, `auditLogs`, planos/assinaturas/entitlements.
+`companies`, `memberAccounts`, `promoterProfiles`, `clients`, `brands`, `retailChains`, `stores`, `teams`, `routes`, `weeklyRouteSchedules`, `visits`, `timeEvents`, `timeCorrectionRequests`, `storePhotos`, `visitPhotos`, `inventoryProducts`, `checklists` (+ questions/responses), `evidences`, `auditLogs`, `vacationSchedules`, planos/assinaturas/entitlements.
 
 Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `promoter_store_assignments`, entre outras.
 
 ### Módulos / routers relevantes
 
 - `server/modules/timeTracking.ts` — ponto
+- `server/modules/vacations.ts` — programação de férias
 - `server/modules/storePhotos.ts` — fotos de loja
 - `server/modules/storeClients.ts` — clientes de loja
 - `server/modules/timesheetMirror.ts` — espelho de ponto
@@ -55,6 +56,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Auth: signup (empresa + admin, trial), login, recuperação, avatar, menu de conta unificado, sessão por cookie + token.
 - Planos e entitlements (catálogo único, overrides, autorização no servidor e UI).
 - Ponto: sequência do dia, saída automática de jornadas de dias anteriores, solicitação/inclusão de batidas esquecidas, espelho, alertas de batida faltante (dismiss persistido).
+- Programação de férias (v1): administradores e supervisores cadastram, editam e cancelam períodos dos funcionários ativos (vários períodos por pessoa). Dias corridos calculados (início e fim inclusos). Impede sobreposição do mesmo funcionário (verificação em transação). Alerta (sem bloquear) se outros da mesma equipe (`supervisorId`) estiverem de férias no mesmo período. Histórico de quem criou/editou/cancelou. Calendário mensal/anual e lista com filtros. Promotor consulta somente as próprias férias (`/minhas-ferias`), sem edição. Menu “Férias” no dropdown Cartão-ponto. Tabela `vacation_schedules` (migração `0025`). Sem solicitação/aprovação pelo funcionário, sem saldo legal nem pagamento nesta versão.
 - Lojas, clientes de loja, roteiros semanais, visitas, check-in/out com foto de fachada.
 - Fotos de loja: captura com marca d’água (nome, endereço, loja, data/hora), galeria, seleção em massa, compartilhamento, exclusão, expiração (~60 dias), relatório PDF. Suporte a foto sem loja.
 - Vínculo promotor ↔ lojas (opcional) na criação e na edição do promotor; alterações refletem imediatamente no acesso.
@@ -79,6 +81,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Schema legado de extintores preservado (`schema.original.ts` e algumas colunas/limites) para não quebrar dados antigos.
 - Tabelas auxiliares criadas sob demanda para reduzir dependência de migrações manuais em ambientes já em produção.
 - Servidor inicia HTTP apenas quando não detecta `process.env.VERCEL` (suporte dual serverless / processo tradicional).
+- Férias v1 é apenas programação operacional: não altera cartão-ponto, não calcula saldo legal e não gera pagamento. Isolamento por `companyId` e permissões (admin/supervisor gerenciam; promotor só lê o próprio).
 
 ## Problemas conhecidos e pendências
 
@@ -91,6 +94,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Checklists dinâmicos e evidências genéricas estão modelados no schema, mas o fluxo completo de produto ainda é parcial.
 - Google Maps é opcional (`VITE_GOOGLE_MAPS_API_KEY`).
 - Testes de banco exigem `EXTERNAL_DATABASE_URL`; a suíte completa não roda sem ambiente configurado.
+- Sobreposição de férias é check-then-act dentro de transação, sem `SELECT FOR UPDATE` nem constraint de intervalo: concorrência alta ainda pode gerar períodos sobrepostos no mesmo funcionário.
 
 ## Deploy e ambientes
 

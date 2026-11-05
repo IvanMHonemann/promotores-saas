@@ -12,7 +12,7 @@ export function buildCompanyGroups(role: string | undefined, hasFeature: (key: s
       { href: "/#inicio", label: "Visão geral", icon: "dashboard" },
       ...(field ? [{ href: "/lojas", label: "Lojas", icon: "store" }, { href: "/#roteiros", label: "Roteiros", icon: "calendar" }] : []),
       ...(field && checkIn && admin && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: "camera" }] : []),
-      ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: "package" }] : []),
+      ...(role && hasFeature("products") ? [{ href: "/produtos", label: "Produtos e validades", icon: "package" }] : []),
     ] },
     { id: "equipe", title: time ? "Equipe e ponto" : "Equipe", items: [
       ...(admin && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: "users" }] : []),

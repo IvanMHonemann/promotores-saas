@@ -266,7 +266,7 @@ function Router() {
       <Route path="/redefinir-senha" component={ResetPasswordPage} />
       <Route path="/termos">{() => <LegalPage kind="termos" />}</Route>
       <Route path="/privacidade">{() => <LegalPage kind="privacidade" />}</Route>
-      <Route path="/produtos"><CommercialProtected><ProductsPage /></CommercialProtected></Route>
+      <Route path="/produtos"><CommercialProtected><FeatureProtected featureKey="products"><ProductsPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lojas/:storeId"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoreGalleryPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lojas"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoresPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lixeira"><CommercialProtected><TrashPage /></CommercialProtected></Route>

@@ -21,7 +21,9 @@ describe("menu lateral da empresa", () => {
   });
   it("respeita módulos contratados", () => {
     const r = buildCompanyGroups("company_admin", (k) => k === "teamManagement");
-    expect(labels(r)).toEqual([["Operação", ["Visão geral", "Produtos e validades"]], ["Equipe", ["Promotores e equipe"]]]);
+    expect(labels(r)).toEqual([["Operação", ["Visão geral"]], ["Equipe", ["Promotores e equipe"]]]);
+    const withProducts = buildCompanyGroups("company_admin", (k) => k === "teamManagement" || k === "products");
+    expect(labels(withProducts)[0]).toEqual(["Operação", ["Visão geral", "Produtos e validades"]]);
   });
   it("sem ponto: some itens de ponto e o grupo vira Equipe", () => {
     const r = buildCompanyGroups("company_admin", (k) => k !== "timeTracking");

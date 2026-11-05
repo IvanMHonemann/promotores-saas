@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { daysUntil, todayInZone } from "@shared/expiry";
 import { AlertTriangle, ClipboardList, Clock3, Loader2, MapPin } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -34,6 +35,7 @@ export default function PromoterDashboard() {
   const access = { ...accessQuery, data: accessQuery.data ?? (!isOnline() ? cachedAccess : undefined) };
   const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
   const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
+  const hasProducts = Boolean(access.data?.effective?.products);
   const hasVisitCheckIn = Boolean(access.data?.effective?.visitCheckIn);
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
   const visitsQuery = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations, staleTime: 0, refetchOnWindowFocus: true });
@@ -49,7 +51,7 @@ export default function PromoterDashboard() {
   };
   const utils = trpc.useUtils();
   const rows = hasFieldOperations ? visits.data || [] : [];
-  const alertsQuery = trpc.inventoryAlerts.useQuery({ daysAhead: 30 }, { staleTime: 60000 });
+  const alertsQuery = trpc.inventoryAlerts.useQuery(undefined, { enabled: hasProducts, staleTime: 60000 });
   const alerts = useOfflineQuery(alertsQuery, "alerts");
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 30 }, { enabled: hasTimeTracking });
   const storesQuery = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
@@ -133,23 +135,23 @@ export default function PromoterDashboard() {
         <div className={`grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 ${hasTimeTracking ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
           <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-sky-300" href="/lojas" />
           {hasTimeTracking && <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-teal-300" href="/ponto" />}
-          <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" href="/produtos" />
+          {hasProducts && <Metric label="Validades" detail="Vencidos e a vencer" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" href="/produtos" />}
         </div>
 
-        <section className="rounded-2xl border-2 border-amber-400/40 bg-amber-400/10 p-4">
+        {hasProducts && <section className="rounded-2xl border-2 border-amber-400/40 bg-amber-400/10 p-4">
           <h3 className="flex items-center gap-2 text-base font-bold text-amber-100">
             <AlertTriangle className="h-5 w-5 text-amber-300" /> Alertas de validade
             {expiringCount > 0 && <span className="ml-auto rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-950">{expiringCount}</span>}
           </h3>
           {alerts.isLoading && <p className="mt-3 text-sm text-amber-100/70">Carregando produtos...</p>}
-          {alerts.isError && <p className="mt-3 text-sm text-rose-200">Não foi possível carregar. Verifique se o módulo de alertas está ativo.</p>}
+          {alerts.isError && <p className="mt-3 text-sm text-rose-200">Não foi possível carregar os alertas de validade.</p>}
           {!alerts.isLoading && !alerts.isError && expiringCount === 0 && (
-            <p className="mt-3 text-sm text-amber-100/70">Nenhum produto perto do vencimento nos próximos 30 dias.</p>
+            <p className="mt-3 text-sm text-amber-100/70">Nenhum produto vencido ou perto do vencimento.</p>
           )}
           <div className="mt-3 space-y-2">
             {(alerts.data || []).slice(0, 5).map((item: any) => {
-              const exp = item.expirationDate ? new Date(item.expirationDate) : null;
-              const days = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+              // Validade é data de calendário: compara com "hoje" no fuso de Brasília (sem erro de fuso/horário).
+              const days = item.expirationDate ? daysUntil(String(item.expirationDate).slice(0, 10), todayInZone()) : null;
               return (
                 <div key={item.id} className="flex items-center justify-between rounded-xl border border-amber-300/20 bg-slate-950/60 px-3 py-2.5">
                   <div>
@@ -157,13 +159,13 @@ export default function PromoterDashboard() {
                     <p className="text-xs text-slate-400">{item.productCode || ""}</p>
                   </div>
                   <span className="rounded-lg bg-amber-400/20 px-2 py-1 text-xs font-bold text-amber-200">
-                    {days == null ? "—" : days < 0 ? "Vencido" : `${days}d`}
+                    {days == null ? "—" : days < 0 ? "Vencido" : days === 0 ? "Hoje" : `${days}d`}
                   </span>
                 </div>
               );
             })}
           </div>
-        </section>
+        </section>}
 
         {!access.isLoading && !hasFieldOperations && <div className="rounded-2xl border border-slate-400/25 bg-slate-400/10 p-4 text-sm text-slate-200">Roteiros e visitas não estão liberados para esta empresa.</div>}
         {hasFieldOperations && <section id="roteiro" className="scroll-mt-6">

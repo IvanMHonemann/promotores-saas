@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { daysUntil, todayInZone } from "@shared/expiry";
 import { AlertTriangle, Bell, Check, CheckCircle2, Clock3, ClipboardList, Loader2, MapPin, Users, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -48,6 +49,7 @@ export default function OperationsDashboard() {
   const isSupervisor = user?.role === "supervisor";
   const access = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
   const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
+  const hasProducts = Boolean(access.data?.effective?.products);
   const hasVisitCheckIn = Boolean(access.data?.effective?.visitCheckIn);
   const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
   const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
@@ -57,7 +59,7 @@ export default function OperationsDashboard() {
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { enabled: hasFieldOperations });
   const storesWithStats = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
-  const alertsQuery = trpc.inventoryAlerts.useQuery({ daysAhead: 30 }, { enabled: hasFieldOperations, staleTime: 60000 });
+  const alertsQuery = trpc.inventoryAlerts.useQuery(undefined, { enabled: hasProducts, staleTime: 60000 });
   const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin && hasTimeTracking });
   const utils = trpc.useUtils();
@@ -163,6 +165,7 @@ export default function OperationsDashboard() {
     <DashboardLayout title={title} description={description} onRefresh={() => window.location.reload()}>
       {visibleSection === "overview" && (
         <Overview
+          hasProducts={hasProducts}
           isSupervisor={isSupervisor}
           setupSteps={buildSetupSteps({ stores: (stores.data || []).length, promoters: (promoters.data || []).length, routes: (routes.data || []).length, activity: metrics.totalPhotos > 0 || (hasTimeTracking && (presence.data || []).length > 0) || (hasVisitCheckIn && metrics.completed > 0), hasTimeTracking, hasVisitCheckIn })}
           setupReady={!stores.isLoading && !promoters.isLoading && !routes.isLoading && !storesWithStats.isLoading}
@@ -214,7 +217,7 @@ export default function OperationsDashboard() {
   );
 }
 
-function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, accessLoading = false, isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasVisitCheckIn, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
+function Overview({ hasProducts = false, isSupervisor = false, setupSteps = [], setupReady = false, accessLoading = false, isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasVisitCheckIn, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
   const activePromoters = presence.filter((entry: CompanyPresenceEntry) => entry.active).length;
   return (
     <div className="space-y-6">
@@ -232,12 +235,12 @@ function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, a
         {hasTimeTracking && <Metric label="Em atendimento" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Com ponto aberto" href={isCompanyAdmin && hasVisitCheckIn ? "/check-in-out" : undefined} />}
         <Metric label="Visitas hoje" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Planejadas" href={hasVisitCheckIn ? "#visitas" : "#roteiros"} />
         <Metric label="Lojas" value={metrics.storeCount} icon={MapPin} tone="text-sky-300" hint="Cadastradas" href="/lojas" />
-        <Metric label="A vencer" value={metrics.expiring} icon={AlertTriangle} tone="text-amber-300" hint="Próx. 30 dias" href="/produtos" />
+        {hasProducts && <Metric label="Validades" value={metrics.expiring} icon={AlertTriangle} tone="text-amber-300" hint="Vencidos e a vencer" href="/produtos" />}
       </div>}
       {!accessLoading && !hasFieldOperations && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">Roteiros, lojas e visitas não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo de operação de campo.</div>}
       {hasFieldOperations && visitsFailed && <p role="alert" className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">Não foi possível carregar os indicadores de visitas. Atualize o painel e tente novamente.</p>}
 
-      {hasFieldOperations && (
+      {hasProducts && (
         <section className="rounded-2xl border-2 border-amber-400/40 bg-amber-400/10 p-4">
           <h3 className="flex items-center gap-2 text-base font-bold text-amber-100">
             <AlertTriangle className="h-5 w-5 text-amber-300" /> Alertas de validade
@@ -246,12 +249,12 @@ function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, a
           {alertsLoading && <p className="mt-3 text-sm text-amber-100/70">Carregando produtos...</p>}
           {alertsError && <p className="mt-3 text-sm text-rose-200">Não foi possível carregar os alertas de validade.</p>}
           {!alertsLoading && !alertsError && metrics.expiring === 0 && (
-            <p className="mt-3 text-sm text-amber-100/70">Nenhum produto perto do vencimento nos próximos 30 dias.</p>
+            <p className="mt-3 text-sm text-amber-100/70">Nenhum produto vencido ou perto do vencimento.</p>
           )}
           <div className="mt-3 space-y-2">
             {(alerts || []).slice(0, 5).map((item: any) => {
-              const exp = item.expirationDate ? new Date(item.expirationDate) : null;
-              const days = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+              // Validade é data de calendário: compara com "hoje" no fuso de Brasília (sem erro de fuso/horário).
+              const days = item.expirationDate ? daysUntil(String(item.expirationDate).slice(0, 10), todayInZone()) : null;
               return (
                 <div key={item.id} className="flex items-center justify-between rounded-xl border border-amber-300/20 bg-slate-950/60 px-3 py-2.5">
                   <div>
@@ -259,7 +262,7 @@ function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, a
                     <p className="text-xs text-slate-400">{item.productCode || ""}</p>
                   </div>
                   <span className="rounded-lg bg-amber-400/20 px-2 py-1 text-xs font-bold text-amber-200">
-                    {days == null ? "—" : days < 0 ? "Vencido" : `${days}d`}
+                    {days == null ? "—" : days < 0 ? "Vencido" : days === 0 ? "Hoje" : `${days}d`}
                   </span>
                 </div>
               );

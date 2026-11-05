@@ -62,13 +62,14 @@ function timingSafeTokenEqual(a: string, b: string): boolean {
 /** Build the Express app (shared by local server and Vercel serverless). */
 export async function createApp(): Promise<Express> {
   const app = express();
+  app.disable("x-powered-by");
   // Required behind reverse proxies so req.protocol and secure cookies work on HTTPS.
   app.set("trust proxy", 1);
   app.use(securityHeaders);
   // Gzip/deflate para HTML, JS/CSS e respostas JSON (reduz ~70% do tráfego).
   app.use(compression());
-  app.use(express.json({ limit: "10mb" }));
-  app.use(express.urlencoded({ limit: "10mb", extended: true }));
+  app.use(express.json({ limit: "4500kb" }));
+  app.use(express.urlencoded({ limit: "4500kb", extended: true }));
 
   app.get("/healthz", (_req, res) => {
     res.status(200).json({ ok: true });

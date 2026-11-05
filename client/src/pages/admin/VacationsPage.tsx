@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { brDate } from "@/lib/labels";
 import { CalendarDays, Plus, Trash2, Pencil, Palmtree } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,6 +38,7 @@ export default function VacationsPage() {
   const [form, setForm] = useState({ memberAccountId: "", startDate: "", endDate: "", notes: "" });
 
   const members = trpc.vacations.members.useQuery(undefined, { staleTime: 30000 });
+  const personName = (id?: number | null) => (id ? (members.data || []).find((m: any) => m.id === id)?.userName || "administrador" : "—");
   const list = trpc.vacations.list.useQuery({
     memberAccountId: memberFilter === "all" ? undefined : Number(memberFilter),
     status: statusFilter === "all" ? "all" : statusFilter,
@@ -158,9 +160,9 @@ export default function VacationsPage() {
               <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 p-3">
                 <div>
                   <p className="font-semibold">{row.memberName}</p>
-                  <p className="text-slate-300">{isoDate(row.startDate)} a {isoDate(row.endDate)} · {row.days} dias · {statusLabel(row.status, isoDate(row.startDate), isoDate(row.endDate))}</p>
+                  <p className="text-slate-300">{brDate(isoDate(row.startDate))} a {brDate(isoDate(row.endDate))} · {row.days} dias · {statusLabel(row.status, isoDate(row.startDate), isoDate(row.endDate))}</p>
                   {row.notes && <p className="text-xs text-slate-400">{row.notes}</p>}
-                  <p className="text-xs text-slate-500">Criado por #{row.createdByMemberAccountId}{row.updatedByMemberAccountId ? ` · editado por #${row.updatedByMemberAccountId}` : ""}{row.cancelledByMemberAccountId ? ` · cancelado por #${row.cancelledByMemberAccountId}` : ""}</p>
+                  <p className="text-xs text-slate-500">Criado por {personName(row.createdByMemberAccountId)}{row.updatedByMemberAccountId ? ` · editado por ${personName(row.updatedByMemberAccountId)}` : ""}{row.cancelledByMemberAccountId ? ` · cancelado por ${personName(row.cancelledByMemberAccountId)}` : ""}</p>
                 </div>
                 {row.status === "scheduled" && (
                   <div className="flex gap-2">

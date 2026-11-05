@@ -152,7 +152,7 @@ export default function MyAccountPage() {
                   {user?.companyId && (
                     <div>
                       <Label className="font-semibold text-slate-700">Empresa</Label>
-                      <p className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-3 font-medium text-slate-950">Empresa #{user.companyId}</p>
+                      <p className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-3 font-medium text-slate-950">{(entitlements.data as any)?.companyName || "Sua empresa"}</p>
                     </div>
                   )}
                 </CardContent>

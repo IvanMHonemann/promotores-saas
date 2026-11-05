@@ -319,8 +319,9 @@ export const storePhotosRouter = router({
       longitude: z.number().optional(),
       accuracy: z.number().optional(),
       locationStatus: z.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
-      imageBase64: z.string().min(100).max(6_000_000, "Imagem grande demais. Tire a foto novamente."),
-      mimeType: z.string().default("image/jpeg"),
+      // Limite da Vercel: corpo de 4,5 MB; base64 de 4,2 M caracteres ≈ 3,1 MB de imagem.
+      imageBase64: z.string().min(100).max(4_200_000, "Imagem grande demais. Tire a foto novamente."),
+      mimeType: z.string().max(100).default("image/jpeg"), // ignorado: o tipo real é detectado pelo conteúdo
       storeClientId: z.number().int().positive().optional(),
       idempotencyKey: z.string().min(8).max(64),
     }))
@@ -352,7 +353,10 @@ export const storePhotosRouter = router({
 
       const { storagePut } = await import("../storage");
       const buffer = Buffer.from(input.imageBase64, "base64");
-      const ext = input.mimeType.includes("png") ? "png" : "jpg";
+      const detectedMime = detectImageMime(buffer);
+      if (!detectedMime) throw new TRPCError({ code: "BAD_REQUEST", message: "Arquivo não é uma imagem válida (use JPG, PNG ou WebP)." });
+      input.mimeType = detectedMime;
+      const ext = input.mimeType === "image/png" ? "png" : input.mimeType === "image/webp" ? "webp" : "jpg";
       const relKey = `store-photos/${ctx.accountId}/${input.storeId}/${input.idempotencyKey}.${ext}`;
 
       let fileKey: string;
@@ -583,4 +587,13 @@ export async function expireOldStorePhotos(): Promise<{ deleted: number; errors:
   }
 
   return { deleted, errors };
+}
+
+/** Confere a assinatura do arquivo (JPEG, PNG ou WebP), independentemente do mimeType informado. */
+export function detectImageMime(buf: Buffer): "image/jpeg" | "image/png" | "image/webp" | null {
+  if (buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  return null;
 }

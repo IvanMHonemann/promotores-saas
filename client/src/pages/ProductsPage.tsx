@@ -36,6 +36,8 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": 
 
 export default function ProductsPage() {
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search.trim()), 350); return () => clearTimeout(t); }, [search]);
   const [expiry, setExpiry] = useState<"all" | "expired" | "near" | "valid">("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -51,7 +53,7 @@ export default function ProductsPage() {
   const scannedRef = useRef(false);
   const utils = trpc.useUtils();
   const stores = trpc.operations.stores.list.useQuery(undefined, { staleTime: 60000 });
-  const productsQuery = trpc.products.list.useQuery({ search: search.trim() || undefined, expiry, storeId: storeFilter, from: from || undefined, to: to || undefined }, { staleTime: 15000 });
+  const productsQuery = trpc.products.list.useQuery({ search: debouncedSearch || undefined, expiry, storeId: storeFilter, from: from || undefined, to: to || undefined }, { staleTime: 15000 });
   const products = useOfflineQuery(productsQuery, "products");
   const expiringQuery = trpc.products.list.useQuery({ expiry: "near" }, { staleTime: 60000 });
   const expiringProducts = useOfflineQuery(expiringQuery, "products-near");

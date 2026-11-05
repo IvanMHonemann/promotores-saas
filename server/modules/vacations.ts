@@ -100,7 +100,7 @@ async function teamOverlapWarning(database: any, companyId: number, memberAccoun
 export const vacationsRouter = router({
   members: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
     assertManager(ctx);
-    const database = await db.getDb();
+    const database = await requireDb();
     return database
       .select({ id: memberAccounts.id, userName: memberAccounts.userName })
       .from(memberAccounts)
@@ -118,7 +118,7 @@ export const vacationsRouter = router({
     .query(async ({ ctx, input }) => {
       assertManager(ctx);
       await ensureVacationSchedulesTable();
-      const database = await db.getDb();
+      const database = await requireDb();
       const conds = [eq(vacationSchedules.companyId, ctx.accountId)];
       if (input?.memberAccountId) conds.push(eq(vacationSchedules.memberAccountId, input.memberAccountId));
       if (input?.status && input.status !== "all") conds.push(eq(vacationSchedules.status, input.status));
@@ -150,7 +150,7 @@ export const vacationsRouter = router({
   mine: protectedProcedure.query(async ({ ctx }) => {
     if (!ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN" });
     await ensureVacationSchedulesTable();
-    const database = await db.getDb();
+    const database = await requireDb();
     return database
       .select()
       .from(vacationSchedules)
@@ -169,7 +169,7 @@ export const vacationsRouter = router({
     .mutation(async ({ ctx, input }) => {
       assertManager(ctx);
       await ensureVacationSchedulesTable();
-      const database = await db.getDb();
+      const database = await requireDb();
       const [member] = await database.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, active: memberAccounts.active })
         .from(memberAccounts).where(eq(memberAccounts.id, input.memberAccountId)).limit(1);
       if (!member || member.companyId !== ctx.accountId || !member.active) {
@@ -202,7 +202,7 @@ export const vacationsRouter = router({
     .mutation(async ({ ctx, input }) => {
       assertManager(ctx);
       await ensureVacationSchedulesTable();
-      const database = await db.getDb();
+      const database = await requireDb();
       const days = daysBetween(input.startDate, input.endDate);
       let warning: string | null = null;
       await database.transaction(async (tx) => {
@@ -228,7 +228,7 @@ export const vacationsRouter = router({
     .mutation(async ({ ctx, input }) => {
       assertManager(ctx);
       await ensureVacationSchedulesTable();
-      const database = await db.getDb();
+      const database = await requireDb();
       await database.transaction(async (tx) => {
         const [row] = await tx.select().from(vacationSchedules)
           .where(and(eq(vacationSchedules.id, input.id), eq(vacationSchedules.companyId, ctx.accountId))).limit(1);
@@ -248,7 +248,7 @@ export const vacationsRouter = router({
     .query(async ({ ctx, input }) => {
       assertManager(ctx);
       await ensureVacationSchedulesTable();
-      const database = await db.getDb();
+      const database = await requireDb();
       const from = input.month
         ? `${input.year}-${String(input.month).padStart(2, "0")}-01`
         : `${input.year}-01-01`;
@@ -279,3 +279,10 @@ export const vacationsRouter = router({
       return rows.map((row) => ({ ...row, startDate: asDateStr(row.startDate), endDate: asDateStr(row.endDate) }));
     }),
 });
+
+/** Banco indisponível vira erro amigável (503) em vez de 500 genérico. */
+async function requireDb() {
+  const database = await db.getDb();
+  if (!database) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Banco de dados indisponível no momento. Tente novamente em instantes." });
+  return database;
+}

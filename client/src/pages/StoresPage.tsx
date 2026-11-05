@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Camera, ChevronRight, MapPin, Plus, Search, Store, X } from "lucide-react";
+import { Camera, ChevronRight, MapPin, Pencil, Plus, Search, Store, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,6 +54,27 @@ export default function StoresPage() {
   const { run } = useBusy();
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({ name: "", city: "", state: "", address: "" });
+  const isCompanyAdmin = user?.role === "company_admin";
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const updateStore = trpc.operations.stores.update.useMutation({
+    onSuccess: () => { toast.success("Loja atualizada."); setForm({ name: "", city: "", state: "", address: "" }); setEditingId(null); setFormOpen(false); void stores.refetch(); },
+    onError: (e) => toast.error(e.message || "Não foi possível salvar a loja."),
+  });
+  const archiveStore = trpc.operations.stores.archive.useMutation({
+    onSuccess: () => { toast.success("Loja removida da lista. Fotos e histórico continuam guardados."); void stores.refetch(); },
+    onError: (e) => toast.error(e.message || "Não foi possível remover a loja."),
+  });
+  const startEdit = (store: any) => {
+    setEditingId(store.id);
+    setForm({ name: store.name || "", city: store.city || "", state: store.state || "", address: store.address || "" });
+    setFormOpen(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const confirmArchive = (store: any) => {
+    if (!window.confirm(`Remover a loja "${store.name}" da lista? As fotos e o histórico continuam guardados.`)) return;
+    void run("Removendo loja...", () => archiveStore.mutateAsync({ id: store.id })).catch(() => {});
+  };
+  const closeForm = () => { setFormOpen(false); setEditingId(null); setForm({ name: "", city: "", state: "", address: "" }); };
   const createStore = trpc.operations.stores.create.useMutation({
     onSuccess: () => {
       toast.success("Loja cadastrada.");
@@ -71,6 +92,11 @@ export default function StoresPage() {
     if (city.length < 2) return toast.info("Informe a cidade.");
     if (state && state.length !== 2) return toast.info("Use a sigla do estado com 2 letras (ex.: SP).");
     const payload = { name, city, state: state || undefined, address: form.address.trim() || undefined };
+    if (editingId) {
+      if (!online) return toast.info("Conecte-se à internet para editar a loja.");
+      void run("Salvando loja...", () => updateStore.mutateAsync({ id: editingId, name, city, state: state || "", address: form.address.trim() })).catch(() => {});
+      return;
+    }
     if (!online) {
       enqueueStore(payload);
       setPendingStores(listStores());
@@ -106,8 +132,8 @@ export default function StoresPage() {
         {canCreateStore && formOpen && (
           <section className="space-y-3 rounded-2xl border border-white/15 bg-slate-800/70 p-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">Cadastrar loja</h3>
-              <button type="button" onClick={() => setFormOpen(false)} aria-label="Fechar" className="rounded-full p-1.5 text-slate-200 hover:bg-white/10">
+              <h3 className="text-base font-bold text-white">{editingId ? "Editar loja" : "Cadastrar loja"}</h3>
+              <button type="button" onClick={closeForm} aria-label="Fechar" className="rounded-full p-1.5 text-slate-200 hover:bg-white/10">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -182,10 +208,20 @@ export default function StoresPage() {
                   {store.pending && " · pendente"}
                 </span>
               </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-teal-300/10 px-2 py-0.5 text-xs font-semibold text-teal-200">
+              <span title="Fotos registradas" className="inline-flex items-center gap-1 rounded-full bg-teal-300/10 px-2 py-0.5 text-xs font-semibold text-teal-200">
                 <Camera className="h-3 w-3" />
-                {store.photoCount}
+                {store.photoCount} foto{store.photoCount === 1 ? "" : "s"}
               </span>
+              {canCreateStore && !store.pending && (
+                <button type="button" aria-label={`Editar ${store.name}`} title="Editar loja" onClick={(e) => { e.preventDefault(); e.stopPropagation(); startEdit(store); }} className="rounded-full p-1.5 text-slate-300 hover:bg-white/10 hover:text-white">
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
+              {isCompanyAdmin && !store.pending && (
+                <button type="button" aria-label={`Remover ${store.name}`} title="Remover loja" onClick={(e) => { e.preventDefault(); e.stopPropagation(); confirmArchive(store); }} className="rounded-full p-1.5 text-slate-300 hover:bg-rose-400/15 hover:text-rose-200">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
               <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
             </Link>
           ))}

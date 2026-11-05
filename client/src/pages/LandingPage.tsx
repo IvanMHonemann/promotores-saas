@@ -17,10 +17,9 @@ import {
 import { useLocation } from "wouter";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
+import ContactChat from "@/components/ContactChat";
+import { useState } from "react";
 
-// Link de contato comercial (WhatsApp, e-mail ou formulário). Defina VITE_CONTACT_URL na hospedagem.
-const CONTACT_URL = (import.meta.env.VITE_CONTACT_URL as string | undefined) || "";
-const openContact = () => { if (CONTACT_URL) window.open(CONTACT_URL, "_blank", "noopener"); else document.getElementById("contato")?.scrollIntoView({ behavior: "smooth" }); };
 
 const navLinks = [
   { href: "#recursos", label: "Recursos" },
@@ -121,6 +120,8 @@ function scrollTo(id: string) {
 export default function LandingPage() {
   const [, navigate] = useLocation();
 
+  const [contactOpen, setContactOpen] = useState(false);
+  const openContact = () => setContactOpen(true);
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#050b14] text-slate-100">
       <div className="pointer-events-none absolute inset-0">
@@ -359,6 +360,7 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+      <ContactChat open={contactOpen} onClose={() => setContactOpen(false)} />
     </main>
   );
 }

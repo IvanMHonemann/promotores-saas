@@ -18,6 +18,7 @@ import { useLocation } from "wouter";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import ContactChat from "@/components/ContactChat";
+import FloatingContactButton from "@/components/FloatingContactButton";
 import { useState } from "react";
 
 
@@ -349,7 +350,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <footer className="relative z-10 border-t border-white/8 px-5 py-8">
+      <footer className="relative z-10 border-t border-white/8 px-5 pb-28 pt-8 sm:pb-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-500 sm:flex-row">
           <BrandLogo variant="dark" height={28} />
           <p>GONDUP · Gestão inteligente de equipes de campo</p>
@@ -360,6 +361,7 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+      <FloatingContactButton onOpen={openContact} hidden={contactOpen} />
       <ContactChat open={contactOpen} onClose={() => setContactOpen(false)} />
     </main>
   );

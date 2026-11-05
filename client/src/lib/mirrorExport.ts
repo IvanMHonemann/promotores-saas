@@ -98,54 +98,115 @@ export function buildMirrorHtml(data: MirrorData, autoPrint = true): string {
 }
 
 /* ---------------- PDF (jsPDF) ---------------- */
+const PDF_HEADERS = ["Data", "Dia", "Entrada", "Iníc. int.", "Ret. int.", "Saída", "Trab.", "Interv.", "Prev.", "Dif.", "Extras", "Ad. not.", "Ocorrências"];
+
 async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolean) {
   const W = 297, H = 210, M = 10;
   if (!first) doc.addPage("a4", "landscape");
-  const widths = [18, 9, 24, 24, 24, 24, 17, 15, 15, 15, 14, 16];
+
+  // Larguras ajustadas para caber melhor os cabeçalhos e dar mais espaço às ocorrências
+  const widths = [16, 8, 20, 22, 22, 20, 16, 14, 14, 14, 14, 16];
   const obsW = W - 2 * M - widths.reduce((a, b) => a + b, 0);
   const cols = [...widths, obsW];
+
   let y = M;
-  const footer = () => { doc.setFontSize(7).setTextColor(100); doc.text(`${data.company.name} · Espelho de ponto · ${r.member.name} · emitido em ${stamp(data)} · página ${doc.getNumberOfPages()}`, M, H - 5); doc.setTextColor(0); };
-  const ensure = (h: number) => { if (y + h > H - 10) { footer(); doc.addPage("a4", "landscape"); y = M; drawHead(); } };
-  const drawHead = () => {
-    doc.setFontSize(8).setFont("helvetica", "bold").setFillColor(226, 232, 240);
-    let x = M; doc.rect(M, y, W - 2 * M, 7, "F");
-    MIRROR_HEADERS.forEach((h, i) => { doc.text(h, x + 1, y + 4.5, { maxWidth: cols[i] - 2 }); x += cols[i]; });
-    y += 7; doc.setFont("helvetica", "normal");
+  const footer = () => {
+    doc.setFontSize(7).setTextColor(100);
+    doc.text(`${data.company.name} · Espelho de ponto · ${r.member.name} · emitido em ${stamp(data)} · página ${doc.getNumberOfPages()}`, M, H - 5);
+    doc.setTextColor(0);
   };
-  doc.setFontSize(16).setFont("helvetica", "bold").text("Espelho de Ponto", M, y + 5); y += 10;
+  const ensure = (h: number) => {
+    if (y + h > H - 12) {
+      footer();
+      doc.addPage("a4", "landscape");
+      y = M;
+      drawHead();
+    }
+  };
+
+  const drawHead = () => {
+    doc.setFontSize(7.5).setFont("helvetica", "bold").setFillColor(226, 232, 240);
+    const headerLines = PDF_HEADERS.map((h, i) => doc.splitTextToSize(h, cols[i] - 2) as string[]);
+    const headerH = Math.max(...headerLines.map(l => l.length)) * 3.2 + 2;
+    let x = M;
+    doc.rect(M, y, W - 2 * M, headerH, "F");
+    headerLines.forEach((lines, i) => {
+      doc.text(lines, x + 1, y + 3.2);
+      x += cols[i];
+    });
+    y += headerH;
+    doc.setFont("helvetica", "normal");
+  };
+
+  doc.setFontSize(16).setFont("helvetica", "bold").text("Espelho de Ponto", M, y + 5);
+  y += 10;
   doc.setFontSize(8.5).setFont("helvetica", "normal");
+
   const left = companyLines(data), right = memberLines(r);
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    if (left[i]) { doc.setFont("helvetica", "bold").text(`${left[i][0]}:`, M, y); doc.setFont("helvetica", "normal").text(left[i][1], M + 28, y, { maxWidth: 100 }); }
-    if (right[i]) { doc.setFont("helvetica", "bold").text(`${right[i][0]}:`, 150, y); doc.setFont("helvetica", "normal").text(right[i][1], 150 + 32, y, { maxWidth: 105 }); }
+    if (left[i]) {
+      doc.setFont("helvetica", "bold").text(`${left[i][0]}:`, M, y);
+      doc.setFont("helvetica", "normal").text(left[i][1], M + 28, y, { maxWidth: 100 });
+    }
+    if (right[i]) {
+      doc.setFont("helvetica", "bold").text(`${right[i][0]}:`, 150, y);
+      doc.setFont("helvetica", "normal").text(right[i][1], 150 + 32, y, { maxWidth: 105 });
+    }
     y += 4.6;
   }
-  doc.setFont("helvetica", "bold").text(`Período: ${periodLabel(r.report)}    Emitido em: ${stamp(data)}`, M, y + 1); y += 6;
+  doc.setFont("helvetica", "bold").text(`Período: ${periodLabel(r.report)}    Emitido em: ${stamp(data)}`, M, y + 1);
+  y += 6;
+
   drawHead();
   doc.setFontSize(7.5);
+
   for (const row of mirrorRows(r.report)) {
-    const lines = row.map((c, i) => doc.splitTextToSize(c, cols[i] - 2) as string[]);
-    const h = Math.max(...lines.map((l) => l.length)) * 3.4 + 2;
+    const lines = row.map((c, i) => doc.splitTextToSize(c || "—", cols[i] - 2) as string[]);
+    const h = Math.max(...lines.map((l) => l.length), 1) * 3.3 + 2;
     ensure(h);
     let x = M;
     doc.setDrawColor(190);
-    lines.forEach((l, i) => { doc.rect(x, y, cols[i], h); doc.text(l, x + 1, y + 3.6); x += cols[i]; });
+    lines.forEach((l, i) => {
+      doc.rect(x, y, cols[i], h);
+      doc.text(l, x + 1, y + 3.4);
+      x += cols[i];
+    });
     y += h;
   }
+
+  // Totais — layout em coluna única para evitar sobreposição de labels longas
   const totals = totalsLines(r.report.totals);
-  ensure(8 + Math.ceil(totals.length / 2) * 5);
-  y += 5; doc.setFontSize(10).setFont("helvetica", "bold").text("Totais do período", M, y); y += 5; doc.setFontSize(8.5);
-  totals.forEach(([k, v], i) => { const cx = M + (i % 2) * 140, cy = y + Math.floor(i / 2) * 5; doc.setFont("helvetica", "normal").text(k, cx, cy); doc.setFont("helvetica", "bold").text(v, cx + 90, cy); });
-  y += Math.ceil(totals.length / 2) * 5 + 4;
+  ensure(12 + totals.length * 4.2);
+  y += 6;
+  doc.setFontSize(10).setFont("helvetica", "bold").text("Totais do período", M, y);
+  y += 6;
+  doc.setFontSize(8);
+  for (const [k, v] of totals) {
+    ensure(4.5);
+    doc.setFont("helvetica", "normal").text(k, M, y, { maxWidth: 160 });
+    doc.setFont("helvetica", "bold").text(String(v), M + 170, y);
+    y += 4.2;
+  }
+
+  y += 3;
   doc.setFont("helvetica", "normal").setFontSize(7.5);
-  const notes = [...r.report.notes.map((n) => `• ${n}`), LEGEND, DISCLAIMER].flatMap((n) => doc.splitTextToSize(n, W - 2 * M) as string[]);
-  for (const line of notes) { ensure(4); doc.text(line, M, y); y += 3.5; }
-  ensure(22); y += 14;
-  doc.setFontSize(8).text("______________________________", 40, y).text("______________________________", 190, y);
-  doc.text("Assinatura do funcionário", 50, y + 4).text("Responsável pela empresa", 200, y + 4);
+  const notes = [...r.report.notes.map((n) => `• ${n}`), LEGEND, DISCLAIMER]
+    .flatMap((n) => doc.splitTextToSize(n, W - 2 * M) as string[]);
+  for (const line of notes) {
+    ensure(3.8);
+    doc.text(line, M, y);
+    y += 3.5;
+  }
+
+  ensure(20);
+  y += 12;
+  doc.setFontSize(8).text("______________________________", 40, y);
+  doc.text("______________________________", 190, y);
+  doc.text("Assinatura do funcionário", 50, y + 4);
+  doc.text("Responsável pela empresa", 200, y + 4);
   footer();
 }
+
 export async function buildMirrorPdf(data: MirrorData): Promise<Blob> {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });

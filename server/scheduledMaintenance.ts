@@ -1,3 +1,4 @@
+import { guardedStorageDelete } from "./mediaKeys";
 import mysql from "mysql2/promise";
 
 export async function runScheduledMaintenance() {
@@ -118,13 +119,13 @@ export async function runPhotoMaintenance() {
   try {
     // Fotos expiradas
     const [expired]: any = await connection.query(
-      `SELECT id, fileKey, thumbnailKey FROM store_photos WHERE expiresAt <= UTC_TIMESTAMP() LIMIT 200`
+      `SELECT id, companyId, fileKey, thumbnailKey FROM store_photos WHERE expiresAt <= UTC_TIMESTAMP() LIMIT 200`
     );
     const { storageDelete } = await import("./storage");
     for (const photo of expired || []) {
       try {
-        if (photo.fileKey) await storageDelete(photo.fileKey);
-        if (photo.thumbnailKey) await storageDelete(photo.thumbnailKey);
+        if (photo.fileKey) await guardedStorageDelete(storageDelete, photo.fileKey, Number(photo.companyId));
+        if (photo.thumbnailKey) await guardedStorageDelete(storageDelete, photo.thumbnailKey, Number(photo.companyId));
       } catch { /* storage optional */ }
       await connection.query(`DELETE FROM store_photos WHERE id = ?`, [photo.id]);
       deleted += 1;

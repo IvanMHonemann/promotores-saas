@@ -1,3 +1,4 @@
+import { guardedStorageDelete } from "./mediaKeys";
 import { and, desc, eq, inArray, isNull, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
@@ -236,16 +237,16 @@ async function purgeExpiredTrash(database: NonNullable<Awaited<ReturnType<typeof
   const expiredPhotos = await database.select().from(trashItems).where(and(eq(trashItems.itemType, "store_photo"), expiredWhere));
   if (expiredPhotos.length) {
     const { storageDelete } = await import("./storage");
-    for (const item of expiredPhotos) await deletePhotoFiles(item.snapshot, storageDelete);
+    for (const item of expiredPhotos) await deletePhotoFiles(item.snapshot, storageDelete, item.accountId);
   }
   return database.delete(trashItems).where(expiredWhere);
 }
 
-async function deletePhotoFiles(snapshot: string, storageDelete: (key: string) => Promise<boolean>) {
+async function deletePhotoFiles(snapshot: string, storageDelete: (key: string) => Promise<boolean>, accountId?: number) {
   try {
     const photo = JSON.parse(snapshot);
-    if (photo?.fileKey) await storageDelete(photo.fileKey);
-    if (photo?.thumbnailKey) await storageDelete(photo.thumbnailKey);
+    if (photo?.fileKey) await guardedStorageDelete(storageDelete, photo.fileKey, accountId);
+    if (photo?.thumbnailKey) await guardedStorageDelete(storageDelete, photo.thumbnailKey, accountId);
   } catch (error) {
     console.warn("[trash] não foi possível remover o arquivo da foto", error);
   }
@@ -351,7 +352,7 @@ export async function permanentlyDeleteTrashItem(id: number, accountId: number, 
   if (!result[0]?.affectedRows) throw new Error("Item não encontrado na lixeira ou sem permissão.");
   if (item?.itemType === "store_photo") {
     const { storageDelete } = await import("./storage");
-    await deletePhotoFiles(item.snapshot, storageDelete);
+    await deletePhotoFiles(item.snapshot, storageDelete, tenant);
   }
   return { itemType: item.itemType, label: item.label, originalId: item.originalId };
 }
@@ -1170,9 +1171,14 @@ export async function updateOperationalRoute(companyId: number, routeId: number,
 export async function deleteOperationalRoute(companyId: number, routeId: number) {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
+  const cid = requireAccountId(companyId);
+  // Histórico não se apaga: roteiro com visita iniciada/concluída/não realizada (check-in, check-out, fotos) fica guardado.
+  const done = await database.select({ id: operationalVisits.id }).from(operationalVisits)
+    .where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, cid), sql`${operationalVisits.status} NOT IN ('pending', 'cancelled')`)).limit(1);
+  if (done[0]) throw new RouteValidationError("Este roteiro já tem visitas realizadas e não pode ser excluído, para não perder o histórico. Remova apenas as lojas pendentes.");
   // Delete visits first, then route
-  await database.delete(operationalVisits).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, companyId)));
-  await database.delete(operationalRoutes).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, companyId)));
+  await database.delete(operationalVisits).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, cid)));
+  await database.delete(operationalRoutes).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, cid)));
   return { success: true };
 }
 

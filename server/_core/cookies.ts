@@ -46,7 +46,8 @@ export function getSessionCookieOptions(
   return {
     httpOnly: true,
     path: "/",
-    sameSite: secure ? "none" : "lax",
+    // Lax: o site e a API são da mesma origem, então o cookie nunca precisa ir em pedidos de outros sites (defesa contra CSRF).
+    sameSite: "lax",
     secure,
   };
 }

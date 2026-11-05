@@ -1,3 +1,4 @@
+import { detectImageMime, guardedStorageDelete, isTenantMediaKey, safeKeySegment } from "../mediaKeys";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "../../shared/uploadLimits";
 import { z } from "zod";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
@@ -252,6 +253,10 @@ export const storePhotosRouter = router({
       if (!limit.ok) {
         throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
       }
+      // O arquivo precisa estar na pasta DESTA empresa: impede apontar para foto de outra empresa ou para backups.
+      if (!isTenantMediaKey(input.fileKey, ctx.accountId) || (input.thumbnailKey && !isTenantMediaKey(input.thumbnailKey, ctx.accountId))) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Arquivo da foto inválido." });
+      }
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
 
@@ -358,7 +363,7 @@ export const storePhotosRouter = router({
       if (!detectedMime) throw new TRPCError({ code: "BAD_REQUEST", message: "Arquivo não é uma imagem válida (use JPG, PNG ou WebP)." });
       input.mimeType = detectedMime;
       const ext = input.mimeType === "image/png" ? "png" : input.mimeType === "image/webp" ? "webp" : "jpg";
-      const relKey = `store-photos/${ctx.accountId}/${input.storeId}/${input.idempotencyKey}.${ext}`;
+      const relKey = `store-photos/${ctx.accountId}/${safeKeySegment(input.storeId, "sem-loja")}/${safeKeySegment(input.idempotencyKey)}.${ext}`;
 
       let fileKey: string;
       try {
@@ -420,6 +425,7 @@ export const storePhotosRouter = router({
       if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
       assertPhotoAccess(ctx, photo);
 
+      if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
       const { storageGetSignedUrl } = await import("../storage");
       const url = await storageGetSignedUrl(photo.fileKey);
       return { url, expiresIn: 3600 };
@@ -434,6 +440,7 @@ export const storePhotosRouter = router({
       const [photo] = await db.select().from(storePhotos).where(and(eq(storePhotos.id, input.photoId), eq(storePhotos.companyId, ctx.accountId))).limit(1);
       if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
       assertPhotoAccess(ctx, photo);
+      if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError({ code: "NOT_FOUND", message: "Foto não encontrada." });
       const { storageRead } = await import("../storage");
       try {
         const image = await storageRead(photo.fileKey);
@@ -578,8 +585,8 @@ export async function expireOldStorePhotos(): Promise<{ deleted: number; errors:
 
   for (const photo of expired) {
     try {
-      if (photo.fileKey) await storageDelete(photo.fileKey);
-      if (photo.thumbnailKey) await storageDelete(photo.thumbnailKey);
+      if (photo.fileKey) await guardedStorageDelete(storageDelete, photo.fileKey, photo.companyId);
+      if (photo.thumbnailKey) await guardedStorageDelete(storageDelete, photo.thumbnailKey, photo.companyId);
       await db.delete(storePhotos).where(eq(storePhotos.id, photo.id));
       deleted++;
     } catch {
@@ -591,10 +598,4 @@ export async function expireOldStorePhotos(): Promise<{ deleted: number; errors:
 }
 
 /** Confere a assinatura do arquivo (JPEG, PNG ou WebP), independentemente do mimeType informado. */
-export function detectImageMime(buf: Buffer): "image/jpeg" | "image/png" | "image/webp" | null {
-  if (buf.length < 12) return null;
-  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
-  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
-  if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
-  return null;
-}
+export { detectImageMime };

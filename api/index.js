@@ -8,6 +8,17 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// shared/csv.ts
+function neutralizeCsvFormula(value) {
+  const text4 = value == null ? "" : String(value);
+  return /^[=+\-@\t\r]/.test(text4) ? `'${text4}` : text4;
+}
+var init_csv = __esm({
+  "shared/csv.ts"() {
+    "use strict";
+  }
+});
+
 // shared/const.ts
 var MEMBER_COOKIE_NAME, ONE_YEAR_MS, UNAUTHED_ERR_MSG, NOT_ADMIN_ERR_MSG;
 var init_const = __esm({
@@ -17,6 +28,49 @@ var init_const = __esm({
     ONE_YEAR_MS = 1e3 * 60 * 60 * 24 * 365;
     UNAUTHED_ERR_MSG = "Please login (10001)";
     NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
+  }
+});
+
+// server/mediaKeys.ts
+function hasTraversal(key) {
+  return key.split("/").some((part) => part === ".." || part === "." || part === "");
+}
+function safeKeySegment(value, fallback = "x") {
+  const cleaned = String(value ?? "").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
+  return cleaned || fallback;
+}
+function isTenantMediaKey(key, companyId, areas = ["store-photos"]) {
+  if (typeof key !== "string" || key.length === 0 || key.length > 512) return false;
+  if (!Number.isInteger(companyId) || companyId <= 0) return false;
+  if (!SAFE_CHARS.test(key) || hasTraversal(key)) return false;
+  return areas.some((area) => key.startsWith(`${area}/${companyId}/`));
+}
+function isDeletableMediaKey(key, companyId) {
+  if (typeof key !== "string" || key.length === 0 || key.length > 512) return false;
+  if (!SAFE_CHARS.test(key) || hasTraversal(key)) return false;
+  const match = /^(store-photos|corrections|archives)\/(\d+)\//.exec(key);
+  if (!match) return false;
+  return companyId == null || Number(match[2]) === companyId;
+}
+async function guardedStorageDelete(storageDelete2, key, companyId) {
+  if (!isDeletableMediaKey(key, companyId)) {
+    if (key) console.warn("[storage] exclus\xE3o recusada: chave fora das \xE1reas permitidas", String(key).slice(0, 80));
+    return false;
+  }
+  return storageDelete2(key);
+}
+function detectImageMime(buf) {
+  if (buf.length < 12) return null;
+  if (buf[0] === 255 && buf[1] === 216 && buf[2] === 255) return "image/jpeg";
+  if (buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
+  if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  return null;
+}
+var SAFE_CHARS;
+var init_mediaKeys = __esm({
+  "server/mediaKeys.ts"() {
+    "use strict";
+    SAFE_CHARS = /^[A-Za-z0-9._\-/]+$/;
   }
 });
 
@@ -103,11 +157,11 @@ var init_schema_original = __esm({
       gracePeriodEndsAt: timestamp("gracePeriodEndsAt"),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      activeIdx: index("companies_active_idx").on(table.active),
-      nameIdx: index("companies_name_idx").on(table.name),
-      planIdx: index("companies_plan_idx").on(table.planId),
-      subscriptionStatusIdx: index("companies_subscription_status_idx").on(table.subscriptionStatus)
+    }, (table2) => ({
+      activeIdx: index("companies_active_idx").on(table2.active),
+      nameIdx: index("companies_name_idx").on(table2.name),
+      planIdx: index("companies_plan_idx").on(table2.planId),
+      subscriptionStatusIdx: index("companies_subscription_status_idx").on(table2.subscriptionStatus)
     }));
     platformAdmins = mysqlTable("platform_admins", {
       id: int("id").autoincrement().primaryKey(),
@@ -130,9 +184,9 @@ var init_schema_original = __esm({
       active: boolean("active").default(true).notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index("member_accounts_company_idx").on(table.companyId),
-      companyRoleIdx: index("member_accounts_company_role_idx").on(table.companyId, table.role)
+    }, (table2) => ({
+      companyIdx: index("member_accounts_company_idx").on(table2.companyId),
+      companyRoleIdx: index("member_accounts_company_role_idx").on(table2.companyId, table2.role)
     }));
     memberSessions = mysqlTable("member_sessions", {
       id: int("id").autoincrement().primaryKey(),
@@ -140,8 +194,8 @@ var init_schema_original = __esm({
       tokenHash: varchar("tokenHash", { length: 128 }).notNull().unique(),
       expiresAt: timestamp("expiresAt").notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      accountExpiryIdx: index("member_sessions_account_expiry_idx").on(table.memberAccountId, table.expiresAt)
+    }, (table2) => ({
+      accountExpiryIdx: index("member_sessions_account_expiry_idx").on(table2.memberAccountId, table2.expiresAt)
     }));
     platformSessions = mysqlTable("platform_sessions", {
       id: int("id").autoincrement().primaryKey(),
@@ -149,8 +203,8 @@ var init_schema_original = __esm({
       tokenHash: varchar("tokenHash", { length: 128 }).notNull().unique(),
       expiresAt: timestamp("expiresAt").notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      adminExpiryIdx: index("platform_sessions_admin_expiry_idx").on(table.platformAdminId, table.expiresAt)
+    }, (table2) => ({
+      adminExpiryIdx: index("platform_sessions_admin_expiry_idx").on(table2.platformAdminId, table2.expiresAt)
     }));
     clients = mysqlTable("clients", {
       id: int("id").autoincrement().primaryKey(),
@@ -170,9 +224,9 @@ var init_schema_original = __esm({
       stockQuantity: int("stockQuantity").notNull().default(1),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      accountIdx: index("clients_account_idx").on(table.accountId),
-      cityIdx: index("clients_account_city_idx").on(table.accountId, table.city)
+    }, (table2) => ({
+      accountIdx: index("clients_account_idx").on(table2.accountId),
+      cityIdx: index("clients_account_city_idx").on(table2.accountId, table2.city)
     }));
     extinguishers = mysqlTable("extinguishers", {
       id: int("id").autoincrement().primaryKey(),
@@ -190,11 +244,11 @@ var init_schema_original = __esm({
       notes: text("notes"),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      accountIdx: index("extinguishers_account_idx").on(table.accountId),
-      clientIdx: index("extinguishers_client_idx").on(table.clientId),
-      expirationIdx: index("extinguishers_account_expiration_idx").on(table.accountId, table.expirationDate),
-      publicTokenIdx: index("extinguishers_public_token_idx").on(table.publicToken)
+    }, (table2) => ({
+      accountIdx: index("extinguishers_account_idx").on(table2.accountId),
+      clientIdx: index("extinguishers_client_idx").on(table2.clientId),
+      expirationIdx: index("extinguishers_account_expiration_idx").on(table2.accountId, table2.expirationDate),
+      publicTokenIdx: index("extinguishers_public_token_idx").on(table2.publicToken)
     }));
     serviceOrders = mysqlTable("service_orders", {
       id: int("id").autoincrement().primaryKey(),
@@ -219,11 +273,11 @@ var init_schema_original = __esm({
       observations: text("observations"),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      accountIdx: index("service_orders_account_idx").on(table.accountId),
-      clientIdx: index("service_orders_client_idx").on(table.clientId),
-      dateIdx: index("service_orders_account_date_idx").on(table.accountId, table.orderDate),
-      numberIdx: index("service_orders_account_number_idx").on(table.accountId, table.orderNumber)
+    }, (table2) => ({
+      accountIdx: index("service_orders_account_idx").on(table2.accountId),
+      clientIdx: index("service_orders_client_idx").on(table2.clientId),
+      dateIdx: index("service_orders_account_date_idx").on(table2.accountId, table2.orderDate),
+      numberIdx: index("service_orders_account_number_idx").on(table2.accountId, table2.orderNumber)
     }));
     serviceOrderItems = mysqlTable("service_order_items", {
       id: int("id").autoincrement().primaryKey(),
@@ -233,8 +287,8 @@ var init_schema_original = __esm({
       unitPrice: decimal("unitPrice", { precision: 10, scale: 2 }).default("0.00").notNull(),
       totalPrice: decimal("totalPrice", { precision: 10, scale: 2 }).default("0.00").notNull(),
       createdAt: timestamp("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      orderIdx: index("service_order_items_order_idx").on(table.serviceOrderId)
+    }, (table2) => ({
+      orderIdx: index("service_order_items_order_idx").on(table2.serviceOrderId)
     }));
     trashItems = mysqlTable("trash_items", {
       id: int("id").autoincrement().primaryKey(),
@@ -248,9 +302,9 @@ var init_schema_original = __esm({
       deletedByMemberId: int("deletedByMemberId"),
       deletedByName: varchar("deletedByName", { length: 255 }),
       ownerMemberId: int("ownerMemberId")
-    }, (table) => ({
-      accountExpiryIdx: index("trash_items_account_expiry_idx").on(table.accountId, table.expiresAt),
-      accountDeletedIdx: index("trash_items_account_deleted_idx").on(table.accountId, table.deletedAt)
+    }, (table2) => ({
+      accountExpiryIdx: index("trash_items_account_expiry_idx").on(table2.accountId, table2.expiresAt),
+      accountDeletedIdx: index("trash_items_account_deleted_idx").on(table2.accountId, table2.deletedAt)
     }));
     systemSettings = mysqlTable("system_settings", {
       id: int("id").autoincrement().primaryKey(),
@@ -258,9 +312,9 @@ var init_schema_original = __esm({
       settingKey: varchar("settingKey", { length: 100 }).notNull(),
       settingValue: text("settingValue").notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      accountKeyUnique: uniqueIndex("system_settings_account_key_unique").on(table.accountId, table.settingKey),
-      accountIdx: index("system_settings_account_idx").on(table.accountId)
+    }, (table2) => ({
+      accountKeyUnique: uniqueIndex("system_settings_account_key_unique").on(table2.accountId, table2.settingKey),
+      accountIdx: index("system_settings_account_idx").on(table2.accountId)
     }));
     subscriptionPlans = mysqlTable("subscription_plans", {
       id: int("id").autoincrement().primaryKey(),
@@ -275,9 +329,9 @@ var init_schema_original = __esm({
       active: boolean("active").notNull().default(true),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      nameIdx: index("subscription_plans_name_idx").on(table.name),
-      availableIdx: index("subscription_plans_available_idx").on(table.availableForNew, table.active)
+    }, (table2) => ({
+      nameIdx: index("subscription_plans_name_idx").on(table2.name),
+      availableIdx: index("subscription_plans_available_idx").on(table2.availableForNew, table2.active)
     }));
     companySubscriptions = mysqlTable("company_subscriptions", {
       id: int("id").autoincrement().primaryKey(),
@@ -299,12 +353,12 @@ var init_schema_original = __esm({
       notes: text("notes"),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index("company_subscriptions_company_idx").on(table.companyId),
-      planIdx: index("company_subscriptions_plan_idx").on(table.planId),
-      statusIdx: index("company_subscriptions_status_idx").on(table.status),
-      endsAtIdx: index("company_subscriptions_ends_at_idx").on(table.endsAt),
-      asaasSubIdx: index("company_subscriptions_asaas_sub_idx").on(table.asaasSubscriptionId)
+    }, (table2) => ({
+      companyIdx: index("company_subscriptions_company_idx").on(table2.companyId),
+      planIdx: index("company_subscriptions_plan_idx").on(table2.planId),
+      statusIdx: index("company_subscriptions_status_idx").on(table2.status),
+      endsAtIdx: index("company_subscriptions_ends_at_idx").on(table2.endsAt),
+      asaasSubIdx: index("company_subscriptions_asaas_sub_idx").on(table2.asaasSubscriptionId)
     }));
     payments = mysqlTable("payments", {
       id: int("id").autoincrement().primaryKey(),
@@ -323,11 +377,11 @@ var init_schema_original = __esm({
       bankSlipUrl: text("bankSlipUrl"),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index("payments_company_idx").on(table.companyId),
-      subscriptionIdx: index("payments_subscription_idx").on(table.subscriptionId),
-      asaasPaymentIdx: index("payments_asaas_payment_idx").on(table.asaasPaymentId),
-      statusIdx: index("payments_status_idx").on(table.status)
+    }, (table2) => ({
+      companyIdx: index("payments_company_idx").on(table2.companyId),
+      subscriptionIdx: index("payments_subscription_idx").on(table2.subscriptionId),
+      asaasPaymentIdx: index("payments_asaas_payment_idx").on(table2.asaasPaymentId),
+      statusIdx: index("payments_status_idx").on(table2.status)
     }));
     paymentEvents = mysqlTable("payment_events", {
       id: int("id").autoincrement().primaryKey(),
@@ -338,8 +392,8 @@ var init_schema_original = __esm({
       payload: text("payload").notNull(),
       processed: boolean("processed").notNull().default(false),
       createdAt: timestamp("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      processedIdx: index("payment_events_processed_idx").on(table.processed)
+    }, (table2) => ({
+      processedIdx: index("payment_events_processed_idx").on(table2.processed)
     }));
     auditLogs = mysqlTable("audit_logs", {
       id: int("id").autoincrement().primaryKey(),
@@ -358,14 +412,14 @@ var init_schema_original = __esm({
       ipAddress: varchar("ipAddress", { length: 64 }),
       userAgent: varchar("userAgent", { length: 512 }),
       createdAt: timestamp("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      companyIdx: index("audit_logs_company_idx").on(table.companyId),
-      companyCreatedIdx: index("audit_logs_company_created_idx").on(table.companyId, table.createdAt),
-      userIdx: index("audit_logs_user_idx").on(table.userId),
-      entityIdx: index("audit_logs_entity_idx").on(table.entityType, table.entityId),
-      actionIdx: index("audit_logs_action_idx").on(table.action),
-      moduleIdx: index("audit_logs_module_idx").on(table.module),
-      createdIdx: index("audit_logs_created_idx").on(table.createdAt)
+    }, (table2) => ({
+      companyIdx: index("audit_logs_company_idx").on(table2.companyId),
+      companyCreatedIdx: index("audit_logs_company_created_idx").on(table2.companyId, table2.createdAt),
+      userIdx: index("audit_logs_user_idx").on(table2.userId),
+      entityIdx: index("audit_logs_entity_idx").on(table2.entityType, table2.entityId),
+      actionIdx: index("audit_logs_action_idx").on(table2.action),
+      moduleIdx: index("audit_logs_module_idx").on(table2.module),
+      createdIdx: index("audit_logs_created_idx").on(table2.createdAt)
     }));
   }
 });
@@ -436,11 +490,11 @@ var init_schema = __esm({
       gracePeriodEndsAt: timestamp2("gracePeriodEndsAt"),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      activeIdx: index2("companies_active_idx").on(table.active),
-      nameIdx: index2("companies_name_idx").on(table.name),
-      planIdx: index2("companies_plan_idx").on(table.planId),
-      subscriptionStatusIdx: index2("companies_subscription_status_idx").on(table.subscriptionStatus)
+    }, (table2) => ({
+      activeIdx: index2("companies_active_idx").on(table2.active),
+      nameIdx: index2("companies_name_idx").on(table2.name),
+      planIdx: index2("companies_plan_idx").on(table2.planId),
+      subscriptionStatusIdx: index2("companies_subscription_status_idx").on(table2.subscriptionStatus)
     }));
     platformAdmins2 = mysqlTable2("platform_admins", {
       id: int2("id").autoincrement().primaryKey(),
@@ -465,9 +519,9 @@ var init_schema = __esm({
       supervisorId: int2("supervisorId"),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("member_accounts_company_idx").on(table.companyId),
-      companyRoleIdx: index2("member_accounts_company_role_idx").on(table.companyId, table.role)
+    }, (table2) => ({
+      companyIdx: index2("member_accounts_company_idx").on(table2.companyId),
+      companyRoleIdx: index2("member_accounts_company_role_idx").on(table2.companyId, table2.role)
     }));
     promoterProfiles = mysqlTable2("promoter_profiles", {
       memberAccountId: int2("memberAccountId").primaryKey().references(() => memberAccounts2.id, { onDelete: "cascade" }),
@@ -477,9 +531,9 @@ var init_schema = __esm({
       workEndTime: varchar2("workEndTime", { length: 5 }),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("promoter_profiles_company_idx").on(table.companyId),
-      companyEmployeeCodeUnique: uniqueIndex2("promoter_profiles_company_employee_code_unique").on(table.companyId, table.employeeCode)
+    }, (table2) => ({
+      companyIdx: index2("promoter_profiles_company_idx").on(table2.companyId),
+      companyEmployeeCodeUnique: uniqueIndex2("promoter_profiles_company_employee_code_unique").on(table2.companyId, table2.employeeCode)
     }));
     memberSessions2 = mysqlTable2("member_sessions", {
       id: int2("id").autoincrement().primaryKey(),
@@ -487,8 +541,8 @@ var init_schema = __esm({
       tokenHash: varchar2("tokenHash", { length: 128 }).notNull().unique(),
       expiresAt: timestamp2("expiresAt").notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      accountExpiryIdx: index2("member_sessions_account_expiry_idx").on(table.memberAccountId, table.expiresAt)
+    }, (table2) => ({
+      accountExpiryIdx: index2("member_sessions_account_expiry_idx").on(table2.memberAccountId, table2.expiresAt)
     }));
     platformSessions2 = mysqlTable2("platform_sessions", {
       id: int2("id").autoincrement().primaryKey(),
@@ -496,8 +550,8 @@ var init_schema = __esm({
       tokenHash: varchar2("tokenHash", { length: 128 }).notNull().unique(),
       expiresAt: timestamp2("expiresAt").notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      adminExpiryIdx: index2("platform_sessions_admin_expiry_idx").on(table.platformAdminId, table.expiresAt)
+    }, (table2) => ({
+      adminExpiryIdx: index2("platform_sessions_admin_expiry_idx").on(table2.platformAdminId, table2.expiresAt)
     }));
     clients2 = mysqlTable2("clients", {
       id: int2("id").autoincrement().primaryKey(),
@@ -511,9 +565,9 @@ var init_schema = __esm({
       active: boolean2("active").default(true).notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("clients_company_idx").on(table.companyId),
-      nameIdx: index2("clients_company_name_idx").on(table.companyId, table.name)
+    }, (table2) => ({
+      companyIdx: index2("clients_company_idx").on(table2.companyId),
+      nameIdx: index2("clients_company_name_idx").on(table2.companyId, table2.name)
     }));
     brands = mysqlTable2("brands", {
       id: int2("id").autoincrement().primaryKey(),
@@ -524,9 +578,9 @@ var init_schema = __esm({
       active: boolean2("active").default(true).notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("brands_company_idx").on(table.companyId),
-      clientIdx: index2("brands_client_idx").on(table.clientId)
+    }, (table2) => ({
+      companyIdx: index2("brands_company_idx").on(table2.companyId),
+      clientIdx: index2("brands_client_idx").on(table2.clientId)
     }));
     retailChains = mysqlTable2("retail_chains", {
       id: int2("id").autoincrement().primaryKey(),
@@ -536,8 +590,8 @@ var init_schema = __esm({
       active: boolean2("active").default(true).notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("retail_chains_company_idx").on(table.companyId)
+    }, (table2) => ({
+      companyIdx: index2("retail_chains_company_idx").on(table2.companyId)
     }));
     stores = mysqlTable2("stores", {
       id: int2("id").autoincrement().primaryKey(),
@@ -560,11 +614,11 @@ var init_schema = __esm({
       active: boolean2("active").default(true).notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("stores_company_idx").on(table.companyId),
-      clientIdx: index2("stores_client_idx").on(table.clientId),
-      cityIdx: index2("stores_company_city_idx").on(table.companyId, table.city),
-      geoIdx: index2("stores_geo_idx").on(table.latitude, table.longitude)
+    }, (table2) => ({
+      companyIdx: index2("stores_company_idx").on(table2.companyId),
+      clientIdx: index2("stores_client_idx").on(table2.clientId),
+      cityIdx: index2("stores_company_city_idx").on(table2.companyId, table2.city),
+      geoIdx: index2("stores_geo_idx").on(table2.latitude, table2.longitude)
     }));
     teams = mysqlTable2("teams", {
       id: int2("id").autoincrement().primaryKey(),
@@ -575,8 +629,8 @@ var init_schema = __esm({
       active: boolean2("active").default(true).notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("teams_company_idx").on(table.companyId)
+    }, (table2) => ({
+      companyIdx: index2("teams_company_idx").on(table2.companyId)
     }));
     routes = mysqlTable2("routes", {
       id: int2("id").autoincrement().primaryKey(),
@@ -591,11 +645,11 @@ var init_schema = __esm({
       weeklyScheduleId: int2("weeklyScheduleId"),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("routes_company_idx").on(table.companyId),
-      promoterDateIdx: index2("routes_promoter_date_idx").on(table.promoterId, table.date),
-      dateIdx: index2("routes_company_date_idx").on(table.companyId, table.date),
-      weeklyOccurrenceUnique: uniqueIndex2("routes_weekly_occurrence_unique").on(table.weeklyScheduleId, table.date)
+    }, (table2) => ({
+      companyIdx: index2("routes_company_idx").on(table2.companyId),
+      promoterDateIdx: index2("routes_promoter_date_idx").on(table2.promoterId, table2.date),
+      dateIdx: index2("routes_company_date_idx").on(table2.companyId, table2.date),
+      weeklyOccurrenceUnique: uniqueIndex2("routes_weekly_occurrence_unique").on(table2.weeklyScheduleId, table2.date)
     }));
     weeklyRouteSchedules = mysqlTable2("weekly_route_schedules", {
       id: int2("id").autoincrement().primaryKey(),
@@ -608,9 +662,9 @@ var init_schema = __esm({
       active: boolean2("active").default(true).notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("weekly_route_schedules_company_idx").on(table.companyId),
-      promoterDayUnique: uniqueIndex2("weekly_route_schedules_promoter_day_unique").on(table.companyId, table.promoterId, table.weekday)
+    }, (table2) => ({
+      companyIdx: index2("weekly_route_schedules_company_idx").on(table2.companyId),
+      promoterDayUnique: uniqueIndex2("weekly_route_schedules_promoter_day_unique").on(table2.companyId, table2.promoterId, table2.weekday)
     }));
     inventoryProducts = mysqlTable2("inventory_products", {
       id: int2("id").autoincrement().primaryKey(),
@@ -624,10 +678,10 @@ var init_schema = __esm({
       createdByMemberId: int2("createdByMemberId"),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("inventory_products_company_idx").on(table.companyId),
-      codeIdx: index2("inventory_products_company_code_idx").on(table.companyId, table.productCode),
-      expiryIdx: index2("inventory_products_expiration_idx").on(table.companyId, table.expirationDate)
+    }, (table2) => ({
+      companyIdx: index2("inventory_products_company_idx").on(table2.companyId),
+      codeIdx: index2("inventory_products_company_code_idx").on(table2.companyId, table2.productCode),
+      expiryIdx: index2("inventory_products_expiration_idx").on(table2.companyId, table2.expirationDate)
     }));
     visits = mysqlTable2("visits", {
       id: int2("id").autoincrement().primaryKey(),
@@ -651,12 +705,12 @@ var init_schema = __esm({
       notes: text2("notes"),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("visits_company_idx").on(table.companyId),
-      routeIdx: index2("visits_route_idx").on(table.routeId),
-      storeIdx: index2("visits_store_idx").on(table.storeId),
-      promoterIdx: index2("visits_promoter_idx").on(table.promoterId),
-      statusIdx: index2("visits_status_idx").on(table.companyId, table.status)
+    }, (table2) => ({
+      companyIdx: index2("visits_company_idx").on(table2.companyId),
+      routeIdx: index2("visits_route_idx").on(table2.routeId),
+      storeIdx: index2("visits_store_idx").on(table2.storeId),
+      promoterIdx: index2("visits_promoter_idx").on(table2.promoterId),
+      statusIdx: index2("visits_status_idx").on(table2.companyId, table2.status)
     }));
     timeEvents = mysqlTable2("time_events", {
       id: int2("id").autoincrement().primaryKey(),
@@ -675,11 +729,11 @@ var init_schema = __esm({
       synced: boolean2("synced").default(true).notNull(),
       notes: text2("notes"),
       createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("time_events_company_idx").on(table.companyId),
-      memberIdx: index2("time_events_member_idx").on(table.memberAccountId),
-      memberTimeIdx: index2("time_events_member_time_idx").on(table.memberAccountId, table.serverTime),
-      idempotencyIdx: uniqueIndex2("time_events_idempotency_unique").on(table.idempotencyKey)
+    }, (table2) => ({
+      companyIdx: index2("time_events_company_idx").on(table2.companyId),
+      memberIdx: index2("time_events_member_idx").on(table2.memberAccountId),
+      memberTimeIdx: index2("time_events_member_time_idx").on(table2.memberAccountId, table2.serverTime),
+      idempotencyIdx: uniqueIndex2("time_events_idempotency_unique").on(table2.idempotencyKey)
     }));
     timeCorrectionRequests = mysqlTable2("time_correction_requests", {
       id: int2("id").autoincrement().primaryKey(),
@@ -696,10 +750,10 @@ var init_schema = __esm({
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       justificationType: varchar2("justificationType", { length: 32 }).default("normal"),
       attachmentKey: varchar2("attachmentKey", { length: 512 })
-    }, (table) => ({
-      companyIdx: index2("time_corrections_company_idx").on(table.companyId),
-      memberIdx: index2("time_corrections_member_idx").on(table.memberAccountId),
-      statusIdx: index2("time_corrections_status_idx").on(table.companyId, table.status)
+    }, (table2) => ({
+      companyIdx: index2("time_corrections_company_idx").on(table2.companyId),
+      memberIdx: index2("time_corrections_member_idx").on(table2.memberAccountId),
+      statusIdx: index2("time_corrections_status_idx").on(table2.companyId, table2.status)
     }));
     checklists = mysqlTable2("checklists", {
       id: int2("id").autoincrement().primaryKey(),
@@ -711,8 +765,8 @@ var init_schema = __esm({
       active: boolean2("active").default(true).notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("checklists_company_idx").on(table.companyId)
+    }, (table2) => ({
+      companyIdx: index2("checklists_company_idx").on(table2.companyId)
     }));
     checklistQuestions = mysqlTable2("checklist_questions", {
       id: int2("id").autoincrement().primaryKey(),
@@ -724,8 +778,8 @@ var init_schema = __esm({
       options: text2("options"),
       // JSON for select options
       createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      checklistIdx: index2("checklist_questions_checklist_idx").on(table.checklistId)
+    }, (table2) => ({
+      checklistIdx: index2("checklist_questions_checklist_idx").on(table2.checklistId)
     }));
     checklistResponses = mysqlTable2("checklist_responses", {
       id: int2("id").autoincrement().primaryKey(),
@@ -737,9 +791,9 @@ var init_schema = __esm({
       // JSON
       completedAt: timestamp2("completedAt").defaultNow().notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      visitIdx: index2("checklist_responses_visit_idx").on(table.visitId),
-      companyIdx: index2("checklist_responses_company_idx").on(table.companyId)
+    }, (table2) => ({
+      visitIdx: index2("checklist_responses_visit_idx").on(table2.visitId),
+      companyIdx: index2("checklist_responses_company_idx").on(table2.companyId)
     }));
     evidences = mysqlTable2("evidences", {
       id: int2("id").autoincrement().primaryKey(),
@@ -755,9 +809,9 @@ var init_schema = __esm({
       latitude: double("latitude"),
       longitude: double("longitude"),
       createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("evidences_company_idx").on(table.companyId),
-      visitIdx: index2("evidences_visit_idx").on(table.visitId)
+    }, (table2) => ({
+      companyIdx: index2("evidences_company_idx").on(table2.companyId),
+      visitIdx: index2("evidences_visit_idx").on(table2.visitId)
     }));
     auditLogs2 = mysqlTable2("audit_logs", {
       id: int2("id").autoincrement().primaryKey(),
@@ -776,14 +830,14 @@ var init_schema = __esm({
       ipAddress: varchar2("ipAddress", { length: 64 }),
       userAgent: varchar2("userAgent", { length: 512 }),
       createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("audit_logs_company_idx").on(table.companyId),
-      companyCreatedIdx: index2("audit_logs_company_created_idx").on(table.companyId, table.createdAt),
-      userIdx: index2("audit_logs_user_idx").on(table.userId),
-      entityIdx: index2("audit_logs_entity_idx").on(table.entityType, table.entityId),
-      actionIdx: index2("audit_logs_action_idx").on(table.action),
-      moduleIdx: index2("audit_logs_module_idx").on(table.module),
-      createdIdx: index2("audit_logs_created_idx").on(table.createdAt)
+    }, (table2) => ({
+      companyIdx: index2("audit_logs_company_idx").on(table2.companyId),
+      companyCreatedIdx: index2("audit_logs_company_created_idx").on(table2.companyId, table2.createdAt),
+      userIdx: index2("audit_logs_user_idx").on(table2.userId),
+      entityIdx: index2("audit_logs_entity_idx").on(table2.entityType, table2.entityId),
+      actionIdx: index2("audit_logs_action_idx").on(table2.action),
+      moduleIdx: index2("audit_logs_module_idx").on(table2.module),
+      createdIdx: index2("audit_logs_created_idx").on(table2.createdAt)
     }));
     subscriptionPlans2 = mysqlTable2("subscription_plans", {
       id: int2("id").autoincrement().primaryKey(),
@@ -798,9 +852,9 @@ var init_schema = __esm({
       active: boolean2("active").notNull().default(true),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      nameIdx: index2("subscription_plans_name_idx").on(table.name),
-      availableIdx: index2("subscription_plans_available_idx").on(table.availableForNew, table.active)
+    }, (table2) => ({
+      nameIdx: index2("subscription_plans_name_idx").on(table2.name),
+      availableIdx: index2("subscription_plans_available_idx").on(table2.availableForNew, table2.active)
     }));
     subscriptionPlanFeatures = mysqlTable2("subscription_plan_features", {
       id: int2("id").autoincrement().primaryKey(),
@@ -809,9 +863,9 @@ var init_schema = __esm({
       enabled: boolean2("enabled").notNull().default(false),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      planFeatureUnique: uniqueIndex2("subscription_plan_features_plan_feature_unique").on(table.planId, table.featureKey),
-      planIdx: index2("subscription_plan_features_plan_idx").on(table.planId)
+    }, (table2) => ({
+      planFeatureUnique: uniqueIndex2("subscription_plan_features_plan_feature_unique").on(table2.planId, table2.featureKey),
+      planIdx: index2("subscription_plan_features_plan_idx").on(table2.planId)
     }));
     companyFeatureOverrides = mysqlTable2("company_feature_overrides", {
       id: int2("id").autoincrement().primaryKey(),
@@ -822,9 +876,9 @@ var init_schema = __esm({
       updatedByPlatformAdminId: int2("updatedByPlatformAdminId").references(() => platformAdmins2.id, { onDelete: "set null" }),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyFeatureUnique: uniqueIndex2("company_feature_overrides_company_feature_unique").on(table.companyId, table.featureKey),
-      companyIdx: index2("company_feature_overrides_company_idx").on(table.companyId)
+    }, (table2) => ({
+      companyFeatureUnique: uniqueIndex2("company_feature_overrides_company_feature_unique").on(table2.companyId, table2.featureKey),
+      companyIdx: index2("company_feature_overrides_company_idx").on(table2.companyId)
     }));
     memberFeaturePermissions = mysqlTable2("member_feature_permissions", {
       id: int2("id").autoincrement().primaryKey(),
@@ -834,9 +888,9 @@ var init_schema = __esm({
       updatedByMemberAccountId: int2("updatedByMemberAccountId").references(() => memberAccounts2.id, { onDelete: "set null" }),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      memberFeatureUnique: uniqueIndex2("member_feature_permissions_member_feature_unique").on(table.memberAccountId, table.featureKey),
-      memberIdx: index2("member_feature_permissions_member_idx").on(table.memberAccountId)
+    }, (table2) => ({
+      memberFeatureUnique: uniqueIndex2("member_feature_permissions_member_feature_unique").on(table2.memberAccountId, table2.featureKey),
+      memberIdx: index2("member_feature_permissions_member_idx").on(table2.memberAccountId)
     }));
     companySubscriptions2 = mysqlTable2("company_subscriptions", {
       id: int2("id").autoincrement().primaryKey(),
@@ -848,8 +902,8 @@ var init_schema = __esm({
       asaasSubscriptionId: varchar2("asaasSubscriptionId", { length: 64 }),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyIdx: index2("company_subscriptions_company_idx").on(table.companyId)
+    }, (table2) => ({
+      companyIdx: index2("company_subscriptions_company_idx").on(table2.companyId)
     }));
     systemSettings2 = mysqlTable2("system_settings", {
       id: int2("id").autoincrement().primaryKey(),
@@ -857,9 +911,9 @@ var init_schema = __esm({
       settingKey: varchar2("settingKey", { length: 100 }).notNull(),
       settingValue: text2("settingValue").notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      accountKeyUnique: uniqueIndex2("system_settings_company_key_unique").on(table.companyId, table.settingKey),
-      companyIdx: index2("system_settings_company_idx").on(table.companyId)
+    }, (table2) => ({
+      accountKeyUnique: uniqueIndex2("system_settings_company_key_unique").on(table2.companyId, table2.settingKey),
+      companyIdx: index2("system_settings_company_idx").on(table2.companyId)
     }));
     storePhotos = mysqlTable2("store_photos", {
       id: int2("id").autoincrement().primaryKey(),
@@ -881,11 +935,11 @@ var init_schema = __esm({
       expiresAt: timestamp2("expiresAt").notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyStoreDateIdx: index2("store_photos_company_store_date_idx").on(table.companyId, table.storeId, table.capturedAt),
-      companyPromoterIdx: index2("store_photos_company_promoter_idx").on(table.companyId, table.promoterId),
-      expiresIdx: index2("store_photos_expires_idx").on(table.expiresAt),
-      companyIdempotencyUnique: uniqueIndex2("store_photos_company_idempotency_unique").on(table.companyId, table.idempotencyKey)
+    }, (table2) => ({
+      companyStoreDateIdx: index2("store_photos_company_store_date_idx").on(table2.companyId, table2.storeId, table2.capturedAt),
+      companyPromoterIdx: index2("store_photos_company_promoter_idx").on(table2.companyId, table2.promoterId),
+      expiresIdx: index2("store_photos_expires_idx").on(table2.expiresAt),
+      companyIdempotencyUnique: uniqueIndex2("store_photos_company_idempotency_unique").on(table2.companyId, table2.idempotencyKey)
     }));
     visitPhotos = mysqlTable2("visit_photos", {
       id: int2("id").autoincrement().primaryKey(),
@@ -898,9 +952,9 @@ var init_schema = __esm({
       address: varchar2("address", { length: 255 }),
       expiresAt: timestamp2("expiresAt").notNull(),
       createdAt: timestamp2("createdAt").defaultNow().notNull()
-    }, (table) => ({
-      visitIdx: index2("visit_photos_visit_idx").on(table.visitId),
-      expiresIdx: index2("visit_photos_expires_idx").on(table.expiresAt)
+    }, (table2) => ({
+      visitIdx: index2("visit_photos_visit_idx").on(table2.visitId),
+      expiresIdx: index2("visit_photos_expires_idx").on(table2.expiresAt)
     }));
     vacationSchedules = mysqlTable2("vacation_schedules", {
       id: int2("id").autoincrement().primaryKey(),
@@ -917,10 +971,10 @@ var init_schema = __esm({
       cancelledAt: timestamp2("cancelledAt"),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
       updatedAt: timestamp2("updatedAt").defaultNow().onUpdateNow().notNull()
-    }, (table) => ({
-      companyMemberIdx: index2("vacation_schedules_company_member_idx").on(table.companyId, table.memberAccountId),
-      companyDatesIdx: index2("vacation_schedules_company_dates_idx").on(table.companyId, table.startDate, table.endDate),
-      statusIdx: index2("vacation_schedules_status_idx").on(table.status)
+    }, (table2) => ({
+      companyMemberIdx: index2("vacation_schedules_company_member_idx").on(table2.companyId, table2.memberAccountId),
+      companyDatesIdx: index2("vacation_schedules_company_dates_idx").on(table2.companyId, table2.startDate, table2.endDate),
+      statusIdx: index2("vacation_schedules_status_idx").on(table2.status)
     }));
   }
 });
@@ -1004,8 +1058,8 @@ async function setPromoterStoreAssignments(db, companyId, promoterId, storeIds) 
 async function getPromoterStoreAssignments(db, companyId, promoterId) {
   await ensurePromoterStoreAssignmentsTable(db);
   const res = await db.execute(sql`SELECT storeId FROM promoter_store_assignments WHERE companyId = ${companyId} AND promoterId = ${promoterId}`);
-  const rows3 = Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [];
-  return rows3.map((r) => Number(r.storeId));
+  const rows4 = Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [];
+  return rows4.map((r) => Number(r.storeId));
 }
 async function assertStoreAccess(db, ctx, storeId) {
   const memberId = scopeMemberId(ctx);
@@ -1514,15 +1568,15 @@ async function purgeExpiredTrash(database2, accountId) {
   const expiredPhotos = await database2.select().from(trashItems).where(and2(eq2(trashItems.itemType, "store_photo"), expiredWhere));
   if (expiredPhotos.length) {
     const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
-    for (const item of expiredPhotos) await deletePhotoFiles(item.snapshot, storageDelete2);
+    for (const item of expiredPhotos) await deletePhotoFiles(item.snapshot, storageDelete2, item.accountId);
   }
   return database2.delete(trashItems).where(expiredWhere);
 }
-async function deletePhotoFiles(snapshot, storageDelete2) {
+async function deletePhotoFiles(snapshot, storageDelete2, accountId) {
   try {
     const photo = JSON.parse(snapshot);
-    if (photo?.fileKey) await storageDelete2(photo.fileKey);
-    if (photo?.thumbnailKey) await storageDelete2(photo.thumbnailKey);
+    if (photo?.fileKey) await guardedStorageDelete(storageDelete2, photo.fileKey, accountId);
+    if (photo?.thumbnailKey) await guardedStorageDelete(storageDelete2, photo.thumbnailKey, accountId);
   } catch (error) {
     console.warn("[trash] n\xE3o foi poss\xEDvel remover o arquivo da foto", error);
   }
@@ -1618,7 +1672,7 @@ async function permanentlyDeleteTrashItem(id2, accountId, scopeMemberId2) {
   if (!result[0]?.affectedRows) throw new Error("Item n\xE3o encontrado na lixeira ou sem permiss\xE3o.");
   if (item?.itemType === "store_photo") {
     const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
-    await deletePhotoFiles(item.snapshot, storageDelete2);
+    await deletePhotoFiles(item.snapshot, storageDelete2, tenant);
   }
   return { itemType: item.itemType, label: item.label, originalId: item.originalId };
 }
@@ -1642,10 +1696,10 @@ function isMissingEntitlementsTable(error) {
 }
 async function replaceSubscriptionPlanFeatures(database2, planId, featureKeys) {
   const enabled = new Set(featureKeys);
-  const rows3 = ENTITLEMENT_KEYS.map((featureKey) => ({ planId, featureKey, enabled: enabled.has(featureKey) }));
+  const rows4 = ENTITLEMENT_KEYS.map((featureKey) => ({ planId, featureKey, enabled: enabled.has(featureKey) }));
   await database2.transaction(async (tx) => {
     await tx.delete(subscriptionPlanFeatures).where(eq2(subscriptionPlanFeatures.planId, planId));
-    await tx.insert(subscriptionPlanFeatures).values(rows3);
+    await tx.insert(subscriptionPlanFeatures).values(rows4);
   });
 }
 async function attachPlanFeatureKeys(database2, plans) {
@@ -1672,8 +1726,8 @@ async function getCompanyFeatureOverrides(companyId) {
   const database2 = await getDb();
   if (!database2) return {};
   try {
-    const rows3 = await database2.select({ featureKey: companyFeatureOverrides.featureKey, enabled: companyFeatureOverrides.enabled }).from(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, companyId));
-    return Object.fromEntries(rows3.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, Boolean(row2.enabled)]));
+    const rows4 = await database2.select({ featureKey: companyFeatureOverrides.featureKey, enabled: companyFeatureOverrides.enabled }).from(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, companyId));
+    return Object.fromEntries(rows4.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, Boolean(row2.enabled)]));
   } catch (error) {
     if (isMissingEntitlementsTable(error)) return {};
     throw error;
@@ -1685,8 +1739,8 @@ async function getMemberFeatureModes(memberAccountId, companyId) {
   const account = await database2.select({ id: memberAccounts2.id }).from(memberAccounts2).where(and2(eq2(memberAccounts2.id, memberAccountId), eq2(memberAccounts2.companyId, companyId))).limit(1);
   if (!account[0]) return {};
   try {
-    const rows3 = await database2.select({ featureKey: memberFeaturePermissions.featureKey, mode: memberFeaturePermissions.mode }).from(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, memberAccountId));
-    return Object.fromEntries(rows3.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, row2.mode]));
+    const rows4 = await database2.select({ featureKey: memberFeaturePermissions.featureKey, mode: memberFeaturePermissions.mode }).from(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, memberAccountId));
+    return Object.fromEntries(rows4.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, row2.mode]));
   } catch (error) {
     if (isMissingEntitlementsTable(error)) return {};
     throw error;
@@ -1695,26 +1749,26 @@ async function getMemberFeatureModes(memberAccountId, companyId) {
 async function replaceCompanyFeatureOverrides(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
-  const rows3 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+  const rows4 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
     const enabled = input.overrides[featureKey];
     return enabled == null ? [] : [{ companyId: input.companyId, featureKey, enabled, reason: input.reason ?? null, updatedByPlatformAdminId: input.updatedByPlatformAdminId }];
   });
   await database2.transaction(async (tx) => {
     await tx.delete(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, input.companyId));
-    if (rows3.length) await tx.insert(companyFeatureOverrides).values(rows3);
+    if (rows4.length) await tx.insert(companyFeatureOverrides).values(rows4);
   });
   return { success: true };
 }
 async function replaceMemberFeatureModes(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
-  const rows3 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+  const rows4 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
     const mode = input.modes[featureKey];
     return !mode || mode === "inherit" ? [] : [{ memberAccountId: input.memberAccountId, featureKey, mode, updatedByMemberAccountId: input.updatedByMemberAccountId }];
   });
   await database2.transaction(async (tx) => {
     await tx.delete(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, input.memberAccountId));
-    if (rows3.length) await tx.insert(memberFeaturePermissions).values(rows3);
+    if (rows4.length) await tx.insert(memberFeaturePermissions).values(rows4);
   });
   return { success: true };
 }
@@ -1754,7 +1808,7 @@ async function updateSubscriptionPlan(id2, data) {
 async function listCompanySubscriptions() {
   const db = await getDb();
   if (!db) return [];
-  const rows3 = await db.select({
+  const rows4 = await db.select({
     id: companySubscriptions.id,
     companyId: companySubscriptions.companyId,
     planId: companySubscriptions.planId,
@@ -1771,7 +1825,7 @@ async function listCompanySubscriptions() {
     maxClients: subscriptionPlans.maxClients,
     maxExtinguishers: subscriptionPlans.maxExtinguishers
   }).from(companySubscriptions).innerJoin(companies, eq2(companySubscriptions.companyId, companies.id)).innerJoin(subscriptionPlans, eq2(companySubscriptions.planId, subscriptionPlans.id)).orderBy(desc(companySubscriptions.createdAt));
-  return rows3;
+  return rows4;
 }
 async function getSubscriptionStats() {
   const db = await getDb();
@@ -1815,8 +1869,8 @@ async function updateCompanySubscription(id2, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   await db.update(companySubscriptions).set(data).where(eq2(companySubscriptions.id, id2));
-  const rows3 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.id, id2)).limit(1);
-  const sub = rows3[0];
+  const rows4 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.id, id2)).limit(1);
+  const sub = rows4[0];
   if (sub) {
     const patch = {};
     if (data.planId !== void 0) patch.planId = data.planId;
@@ -1832,8 +1886,8 @@ async function updateCompanySubscription(id2, data) {
 async function getSubscriptionPlanById(planId) {
   const database2 = await getDb();
   if (!database2) return null;
-  const rows3 = await database2.select().from(subscriptionPlans).where(eq2(subscriptionPlans.id, planId)).limit(1);
-  return (await attachPlanFeatureKeys(database2, rows3))[0] ?? null;
+  const rows4 = await database2.select().from(subscriptionPlans).where(eq2(subscriptionPlans.id, planId)).limit(1);
+  return (await attachPlanFeatureKeys(database2, rows4))[0] ?? null;
 }
 async function resolveCompanyPlan(companyId) {
   const db = await getDb();
@@ -1861,12 +1915,12 @@ async function resolveCompanyPlan(companyId) {
 async function getLatestCompanySubscription(companyId) {
   const db = await getDb();
   if (!db) return null;
-  const rows3 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.companyId, companyId)).orderBy(desc(companySubscriptions.createdAt));
-  if (!rows3.length) return null;
-  const preferred = rows3.find(
+  const rows4 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.companyId, companyId)).orderBy(desc(companySubscriptions.createdAt));
+  if (!rows4.length) return null;
+  const preferred = rows4.find(
     (r) => ["active", "trial", "test", "pending", "overdue"].includes(String(r.status))
   );
-  return preferred ?? rows3[0];
+  return preferred ?? rows4[0];
 }
 async function updateCompanySubscriptionFields(companyId, data) {
   const db = await getDb();
@@ -1919,8 +1973,8 @@ async function createPaymentRecord(data) {
 async function findPaymentEventByEventId(eventId) {
   const db = await getDb();
   if (!db) return null;
-  const rows3 = await db.select().from(paymentEvents).where(eq2(paymentEvents.eventId, eventId)).limit(1);
-  return rows3[0] ?? null;
+  const rows4 = await db.select().from(paymentEvents).where(eq2(paymentEvents.eventId, eventId)).limit(1);
+  return rows4[0] ?? null;
 }
 async function recordPaymentEvent(data) {
   const db = await getDb();
@@ -2017,8 +2071,8 @@ async function createOperationalStore(input, ownerMemberAccountId) {
   const result = await database2.insert(stores).values(input);
   const storeId = Number(result[0]?.insertId);
   if (ownerMemberAccountId) await recordStoreOwner(database2, { storeId, companyId: input.companyId, memberAccountId: ownerMemberAccountId });
-  const rows3 = await database2.select().from(stores).where(eq2(stores.id, storeId)).limit(1);
-  return rows3[0];
+  const rows4 = await database2.select().from(stores).where(eq2(stores.id, storeId)).limit(1);
+  return rows4[0];
 }
 async function updateOperationalStore(companyId, id2, patch) {
   const database2 = await getDb();
@@ -2220,8 +2274,8 @@ async function createOperationalRoute(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
   const result = await database2.insert(routes).values(input);
-  const rows3 = await database2.select().from(routes).where(eq2(routes.id, Number(result[0]?.insertId))).limit(1);
-  return rows3[0];
+  const rows4 = await database2.select().from(routes).where(eq2(routes.id, Number(result[0]?.insertId))).limit(1);
+  return rows4[0];
 }
 async function updateOperationalRoute(companyId, routeId, data) {
   const database2 = await getDb();
@@ -2265,8 +2319,11 @@ async function updateOperationalRoute(companyId, routeId, data) {
 async function deleteOperationalRoute(companyId, routeId) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not available");
-  await database2.delete(visits).where(and2(eq2(visits.routeId, routeId), eq2(visits.companyId, companyId)));
-  await database2.delete(routes).where(and2(eq2(routes.id, routeId), eq2(routes.companyId, companyId)));
+  const cid = requireAccountId(companyId);
+  const done = await database2.select({ id: visits.id }).from(visits).where(and2(eq2(visits.routeId, routeId), eq2(visits.companyId, cid), sql2`${visits.status} NOT IN ('pending', 'cancelled')`)).limit(1);
+  if (done[0]) throw new RouteValidationError("Este roteiro j\xE1 tem visitas realizadas e n\xE3o pode ser exclu\xEDdo, para n\xE3o perder o hist\xF3rico. Remova apenas as lojas pendentes.");
+  await database2.delete(visits).where(and2(eq2(visits.routeId, routeId), eq2(visits.companyId, cid)));
+  await database2.delete(routes).where(and2(eq2(routes.id, routeId), eq2(routes.companyId, cid)));
   return { success: true };
 }
 async function createOperationalRouteWithVisits(input) {
@@ -2281,8 +2338,8 @@ async function createOperationalRouteWithVisits(input) {
     const result = await tx.insert(routes).values(input.route);
     const routeId = Number(result[0]?.insertId);
     await tx.insert(visits).values(stores2.map((store) => ({ companyId, routeId, storeId: store.id, promoterId: input.route.promoterId, status: "pending" })));
-    const rows3 = await tx.select().from(routes).where(eq2(routes.id, routeId)).limit(1);
-    return rows3[0];
+    const rows4 = await tx.select().from(routes).where(eq2(routes.id, routeId)).limit(1);
+    return rows4[0];
   });
 }
 async function listOperationalVisits(companyId, options = {}) {
@@ -2293,15 +2350,15 @@ async function listOperationalVisits(companyId, options = {}) {
   if (options.promoterId) conditions.push(eq2(visits.promoterId, options.promoterId));
   if (options.routeId) conditions.push(eq2(visits.routeId, options.routeId));
   if (options.date) conditions.push(eq2(routes.date, options.date));
-  const rows3 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, and2(eq2(visits.storeId, stores.id), eq2(stores.companyId, visits.companyId))).innerJoin(routes, and2(eq2(visits.routeId, routes.id), eq2(routes.companyId, visits.companyId))).where(and2(...conditions)).orderBy(visits.plannedStart, visits.id);
-  return rows3;
+  const rows4 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, and2(eq2(visits.storeId, stores.id), eq2(stores.companyId, visits.companyId))).innerJoin(routes, and2(eq2(visits.routeId, routes.id), eq2(routes.companyId, visits.companyId))).where(and2(...conditions)).orderBy(visits.plannedStart, visits.id);
+  return rows4;
 }
 async function updateOperationalVisit(companyId, id2, data) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
   await database2.update(visits).set(data).where(and2(eq2(visits.id, id2), eq2(visits.companyId, requireAccountId(companyId))));
-  const rows3 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq2(visits.storeId, stores.id)).where(and2(eq2(visits.id, id2), eq2(visits.companyId, companyId))).limit(1);
-  return rows3[0];
+  const rows4 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq2(visits.storeId, stores.id)).where(and2(eq2(visits.id, id2), eq2(visits.companyId, companyId))).limit(1);
+  return rows4[0];
 }
 async function autoCloseStaleVisits(companyId, promoterId, today) {
   try {
@@ -2437,12 +2494,12 @@ async function deleteInventoryProducts(companyId, ids, actor) {
   await ensureTrashTable();
   await ensureInventoryProductsSchema();
   return database2.transaction(async (tx) => {
-    const rows3 = await tx.select().from(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
-    if (rows3.length !== uniqueIds.length) throw new Error("Um ou mais produtos n\xE3o existem ou n\xE3o pertencem \xE0 sua empresa.");
+    const rows4 = await tx.select().from(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
+    if (rows4.length !== uniqueIds.length) throw new Error("Um ou mais produtos n\xE3o existem ou n\xE3o pertencem \xE0 sua empresa.");
     const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1e3);
-    await tx.insert(trashItems).values(rows3.map((product) => ({ accountId: tenant, deletedByMemberId: actor?.memberId ?? null, deletedByName: actor?.name ?? null, ownerMemberId: product.createdByMemberId ?? null, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
+    await tx.insert(trashItems).values(rows4.map((product) => ({ accountId: tenant, deletedByMemberId: actor?.memberId ?? null, deletedByName: actor?.name ?? null, ownerMemberId: product.createdByMemberId ?? null, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
     await tx.delete(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
-    return { deleted: rows3.length };
+    return { deleted: rows4.length };
   });
 }
 async function deleteInventoryProduct(companyId, id2, actor) {
@@ -2463,6 +2520,7 @@ var _db, _dbUrl, _pool, ownerScopeReady, ownerScopePromise, _trashTableReady, Ro
 var init_db = __esm({
   "server/db.ts"() {
     "use strict";
+    init_mediaKeys();
     init_schema_original();
     init_schema();
     init_storeAccess();
@@ -2992,12 +3050,12 @@ async function listAuditLogs(filters = {}) {
       params
     );
     const total = Number(countRows[0]?.value || 0);
-    const [rows3] = await pool.query(
+    const [rows4] = await pool.query(
       `SELECT * FROM \`audit_logs\` ${whereSql} ORDER BY \`createdAt\` DESC, \`id\` DESC LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
     return {
-      items: rows3 || [],
+      items: rows4 || [],
       total,
       page,
       pageSize
@@ -3012,11 +3070,11 @@ async function listAuditLogs(filters = {}) {
         params
       );
       const total = Number(countRows[0]?.value || 0);
-      const [rows3] = await pool.query(
+      const [rows4] = await pool.query(
         `SELECT * FROM \`audit_logs\` ${whereSql} ORDER BY \`createdAt\` DESC, \`id\` DESC LIMIT ? OFFSET ?`,
         [...params, pageSize, offset]
       );
-      return { items: rows3 || [], total, page, pageSize };
+      return { items: rows4 || [], total, page, pageSize };
     } catch (err2) {
       console.warn("[audit] list failed permanently", err2);
       return { items: [], total: 0, page, pageSize };
@@ -3029,17 +3087,17 @@ async function getAuditLogById(id2, companyId) {
   if (!pool) return null;
   try {
     if (companyId != null) {
-      const [rows4] = await pool.query(
+      const [rows5] = await pool.query(
         "SELECT * FROM `audit_logs` WHERE `id` = ? AND `companyId` = ? LIMIT 1",
         [id2, companyId]
       );
-      return rows4[0] || null;
+      return rows5[0] || null;
     }
-    const [rows3] = await pool.query(
+    const [rows4] = await pool.query(
       "SELECT * FROM `audit_logs` WHERE `id` = ? LIMIT 1",
       [id2]
     );
-    return rows3[0] || null;
+    return rows4[0] || null;
   } catch (err) {
     console.warn("[audit] getById failed", err);
     return null;
@@ -3074,7 +3132,7 @@ async function exportAuditLogsCsv(filters) {
     "ipAddress"
   ];
   const escape = (v) => {
-    const s = v == null ? "" : String(v);
+    const s = neutralizeCsvFormula(v);
     if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
     return s;
   };
@@ -3186,8 +3244,8 @@ async function listPromoterActivities(filters) {
   try {
     const [countRows] = await pool.query(`SELECT COUNT(*) AS value ${tableSql}`, params);
     const total = Number(countRows[0]?.value || 0);
-    const [rows3] = await pool.query(`SELECT activity.* ${tableSql} ORDER BY activity.occurredAt DESC, activity.activityId DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
-    return { items: rows3 || [], total, page, pageSize };
+    const [rows4] = await pool.query(`SELECT activity.* ${tableSql} ORDER BY activity.occurredAt DESC, activity.activityId DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
+    return { items: rows4 || [], total, page, pageSize };
   } catch (err) {
     console.warn("[audit] promoter activity query failed", err);
     throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel carregar as atividades dos promotores. Tente novamente em instantes." });
@@ -3197,6 +3255,7 @@ var auditTableReady, SENSITIVE_KEY_RE;
 var init_audit = __esm({
   "server/audit.ts"() {
     "use strict";
+    init_csv();
     init_db();
     auditTableReady = false;
     SENSITIVE_KEY_RE = /password|passwd|pwd|token|secret|cookie|authorization|recovery|hash|credit.?card|card.?number|cvv|cvc|ssn|api.?key/i;
@@ -3594,8 +3653,11 @@ async function saveCorrectionAttachment(companyId, requestId, base64, mime = "im
   const clean = base64.replace(/^data:[^;]+;base64,/, "");
   const buf = Buffer.from(clean, "base64");
   if (buf.length > 8 * 1024 * 1024) throw new Error("Foto muito grande (m\xE1x. 8 MB).");
-  const key = `corrections/${companyId}/${requestId}_${Date.now()}.jpg`;
-  const { key: stored } = await storagePut(key, buf, mime);
+  const detected = detectImageMime(buf);
+  if (!detected) throw new Error("O anexo precisa ser uma imagem v\xE1lida (JPG, PNG ou WebP).");
+  const ext = detected === "image/png" ? "png" : detected === "image/webp" ? "webp" : "jpg";
+  const key = `corrections/${companyId}/${requestId}_${Date.now()}.${ext}`;
+  const { key: stored } = await storagePut(key, buf, detected);
   return stored;
 }
 async function loadApprovedDayExcuses(companyId, memberIds, from, to) {
@@ -3606,14 +3668,14 @@ async function loadApprovedDayExcuses(companyId, memberIds, from, to) {
   await ensureCorrectionExtras();
   const start = new Date(Date.parse(`${from}T00:00:00Z`) - 15 * 36e5);
   const end = new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 36e5);
-  const rows3 = await database2.select().from(timeCorrectionRequests).where(and3(
+  const rows4 = await database2.select().from(timeCorrectionRequests).where(and3(
     eq3(timeCorrectionRequests.companyId, companyId),
     inArray2(timeCorrectionRequests.memberAccountId, memberIds),
     eq3(timeCorrectionRequests.status, "approved"),
     gte(timeCorrectionRequests.requestedTime, start),
     lt(timeCorrectionRequests.requestedTime, end)
   ));
-  for (const row2 of rows3) {
+  for (const row2 of rows4) {
     if (!looksLikeFullDayExcuse(row2)) continue;
     const date3 = excuseDay(row2.requestedTime);
     if (date3 < from || date3 > to) continue;
@@ -3630,6 +3692,7 @@ var ready;
 var init_correctionExtras = __esm({
   "server/modules/correctionExtras.ts"() {
     "use strict";
+    init_mediaKeys();
     init_db();
     init_schema();
     init_storage();
@@ -3760,7 +3823,7 @@ var init_vacations = __esm({
         if (input?.status && input.status !== "all") conds.push(eq4(vacationSchedules.status, input.status));
         if (input?.from) conds.push(gte2(vacationSchedules.endDate, input.from));
         if (input?.to) conds.push(lte(vacationSchedules.startDate, input.to));
-        const rows3 = await database2.select({
+        const rows4 = await database2.select({
           id: vacationSchedules.id,
           memberAccountId: vacationSchedules.memberAccountId,
           startDate: vacationSchedules.startDate,
@@ -3775,7 +3838,7 @@ var init_vacations = __esm({
           cancelledByMemberAccountId: vacationSchedules.cancelledByMemberAccountId,
           memberName: memberAccounts2.userName
         }).from(vacationSchedules).innerJoin(memberAccounts2, eq4(memberAccounts2.id, vacationSchedules.memberAccountId)).where(and4(...conds)).orderBy(vacationSchedules.startDate);
-        return rows3.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
       }),
       mine: protectedProcedure.query(async ({ ctx }) => {
         if (!ctx.memberAccountId) throw new TRPCError5({ code: "FORBIDDEN" });
@@ -3908,8 +3971,8 @@ async function loadMemberVacations(companyId, memberIds, from, to) {
     await ensureVacationSchedulesTable2();
     const database2 = await getDb();
     if (!database2) return map;
-    const rows3 = await database2.select({ memberAccountId: vacationSchedules.memberAccountId, startDate: vacationSchedules.startDate, endDate: vacationSchedules.endDate }).from(vacationSchedules).where(and5(eq5(vacationSchedules.companyId, companyId), eq5(vacationSchedules.status, "scheduled"), inArray4(vacationSchedules.memberAccountId, memberIds)));
-    for (const r of rows3) {
+    const rows4 = await database2.select({ memberAccountId: vacationSchedules.memberAccountId, startDate: vacationSchedules.startDate, endDate: vacationSchedules.endDate }).from(vacationSchedules).where(and5(eq5(vacationSchedules.companyId, companyId), eq5(vacationSchedules.status, "scheduled"), inArray4(vacationSchedules.memberAccountId, memberIds)));
+    for (const r of rows4) {
       const startDate = dateOnly(r.startDate), endDate = dateOnly(r.endDate);
       if (!startDate || !endDate || endDate < from || startDate > to) continue;
       map.set(r.memberAccountId, [...map.get(r.memberAccountId) || [], { startDate, endDate }]);
@@ -4040,8 +4103,8 @@ async function companyMembers(companyId, memberIds) {
   if (!database2) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
   const where = [eq6(memberAccounts2.companyId, companyId)];
   if (memberIds?.length) where.push(inArray5(memberAccounts2.id, memberIds));
-  const rows3 = await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq6(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and6(...where));
-  return rows3.filter((r) => r.role !== "company_admin");
+  const rows4 = await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq6(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and6(...where));
+  return rows4.filter((r) => r.role !== "company_admin");
 }
 var TZ, dateStr2, hm, adjustmentsReady, legalSchema, laborSchema, timesheetMirrorRouter;
 var init_timesheetMirror2 = __esm({
@@ -4294,14 +4357,14 @@ async function companyMembers2(companyId, memberIds) {
   if (!database2) throw new Error("Banco de dados indispon\xEDvel.");
   const where = [eq8(memberAccounts2.companyId, companyId)];
   if (memberIds?.length) where.push(inArray8(memberAccounts2.id, memberIds));
-  const rows3 = await database2.select({
+  const rows4 = await database2.select({
     id: memberAccounts2.id,
     name: memberAccounts2.userName,
     role: memberAccounts2.role,
     active: memberAccounts2.active,
     employeeCode: promoterProfiles.employeeCode
   }).from(memberAccounts2).leftJoin(promoterProfiles, eq8(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and8(...where));
-  return rows3.filter((r) => r.role !== "company_admin");
+  return rows4.filter((r) => r.role !== "company_admin");
 }
 async function buildPdfBuffer(opts) {
   const { jsPDF } = await import("jspdf");
@@ -4483,20 +4546,20 @@ var init_timesheetArchive = __esm({
         if (input?.memberId) conds.push(sql8`a.memberAccountId = ${input.memberId}`);
         if (input?.year) conds.push(sql8`a.year = ${input.year}`);
         if (input?.month) conds.push(sql8`a.month = ${input.month}`);
-        const rows3 = (await database2.execute(sql8`SELECT a.*, m.userName AS memberName
+        const rows4 = (await database2.execute(sql8`SELECT a.*, m.userName AS memberName
         FROM timesheet_archives a
         LEFT JOIN member_accounts m ON m.id = a.memberAccountId AND m.companyId = a.companyId
         WHERE ${sql8.join(conds, sql8` AND `)}
         ORDER BY a.year DESC, a.month DESC, a.memberAccountId, a.version DESC
         LIMIT 500`))[0] ?? [];
-        return rows3;
+        return rows4;
       }),
       downloadUrl: companyAdminFeatureProcedure("timeTracking").input(z4.object({ id: z4.number().int().positive() })).query(async ({ ctx, input }) => {
         await ensureTimesheetArchivesTable();
         const database2 = await getDb();
         if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
-        const rows3 = (await database2.execute(sql8`SELECT fileKey, status FROM timesheet_archives WHERE id = ${input.id} AND companyId = ${ctx.accountId} LIMIT 1`))[0] ?? [];
-        const row2 = rows3[0];
+        const rows4 = (await database2.execute(sql8`SELECT fileKey, status FROM timesheet_archives WHERE id = ${input.id} AND companyId = ${ctx.accountId} LIMIT 1`))[0] ?? [];
+        const row2 = rows4[0];
         if (!row2 || row2.status !== "ready" || !row2.fileKey) throw new TRPCError8({ code: "NOT_FOUND", message: "Arquivo n\xE3o encontrado ou indispon\xEDvel." });
         const url = await storageGetSignedUrl(row2.fileKey);
         return { url };
@@ -4840,7 +4903,7 @@ async function database() {
 }
 async function listCompaniesOverview() {
   const d = await database();
-  const [rows3, plans, pays, counts, admins, flags] = await Promise.all([
+  const [rows4, plans, pays, counts, admins, flags] = await Promise.all([
     d.select().from(companies).orderBy(companies.name),
     d.select().from(subscriptionPlans),
     d.execute(sql9`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
@@ -4852,7 +4915,7 @@ async function listCompaniesOverview() {
   const map = (r, key = "companyId") => new Map(r[0].map((x) => [Number(x[key]), x]));
   const payBy = map(pays), countBy = map(counts), adminBy = map(admins);
   const flagBy = new Map(flags.map((f) => [`${f.accountId}:${f.settingKey}`, f.settingValue]));
-  return rows3.map((c) => {
+  return rows4.map((c) => {
     const plan = c.planId ? planById.get(c.planId) : null;
     const monthlyAmount = flagBy.get(`${c.id}:${MONTHLY_AMOUNT_KEY}`) || (plan?.price != null ? String(plan.price) : null);
     const blockAfter = flagBy.get(`${c.id}:${BLOCK_AFTER_OVERDUE_KEY}`);
@@ -4964,8 +5027,7 @@ async function purgeCompany(companyId, confirmName) {
     for (const p of photoRows) {
       for (const k of [p.fileKey, p.thumbnailKey]) if (k) {
         try {
-          await storageDelete2(k);
-          filesDeleted++;
+          if (await guardedStorageDelete(storageDelete2, k, companyId)) filesDeleted++;
         } catch {
         }
       }
@@ -5039,6 +5101,7 @@ var BR, endOfDay, startOfDay, addDaysDate;
 var init_platformCompanies = __esm({
   "server/platformCompanies.ts"() {
     "use strict";
+    init_mediaKeys();
     init_db();
     init_schema_original();
     init_paymentReminder();
@@ -5261,8 +5324,8 @@ async function expireOldStorePhotos() {
   let errors = 0;
   for (const photo of expired) {
     try {
-      if (photo.fileKey) await storageDelete2(photo.fileKey);
-      if (photo.thumbnailKey) await storageDelete2(photo.thumbnailKey);
+      if (photo.fileKey) await guardedStorageDelete(storageDelete2, photo.fileKey, photo.companyId);
+      if (photo.thumbnailKey) await guardedStorageDelete(storageDelete2, photo.thumbnailKey, photo.companyId);
       await db.delete(storePhotos).where(eq10(storePhotos.id, photo.id));
       deleted++;
     } catch {
@@ -5271,17 +5334,11 @@ async function expireOldStorePhotos() {
   }
   return { deleted, errors };
 }
-function detectImageMime(buf) {
-  if (buf.length < 12) return null;
-  if (buf[0] === 255 && buf[1] === 216 && buf[2] === 255) return "image/jpeg";
-  if (buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return "image/png";
-  if (buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
-  return null;
-}
 var RETENTION_DAYS, TRASH_DAYS, storePhotosRouter;
 var init_storePhotos = __esm({
   "server/modules/storePhotos.ts"() {
     "use strict";
+    init_mediaKeys();
     init_uploadLimits();
     init_schema();
     init_schema_original();
@@ -5313,7 +5370,7 @@ var init_storePhotos = __esm({
           conditions.push(eq10(stores.city, input.city));
         }
         try {
-          const rows3 = await db.select({
+          const rows4 = await db.select({
             id: stores.id,
             name: stores.name,
             city: stores.city,
@@ -5322,11 +5379,11 @@ var init_storePhotos = __esm({
             photoCount: sql11`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
             lastActivity: sql11`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`
           }).from(stores).where(and10(...conditions)).orderBy(desc4(stores.updatedAt));
-          return rows3;
+          return rows4;
         } catch (err) {
           if (String(err?.message || "").includes("store_photos") || err?.code === "ER_NO_SUCH_TABLE") {
-            const rows3 = await db.select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address }).from(stores).where(and10(...conditions)).orderBy(desc4(stores.updatedAt));
-            return rows3.map((r) => ({ ...r, photoCount: 0, lastActivity: null }));
+            const rows4 = await db.select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address }).from(stores).where(and10(...conditions)).orderBy(desc4(stores.updatedAt));
+            return rows4.map((r) => ({ ...r, photoCount: 0, lastActivity: null }));
           }
           throw err;
         }
@@ -5413,6 +5470,9 @@ var init_storePhotos = __esm({
         if (!limit.ok) {
           throw new TRPCError10({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
         }
+        if (!isTenantMediaKey(input.fileKey, ctx.accountId) || input.thumbnailKey && !isTenantMediaKey(input.thumbnailKey, ctx.accountId)) {
+          throw new TRPCError10({ code: "BAD_REQUEST", message: "Arquivo da foto inv\xE1lido." });
+        }
         const db = await getDb();
         if (!db) throw new TRPCError10({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         let storeName = "Sem loja vinculada";
@@ -5497,7 +5557,7 @@ var init_storePhotos = __esm({
         if (!detectedMime) throw new TRPCError10({ code: "BAD_REQUEST", message: "Arquivo n\xE3o \xE9 uma imagem v\xE1lida (use JPG, PNG ou WebP)." });
         input.mimeType = detectedMime;
         const ext = input.mimeType === "image/png" ? "png" : input.mimeType === "image/webp" ? "webp" : "jpg";
-        const relKey = `store-photos/${ctx.accountId}/${input.storeId}/${input.idempotencyKey}.${ext}`;
+        const relKey = `store-photos/${ctx.accountId}/${safeKeySegment(input.storeId, "sem-loja")}/${safeKeySegment(input.idempotencyKey)}.${ext}`;
         let fileKey;
         try {
           const uploaded = await storagePut2(relKey, buffer, input.mimeType);
@@ -5544,6 +5604,7 @@ var init_storePhotos = __esm({
         const [photo] = await db.select().from(storePhotos).where(and10(eq10(storePhotos.id, input.photoId), eq10(storePhotos.companyId, ctx.accountId))).limit(1);
         if (!photo) throw new TRPCError10({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         assertPhotoAccess(ctx, photo);
+        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError10({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         const { storageGetSignedUrl: storageGetSignedUrl2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         const url = await storageGetSignedUrl2(photo.fileKey);
         return { url, expiresIn: 3600 };
@@ -5555,6 +5616,7 @@ var init_storePhotos = __esm({
         const [photo] = await db.select().from(storePhotos).where(and10(eq10(storePhotos.id, input.photoId), eq10(storePhotos.companyId, ctx.accountId))).limit(1);
         if (!photo) throw new TRPCError10({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         assertPhotoAccess(ctx, photo);
+        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError10({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         const { storageRead: storageRead2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         try {
           const image = await storageRead2(photo.fileKey);
@@ -5717,8 +5779,8 @@ function row(label, value) {
     <td style="padding:8px 0;color:#fff;font-size:14px;font-weight:600;vertical-align:top;">${escapeHtml(value)}</td>
   </tr>`;
 }
-function dataTable(rows3) {
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:12px 0 20px;">${rows3.map(([l, v]) => row(l, v)).join("")}</table>`;
+function dataTable(rows4) {
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:12px 0 20px;">${rows4.map(([l, v]) => row(l, v)).join("")}</table>`;
 }
 function cta(href, label) {
   return `<p style="margin:20px 0 8px;"><a href="${escapeHtml(href)}" style="display:inline-block;background:#e10600;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:999px;">${escapeHtml(label)}</a></p>`;
@@ -5799,18 +5861,18 @@ async function sendEmail(input) {
 async function emailAccountCreated(input) {
   const loginUrl = `${getAppPublicUrl()}/?login=1`;
   const planLine = input.planName ? `${input.planName}${input.isTrial ? " (teste gr\xE1tis)" : ""}` : input.isTrial ? "Teste gr\xE1tis" : "N\xE3o informado";
-  const rows3 = [
+  const rows4 = [
     ["Empresa", input.companyName],
     ["Respons\xE1vel", input.userName],
     ["E-mail de acesso", input.email]
   ];
-  if (input.password) rows3.push(["Senha", input.password]);
-  rows3.push(["C\xF3digo de redefini\xE7\xE3o", input.recoveryCode]);
-  rows3.push(["Plano", planLine]);
+  if (input.password) rows4.push(["Senha", input.password]);
+  rows4.push(["C\xF3digo de redefini\xE7\xE3o", input.recoveryCode]);
+  rows4.push(["Plano", planLine]);
   const html = layout(
     "Sua conta GondUp foi criada",
     `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Sua conta foi criada com sucesso. Guarde estes dados em local seguro.</p>
-    ${dataTable(rows3)}
+    ${dataTable(rows4)}
     <p style="margin:0 0 8px;color:#c4cae0;font-size:13px;line-height:1.5;">Use o <strong style="color:#fff;">c\xF3digo de redefini\xE7\xE3o</strong> se precisar trocar a senha na tela de recupera\xE7\xE3o.</p>
     ${cta(loginUrl, "Entrar no GondUp")}`
   );
@@ -5846,17 +5908,17 @@ Se voc\xEA n\xE3o pediu isso, ignore este e-mail.`
 }
 async function emailPlanChanged(input) {
   const title = input.isUpgrade ? "Upgrade de plano confirmado" : "Plano adquirido";
-  const rows3 = [
+  const rows4 = [
     ["Empresa", input.companyName],
     ["Plano", input.planName],
     ["Status", input.status]
   ];
-  if (input.amount) rows3.push(["Valor", `R$ ${input.amount}`]);
-  if (input.periodEnd) rows3.push(["V\xE1lido at\xE9", input.periodEnd]);
+  if (input.amount) rows4.push(["Valor", `R$ ${input.amount}`]);
+  if (input.periodEnd) rows4.push(["V\xE1lido at\xE9", input.periodEnd]);
   const html = layout(
     title,
     `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Registramos a altera\xE7\xE3o do plano da sua empresa.</p>
-    ${dataTable(rows3)}
+    ${dataTable(rows4)}
     ${cta(`${getAppPublicUrl()}/minha-assinatura`, "Ver minha assinatura")}`
   );
   return sendEmail({
@@ -5957,7 +6019,7 @@ var productLookup_exports = {};
 __export(productLookup_exports, {
   lookupProductByCode: () => lookupProductByCode
 });
-import { and as and12, desc as desc5, eq as eq13, inArray as inArray10 } from "drizzle-orm";
+import { and as and12, desc as desc5, eq as eq13, inArray as inArray11 } from "drizzle-orm";
 async function fetchJson(url, init2 = {}, ms2 = 4e3) {
   const ctl = new AbortController();
   const t2 = setTimeout(() => ctl.abort(), ms2);
@@ -5985,8 +6047,8 @@ async function lookupProductByCode(companyId, rawCode) {
   if (database2) {
     await ensureInventoryProductsSchema();
     const codes = [.../* @__PURE__ */ new Set([rawCode.trim(), ...variants])];
-    const rows3 = await database2.select({ description: inventoryProducts.description, price: inventoryProducts.price, productCode: inventoryProducts.productCode }).from(inventoryProducts).where(and12(eq13(inventoryProducts.companyId, companyId), inArray10(inventoryProducts.productCode, codes))).orderBy(desc5(inventoryProducts.id)).limit(1);
-    if (rows3[0]) return { found: true, source: "company", description: rows3[0].description, price: String(rows3[0].price), code: rows3[0].productCode };
+    const rows4 = await database2.select({ description: inventoryProducts.description, price: inventoryProducts.price, productCode: inventoryProducts.productCode }).from(inventoryProducts).where(and12(eq13(inventoryProducts.companyId, companyId), inArray11(inventoryProducts.productCode, codes))).orderBy(desc5(inventoryProducts.id)).limit(1);
+    if (rows4[0]) return { found: true, source: "company", description: rows4[0].description, price: String(rows4[0].price), code: rows4[0].productCode };
   }
   if (!variants.length) return { found: false, source: null, description: "", code };
   const token = process.env.COSMOS_API_TOKEN;
@@ -6110,39 +6172,39 @@ async function runBackupStep(c, opts = { budgetMs: 18e3 }) {
   }
   const [doneRows] = await c.query("SELECT tableName FROM backup_progress WHERE day = ? AND done = 1", [day]);
   const done = new Set(doneRows.map((r) => r.tableName));
-  for (const table of tables) {
-    if (done.has(table)) continue;
-    const [progRows] = await c.query("SELECT * FROM backup_progress WHERE day = ? AND tableName = ?", [day, table]);
+  for (const table2 of tables) {
+    if (done.has(table2)) continue;
+    const [progRows] = await c.query("SELECT * FROM backup_progress WHERE day = ? AND tableName = ?", [day, table2]);
     const prog = progRows[0];
     let part = prog?.part ?? 0, rowsDone = prog?.rowsDone ?? 0, cursor = prog?.cursorValue ?? null;
     const files = prog?.files ? JSON.parse(prog.files) : [];
-    const [keys] = await c.query(`SHOW KEYS FROM \`${table}\` WHERE Key_name = 'PRIMARY'`);
+    const [keys] = await c.query(`SHOW KEYS FROM \`${table2}\` WHERE Key_name = 'PRIMARY'`);
     const pk = keys.length === 1 ? keys[0].Column_name : null;
     let finished = false;
     while (Date.now() - started < opts.budgetMs) {
-      const [rows3] = pk ? await c.query(
-        `SELECT * FROM \`${table}\` ${cursor != null ? `WHERE \`${pk}\` > ?` : ""} ORDER BY \`${pk}\` LIMIT ${CHUNK_ROWS}`,
+      const [rows4] = pk ? await c.query(
+        `SELECT * FROM \`${table2}\` ${cursor != null ? `WHERE \`${pk}\` > ?` : ""} ORDER BY \`${pk}\` LIMIT ${CHUNK_ROWS}`,
         cursor != null ? [cursor] : []
-      ) : await c.query(`SELECT * FROM \`${table}\` ORDER BY 1 LIMIT ${CHUNK_ROWS} OFFSET ${rowsDone}`);
-      if (!rows3.length) {
+      ) : await c.query(`SELECT * FROM \`${table2}\` ORDER BY 1 LIMIT ${CHUNK_ROWS} OFFSET ${rowsDone}`);
+      if (!rows4.length) {
         finished = true;
         break;
       }
-      const body = await gzip(Buffer.from(rows3.map((r) => JSON.stringify(r, jsonReplacer)).join("\n") + "\n"));
-      const key = `${prefix}/${table}.${String(part).padStart(5, "0")}.jsonl.gz`;
+      const body = await gzip(Buffer.from(rows4.map((r) => JSON.stringify(r, jsonReplacer)).join("\n") + "\n"));
+      const key = `${prefix}/${table2}.${String(part).padStart(5, "0")}.jsonl.gz`;
       const stored = await storagePut2(key, body, "application/gzip");
-      files.push({ key: stored.key, rows: rows3.length, sha256: crypto3.createHash("sha256").update(body).digest("hex") });
+      files.push({ key: stored.key, rows: rows4.length, sha256: crypto3.createHash("sha256").update(body).digest("hex") });
       bytes += body.length;
       partsWritten += 1;
       part += 1;
-      rowsDone += rows3.length;
-      if (pk) cursor = String(rows3[rows3.length - 1][pk]);
+      rowsDone += rows4.length;
+      if (pk) cursor = String(rows4[rows4.length - 1][pk]);
       await c.query(
         `INSERT INTO backup_progress (day, tableName, cursorValue, part, rowsDone, done, files) VALUES (?,?,?,?,?,0,?)
          ON DUPLICATE KEY UPDATE cursorValue = VALUES(cursorValue), part = VALUES(part), rowsDone = VALUES(rowsDone), files = VALUES(files)`,
-        [day, table, cursor, part, rowsDone, JSON.stringify(files)]
+        [day, table2, cursor, part, rowsDone, JSON.stringify(files)]
       );
-      if (rows3.length < CHUNK_ROWS) {
+      if (rows4.length < CHUNK_ROWS) {
         finished = true;
         break;
       }
@@ -6151,9 +6213,9 @@ async function runBackupStep(c, opts = { budgetMs: 18e3 }) {
       await c.query(
         `INSERT INTO backup_progress (day, tableName, cursorValue, part, rowsDone, done, files) VALUES (?,?,?,?,?,1,?)
          ON DUPLICATE KEY UPDATE done = 1, files = VALUES(files), rowsDone = VALUES(rowsDone), part = VALUES(part)`,
-        [day, table, cursor, part, rowsDone, JSON.stringify(files)]
+        [day, table2, cursor, part, rowsDone, JSON.stringify(files)]
       );
-      done.add(table);
+      done.add(table2);
     } else break;
   }
   const complete = tables.every((t2) => done.has(t2));
@@ -6227,6 +6289,44 @@ var init_backup = __esm({
   }
 });
 
+// server/_core/originGuard.ts
+var SAFE_METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "OPTIONS"]);
+function firstHeader(value) {
+  return (Array.isArray(value) ? value[0] : value ?? "").split(",")[0].trim().toLowerCase();
+}
+function isAllowedOrigin(headers, method, extraAllowed = []) {
+  if (SAFE_METHODS.has(method.toUpperCase())) return true;
+  const origin = firstHeader(headers.origin);
+  if (origin) {
+    if (origin === "null") return false;
+    let originHost;
+    try {
+      originHost = new URL(origin).host.toLowerCase();
+    } catch {
+      return false;
+    }
+    const hosts = [firstHeader(headers["x-forwarded-host"]), firstHeader(headers.host)].filter(Boolean);
+    if (hosts.includes(originHost)) return true;
+    return extraAllowed.some((allowed) => {
+      try {
+        return new URL(allowed).host.toLowerCase() === originHost;
+      } catch {
+        return false;
+      }
+    });
+  }
+  const site = firstHeader(headers["sec-fetch-site"]);
+  if (site === "cross-site") return false;
+  return true;
+}
+function originGuard(extraAllowed = []) {
+  return (req, res, next) => {
+    const extras = [...extraAllowed, process.env.APP_PUBLIC_URL ?? ""].filter(Boolean);
+    if (isAllowedOrigin(req.headers, req.method, extras)) return next();
+    res.status(403).json({ error: "Origem n\xE3o permitida." });
+  };
+}
+
 // server/vercel-entry.ts
 import express from "express";
 import compression from "compression";
@@ -6235,9 +6335,11 @@ import path from "path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 // server/routers.ts
+init_csv();
 init_const();
 
 // server/modules/timeTracking.ts
+init_mediaKeys();
 init_uploadLimits();
 init_trpc();
 init_db();
@@ -6369,7 +6471,7 @@ var timeTrackingRouter = router({
     const timeZone = input?.timeZone || "UTC";
     const today = localDay(/* @__PURE__ */ new Date(), timeZone);
     const since = new Date(Date.now() - 36 * 60 * 60 * 1e3);
-    const rows3 = await database2.select({
+    const rows4 = await database2.select({
       promoterId: memberAccounts2.id,
       promoterName: memberAccounts2.userName,
       eventType: timeEvents.eventType,
@@ -6387,7 +6489,7 @@ var timeTrackingRouter = router({
       gte5(timeEvents.serverTime, since)
     )).orderBy(desc2(timeEvents.serverTime)).limit(5e3);
     const eventsByPromoter = /* @__PURE__ */ new Map();
-    for (const row2 of rows3) {
+    for (const row2 of rows4) {
       if (localDay(row2.deviceTime || row2.serverTime, timeZone) !== today) continue;
       const promoterEvents = eventsByPromoter.get(row2.promoterId) || [];
       promoterEvents.push(row2);
@@ -6537,7 +6639,7 @@ var timeTrackingRouter = router({
     const database2 = await getDb();
     if (!database2) return found;
     const memberIds = [...new Set(found.map((m) => m.memberId))];
-    const rows3 = await database2.select({
+    const rows4 = await database2.select({
       memberAccountId: timeCorrectionRequests.memberAccountId,
       requestedTime: timeCorrectionRequests.requestedTime
     }).from(timeCorrectionRequests).where(and7(
@@ -6546,7 +6648,7 @@ var timeTrackingRouter = router({
       sql7`${timeCorrectionRequests.status} IN ('pending', 'approved')`
     )).orderBy(desc2(timeCorrectionRequests.createdAt)).limit(500);
     const covered = /* @__PURE__ */ new Set();
-    for (const row2 of rows3) {
+    for (const row2 of rows4) {
       const day = excuseDay(row2.requestedTime);
       covered.add(`${row2.memberAccountId}:${day}`);
     }
@@ -6589,8 +6691,8 @@ var timeTrackingRouter = router({
     const from = `${today.slice(0, 7)}-01`;
     const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const to = `${today.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
-    const rows3 = await loadMirrorEventRows(companyId, [memberId], from, to);
-    const events = rows3.map((row2) => ({
+    const rows4 = await loadMirrorEventRows(companyId, [memberId], from, to);
+    const events = rows4.map((row2) => ({
       id: row2.id,
       type: row2.eventType,
       time: (row2.deviceTime || row2.serverTime).toISOString(),
@@ -6709,6 +6811,10 @@ var timeTrackingRouter = router({
         eq7(timeCorrectionRequests.memberAccountId, memberId),
         sql7`${timeCorrectionRequests.status} IN ('pending', 'approved')`
       )).orderBy(desc2(timeCorrectionRequests.createdAt)).limit(100);
+      if (input.attachmentBase64) {
+        const head = Buffer.from(input.attachmentBase64.replace(/^data:[^;]+;base64,/, "").slice(0, 64), "base64");
+        if (!detectImageMime(head)) throw new TRPCError7({ code: "BAD_REQUEST", message: "O anexo precisa ser uma imagem v\xE1lida (JPG, PNG ou WebP)." });
+      }
       if (fullDay) {
         const day = excuseDay(requestedTime);
         if (existing.some((row2) => looksLikeFullDayExcuse(row2) && excuseDay(row2.requestedTime) === day)) {
@@ -6766,12 +6872,12 @@ var timeTrackingRouter = router({
       const database2 = await getDb();
       if (!database2) return [];
       await ensureCorrectionExtras();
-      const rows3 = await database2.select({
+      const rows4 = await database2.select({
         request: timeCorrectionRequests,
         event: timeEvents,
         employee: { userName: memberAccounts2.userName }
       }).from(timeCorrectionRequests).innerJoin(memberAccounts2, eq7(timeCorrectionRequests.memberAccountId, memberAccounts2.id)).leftJoin(timeEvents, eq7(timeCorrectionRequests.timeEventId, timeEvents.id)).where(and7(eq7(timeCorrectionRequests.companyId, ctx.accountId), eq7(timeCorrectionRequests.status, "pending"))).orderBy(desc2(timeCorrectionRequests.createdAt));
-      return Promise.all(rows3.map(async (row2) => {
+      return Promise.all(rows4.map(async (row2) => {
         const key = row2.request.attachmentKey;
         let attachmentUrl = null;
         if (key) {
@@ -6787,8 +6893,8 @@ var timeTrackingRouter = router({
     review: companyAdminFeatureProcedure("timeTracking").input(z3.object({ id: z3.number().int().positive(), status: z3.enum(["approved", "rejected"]), reviewNotes: z3.string().max(1e3).optional() })).mutation(async ({ ctx, input }) => {
       const database2 = await getDb();
       if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-      const rows3 = await database2.select().from(timeCorrectionRequests).where(and7(eq7(timeCorrectionRequests.id, input.id), eq7(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
-      const request = rows3[0];
+      const rows4 = await database2.select().from(timeCorrectionRequests).where(and7(eq7(timeCorrectionRequests.id, input.id), eq7(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
+      const request = rows4[0];
       if (!request) throw new TRPCError7({ code: "NOT_FOUND", message: "Solicita\xE7\xE3o de corre\xE7\xE3o n\xE3o encontrada." });
       if (request.status !== "pending") throw new TRPCError7({ code: "BAD_REQUEST", message: "Esta solicita\xE7\xE3o j\xE1 foi analisada." });
       await database2.transaction(async (tx) => {
@@ -6805,8 +6911,8 @@ var timeTrackingRouter = router({
       if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
       let done = 0;
       for (const id2 of input.ids) {
-        const rows3 = await database2.select().from(timeCorrectionRequests).where(and7(eq7(timeCorrectionRequests.id, id2), eq7(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
-        const request = rows3[0];
+        const rows4 = await database2.select().from(timeCorrectionRequests).where(and7(eq7(timeCorrectionRequests.id, id2), eq7(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
+        const request = rows4[0];
         if (!request || request.status !== "pending") continue;
         const applied = await database2.transaction(async (tx) => {
           const claimed = await tx.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: /* @__PURE__ */ new Date(), reviewNotes: input.reviewNotes || null }).where(and7(eq7(timeCorrectionRequests.id, request.id), eq7(timeCorrectionRequests.status, "pending")));
@@ -6989,6 +7095,89 @@ import { z as z9 } from "zod";
 import { parse as parseCookie } from "cookie";
 import { TRPCError as TRPCError14 } from "@trpc/server";
 
+// server/authThrottle.ts
+import { createHash as createHash2 } from "node:crypto";
+import { sql as sql13 } from "drizzle-orm";
+var THROTTLE_LIMIT = 5;
+var THROTTLE_WINDOW_MS = 15 * 60 * 1e3;
+var THROTTLE_BLOCK_MS = 15 * 60 * 1e3;
+var memory = /* @__PURE__ */ new Map();
+function throttleKeyHash(key) {
+  return createHash2("sha256").update(key).digest("hex");
+}
+function nextEntryAfterFailure(current, now, limit = THROTTLE_LIMIT) {
+  const entry = !current || now - current.windowStartedAt >= THROTTLE_WINDOW_MS ? { failures: 1, windowStartedAt: now, blockedUntil: 0 } : { ...current, failures: current.failures + 1 };
+  if (entry.failures >= limit) entry.blockedUntil = now + THROTTLE_BLOCK_MS;
+  return entry;
+}
+var ensured2 = null;
+var dbGetter = async () => null;
+function configureThrottleDb(getter) {
+  dbGetter = getter;
+  ensured2 = null;
+}
+var rows3 = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
+async function table() {
+  const db = await dbGetter();
+  if (!db) return null;
+  if (!ensured2) {
+    ensured2 = db.execute(sql13.raw(`CREATE TABLE IF NOT EXISTS auth_throttle (
+      keyHash char(64) NOT NULL,
+      failures int NOT NULL DEFAULT 0,
+      windowStartedAt bigint NOT NULL,
+      blockedUntil bigint NOT NULL DEFAULT 0,
+      PRIMARY KEY (keyHash)
+    )`)).then(() => void 0).catch((err) => {
+      ensured2 = null;
+      throw err;
+    });
+  }
+  await ensured2;
+  return db;
+}
+async function isThrottled(key) {
+  const now = Date.now();
+  const mem = memory.get(key);
+  if (mem && mem.blockedUntil > now) return true;
+  try {
+    const db = await table();
+    if (!db) return false;
+    const found = rows3(await db.execute(sql13`SELECT blockedUntil FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)} LIMIT 1`));
+    return Number(found[0]?.blockedUntil ?? 0) > now;
+  } catch (err) {
+    console.warn("[auth-throttle] banco indispon\xEDvel, usando s\xF3 a mem\xF3ria", err?.message);
+    return false;
+  }
+}
+async function registerThrottleFailure(key) {
+  const now = Date.now();
+  memory.set(key, nextEntryAfterFailure(memory.get(key), now));
+  if (memory.size > 5e3) {
+    for (const [k, v] of memory) if (now - v.windowStartedAt >= THROTTLE_WINDOW_MS) memory.delete(k);
+  }
+  try {
+    const db = await table();
+    if (!db) return;
+    const hash = throttleKeyHash(key);
+    const found = rows3(await db.execute(sql13`SELECT failures, windowStartedAt, blockedUntil FROM auth_throttle WHERE keyHash = ${hash} LIMIT 1`));
+    const current = found[0] ? { failures: Number(found[0].failures), windowStartedAt: Number(found[0].windowStartedAt), blockedUntil: Number(found[0].blockedUntil) } : void 0;
+    const next = nextEntryAfterFailure(current, now);
+    await db.execute(sql13`INSERT INTO auth_throttle (keyHash, failures, windowStartedAt, blockedUntil)
+      VALUES (${hash}, ${next.failures}, ${next.windowStartedAt}, ${next.blockedUntil})
+      ON DUPLICATE KEY UPDATE failures = VALUES(failures), windowStartedAt = VALUES(windowStartedAt), blockedUntil = VALUES(blockedUntil)`);
+  } catch (err) {
+    console.warn("[auth-throttle] falha ao gravar tentativa", err?.message);
+  }
+}
+async function clearThrottle(key) {
+  memory.delete(key);
+  try {
+    const db = await table();
+    if (db) await db.execute(sql13`DELETE FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)}`);
+  } catch {
+  }
+}
+
 // server/_core/cookies.ts
 function isSecureRequest(req) {
   if (req.protocol === "https") return true;
@@ -7002,7 +7191,8 @@ function getSessionCookieOptions(req, allowCrossSite = false) {
   return {
     httpOnly: true,
     path: "/",
-    sameSite: secure ? "none" : "lax",
+    // Lax: o site e a API são da mesma origem, então o cookie nunca precisa ir em pedidos de outros sites (defesa contra CSRF).
+    sameSite: "lax",
     secure
   };
 }
@@ -7108,31 +7298,13 @@ init_ttlCache();
 init_schema_original();
 init_schema();
 init_db();
-import { createHash as createHash2, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { and as and11, eq as eq11, gt, lte as lte4 } from "drizzle-orm";
+import { createHash as createHash3, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { and as and11, eq as eq11, gt, inArray as inArray10, lte as lte4 } from "drizzle-orm";
 var SESSION_DAYS = 30;
-var RATE_WINDOW_MS = 15 * 60 * 1e3;
-var RATE_LIMIT = 5;
-var BLOCK_MS = 15 * 60 * 1e3;
-var authRate = /* @__PURE__ */ new Map();
-function isRateLimited(key) {
-  const now = Date.now();
-  const current = authRate.get(key);
-  if (!current) return false;
-  if (current.blockedUntil > now) return true;
-  if (now - current.windowStartedAt >= RATE_WINDOW_MS) authRate.delete(key);
-  return false;
-}
-function registerFailure(key) {
-  const now = Date.now();
-  const current = authRate.get(key);
-  const entry = !current || now - current.windowStartedAt >= RATE_WINDOW_MS ? { failures: 1, windowStartedAt: now, blockedUntil: 0 } : { ...current, failures: current.failures + 1 };
-  if (entry.failures >= RATE_LIMIT) entry.blockedUntil = now + BLOCK_MS;
-  authRate.set(key, entry);
-}
-function clearRateLimit(key) {
-  authRate.delete(key);
-}
+configureThrottleDb(() => getDb());
+var isRateLimited = isThrottled;
+var registerFailure = registerThrottleFailure;
+var clearRateLimit = clearThrottle;
 function hashPassword(password) {
   const salt = randomBytes(16).toString("hex");
   const derived = scryptSync(password, salt, 64).toString("hex");
@@ -7146,7 +7318,7 @@ function verifyPassword(password, encoded) {
   return expected.length === derived.length && timingSafeEqual(expected, derived);
 }
 function hashToken(token) {
-  return createHash2("sha256").update(token).digest("hex");
+  return createHash3("sha256").update(token).digest("hex");
 }
 function normalizeMemberRole(role) {
   if (role === "admin" || role === "company_admin") return "company_admin";
@@ -7156,22 +7328,22 @@ function normalizeMemberRole(role) {
 async function authenticateMember(email, password) {
   const normalizedEmail = email.trim().toLowerCase();
   const key = `login:${normalizedEmail}`;
-  if (isRateLimited(key)) return null;
+  if (await isRateLimited(key)) return null;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const platformResult = await db.select().from(platformAdmins).where(eq11(platformAdmins.email, normalizedEmail)).limit(1);
   const platform = platformResult[0];
   if (platform && platform.active && verifyPassword(password, platform.passwordHash)) {
-    clearRateLimit(key);
+    await clearRateLimit(key);
     return { kind: "platform", account: platform };
   }
   const memberResult = await db.select().from(memberAccounts).where(eq11(memberAccounts.email, normalizedEmail)).limit(1);
   const member = memberResult[0];
   if (member && member.active && verifyPassword(password, member.passwordHash)) {
-    clearRateLimit(key);
+    await clearRateLimit(key);
     return { kind: "company", account: member };
   }
-  registerFailure(key);
+  await registerFailure(key);
   return null;
 }
 async function createSession(principal) {
@@ -7191,6 +7363,10 @@ async function createSession(principal) {
 var SESSION_CACHE_MS = 2e4;
 var memberSessionCache = createTtlCache(SESSION_CACHE_MS);
 var platformSessionCache = createTtlCache(SESSION_CACHE_MS);
+function dropSessionCaches() {
+  memberSessionCache.clear();
+  platformSessionCache.clear();
+}
 var lastSessionCleanup = 0;
 function cleanupExpiredSessions(db) {
   const nowMs = Date.now();
@@ -7237,34 +7413,36 @@ async function revokeSessions(rawToken) {
 }
 async function changeMemberPassword(memberAccountId, currentPassword, newPassword) {
   const key = `change:member:${memberAccountId}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const result = await db.select().from(memberAccounts).where(eq11(memberAccounts.id, memberAccountId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(currentPassword, account.passwordHash)) {
-    registerFailure(key);
+    await registerFailure(key);
     return false;
   }
-  clearRateLimit(key);
+  await clearRateLimit(key);
   await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq11(memberAccounts.id, memberAccountId));
   await db.delete(memberSessions).where(eq11(memberSessions.memberAccountId, memberAccountId));
+  dropSessionCaches();
   return true;
 }
 async function changePlatformPassword(platformAdminId, currentPassword, newPassword) {
   const key = `change:platform:${platformAdminId}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const result = await db.select().from(platformAdmins).where(eq11(platformAdmins.id, platformAdminId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(currentPassword, account.passwordHash)) {
-    registerFailure(key);
+    await registerFailure(key);
     return false;
   }
-  clearRateLimit(key);
+  await clearRateLimit(key);
   await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq11(platformAdmins.id, platformAdminId));
   await db.delete(platformSessions).where(eq11(platformSessions.platformAdminId, platformAdminId));
+  dropSessionCaches();
   return true;
 }
 async function resetMemberPassword(memberAccountId, newPassword) {
@@ -7272,12 +7450,14 @@ async function resetMemberPassword(memberAccountId, newPassword) {
   if (!db) throw new Error("Database not connected");
   await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq11(memberAccounts.id, memberAccountId));
   await db.delete(memberSessions).where(eq11(memberSessions.memberAccountId, memberAccountId));
-  clearRateLimit(`login:${memberAccountId}`);
+  dropSessionCaches();
+  const [acc] = await db.select({ email: memberAccounts.email }).from(memberAccounts).where(eq11(memberAccounts.id, memberAccountId)).limit(1);
+  if (acc?.email) await clearRateLimit(`login:${acc.email.trim().toLowerCase()}`);
 }
 async function recoverPassword(email, recoveryCode, newPassword) {
   const normalizedEmail = email.trim().toLowerCase();
   const key = `recover:${normalizedEmail}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const nextRecoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
@@ -7286,7 +7466,7 @@ async function recoverPassword(email, recoveryCode, newPassword) {
   if (platform?.active && platform.recoveryCodeHash && verifyPassword(recoveryCode, platform.recoveryCodeHash)) {
     await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq11(platformAdmins.id, platform.id));
     await db.delete(platformSessions).where(eq11(platformSessions.platformAdminId, platform.id));
-    clearRateLimit(key);
+    await clearRateLimit(key);
     return { recoveryCode: nextRecoveryCode, kind: "platform" };
   }
   const memberResult = await db.select().from(memberAccounts).where(eq11(memberAccounts.email, normalizedEmail)).limit(1);
@@ -7294,10 +7474,10 @@ async function recoverPassword(email, recoveryCode, newPassword) {
   if (member?.active && member.recoveryCodeHash && verifyPassword(recoveryCode, member.recoveryCodeHash)) {
     await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq11(memberAccounts.id, member.id));
     await db.delete(memberSessions).where(eq11(memberSessions.memberAccountId, member.id));
-    clearRateLimit(key);
+    await clearRateLimit(key);
     return { recoveryCode: nextRecoveryCode, kind: "company" };
   }
-  registerFailure(key);
+  await registerFailure(key);
   return false;
 }
 var RESET_TOKEN_TTL_MS = 60 * 60 * 1e3;
@@ -7340,19 +7520,19 @@ async function resetPasswordWithToken(token, newPassword) {
   const parsed = parseResetToken(token);
   if (!parsed || parsed.exp < Date.now()) return false;
   const key = `reset:${parsed.k}:${parsed.id}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const account = parsed.k === "platform" ? (await db.select().from(platformAdmins).where(eq11(platformAdmins.id, parsed.id)).limit(1))[0] : (await db.select().from(memberAccounts).where(eq11(memberAccounts.id, parsed.id)).limit(1))[0];
   if (!account || !account.active) {
-    registerFailure(key);
+    await registerFailure(key);
     return false;
   }
   const expected = signResetToken(parsed.k, parsed.id, parsed.exp, account.passwordHash);
   const a = Buffer.from(expected);
   const b = Buffer.from(`${parsed.payload}.${parsed.mac}`);
   if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    registerFailure(key);
+    await registerFailure(key);
     return false;
   }
   if (parsed.k === "platform") {
@@ -7362,13 +7542,14 @@ async function resetPasswordWithToken(token, newPassword) {
     await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq11(memberAccounts.id, parsed.id));
     await db.delete(memberSessions).where(eq11(memberSessions.memberAccountId, parsed.id));
   }
-  clearRateLimit(key);
+  await clearRateLimit(key);
+  dropSessionCaches();
   return true;
 }
-function allowPasswordResetRequest(email) {
+async function allowPasswordResetRequest(email) {
   const key = `resetreq:${email.trim().toLowerCase()}`;
-  if (isRateLimited(key)) return false;
-  registerFailure(key);
+  if (await isRateLimited(key)) return false;
+  await registerFailure(key);
   return true;
 }
 async function createCompanyWithAdmin(input) {
@@ -7444,12 +7625,19 @@ async function listMemberAccounts(companyId) {
   const db = await getDb();
   if (!db) return [];
   const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt, employeeCode: promoterProfiles.employeeCode, workStartTime: promoterProfiles.workStartTime, workEndTime: promoterProfiles.workEndTime }).from(memberAccounts).leftJoin(promoterProfiles, and11(eq11(promoterProfiles.memberAccountId, memberAccounts.id), eq11(promoterProfiles.companyId, memberAccounts.companyId)));
-  const rows3 = companyId ? await query.where(eq11(memberAccounts.companyId, companyId)) : await query;
-  return rows3.map((row2) => ({ ...row2, role: normalizeMemberRole(String(row2.role)) }));
+  const rows4 = companyId ? await query.where(eq11(memberAccounts.companyId, companyId)) : await query;
+  return rows4.map((row2) => ({ ...row2, role: normalizeMemberRole(String(row2.role)) }));
 }
 async function updateCompanyUser(accountId, companyId, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
+  if (data.role && data.role !== "company_admin") {
+    const [target] = await db.select({ role: memberAccounts.role }).from(memberAccounts).where(and11(eq11(memberAccounts.id, accountId), eq11(memberAccounts.companyId, companyId))).limit(1);
+    if (target && normalizeMemberRole(String(target.role)) === "company_admin") {
+      const admins = await db.select({ id: memberAccounts.id }).from(memberAccounts).where(and11(eq11(memberAccounts.companyId, companyId), eq11(memberAccounts.active, true), inArray10(memberAccounts.role, ["company_admin", "admin"]))).limit(2);
+      if (admins.length <= 1) throw new Error("A empresa precisa manter pelo menos um administrador ativo.");
+    }
+  }
   await db.update(memberAccounts).set({ ...data, email: data.email?.trim().toLowerCase() }).where(and11(eq11(memberAccounts.id, accountId), eq11(memberAccounts.companyId, companyId)));
 }
 async function setMemberActive(id2, active, companyId) {
@@ -7462,7 +7650,10 @@ async function setMemberActive(id2, active, companyId) {
     if (adminCount.length <= 1) throw new Error("A empresa precisa manter pelo menos um administrador ativo.");
   }
   await db.update(memberAccounts).set({ active }).where(conditions);
-  if (!active) await db.delete(memberSessions).where(eq11(memberSessions.memberAccountId, id2));
+  if (!active) {
+    await db.delete(memberSessions).where(eq11(memberSessions.memberAccountId, id2));
+    dropSessionCaches();
+  }
 }
 async function updateMemberProfile(memberAccountId, data) {
   const db = await getDb();
@@ -7483,20 +7674,21 @@ async function revokeAllMemberSessions(memberAccountId) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   await db.delete(memberSessions).where(eq11(memberSessions.memberAccountId, memberAccountId));
+  dropSessionCaches();
   return { success: true };
 }
 async function verifyMemberPassword(memberAccountId, password) {
   const key = `verify:member:${memberAccountId}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
   const result = await database2.select().from(memberAccounts).where(eq11(memberAccounts.id, memberAccountId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(password, account.passwordHash)) {
-    registerFailure(key);
+    await registerFailure(key);
     return false;
   }
-  clearRateLimit(key);
+  await clearRateLimit(key);
   return true;
 }
 
@@ -7504,7 +7696,7 @@ async function verifyMemberPassword(memberAccountId, password) {
 init_schema_original();
 init_entitlements();
 init_entitlements2();
-import { sql as sql13, eq as eq12 } from "drizzle-orm";
+import { sql as sql14, eq as eq12 } from "drizzle-orm";
 async function getEffectivePlan(companyId) {
   const base = await getCompanyEntitlementBase(companyId);
   const plan = base.plan;
@@ -7961,6 +8153,11 @@ var appRouter = router({
       planId: z9.number().int().positive("Selecione um plano antes de criar a conta"),
       paymentConfirmed: z9.boolean().refine((v) => v === true, { message: "Confirme o pagamento para criar a conta." })
     })).mutation(async ({ ctx, input }) => {
+      const signupKey = `signup:${getClientIp(ctx.req)}`;
+      if (await isThrottled(signupKey)) {
+        throw new TRPCError14({ code: "TOO_MANY_REQUESTS", message: "Muitos cadastros deste endere\xE7o. Tente novamente em alguns minutos." });
+      }
+      await registerThrottleFailure(signupKey);
       try {
         const created = await createCompanyWithAdmin({
           companyName: input.companyName,
@@ -7981,7 +8178,6 @@ var appRouter = router({
               userName: input.userName,
               companyName: input.companyName,
               email: input.email,
-              password: input.password,
               recoveryCode: created.recoveryCode,
               planName,
               isTrial: true
@@ -8070,7 +8266,7 @@ var appRouter = router({
     /** "Esqueci minha senha": resposta sempre igual (não revela se o e-mail existe). */
     requestPasswordReset: publicProcedure.input(z9.object({ email: z9.string().trim().email() })).mutation(async ({ input }) => {
       const message = "Se o e-mail estiver cadastrado, enviaremos um link para criar uma nova senha. Se n\xE3o chegar em alguns minutos, use o c\xF3digo de recupera\xE7\xE3o ou fale com o suporte.";
-      if (!isPasswordResetAvailable() || !allowPasswordResetRequest(input.email)) return { success: true, message };
+      if (!isPasswordResetAvailable() || !await allowPasswordResetRequest(input.email)) return { success: true, message };
       try {
         const reset = await createPasswordResetToken(input.email);
         if (reset) await emailPasswordReset({ to: input.email, userName: reset.userName, token: reset.token });
@@ -8443,7 +8639,12 @@ var appRouter = router({
       if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError14({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode remover o pr\xF3prio n\xEDvel administrativo." });
       const usersBefore = await listMemberAccounts(ctx.accountId);
       const beforeUser = usersBefore.find((u) => u.id === input.id) || null;
-      await updateCompanyUser(input.id, ctx.accountId, { userName: input.userName, email: input.email, role: input.role });
+      try {
+        await updateCompanyUser(input.id, ctx.accountId, { userName: input.userName, email: input.email, role: input.role });
+      } catch (error) {
+        if (error?.message === "A empresa precisa manter pelo menos um administrador ativo.") throw new TRPCError14({ code: "BAD_REQUEST", message: error.message });
+        throw error;
+      }
       const usersAfter = await listMemberAccounts(ctx.accountId);
       const afterUser = usersAfter.find((u) => u.id === input.id) || null;
       const userDiff = diffAuditData(beforeUser, afterUser);
@@ -8726,7 +8927,12 @@ var appRouter = router({
         }
       }),
       delete: companyAdminProcedure.input(z9.object({ id: z9.number().int().positive() })).mutation(async ({ ctx, input }) => {
-        return deleteOperationalRoute(ctx.accountId, input.id);
+        try {
+          return await deleteOperationalRoute(ctx.accountId, input.id);
+        } catch (error) {
+          if (error instanceof RouteValidationError) throw new TRPCError14({ code: "BAD_REQUEST", message: error.message });
+          throw error;
+        }
       })
     }),
     visits: router({
@@ -8812,7 +9018,7 @@ var appRouter = router({
       const result = await listPromoterActivities({ companyId: ctx.accountId, page: 1, pageSize: 1e4, ...input });
       const headers = ["Data/hora", "Promotor", "E-mail", "Atividade", "\xC1rea", "Registro", "Descri\xE7\xE3o", "Detalhes"];
       const values = result.items.map((row2) => [row2.occurredAt, row2.userName, row2.userEmail, row2.action, row2.module, row2.entityLabel, row2.description, typeof row2.details === "string" ? row2.details : JSON.stringify(row2.details ?? {})]);
-      const cell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+      const cell = (value) => `"${neutralizeCsvFormula(value).replace(/"/g, '""')}"`;
       const csv = `\uFEFF${[headers, ...values].map((line) => line.map(cell).join(";")).join("\r\n")}`;
       return { csv, contentType: "text/csv; charset=utf-8", filename: `atividades-promotores-${ctx.accountId}.csv` };
     }),
@@ -8997,6 +9203,7 @@ function isScheduleRequestAuthorized(req, env2 = process.env) {
 }
 
 // server/scheduledMaintenance.ts
+init_mediaKeys();
 import mysql2 from "mysql2/promise";
 async function runScheduledMaintenance() {
   const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -9103,13 +9310,13 @@ async function runPhotoMaintenance() {
   const PHOTO_LIMIT = Number(process.env.PHOTO_STORAGE_ALERT_COUNT || 5e3);
   try {
     const [expired] = await connection.query(
-      `SELECT id, fileKey, thumbnailKey FROM store_photos WHERE expiresAt <= UTC_TIMESTAMP() LIMIT 200`
+      `SELECT id, companyId, fileKey, thumbnailKey FROM store_photos WHERE expiresAt <= UTC_TIMESTAMP() LIMIT 200`
     );
     const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
     for (const photo of expired || []) {
       try {
-        if (photo.fileKey) await storageDelete2(photo.fileKey);
-        if (photo.thumbnailKey) await storageDelete2(photo.thumbnailKey);
+        if (photo.fileKey) await guardedStorageDelete(storageDelete2, photo.fileKey, Number(photo.companyId));
+        if (photo.thumbnailKey) await guardedStorageDelete(storageDelete2, photo.thumbnailKey, Number(photo.companyId));
       } catch {
       }
       await connection.query(`DELETE FROM store_photos WHERE id = ?`, [photo.id]);
@@ -9350,6 +9557,7 @@ async function createApp() {
       return res.status(500).json({ error: "Webhook processing failed" });
     }
   });
+  app.use("/api/trpc", originGuard());
   app.use("/api/trpc", (_req, res, next) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
     next();

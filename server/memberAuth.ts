@@ -1,40 +1,17 @@
 import { createTtlCache } from "./ttlCache";
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { and, eq, gt, lte } from "drizzle-orm";
+import { and, eq, gt, inArray, lte } from "drizzle-orm";
 import { companies, companySubscriptions, memberAccounts, memberSessions, platformAdmins, platformSessions, subscriptionPlans } from "../drizzle/schema.original";
 import { promoterProfiles } from "../drizzle/schema";
 import { getDb } from "./db";
+import { clearThrottle, configureThrottleDb, isThrottled, registerThrottleFailure } from "./authThrottle";
 
 const SESSION_DAYS = 30;
-const RATE_WINDOW_MS = 15 * 60 * 1000;
-const RATE_LIMIT = 5;
-const BLOCK_MS = 15 * 60 * 1000;
-
-type RateEntry = { failures: number; windowStartedAt: number; blockedUntil: number };
-const authRate = new Map<string, RateEntry>();
-
-function isRateLimited(key: string) {
-  const now = Date.now();
-  const current = authRate.get(key);
-  if (!current) return false;
-  if (current.blockedUntil > now) return true;
-  if (now - current.windowStartedAt >= RATE_WINDOW_MS) authRate.delete(key);
-  return false;
-}
-
-function registerFailure(key: string) {
-  const now = Date.now();
-  const current = authRate.get(key);
-  const entry = !current || now - current.windowStartedAt >= RATE_WINDOW_MS
-    ? { failures: 1, windowStartedAt: now, blockedUntil: 0 }
-    : { ...current, failures: current.failures + 1 };
-  if (entry.failures >= RATE_LIMIT) entry.blockedUntil = now + BLOCK_MS;
-  authRate.set(key, entry);
-}
-
-function clearRateLimit(key: string) {
-  authRate.delete(key);
-}
+// Limite de tentativas compartilhado entre instâncias (banco), ver authThrottle.ts.
+configureThrottleDb(() => getDb());
+const isRateLimited = isThrottled;
+const registerFailure = registerThrottleFailure;
+const clearRateLimit = clearThrottle;
 
 export function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
@@ -67,25 +44,25 @@ export function normalizeMemberRole(role: string): "company_admin" | "supervisor
 export async function authenticateMember(email: string, password: string): Promise<LoginPrincipal | null> {
   const normalizedEmail = email.trim().toLowerCase();
   const key = `login:${normalizedEmail}`;
-  if (isRateLimited(key)) return null;
+  if (await isRateLimited(key)) return null;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
 
   const platformResult = await db.select().from(platformAdmins).where(eq(platformAdmins.email, normalizedEmail)).limit(1);
   const platform = platformResult[0];
   if (platform && platform.active && verifyPassword(password, platform.passwordHash)) {
-    clearRateLimit(key);
+    await clearRateLimit(key);
     return { kind: "platform", account: platform };
   }
 
   const memberResult = await db.select().from(memberAccounts).where(eq(memberAccounts.email, normalizedEmail)).limit(1);
   const member = memberResult[0];
   if (member && member.active && verifyPassword(password, member.passwordHash)) {
-    clearRateLimit(key);
+    await clearRateLimit(key);
     return { kind: "company", account: member };
   }
 
-  registerFailure(key);
+  await registerFailure(key);
   return null;
 }
 
@@ -107,6 +84,11 @@ export async function createSession(principal: LoginPrincipal) {
 const SESSION_CACHE_MS = 20_000;
 const memberSessionCache = createTtlCache<any>(SESSION_CACHE_MS);
 const platformSessionCache = createTtlCache<any>(SESSION_CACHE_MS);
+/** Derruba o cache de sessão desta instância quando sessões são encerradas (o efeito deixa de esperar o TTL). */
+function dropSessionCaches() {
+  memberSessionCache.clear();
+  platformSessionCache.clear();
+}
 let lastSessionCleanup = 0;
 /** Limpa sessões expiradas no máximo a cada 10 min por instância, sem bloquear a requisição. */
 function cleanupExpiredSessions(db: any) {
@@ -167,35 +149,37 @@ export async function revokeSessions(rawToken: string) {
 
 export async function changeMemberPassword(memberAccountId: number, currentPassword: string, newPassword: string) {
   const key = `change:member:${memberAccountId}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const result = await db.select().from(memberAccounts).where(eq(memberAccounts.id, memberAccountId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(currentPassword, account.passwordHash)) {
-    registerFailure(key);
+    await registerFailure(key);
     return false;
   }
-  clearRateLimit(key);
+  await clearRateLimit(key);
   await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq(memberAccounts.id, memberAccountId));
   await db.delete(memberSessions).where(eq(memberSessions.memberAccountId, memberAccountId));
+  dropSessionCaches();
   return true;
 }
 
 export async function changePlatformPassword(platformAdminId: number, currentPassword: string, newPassword: string) {
   const key = `change:platform:${platformAdminId}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const result = await db.select().from(platformAdmins).where(eq(platformAdmins.id, platformAdminId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(currentPassword, account.passwordHash)) {
-    registerFailure(key);
+    await registerFailure(key);
     return false;
   }
-  clearRateLimit(key);
+  await clearRateLimit(key);
   await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq(platformAdmins.id, platformAdminId));
   await db.delete(platformSessions).where(eq(platformSessions.platformAdminId, platformAdminId));
+  dropSessionCaches();
   return true;
 }
 
@@ -204,13 +188,15 @@ export async function resetMemberPassword(memberAccountId: number, newPassword: 
   if (!db) throw new Error("Database not connected");
   await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq(memberAccounts.id, memberAccountId));
   await db.delete(memberSessions).where(eq(memberSessions.memberAccountId, memberAccountId));
-  clearRateLimit(`login:${memberAccountId}`);
+  dropSessionCaches();
+  const [acc] = await db.select({ email: memberAccounts.email }).from(memberAccounts).where(eq(memberAccounts.id, memberAccountId)).limit(1);
+  if (acc?.email) await clearRateLimit(`login:${acc.email.trim().toLowerCase()}`);
 }
 
 export async function recoverPassword(email: string, recoveryCode: string, newPassword: string) {
   const normalizedEmail = email.trim().toLowerCase();
   const key = `recover:${normalizedEmail}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const nextRecoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
@@ -220,7 +206,7 @@ export async function recoverPassword(email: string, recoveryCode: string, newPa
   if (platform?.active && platform.recoveryCodeHash && verifyPassword(recoveryCode, platform.recoveryCodeHash)) {
     await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq(platformAdmins.id, platform.id));
     await db.delete(platformSessions).where(eq(platformSessions.platformAdminId, platform.id));
-    clearRateLimit(key);
+    await clearRateLimit(key);
     return { recoveryCode: nextRecoveryCode, kind: "platform" as const };
   }
 
@@ -229,11 +215,11 @@ export async function recoverPassword(email: string, recoveryCode: string, newPa
   if (member?.active && member.recoveryCodeHash && verifyPassword(recoveryCode, member.recoveryCodeHash)) {
     await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq(memberAccounts.id, member.id));
     await db.delete(memberSessions).where(eq(memberSessions.memberAccountId, member.id));
-    clearRateLimit(key);
+    await clearRateLimit(key);
     return { recoveryCode: nextRecoveryCode, kind: "company" as const };
   }
 
-  registerFailure(key);
+  await registerFailure(key);
   return false;
 }
 
@@ -291,17 +277,17 @@ export async function resetPasswordWithToken(token: string, newPassword: string)
   const parsed = parseResetToken(token);
   if (!parsed || parsed.exp < Date.now()) return false;
   const key = `reset:${parsed.k}:${parsed.id}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const account = parsed.k === "platform"
     ? (await db.select().from(platformAdmins).where(eq(platformAdmins.id, parsed.id)).limit(1))[0]
     : (await db.select().from(memberAccounts).where(eq(memberAccounts.id, parsed.id)).limit(1))[0];
-  if (!account || !account.active) { registerFailure(key); return false; }
+  if (!account || !account.active) { await registerFailure(key); return false; }
   const expected = signResetToken(parsed.k, parsed.id, parsed.exp, account.passwordHash);
   const a = Buffer.from(expected);
   const b = Buffer.from(`${parsed.payload}.${parsed.mac}`);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) { registerFailure(key); return false; }
+  if (a.length !== b.length || !timingSafeEqual(a, b)) { await registerFailure(key); return false; }
   if (parsed.k === "platform") {
     await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq(platformAdmins.id, parsed.id));
     await db.delete(platformSessions).where(eq(platformSessions.platformAdminId, parsed.id));
@@ -309,15 +295,16 @@ export async function resetPasswordWithToken(token: string, newPassword: string)
     await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq(memberAccounts.id, parsed.id));
     await db.delete(memberSessions).where(eq(memberSessions.memberAccountId, parsed.id));
   }
-  clearRateLimit(key);
+  await clearRateLimit(key);
+  dropSessionCaches();
   return true;
 }
 
-/** Limita pedidos de redefinição por e-mail (5 por 15 min, por instância). */
-export function allowPasswordResetRequest(email: string) {
+/** Limita pedidos de redefinição por e-mail (5 por 15 min, compartilhado entre instâncias). */
+export async function allowPasswordResetRequest(email: string) {
   const key = `resetreq:${email.trim().toLowerCase()}`;
-  if (isRateLimited(key)) return false;
-  registerFailure(key);
+  if (await isRateLimited(key)) return false;
+  await registerFailure(key);
   return true;
 }
 
@@ -409,6 +396,14 @@ export async function listMemberAccounts(companyId?: number) {
 export async function updateCompanyUser(accountId: number, companyId: number, data: { userName?: string; email?: string; role?: "company_admin" | "supervisor" | "promoter" }) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
+  if (data.role && data.role !== "company_admin") {
+    // Não deixa a empresa sem administrador ao rebaixar o último (a empresa ficaria sem ninguém para gerenciá-la).
+    const [target] = await db.select({ role: memberAccounts.role }).from(memberAccounts).where(and(eq(memberAccounts.id, accountId), eq(memberAccounts.companyId, companyId))).limit(1);
+    if (target && normalizeMemberRole(String(target.role)) === "company_admin") {
+      const admins = await db.select({ id: memberAccounts.id }).from(memberAccounts).where(and(eq(memberAccounts.companyId, companyId), eq(memberAccounts.active, true), inArray(memberAccounts.role, ["company_admin", "admin"] as any))).limit(2);
+      if (admins.length <= 1) throw new Error("A empresa precisa manter pelo menos um administrador ativo.");
+    }
+  }
   await db.update(memberAccounts).set({ ...data, email: data.email?.trim().toLowerCase() }).where(and(eq(memberAccounts.id, accountId), eq(memberAccounts.companyId, companyId)));
 }
 
@@ -422,7 +417,10 @@ export async function setMemberActive(id: number, active: boolean, companyId?: n
     if (adminCount.length <= 1) throw new Error("A empresa precisa manter pelo menos um administrador ativo.");
   }
   await db.update(memberAccounts).set({ active }).where(conditions);
-  if (!active) await db.delete(memberSessions).where(eq(memberSessions.memberAccountId, id));
+  if (!active) {
+    await db.delete(memberSessions).where(eq(memberSessions.memberAccountId, id));
+    dropSessionCaches();
+  }
 }
 
 export async function setPlatformAdminActive(id: number, active: boolean) {
@@ -453,21 +451,22 @@ export async function revokeAllMemberSessions(memberAccountId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   await db.delete(memberSessions).where(eq(memberSessions.memberAccountId, memberAccountId));
+  dropSessionCaches();
   return { success: true as const };
 }
 
 
 export async function verifyMemberPassword(memberAccountId: number, password: string) {
   const key = `verify:member:${memberAccountId}`;
-  if (isRateLimited(key)) return false;
+  if (await isRateLimited(key)) return false;
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
   const result = await database.select().from(memberAccounts).where(eq(memberAccounts.id, memberAccountId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(password, account.passwordHash)) {
-    registerFailure(key);
+    await registerFailure(key);
     return false;
   }
-  clearRateLimit(key);
+  await clearRateLimit(key);
   return true;
 }

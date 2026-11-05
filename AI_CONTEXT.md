@@ -42,10 +42,14 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 ### Módulos / routers relevantes
 
 - `server/modules/timeTracking.ts` — ponto
+- `server/modules/timesheetMirror.ts` — espelho de ponto
+- `server/modules/timesheetArchive.ts` — arquivamento histórico de espelhos (PDF + R2)
+- `server/modules/correctionExtras.ts` — tipo de justificativa e anexo em correções
 - `server/modules/vacations.ts` — programação de férias
 - `server/modules/storePhotos.ts` — fotos de loja
 - `server/modules/storeClients.ts` — clientes de loja
-- `server/modules/timesheetMirror.ts` — espelho de ponto
+- `server/modules/platformCompanies.ts` — empresas da plataforma
+- `shared/holidays.ts` — feriados nacionais (espelho e abono)
 - `server/storeAccess.ts` — visibilidade e atribuição de lojas
 - `server/storage.ts` — S3/R2 (o `S3Client` é reaproveitado entre chamadas na mesma instância)
 - `server/entitlements.ts` / `shared/entitlements.ts`
@@ -55,11 +59,14 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 
 - Auth: signup (empresa + admin, trial), login, recuperação, avatar, menu de conta unificado, sessão por cookie + token.
 - Planos e entitlements (catálogo único, overrides, autorização no servidor e UI).
-- Ponto: sequência do dia, saída automática de jornadas de dias anteriores, solicitação/inclusão de batidas esquecidas, espelho, alertas de batida faltante (dismiss persistido).
-- Programação de férias (v1): administradores e supervisores cadastram, editam e cancelam períodos dos funcionários ativos (vários períodos por pessoa). Dias corridos calculados (início e fim inclusos). Impede sobreposição do mesmo funcionário (verificação em transação). Alerta (sem bloquear) se outros da mesma equipe (`supervisorId`) estiverem de férias no mesmo período. Histórico de quem criou/editou/cancelou. Calendário mensal/anual e lista com filtros. Promotor consulta somente as próprias férias (`/minhas-ferias`), sem edição. Menu “Férias” no dropdown Cartão-ponto. Tabela `vacation_schedules` (migração `0025`). Sem solicitação/aprovação pelo funcionário, sem saldo legal nem pagamento nesta versão.
-- Lojas, clientes de loja, roteiros semanais, visitas, check-in/out com foto de fachada.
-- Fotos de loja: captura com marca d’água (nome, endereço, loja, data/hora), galeria, seleção em massa, compartilhamento, exclusão, expiração (~60 dias), relatório PDF. Suporte a foto sem loja.
+- Ponto: sequência do dia, saída automática de jornadas de dias anteriores, solicitação/inclusão de batidas esquecidas, espelho, alertas de batida faltante (dismiss persistido). Feriados nacionais identificados automaticamente (`shared/holidays.ts`): falta de batida em feriado é abonada e o ponto continua liberado. Correções/inclusões aceitam tipo de justificativa (`normal` / `feriado` / `folga` / `atestado`) e anexo de foto. Abono de dia inteiro (folga/feriado/atestado). Alerta de batida faltante do admin some quando há correção ou abono cobrindo o dia. Correções da mesma data podem ser aprovadas/recusadas juntas. Promotor vê aviso de correção recusada. Espelhos podem ser arquivados (PDF + hash + R2) em `/arquivos-historicos`.
+- Menu do admin/supervisor: dropdowns Roteiros (ver/editar + check-in/out) e Cartão-ponto (visualizar + espelho + férias). Arquivos históricos e Meus módulos só para company_admin quando aplicável.
+- Programação de férias (v1): administradores e supervisores cadastram, editam e cancelam períodos dos funcionários ativos (vários períodos por pessoa). Dias corridos calculados (início e fim inclusos). Impede sobreposição do mesmo funcionário (verificação em transação). Alerta (sem bloquear) se outros da mesma equipe (`supervisorId`) estiverem de férias no mesmo período. Histórico de quem criou/editou/cancelou. Calendário mensal/anual (agrupa meses mesmo cruzando o ano) e lista com filtros. Promotor consulta somente as próprias férias (`/minhas-ferias`), sem edição. Menu “Férias” no dropdown Cartão-ponto. Tabela `vacation_schedules` (migração `0025`). Sem solicitação/aprovação pelo funcionário, sem saldo legal nem pagamento nesta versão.
+- Lojas, clientes de loja, roteiros semanais, visitas, check-in/out com foto de fachada. Visitas `in_progress` de dias anteriores são fechadas automaticamente; o bloqueio de check-in em outra loja considera só a visita aberta do mesmo dia. Lista de lojas compacta, com item “Fotos sem loja”.
+- Fotos de loja: captura com marca d’água (nome, endereço, loja, data/hora), galeria, seleção em massa, compartilhamento, exclusão, expiração (~60 dias), relatório PDF. Suporte a foto sem loja. Botão Tirar foto permanece visível mesmo sem loja/cliente.
 - Vínculo promotor ↔ lojas (opcional) na criação e na edição do promotor; alterações refletem imediatamente no acesso.
+- Páginas de planos, upgrade, pagamentos e cadastro público arquivadas em `client/src/pages/_archived/`. Dono da empresa vê módulos liberados em `/meus-modulos`. Platform admin escolhe `featureKeys` na criação da empresa e edita módulos em `CompanyFeaturesCard`.
+- Dashboards da Central (OperationsDashboard): lojas, fotos totais, produtos a vencer, visitas pendentes e alertas de validade (top 5), sem ranking de promotores.
 - Check-in/check-out com foto da fachada (`client/src/components/VisitCheckIn.tsx` + `client/src/lib/photoUpload.ts`): a foto é redimensionada/comprimida (JPEG, lado maior 1280 px, q 0,72) logo após a captura, com preview via blob URL; GPS é lido ao abrir a tela (espera máx. 3 s ao confirmar); check-in/out e upload da foto rodam em paralelo com timeout (AbortController); etapa de progresso visível; botões travados durante o envio + trava síncrona contra toque duplo; erro do servidor (4xx) aparece na tela e permite "Tentar novamente" sem ir para a fila; só falha de rede/timeout/5xx/408/429 vai para a fila offline. A foto nunca é enviada sem compressão (imagem inválida => erro na tela).
 - Idempotência da foto de check-in: chave `ci-<visita>-<ação>-<uuid>` gerada por captura e reaproveitada em retentativas e na fila (`QueuedVisit.idempotencyKey/capturedAt`); `visits.start` ignora visita que não está `pending` e `visits.complete` ignora visita já `completed` (reenvio não reinicia horários).
 - Offline: cadastro de lojas/clientes, sincronização de visitas, fila de fotos (IndexedDB), cache de roteiro do dia.
@@ -82,6 +89,8 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Tabelas auxiliares criadas sob demanda para reduzir dependência de migrações manuais em ambientes já em produção.
 - Servidor inicia HTTP apenas quando não detecta `process.env.VERCEL` (suporte dual serverless / processo tradicional).
 - Férias v1 é apenas programação operacional: não altera cartão-ponto, não calcula saldo legal e não gera pagamento. Isolamento por `companyId` e permissões (admin/supervisor gerenciam; promotor só lê o próprio).
+- Páginas comerciais de planos/pagamentos foram arquivadas; liberação de módulos é por entitlements/overrides, não por fluxo de checkout nesta fase.
+- Espelho de ponto usa dia local `America/Sao_Paulo` e perfil trabalhista; jornada aberta de hoje não entra no saldo.
 
 ## Problemas conhecidos e pendências
 

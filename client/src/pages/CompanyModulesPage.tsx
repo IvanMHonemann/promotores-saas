@@ -15,6 +15,7 @@ export default function CompanyModulesPage() {
   return (
     <DashboardLayout
       title="Módulos da conta"
+      help="Módulos são as partes do sistema (ponto, roteiros, fotos, produtos...). Os que estão desligados não aparecem no menu."
       description="O que está liberado para sua empresa. Alterações são feitas pelo administrador da plataforma."
     >
       <div className="grid gap-4 md:grid-cols-2">

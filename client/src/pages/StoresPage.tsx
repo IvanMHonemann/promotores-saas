@@ -13,6 +13,7 @@ import { cacheGet, cacheSet } from "@/lib/offlineCache";
 import { useOnline } from "@/hooks/useOnline";
 import { enqueueStore, listStores } from "@/lib/storeQueue";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { confirmAction } from "@/components/ConfirmDialog";
 
 export default function StoresPage() {
   const { user } = useAuth();
@@ -70,8 +71,8 @@ export default function StoresPage() {
     setFormOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  const confirmArchive = (store: any) => {
-    if (!window.confirm(`Remover a loja "${store.name}" da lista? As fotos e o histórico continuam guardados.`)) return;
+  const confirmArchive = async (store: any) => {
+    if (!(await confirmAction({ title: `Remover a loja "${store.name}"?`, description: "As fotos e o histórico continuam guardados.", confirmLabel: "Remover loja" }))) return;
     void run("Removendo loja...", () => archiveStore.mutateAsync({ id: store.id })).catch(() => {});
   };
   const closeForm = () => { setFormOpen(false); setEditingId(null); setForm({ name: "", city: "", state: "", address: "" }); };
@@ -113,7 +114,7 @@ export default function StoresPage() {
   return (
     <DashboardLayout
       title="Lojas"
-      description="Veja as evidências fotográficas de cada ponto de venda"
+      description="Veja as fotos das visitas em cada loja"
       onRefresh={() => void stores.refetch()}
     >
       <div className="space-y-4">

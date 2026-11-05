@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { ConfirmHost } from "@/components/ConfirmDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation } from "wouter";
@@ -281,6 +282,7 @@ function App() {
         <TooltipProvider>
           <BusyProvider>
             <Toaster />
+            <ConfirmHost />
             <GlobalMutationIndicator />
             <PwaStatusBar />
             <Suspense fallback={<LoadingScreen />}>

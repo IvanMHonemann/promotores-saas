@@ -77,7 +77,7 @@ export function SidebarNav() {
         { href: "/admin/auditoria", label: "Auditoria geral", icon: ClipboardList },
         { href: "/plataforma/ponto", label: "Ponto eletrônico (teste)", icon: Clock3 },
         { href: "/plataforma/teste-check-in-out", label: "Testar check-in / check-out", icon: Camera },
-        { href: "/plataforma/scanner", label: "Scanner e erros", icon: ShieldAlert },
+        { href: "/plataforma/scanner", label: "Erros ao vivo", icon: ShieldAlert },
         { href: "/plataforma/ia", label: "Suporte com IA", icon: Sparkles },
       ]
     : role === "promoter"
@@ -119,7 +119,7 @@ export function SidebarNav() {
     return (
       <div key={g.id} className={compact ? "" : "pt-2"}>
         <button type="button" onClick={() => toggleGroup(g, isOpen)} aria-expanded={isOpen}
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-[.18em] text-slate-400 hover:text-slate-200">
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-[.18em] text-slate-400 hover:text-slate-200">
           <span className="flex-1 text-left">{g.title}</span>
           <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`} />
         </button>
@@ -143,7 +143,7 @@ export function SidebarNav() {
       <div className="flex items-center justify-between"><BrandLogo height={40} /><div className="flex items-center gap-1">{!collapsed && <button type="button" className="hidden rounded-lg p-2 text-slate-300 hover:bg-white/10 lg:block" onClick={() => setSidebarCollapsed(true)} aria-label="Recolher menu" title="Recolher menu"><ChevronsLeft className="h-5 w-5" /></button>}<button type="button" className={`rounded-lg p-2 text-slate-300 hover:bg-white/10 ${collapsed ? "" : "lg:hidden"}`} onClick={close} aria-label="Fechar menu"><X className="h-5 w-5" /></button></div></div>
       <div className="mt-9 rounded-2xl border border-teal-300/20 bg-gradient-to-br from-teal-300/15 to-transparent p-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-300 font-black text-slate-950">{(user?.name || user?.email || "U").slice(0, 1).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-sm font-bold text-white">{user?.name || "Usuário"}</p><p className="truncate text-xs text-slate-300">{roleLabels[role || ""] || "Usuário"}</p></div></div><div className="mt-4 flex items-center gap-2 text-xs text-teal-200"><span className="h-2 w-2 rounded-full bg-teal-300 shadow-[0_0_12px_#5eead4]" /> Sistema operacional</div></div>
       <nav className="mt-8 space-y-1.5">
-        {!isCompany && <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-slate-400">Navegação</p>}
+        {!isCompany && <p className="mb-2 px-3 text-xs font-bold uppercase tracking-[.18em] text-slate-400">Navegação</p>}
         {loadingModules && <div role="status" aria-label="Carregando menu" className="space-y-2">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-11 w-full rounded-xl bg-white/10" />)}</div>}
         {!loadingModules && company && company.groups.map((g) => renderGroup(g))}
         {!loadingModules && links.map((item) => {

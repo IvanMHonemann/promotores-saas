@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
+import { confirmAction } from "@/components/ConfirmDialog";
+import SetupChecklist, { AttentionCard, buildSetupSteps } from "@/components/SetupChecklist";
 
 type Section = "overview" | "routes" | "visits";
 type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
@@ -160,6 +162,9 @@ export default function OperationsDashboard() {
     <DashboardLayout title={title} description={description} onRefresh={() => window.location.reload()}>
       {visibleSection === "overview" && (
         <Overview
+          isSupervisor={isSupervisor}
+          setupSteps={buildSetupSteps({ stores: (stores.data || []).length, promoters: (promoters.data || []).length, routes: (routes.data || []).length, activity: (presence.data || []).length > 0 || metrics.totalPhotos > 0 })}
+          setupReady={!stores.isLoading && !promoters.isLoading && !routes.isLoading && !storesWithStats.isLoading}
           accessLoading={access.isLoading}
           isPromoter={user?.role === "promoter"}
           todayVisits={visits.data || []}
@@ -207,7 +212,7 @@ export default function OperationsDashboard() {
   );
 }
 
-function Overview({ accessLoading = false, isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
+function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, accessLoading = false, isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
   const activePromoters = presence.filter((entry: CompanyPresenceEntry) => entry.active).length;
   return (
     <div className="space-y-6">
@@ -217,6 +222,8 @@ function Overview({ accessLoading = false, isPromoter, todayVisits = [], metrics
         <h2 className="mt-2 text-2xl font-black sm:text-4xl">Operação de campo</h2>
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar.</p>
       </div>
+      {isCompanyAdmin && hasFieldOperations && setupReady && <SetupChecklist steps={setupSteps} />}
+      {isSupervisor && hasFieldOperations && <AttentionCard pendingVisits={metrics.pending} expiring={metrics.expiring} />}
 
       {accessLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
       {hasFieldOperations && <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
@@ -287,9 +294,9 @@ function Metric({ label, value, icon: Icon, tone, hint, href, className = "" }: 
     <Tag href={href} className={`block min-h-[96px] bg-[#0b1021] p-3 transition hover:bg-white/[.06] active:bg-white/10 sm:min-h-[108px] sm:p-4 ${className}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300">{label}</p>
+          <p className="text-xs font-bold uppercase tracking-[.12em] text-slate-300">{label}</p>
           <p className={`mt-1 text-3xl font-black leading-none ${tone}`}>{value}</p>
-          <p className="mt-2 text-[11px] text-slate-400">{hint} <span aria-hidden="true">→</span></p>
+          <p className="mt-2 text-xs text-slate-400">{hint} <span aria-hidden="true">→</span></p>
         </div>
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[.04]">
           <Icon className={`h-4 w-4 ${tone}`} />
@@ -326,11 +333,11 @@ function PresenceCard({ entries, loading, failed, timeZone }: { entries: Company
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-white/5 bg-white/[.03] p-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Entrada</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Entrada</p>
                 <p className="mt-1 text-base font-bold text-slate-100">{formatTime(entry.clockInTime)}</p>
               </div>
               <div className="rounded-lg border border-white/5 bg-white/[.03] p-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Última marcação</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Última marcação</p>
                 <p className="mt-1 text-sm font-semibold text-slate-200">{eventLabels[entry.lastEventType]} · {formatTime(entry.lastEventTime)}</p>
               </div>
             </div>
@@ -472,7 +479,7 @@ function RoutesModule({ weekly, promoters, saveWeekly, editingRoute, setEditingR
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => setEditingRoute(route)}>Editar</Button>
                   <Button size="sm" variant="outline" onClick={() => navigator.share?.({ title: route.name, text: `Roteiro: ${route.name}` }).catch(() => toast.info("Compartilhamento não disponível"))}>Compartilhar</Button>
-                  <Button size="sm" variant="outline" className="text-rose-300" onClick={() => { if (confirm("Excluir este roteiro?")) deleteRoute.mutate({ id: route.id }); }}>Excluir</Button>
+                  <Button size="sm" variant="outline" className="text-rose-300" onClick={async () => { if (await confirmAction({ title: "Excluir este roteiro?", description: "O promotor deixa de ver estas visitas na agenda.", confirmLabel: "Excluir roteiro" })) deleteRoute.mutate({ id: route.id }); }}>Excluir</Button>
                 </div>
               </div>
             </div>

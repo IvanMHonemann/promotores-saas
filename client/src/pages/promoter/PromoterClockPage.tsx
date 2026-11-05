@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { LocationLabel } from "./geolocation";
-import { localDayKey } from "@/components/PunchPanel";
+import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 import { punchOrderError, sortPunches } from "@shared/punchOrder";
 
@@ -219,9 +219,8 @@ export default function PromoterClockPage() {
   return (
     <DashboardLayout title="Cartão ponto" description="Histórico, localização e pedidos de correção.">
       <div className="space-y-4">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-teal-300 hover:text-teal-200">
-          <ArrowLeft className="h-4 w-4" /> Voltar ao painel inicial para bater o ponto
-        </Link>
+        {/* Bater o ponto também aqui: quem abre "Cartão ponto" espera marcar a batida nesta tela. */}
+        <PunchPanel />
 
         <div id="historico" className="scroll-mt-6">
           <Card>
@@ -299,25 +298,31 @@ export default function PromoterClockPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <Button type="button" variant={mode === "add" ? "default" : "outline"} size="sm" className="w-full" onClick={() => setMode("add")}>
-                  <Plus className="mr-1 h-4 w-4" /> Incluir batidas ou abonar o dia
-                </Button>
-                <Button type="button" variant={mode === "correct" ? "default" : "outline"} size="sm" className="w-full" onClick={() => { setMode("correct"); if (isFullDayExcuseType(justificationType)) setJustificationType("normal"); }}>
-                  Corrigir batida existente
-                </Button>
+              <p className="mb-2 text-sm font-semibold text-slate-200">O que aconteceu?</p>
+              <div role="radiogroup" aria-label="O que aconteceu?" className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {([
+                  { key: "forgot", title: "Esqueci de bater", desc: "Incluir a batida que faltou", active: mode === "add" && !isFullDay, pick: () => { setMode("add"); setJustificationType("normal"); } },
+                  { key: "wrong", title: "Bati no horário errado", desc: "Corrigir uma batida feita", active: mode === "correct", pick: () => { setMode("correct"); setJustificationType("normal"); } },
+                  { key: "absent", title: "Faltei com justificativa", desc: "Atestado, folga ou feriado", active: isFullDay, pick: () => { setMode("add"); setJustificationType("medical_certificate"); } },
+                ] as const).map((o) => (
+                  <button key={o.key} type="button" role="radio" aria-checked={o.active} onClick={o.pick}
+                    className={`min-h-[64px] rounded-xl border p-3 text-left transition ${o.active ? "border-teal-300 bg-teal-300/15" : "border-white/15 bg-slate-950/40 hover:border-white/30"}`}>
+                    <span className="block font-semibold text-white">{o.title}</span>
+                    <span className="block text-sm text-slate-300">{o.desc}</span>
+                  </button>
+                ))}
               </div>
 
-              <label className="mb-3 block text-sm font-semibold text-slate-200">
-                Tipo de justificativa
+              {isFullDay && <label className="mb-3 block text-sm font-semibold text-slate-200">
+                Motivo da falta
                 <select value={justificationType} onChange={(e) => {
                   const next = e.target.value as JustificationType;
                   setJustificationType(next);
                   if (isFullDayExcuseType(next)) setMode("add");
-                }} className="mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100">
-                  {Object.entries(justificationLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                }} className="mt-1 h-11 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-base text-slate-100">
+                  {Object.entries(justificationLabels).filter(([k]) => isFullDayExcuseType(k as JustificationType)).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
-              </label>
+              </label>}
               {isFullDay && (
                 <p className="mb-3 rounded-xl border border-teal-300/30 bg-teal-400/10 p-3 text-sm text-teal-100">
                   {justificationLabels[justificationType]} justifica a falta do dia inteiro. Não é preciso informar entrada, saída ou intervalo.

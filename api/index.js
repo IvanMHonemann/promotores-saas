@@ -1151,6 +1151,7 @@ var init_entitlements = __esm({
       "alerts",
       "timeTracking",
       "fieldOperations",
+      "visitCheckIn",
       "reports",
       "teamManagement",
       "backup",
@@ -1158,8 +1159,8 @@ var init_entitlements = __esm({
     ];
     PLAN_FEATURES = {
       start: ["dashboard", "clients", "pointsOfSale", "alerts"],
-      profissional: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "reports", "teamManagement"],
-      empresarial: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "reports", "teamManagement", "backup", "offline"]
+      profissional: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "reports", "teamManagement"],
+      empresarial: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "reports", "teamManagement", "backup", "offline"]
     };
     ALL_FEATURES = [...ENTITLEMENT_KEYS];
     SUPERVISOR_CEILING = [
@@ -1169,10 +1170,11 @@ var init_entitlements = __esm({
       "alerts",
       "timeTracking",
       "fieldOperations",
+      "visitCheckIn",
       "reports",
       "offline"
     ];
-    PROMOTER_CEILING = ["dashboard", "timeTracking", "fieldOperations"];
+    PROMOTER_CEILING = ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn"];
     ROLE_FEATURE_CEILING = {
       company_admin: ALL_FEATURES,
       supervisor: SUPERVISOR_CEILING,
@@ -1180,8 +1182,8 @@ var init_entitlements = __esm({
     };
     ROLE_FEATURE_DEFAULTS = {
       company_admin: ALL_FEATURES,
-      supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations"],
-      promoter: ["dashboard", "timeTracking", "fieldOperations"]
+      supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn"],
+      promoter: ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn"]
     };
   }
 });
@@ -1363,6 +1365,7 @@ __export(db_exports, {
   ensureOwnerScopeColumns: () => ensureOwnerScopeColumns,
   ensureSeedPlans: () => ensureSeedPlans,
   ensureTrashTable: () => ensureTrashTable,
+  ensureVisitCheckInFeature: () => ensureVisitCheckInFeature,
   findPaymentEventByEventId: () => findPaymentEventByEventId,
   getCompanyById: () => getCompanyById,
   getCompanyFeatureOverrides: () => getCompanyFeatureOverrides,
@@ -2074,6 +2077,42 @@ async function ensureSeedPlans() {
         if (!isMissingEntitlementsTable(error)) throw error;
       }
     }
+  }
+  await ensureVisitCheckInFeature();
+}
+async function ensureVisitCheckInFeature() {
+  const database2 = await getDb();
+  if (!database2) return;
+  try {
+    await database2.execute(sql2`
+      INSERT INTO subscription_plan_features (planId, featureKey, enabled)
+      SELECT planId, 'visitCheckIn', enabled FROM subscription_plan_features spf
+      WHERE featureKey = 'fieldOperations'
+        AND NOT EXISTS (
+          SELECT 1 FROM subscription_plan_features x
+          WHERE x.planId = spf.planId AND x.featureKey = 'visitCheckIn'
+        )
+    `);
+    await database2.execute(sql2`
+      INSERT INTO subscription_plan_features (planId, featureKey, enabled)
+      SELECT p.id, 'visitCheckIn', 0 FROM subscription_plans p
+      WHERE NOT EXISTS (
+        SELECT 1 FROM subscription_plan_features x
+        WHERE x.planId = p.id AND x.featureKey = 'visitCheckIn'
+      )
+    `);
+    await database2.execute(sql2`
+      INSERT INTO company_feature_overrides (companyId, featureKey, enabled, reason)
+      SELECT o.companyId, 'visitCheckIn', o.enabled, 'Backfill: check-in/out alinhado a lojas e roteiros'
+      FROM company_feature_overrides o
+      WHERE o.featureKey = 'fieldOperations'
+        AND NOT EXISTS (
+          SELECT 1 FROM company_feature_overrides x
+          WHERE x.companyId = o.companyId AND x.featureKey = 'visitCheckIn'
+        )
+    `);
+  } catch (error) {
+    if (!isMissingEntitlementsTable(error)) throw error;
   }
 }
 async function listOperationalStores(companyId, search, memberAccountId) {
@@ -9908,7 +9947,7 @@ var appRouter = router({
         return listOperationalVisits(ctx.accountId, { date: date3, promoterId: promoterId ?? void 0 });
       }),
       list: commercialFeatureProcedure("fieldOperations").input(z10.object({ date: z10.string().optional(), routeId: z10.number().int().positive().optional(), promoterId: z10.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
-      start: commercialFeatureProcedure("fieldOperations").input(z10.object({ id: z10.number().int().positive(), latitude: z10.number().optional(), longitude: z10.number().optional(), accuracy: z10.number().optional() })).mutation(async ({ ctx, input }) => {
+      start: commercialFeatureProcedure("visitCheckIn").input(z10.object({ id: z10.number().int().positive(), latitude: z10.number().optional(), longitude: z10.number().optional(), accuracy: z10.number().optional() })).mutation(async ({ ctx, input }) => {
         const promoterId = scopeMemberId(ctx);
         const today = todayInZone();
         if (promoterId != null) {
@@ -9931,7 +9970,7 @@ var appRouter = router({
         }
         return updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: /* @__PURE__ */ new Date(), startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
       }),
-      complete: commercialFeatureProcedure("fieldOperations").input(z10.object({ id: z10.number().int().positive(), latitude: z10.number().optional(), longitude: z10.number().optional(), accuracy: z10.number().optional(), notes: z10.string().optional() })).mutation(async ({ ctx, input }) => {
+      complete: commercialFeatureProcedure("visitCheckIn").input(z10.object({ id: z10.number().int().positive(), latitude: z10.number().optional(), longitude: z10.number().optional(), accuracy: z10.number().optional(), notes: z10.string().optional() })).mutation(async ({ ctx, input }) => {
         const [owned] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? void 0 });
         if (!owned) throw new TRPCError15({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
         if (owned.visit.status === "completed") return owned;

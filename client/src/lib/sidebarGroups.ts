@@ -5,12 +5,13 @@ export type NavGroup = { id: string; title: string; items: GroupItem[] };
 export function buildCompanyGroups(role: string | undefined, hasFeature: (key: string) => boolean): { groups: NavGroup[]; account: NavGroup } {
   const admin = role === "company_admin";
   const field = hasFeature("fieldOperations");
+  const checkIn = hasFeature("visitCheckIn");
   const time = hasFeature("timeTracking");
   const groups: NavGroup[] = [
     { id: "operacao", title: "Operação", items: [
       { href: "/#inicio", label: "Visão geral", icon: "dashboard" },
       ...(field ? [{ href: "/lojas", label: "Lojas", icon: "store" }, { href: "/#roteiros", label: "Roteiros", icon: "calendar" }] : []),
-      ...(field && admin && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: "camera" }] : []),
+      ...(field && checkIn && admin && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: "camera" }] : []),
       ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: "package" }] : []),
     ] },
     { id: "equipe", title: time ? "Equipe e ponto" : "Equipe", items: [

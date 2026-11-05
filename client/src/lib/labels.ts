@@ -5,7 +5,7 @@ const ACTIONS: Record<string, string> = {
   clock_in: "entrada", clock_out: "saída", break_start: "início do intervalo", break_end: "fim do intervalo",
 };
 const MODULES: Record<string, string> = {
-  products: "produtos", time_tracking: "ponto", timeTracking: "ponto", stores: "lojas", routes: "roteiros", vacations: "férias",
+  products: "produtos", time_tracking: "ponto", timeTracking: "ponto", visitCheckIn: "check-in/out", fieldOperations: "lojas e roteiros", stores: "lojas", routes: "roteiros", vacations: "férias",
   team: "equipe", teamManagement: "equipe", auth: "acesso", companies: "empresas", files: "arquivos", photos: "fotos",
   billing: "cobrança", platform: "plataforma", backup: "backup", audit: "auditoria",
 };

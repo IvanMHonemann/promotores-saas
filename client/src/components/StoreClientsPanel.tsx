@@ -9,6 +9,7 @@ import { cacheGet, cacheSet } from "@/lib/offlineCache";
 import { useOnline } from "@/hooks/useOnline";
 import { enqueueClient, listClients } from "@/lib/clientQueue";
 import { toast } from "sonner";
+import { confirmAction } from "@/components/ConfirmDialog";
 
 export type ClientFilter = "all" | "none" | number;
 const field = "h-11 border-white/20 bg-slate-950/70 text-white placeholder:text-slate-400";
@@ -133,7 +134,7 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
               {online && !c.pending && (
                 <div className="flex shrink-0 gap-1">
                   <button type="button" aria-label={`Editar ${c.name}`} onClick={() => setForm({ id: c.id, open: true, name: c.name, contactName: c.contactName ?? "", phone: c.phone ?? "", notes: c.notes ?? "" })} className="rounded-full p-2 text-slate-200 hover:bg-white/10"><Pencil className="h-4 w-4" /></button>
-                  <button type="button" aria-label={`Remover ${c.name}`} onClick={() => { if (window.confirm(`Remover o cliente ${c.name} desta loja? As fotos já tiradas continuam salvas.`)) setActive.mutate({ storeId, id: c.id, active: false }); }} className="rounded-full p-2 text-rose-200 hover:bg-white/10"><Trash2 className="h-4 w-4" /></button>
+                  <button type="button" aria-label={`Remover ${c.name}`} onClick={() => { void confirmAction({ title: `Remover o cliente ${c.name} desta loja? As fotos já tiradas continuam salvas.`, confirmLabel: "Confirmar" }).then((ok) => ok && setActive.mutate({ storeId, id: c.id, active: false })); }} className="rounded-full p-2 text-rose-200 hover:bg-white/10"><Trash2 className="h-4 w-4" /></button>
                 </div>
               )}
             </div>

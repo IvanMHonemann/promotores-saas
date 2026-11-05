@@ -62,16 +62,6 @@ export default function TimesheetPage() {
               {selected && <p className="mt-3 text-sm text-slate-300">Selecionado: <span className="font-semibold text-white">{selected.userName}</span></p>}
             </CardContent>
           </Card>
-          <Card className="border-white/10 bg-slate-900/70 text-white sm:col-span-2">
-            <CardHeader><CardTitle className="text-base">Horário limite para alerta de batida faltante</CardTitle></CardHeader>
-            <CardContent className="flex items-end gap-3">
-              <div>
-                <label className="text-xs text-slate-400">Horário padrão (HH:MM) — após ele, jornada aberta gera alerta ao promotor e ao administrador; nenhuma marcação é criada automaticamente</label>
-                <input type="time" value={autoTime || autoSetting.data || ""} onChange={(e) => setAutoTime(e.target.value)} className="mt-1 block rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-white [color-scheme:dark]" />
-              </div>
-              <Button size="sm" className="bg-teal-400 text-slate-950" disabled={setAuto.isPending} onClick={() => setAuto.mutate({ time: autoTime || autoSetting.data || "" })}>Salvar</Button>
-            </CardContent>
-          </Card>
         </div>
 
         {selectedId && (
@@ -112,7 +102,7 @@ export default function TimesheetPage() {
                         <span className="text-slate-200">{labels[ev.eventType] || ev.eventType}</span>
                         <span className="text-slate-400">
                           {new Date(ev.deviceTime || ev.serverTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                          {ev.notes?.includes("automática") && <span className="ml-2 rounded bg-amber-400/20 px-1.5 py-0.5 text-[10px] text-amber-200">Auto</span>}
+                          {ev.notes?.includes("automática") && <span className="ml-2 rounded bg-amber-400/20 px-1.5 py-0.5 text-xs text-amber-200">Auto</span>}
                         </span>
                       </div>
                     ))}
@@ -175,6 +165,21 @@ export default function TimesheetPage() {
             })()}
           </CardContent>
         </Card>
+        {/* Configuração (separada da consulta): horário de aviso de batida faltante. */}
+        <details className="group rounded-2xl border border-white/10 bg-slate-900/70 p-5 text-white">
+          <summary className="flex cursor-pointer list-none items-center justify-between font-bold">
+            Configurações do ponto
+            <span className="text-sm font-normal text-teal-300 group-open:hidden">Abrir</span>
+          </summary>
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <div>
+              <label htmlFor="auto-time" className="text-sm font-semibold text-white">Avisar se o promotor não encerrar a jornada até:</label>
+              <p className="mt-0.5 text-sm text-slate-300">Depois desse horário, o promotor e o administrador recebem um aviso. Nenhuma batida é criada automaticamente.</p>
+              <input id="auto-time" type="time" value={autoTime || autoSetting.data || ""} onChange={(e) => setAutoTime(e.target.value)} className="mt-2 block h-11 rounded-lg border border-white/15 bg-slate-950 px-3 text-white [color-scheme:dark]" />
+            </div>
+            <Button className="h-11 bg-teal-400 text-slate-950" disabled={setAuto.isPending} onClick={() => setAuto.mutate({ time: autoTime || autoSetting.data || "" })}>Salvar</Button>
+          </div>
+        </details>
       </div>
     </DashboardLayout>
   );

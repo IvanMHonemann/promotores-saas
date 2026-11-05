@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { ENTITLEMENT_CATALOG, type EntitlementKey } from "@shared/entitlements";
 import { toast } from "sonner";
+import { confirmAction } from "@/components/ConfirmDialog";
 
 const STATUS_LABEL: Record<string, string> = { trial: "Teste", test: "Teste", active: "Ativa", pending: "Pagamento pendente", overdue: "Em atraso", suspended: "Suspensa", canceled: "Cancelada", expired: "Expirada" };
 const sel = "mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white";
@@ -111,7 +112,7 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
       </div>
       <Button disabled={pay.isPending || !c.planId || !/^\d+(\.\d{1,2})?$/.test(pay_.amount) || !pay_.periodTo} onClick={() => pay.mutate({ companyId: c.id, amount: pay_.amount, paymentDate: pay_.paymentDate, periodFrom: pay_.periodFrom, periodTo: pay_.periodTo, billingType: pay_.billingType, planId: Number(planId) || c.planId })} className="bg-emerald-500 text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4" />Registrar pagamento e liberar até a data</Button>
       {!c.planId && <p className="text-xs text-amber-200">Defina o plano da empresa acima antes de registrar o pagamento.</p>}
-      <div className="space-y-1 border-t border-white/10 pt-3 text-sm">{(payments.data || []).map((p: any) => <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2"><span>{money(p.amount)} · pago em {day(p.paymentDate)} · {p.status}</span><Button size="sm" variant="ghost" className="text-rose-200" onClick={() => { if (window.confirm("Excluir este registro de pagamento?")) delPay.mutate({ companyId: c.id, paymentId: p.id }); }}><Trash2 className="h-4 w-4" /></Button></div>)}{!payments.data?.length && <p className="text-slate-400">Nenhum pagamento registrado.</p>}</div>
+      <div className="space-y-1 border-t border-white/10 pt-3 text-sm">{(payments.data || []).map((p: any) => <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2"><span>{money(p.amount)} · pago em {day(p.paymentDate)} · {p.status}</span><Button size="sm" variant="ghost" className="text-rose-200" onClick={() => { void confirmAction({ title: "Excluir este registro de pagamento?", confirmLabel: "Confirmar" }).then((ok) => ok && delPay.mutate({ companyId: c.id, paymentId: p.id })); }}><Trash2 className="h-4 w-4" /></Button></div>)}{!payments.data?.length && <p className="text-slate-400">Nenhum pagamento registrado.</p>}</div>
     </CardContent></Card>
 
     <Card className="border-rose-300/20 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Ban className="h-4 w-4 text-rose-300" />Bloqueio e exclusão</CardTitle></CardHeader><CardContent className="space-y-3">
@@ -122,9 +123,9 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
       </div> : <>
         <div><Label>Motivo do bloqueio (mostrado à empresa)</Label><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex.: pagamento em atraso" className={inp} /></div>
         <div className="flex flex-wrap gap-2">
-          {c.active ? <Button onClick={() => { if (window.confirm(`Bloquear ${c.name}? Todos os usuários serão desconectados.`)) block.mutate({ companyId: c.id, blocked: true, reason }); }} className="bg-amber-400 text-slate-950 hover:bg-amber-300"><Ban className="mr-2 h-4 w-4" />Bloquear (falta de pagamento)</Button>
+          {c.active ? <Button onClick={() => { void confirmAction({ title: `Bloquear ${c.name}? Todos os usuários serão desconectados.`, confirmLabel: "Confirmar" }).then((ok) => ok && block.mutate({ companyId: c.id, blocked: true, reason })); }} className="bg-amber-400 text-slate-950 hover:bg-amber-300"><Ban className="mr-2 h-4 w-4" />Bloquear (falta de pagamento)</Button>
             : <Button onClick={() => block.mutate({ companyId: c.id, blocked: false })} className="bg-emerald-500 text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4" />Desbloquear</Button>}
-          <Button variant="outline" onClick={() => { if (window.confirm(`Excluir ${c.name}? Ela será bloqueada e arquivada; os dados só são apagados se você excluir definitivamente depois.`)) archive.mutate({ companyId: c.id, archived: true }); }} className="border-rose-300/40 text-rose-200"><Trash2 className="mr-2 h-4 w-4" />Excluir empresa</Button>
+          <Button variant="outline" onClick={() => { void confirmAction({ title: `Excluir ${c.name}? Ela será bloqueada e arquivada; os dados só são apagados se você excluir definitivamente depois.`, confirmLabel: "Confirmar" }).then((ok) => ok && archive.mutate({ companyId: c.id, archived: true })); }} className="border-rose-300/40 text-rose-200"><Trash2 className="mr-2 h-4 w-4" />Excluir empresa</Button>
         </div>
       </>}
     </CardContent></Card>

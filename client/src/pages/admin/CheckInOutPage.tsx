@@ -30,7 +30,7 @@ function PhotoThumb({ photoId, label }: { photoId: number; label: string }) {
       ) : (
         <div className="flex h-28 w-28 flex-col items-center justify-center rounded-lg bg-slate-800 text-slate-500">
           <ImageOff className="h-5 w-5" />
-          <span className="mt-1 text-[10px]">Indisponível</span>
+          <span className="mt-1 text-xs">Indisponível</span>
         </div>
       )}
     </div>

@@ -80,7 +80,7 @@ export function BusyProvider({ children }: { children: ReactNode }) {
                 <div className="h-full rounded-full bg-teal-300 transition-[width] duration-200" style={{ width: `${Math.round(state.progress * 100)}%` }} />
               )}
             </div>
-            <p className="mt-3 text-[11px] text-slate-500">Aguarde, não feche esta tela.</p>
+            <p className="mt-3 text-xs text-slate-500">Aguarde, não feche esta tela.</p>
           </div>
           <style>{`@keyframes busy-slide{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}`}</style>
         </div>

@@ -9,6 +9,13 @@ import { trpc } from "@/lib/trpc";
 import type { EntitlementKey } from "@shared/entitlements";
 import { setSidebarCollapsed, useSidebarCollapsed } from "@/lib/sidebarState";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useLocation } from "wouter";
+import { buildCompanyGroups, isItemActive, loadGroupState, saveGroupState, type NavGroup } from "@/lib/sidebarGroups";
+
+const groupIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  dashboard: LayoutDashboard, store: MapPin, calendar: CalendarDays, camera: Camera, package: Package, users: UsersRound,
+  clock: Clock3, file: FileText, palm: Palmtree, audit: ClipboardList, archive: Archive, card: CreditCard, trash: Trash2,
+};
 
 const roleLabels: Record<string, string> = {
   platform_admin: "Administrador geral",
@@ -86,37 +93,49 @@ export function SidebarNav() {
           { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
           { href: "/lixeira", label: "Lixeira", icon: Trash2 },
         ]
-      : [
-          { href: "/#inicio", label: "Visão geral", icon: LayoutDashboard },
-          ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: Package }] : []),
-          ...(hasFeature("fieldOperations") ? [
-            { href: "/lojas", label: "Lojas", icon: MapPin },
-            {
-              label: "Roteiros",
-              icon: CalendarDays,
-              children: [
-                { href: "/#roteiros", label: "Ver / editar roteiros", icon: CalendarDays },
-                ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: Camera }] : []),
-              ],
-            },
-          ] : []),
-          ...(hasFeature("timeTracking") ? [{
-            label: "Cartão-ponto",
-            icon: Clock3,
-            children: [
-              { href: "/cartao-ponto", label: "Visualizar ponto", icon: Clock3 },
-              ...(role === "company_admin" && hasFeature("timeTracking") ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: FileText }] : []),
-              { href: "/ferias", label: "Férias", icon: Palmtree },
-            ],
-          }] : []),
-          ...(role === "company_admin" && hasFeature("timeTracking") ? [{ href: "/arquivos-historicos", label: "Arquivos históricos", icon: Archive }] : []),
-          { href: "/lixeira", label: "Lixeira", icon: Trash2 },
-          ...(role === "company_admin" && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: UsersRound }] : []),
-          ...(role === "company_admin" && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: ClipboardList }] : []),
-          ...(role === "company_admin" ? [{ href: "/meus-modulos", label: "Meus módulos", icon: CreditCard }] : []),
-        ];
+      : [];
 
   const close = () => setOpen(false);
+  const isCompany = Boolean(role) && role !== "platform_admin" && role !== "promoter";
+  const company = isCompany ? buildCompanyGroups(role, (k) => hasFeature(k as EntitlementKey)) : null;
+  const [pathname] = useLocation();
+  const [hash, setHash] = useState(() => (typeof window !== "undefined" ? window.location.hash : ""));
+  useEffect(() => {
+    const onHash = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  useEffect(() => { setHash(window.location.hash); }, [pathname]);
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>(() => loadGroupState());
+  const groupHasActive = (g: NavGroup) => g.items.some((i) => isItemActive(i.href, pathname, hash));
+  const toggleGroup = (g: NavGroup, current: boolean) => setGroupOpen((prev) => {
+    const next = { ...prev, [g.id]: !current };
+    saveGroupState(next);
+    return next;
+  });
+  const renderGroup = (g: NavGroup, compact = false) => {
+    // Padrão: aberto; o grupo do item ativo sempre abre.
+    const isOpen = groupHasActive(g) || groupOpen[g.id] !== false;
+    return (
+      <div key={g.id} className={compact ? "" : "pt-2"}>
+        <button type="button" onClick={() => toggleGroup(g, isOpen)} aria-expanded={isOpen}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-[.18em] text-slate-400 hover:text-slate-200">
+          <span className="flex-1 text-left">{g.title}</span>
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        </button>
+        {isOpen && <div className="space-y-1">{g.items.map((item) => {
+          const Icon = groupIcons[item.icon] || LayoutDashboard;
+          const active = isItemActive(item.href, pathname, hash);
+          return (
+            <a key={item.href} href={item.href} onClick={close} aria-current={active ? "page" : undefined}
+              className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${active ? "bg-teal-300/15 text-white" : "text-slate-300 hover:bg-white/[.06] hover:text-white"}`}>
+              <Icon className="h-[18px] w-[18px] text-teal-300" />{item.label}
+            </a>
+          );
+        })}</div>}
+      </div>
+    );
+  };
 
   return <>
     {open && <button type="button" className={`fixed inset-0 z-40 bg-slate-950/75 ${collapsed ? "" : "lg:hidden"}`} onClick={close} aria-label="Fechar menu" />}
@@ -124,8 +143,9 @@ export function SidebarNav() {
       <div className="flex items-center justify-between"><BrandLogo height={40} /><div className="flex items-center gap-1">{!collapsed && <button type="button" className="hidden rounded-lg p-2 text-slate-300 hover:bg-white/10 lg:block" onClick={() => setSidebarCollapsed(true)} aria-label="Recolher menu" title="Recolher menu"><ChevronsLeft className="h-5 w-5" /></button>}<button type="button" className={`rounded-lg p-2 text-slate-300 hover:bg-white/10 ${collapsed ? "" : "lg:hidden"}`} onClick={close} aria-label="Fechar menu"><X className="h-5 w-5" /></button></div></div>
       <div className="mt-9 rounded-2xl border border-teal-300/20 bg-gradient-to-br from-teal-300/15 to-transparent p-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-300 font-black text-slate-950">{(user?.name || user?.email || "U").slice(0, 1).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-sm font-bold text-white">{user?.name || "Usuário"}</p><p className="truncate text-xs text-slate-300">{roleLabels[role || ""] || "Usuário"}</p></div></div><div className="mt-4 flex items-center gap-2 text-xs text-teal-200"><span className="h-2 w-2 rounded-full bg-teal-300 shadow-[0_0_12px_#5eead4]" /> Sistema operacional</div></div>
       <nav className="mt-8 space-y-1.5">
-        <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-slate-400">Navegação</p>
+        {!isCompany && <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-slate-400">Navegação</p>}
         {loadingModules && <div role="status" aria-label="Carregando menu" className="space-y-2">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-11 w-full rounded-xl bg-white/10" />)}</div>}
+        {!loadingModules && company && company.groups.map((g) => renderGroup(g))}
         {!loadingModules && links.map((item) => {
           if (item.children && item.children.length > 0) {
             const isOpen = !!expanded[item.label];
@@ -177,6 +197,12 @@ export function SidebarNav() {
         })}
       </nav>
       <div className="mt-auto border-t border-white/10 pt-4">
+        {!loadingModules && company && company.account.items.length > 0 && (
+          <div className="mb-3">
+            <p className="truncate px-3 text-xs text-slate-400">{user?.name || user?.email || "Usuário"}</p>
+            {renderGroup(company.account, true)}
+          </div>
+        )}
         <InstallButton />
       </div>
     </aside>

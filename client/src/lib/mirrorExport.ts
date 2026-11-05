@@ -104,30 +104,43 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   const W = 297, H = 210, M = 10;
   if (!first) doc.addPage("a4", "landscape");
 
-  // Larguras ajustadas para caber melhor os cabeçalhos e dar mais espaço às ocorrências
-  const widths = [16, 8, 20, 22, 22, 20, 16, 14, 14, 14, 14, 16];
+  // Larguras: mais espaço para Ocorrências, cabeçalhos abreviados cabem em 1 linha
+  const widths = [15, 8, 18, 20, 20, 18, 15, 13, 13, 13, 13, 15];
   const obsW = W - 2 * M - widths.reduce((a, b) => a + b, 0);
   const cols = [...widths, obsW];
 
   let y = M;
+  let inTable = false;
+
   const footer = () => {
     doc.setFontSize(7).setTextColor(100);
     doc.text(`${data.company.name} · Espelho de ponto · ${r.member.name} · emitido em ${stamp(data)} · página ${doc.getNumberOfPages()}`, M, H - 5);
     doc.setTextColor(0);
   };
-  const ensure = (h: number) => {
+
+  // Quebra de página SEM redesenhar o cabeçalho da tabela (para totais e notas)
+  const ensurePlain = (h: number) => {
     if (y + h > H - 12) {
       footer();
       doc.addPage("a4", "landscape");
       y = M;
-      drawHead();
+    }
+  };
+
+  // Quebra de página COM redesenho do cabeçalho (só enquanto estamos na tabela)
+  const ensureTable = (h: number) => {
+    if (y + h > H - 12) {
+      footer();
+      doc.addPage("a4", "landscape");
+      y = M;
+      if (inTable) drawHead();
     }
   };
 
   const drawHead = () => {
     doc.setFontSize(7.5).setFont("helvetica", "bold").setFillColor(226, 232, 240);
     const headerLines = PDF_HEADERS.map((h, i) => doc.splitTextToSize(h, cols[i] - 2) as string[]);
-    const headerH = Math.max(...headerLines.map(l => l.length)) * 3.2 + 2;
+    const headerH = Math.max(...headerLines.map(l => l.length), 1) * 3.2 + 2;
     let x = M;
     doc.rect(M, y, W - 2 * M, headerH, "F");
     headerLines.forEach((lines, i) => {
@@ -138,6 +151,7 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
     doc.setFont("helvetica", "normal");
   };
 
+  // Cabeçalho do documento
   doc.setFontSize(16).setFont("helvetica", "bold").text("Espelho de Ponto", M, y + 5);
   y += 10;
   doc.setFontSize(8.5).setFont("helvetica", "normal");
@@ -157,48 +171,54 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   doc.setFont("helvetica", "bold").text(`Período: ${periodLabel(r.report)}    Emitido em: ${stamp(data)}`, M, y + 1);
   y += 6;
 
+  // Tabela
+  inTable = true;
   drawHead();
   doc.setFontSize(7.5);
 
   for (const row of mirrorRows(r.report)) {
     const lines = row.map((c, i) => doc.splitTextToSize(c || "—", cols[i] - 2) as string[]);
     const h = Math.max(...lines.map((l) => l.length), 1) * 3.3 + 2;
-    ensure(h);
+    ensureTable(h);
     let x = M;
     doc.setDrawColor(190);
     lines.forEach((l, i) => {
       doc.rect(x, y, cols[i], h);
+      // Desenha o texto e garante que não ultrapasse a altura da célula
       doc.text(l, x + 1, y + 3.4);
       x += cols[i];
     });
     y += h;
   }
+  inTable = false;
 
-  // Totais — layout em coluna única para evitar sobreposição de labels longas
+  // Totais (sem redesenhar cabeçalho da tabela)
   const totals = totalsLines(r.report.totals);
-  ensure(12 + totals.length * 4.2);
+  ensurePlain(12 + totals.length * 4.2);
   y += 6;
   doc.setFontSize(10).setFont("helvetica", "bold").text("Totais do período", M, y);
   y += 6;
   doc.setFontSize(8);
   for (const [k, v] of totals) {
-    ensure(4.5);
+    ensurePlain(4.5);
     doc.setFont("helvetica", "normal").text(k, M, y, { maxWidth: 160 });
     doc.setFont("helvetica", "bold").text(String(v), M + 170, y);
     y += 4.2;
   }
 
+  // Notas e legenda
   y += 3;
   doc.setFont("helvetica", "normal").setFontSize(7.5);
   const notes = [...r.report.notes.map((n) => `• ${n}`), LEGEND, DISCLAIMER]
     .flatMap((n) => doc.splitTextToSize(n, W - 2 * M) as string[]);
   for (const line of notes) {
-    ensure(3.8);
+    ensurePlain(3.8);
     doc.text(line, M, y);
     y += 3.5;
   }
 
-  ensure(20);
+  // Assinaturas
+  ensurePlain(20);
   y += 12;
   doc.setFontSize(8).text("______________________________", 40, y);
   doc.text("______________________________", 190, y);

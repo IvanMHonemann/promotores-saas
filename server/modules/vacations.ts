@@ -7,6 +7,36 @@ import * as db from "../db";
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+let tableReady: Promise<void> | null = null;
+
+async function ensureVacationSchedulesTable(): Promise<void> {
+  if (tableReady) return tableReady;
+  tableReady = (async () => {
+    const database = await db.getDb();
+    if (!database) return;
+    await database.execute(`CREATE TABLE IF NOT EXISTS vacation_schedules (
+      id int AUTO_INCREMENT PRIMARY KEY,
+      companyId int NOT NULL,
+      memberAccountId int NOT NULL,
+      startDate date NOT NULL,
+      endDate date NOT NULL,
+      days int NOT NULL,
+      status enum('scheduled','cancelled') NOT NULL DEFAULT 'scheduled',
+      notes text,
+      createdByMemberAccountId int NOT NULL,
+      updatedByMemberAccountId int,
+      cancelledByMemberAccountId int,
+      cancelledAt timestamp NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY vacation_schedules_company_member_idx (companyId, memberAccountId),
+      KEY vacation_schedules_company_dates_idx (companyId, startDate, endDate),
+      KEY vacation_schedules_status_idx (status)
+    )`);
+  })().catch((e) => { tableReady = null; throw e; });
+  return tableReady;
+}
+
 function daysBetween(start: string, end: string): number {
   const s = new Date(start + "T00:00:00");
   const e = new Date(end + "T00:00:00");
@@ -75,6 +105,7 @@ export const vacationsRouter = router({
     }).optional())
     .query(async ({ ctx, input }) => {
       assertManager(ctx);
+      await ensureVacationSchedulesTable();
       const database = await db.getDb();
       const conds = [eq(vacationSchedules.companyId, ctx.accountId)];
       if (input?.memberAccountId) conds.push(eq(vacationSchedules.memberAccountId, input.memberAccountId));
@@ -106,6 +137,7 @@ export const vacationsRouter = router({
 
   mine: protectedProcedure.query(async ({ ctx }) => {
     if (!ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN" });
+    await ensureVacationSchedulesTable();
     const database = await db.getDb();
     return database
       .select()
@@ -123,6 +155,7 @@ export const vacationsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       assertManager(ctx);
+      await ensureVacationSchedulesTable();
       const database = await db.getDb();
       const [member] = await database.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, active: memberAccounts.active })
         .from(memberAccounts).where(eq(memberAccounts.id, input.memberAccountId)).limit(1);
@@ -155,6 +188,7 @@ export const vacationsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       assertManager(ctx);
+      await ensureVacationSchedulesTable();
       const database = await db.getDb();
       const days = daysBetween(input.startDate, input.endDate);
       let warning: string | null = null;
@@ -180,6 +214,7 @@ export const vacationsRouter = router({
     .input(z.object({ id: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       assertManager(ctx);
+      await ensureVacationSchedulesTable();
       const database = await db.getDb();
       await database.transaction(async (tx) => {
         const [row] = await tx.select().from(vacationSchedules)
@@ -199,6 +234,7 @@ export const vacationsRouter = router({
     .input(z.object({ year: z.number().int(), month: z.number().int().min(1).max(12).optional() }))
     .query(async ({ ctx, input }) => {
       assertManager(ctx);
+      await ensureVacationSchedulesTable();
       const database = await db.getDb();
       const from = input.month
         ? `${input.year}-${String(input.month).padStart(2, "0")}-01`

@@ -88,7 +88,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Schema legado de extintores preservado (`schema.original.ts` e algumas colunas/limites) para não quebrar dados antigos.
 - Tabelas auxiliares criadas sob demanda para reduzir dependência de migrações manuais em ambientes já em produção.
 - Servidor inicia HTTP apenas quando não detecta `process.env.VERCEL` (suporte dual serverless / processo tradicional).
-- Férias v1 é apenas programação operacional: não altera cartão-ponto, não calcula saldo legal e não gera pagamento. Isolamento por `companyId` e permissões (admin/supervisor gerenciam; promotor só lê o próprio).
+- Férias v1 é apenas programação operacional: não altera cartão-ponto, não calcula saldo legal e não gera pagamento. Isolamento por `companyId` e permissões (admin/supervisor gerenciam; promotor só lê o próprio). A tabela `vacation_schedules` é criada sob demanda no primeiro acesso (`ensureVacationSchedulesTable`).
 - Páginas comerciais de planos/pagamentos foram arquivadas; liberação de módulos é por entitlements/overrides, não por fluxo de checkout nesta fase.
 - Espelho de ponto usa dia local `America/Sao_Paulo` e perfil trabalhista; jornada aberta de hoje não entra no saldo.
 

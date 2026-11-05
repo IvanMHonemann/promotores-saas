@@ -103,6 +103,9 @@ export default function TimesheetPage() {
                         <span className="text-slate-400">
                           {new Date(ev.deviceTime || ev.serverTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                           {ev.notes?.includes("automática") && <span className="ml-2 rounded bg-amber-400/20 px-1.5 py-0.5 text-xs text-amber-200">Auto</span>}
+                          {(ev.offline || ev.notes?.includes("[MARCACAO-OFFLINE]")) && <span title={`Registrado offline. Recebido pelo servidor às ${new Date(ev.serverTime).toLocaleString("pt-BR")}`} className="ml-2 rounded bg-sky-400/20 px-1.5 py-0.5 text-xs text-sky-200">Registrado offline</span>}
+                          {ev.notes?.includes("[ALERTA-RELOGIO]") && <span title="Possível alteração do relógio do aparelho. Confira com o promotor." className="ml-2 rounded bg-rose-400/20 px-1.5 py-0.5 text-xs text-rose-200">Relógio suspeito</span>}
+                          {ev.notes?.includes("[SEQUENCIA-OFFLINE]") && <span title="Marcação offline fora da sequência esperada" className="ml-2 rounded bg-amber-400/20 px-1.5 py-0.5 text-xs text-amber-200">Fora de sequência</span>}
                         </span>
                       </div>
                     ))}

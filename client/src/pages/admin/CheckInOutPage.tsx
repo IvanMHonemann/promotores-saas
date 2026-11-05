@@ -91,10 +91,23 @@ function VisitPhotos({ storeId, visitId, startTime, endTime }: { storeId: number
   );
 }
 
+function OfflineMark({ mark }: { mark?: { offline: boolean; receivedAt: string; alert: string | null } }) {
+  if (!mark) return null;
+  return (
+    <>
+      {mark.offline && <span title={`Recebido pelo servidor em ${fmt(mark.receivedAt)}`} className="rounded bg-sky-400/20 px-1.5 py-0.5 text-xs text-sky-200">Registrado offline · recebido {fmt(mark.receivedAt)}</span>}
+      {mark.alert && <span title={mark.alert} className="rounded bg-rose-400/20 px-1.5 py-0.5 text-xs text-rose-200">Conferir horário</span>}
+    </>
+  );
+}
+
 export default function CheckInOutPage() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const visits = trpc.operations.visits.list.useQuery({ date }, { staleTime: 30000 });
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { staleTime: 60000 });
+  const visitIds = (visits.data || []).map(({ visit }) => visit.id);
+  const offlineMarks = trpc.operations.visits.offlineMarks.useQuery({ visitIds }, { enabled: visitIds.length > 0, staleTime: 30000 });
+  const markFor = (visitId: number, phase: "start" | "complete") => offlineMarks.data?.find((m) => m.visitId === visitId && m.phase === phase);
   const promoterName = (id: number) => promoters.data?.find((p) => p.id === id)?.userName || "Promotor";
 
   return (
@@ -137,12 +150,14 @@ export default function CheckInOutPage() {
                 {visit.actualStart && (
                   <p className="flex items-center gap-2 text-emerald-300">
                     <Clock className="h-4 w-4" /> Check-in: {fmt(visit.actualStart)}
+                    <OfflineMark mark={markFor(visit.id, "start")} />
                     {visit.startLatitude && ` (${visit.startLatitude.toFixed(4)}, ${visit.startLongitude?.toFixed(4)})`}
                   </p>
                 )}
                 {visit.actualEnd && (
                   <p className="flex items-center gap-2 text-amber-300">
                     <Clock className="h-4 w-4" /> Check-out: {fmt(visit.actualEnd)}
+                    <OfflineMark mark={markFor(visit.id, "complete")} />
                     {visit.endLatitude && ` (${visit.endLatitude.toFixed(4)}, ${visit.endLongitude?.toFixed(4)})`}
                   </p>
                 )}

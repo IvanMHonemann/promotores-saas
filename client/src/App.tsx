@@ -7,6 +7,7 @@ import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { PwaStatusBar } from "./components/PwaStatusBar";
+import { SwUpdatePrompt } from "./components/SwUpdatePrompt";
 import { BusyProvider } from "./components/BusyOverlay";
 import { GlobalMutationIndicator } from "./components/GlobalMutationIndicator";
 
@@ -45,10 +46,9 @@ import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
-import { usePhotoSync } from "@/hooks/usePhotoSync";
+import { useOutboxSync } from "@/hooks/useOutbox";
 import { useStoreSync } from "@/hooks/useStoreSync";
 import { useClientSync } from "@/hooks/useClientSync";
-import { useVisitSync } from "@/hooks/useVisitSync";
 import type { EntitlementKey } from "@shared/entitlements";
 import { useEffect } from "react";
 
@@ -141,7 +141,7 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
   if (accessQuery.data) cacheSet("entitlements", accessQuery.data);
   const access = {
     ...accessQuery,
-    data: accessQuery.data ?? (!isOnline() ? cachedEntitlements : undefined),
+    data: accessQuery.data ?? (!isOnline() || accessQuery.isError ? cachedEntitlements : undefined),
   };
 
   useEffect(() => {
@@ -298,10 +298,9 @@ function Router() {
 }
 
 function App() {
-  usePhotoSync();
+  useOutboxSync();
   useStoreSync();
   useClientSync();
-  useVisitSync();
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
@@ -311,6 +310,7 @@ function App() {
             <ConfirmHost />
             <GlobalMutationIndicator />
             <PwaStatusBar />
+            <SwUpdatePrompt />
             <Suspense fallback={<LoadingScreen />}>
               <Router />
             </Suspense>

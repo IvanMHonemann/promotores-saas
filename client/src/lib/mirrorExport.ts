@@ -74,7 +74,7 @@ export function missingLegalFields(data: MirrorData, r: MirrorResult): string[] 
   return miss;
 }
 export const periodLabel = (r: MirrorReport) => `${fmtDate(r.from)} a ${fmtDate(r.to)}`;
-export const LEGEND = "Legenda (horário de Brasília, America/Sao_Paulo): * = marcação ajustada por correção aprovada (original e justificativa em Ocorrências); + = batida incluída manualmente; # = ajuste antigo sem original estruturado; A = saída automática do sistema; ? = sincronização pendente. — = não aplicável/não configurado. DSR = descanso semanal remunerado.";
+export const LEGEND = "Legenda (horário de Brasília, America/Sao_Paulo): * = marcação ajustada por correção aprovada (original e justificativa em Ocorrências); + = batida incluída manualmente; # = ajuste antigo sem original estruturado; A = saída automática do sistema; ? = sincronização pendente; o = registrada offline (sem internet; horário do aparelho, recebida depois pelo servidor). — = não aplicável/não configurado. DSR = descanso semanal remunerado.";
 export const DISCLAIMER = "Documento gerado pelo GondUp a partir das marcações registradas (originais preservados; correções viram registros à parte). Serve para conferência e arquivo da empresa. A conformidade plena com a Portaria MTP 671/2021 (REP-P) depende ainda do registro no INPI e da assinatura digital ICP-Brasil do empregador/desenvolvedor.";
 
 const safe = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "arquivo";

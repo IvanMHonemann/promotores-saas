@@ -5,8 +5,10 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useBusy } from "@/components/BusyOverlay";
 import { getCurrentPosition } from "@/pages/promoter/geolocation";
-import { enqueue, list as listQueue, remove as removeQueue, isOnline, type QueuedPunch } from "@/lib/offlineQueue";
-import { cacheGet, cacheSet } from "@/lib/offlineCache";
+import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
+import { enqueueItem, nowEvidence, punchLabel } from "@/lib/outboxDb";
+import { classifyError } from "@/lib/outbox";
+import { requestSync, useOutboxItems } from "@/hooks/useOutbox";
 
 export type PunchType = "clock_in" | "break_start" | "break_end" | "clock_out";
 
@@ -57,42 +59,8 @@ const STEPS: Array<{ type: PunchType; label: string }> = [
  * Histórico completo, localização e pedidos de correção ficam em "Cartão ponto".
  */
 export function PunchPanel() {
-  const [queue, setQueue] = useState<QueuedPunch[]>([]);
-  const refreshQueue = () => setQueue(listQueue());
-  useEffect(() => { refreshQueue(); }, []);
-
-  // Sync queue when online
-  useEffect(() => {
-    const sync = async () => {
-      if (!isOnline()) return;
-      const pending = listQueue();
-      if (!pending.length) return;
-      for (const item of pending) {
-        try {
-          await register.mutateAsync({
-            eventType: item.eventType,
-            timeZone: item.timeZone,
-            deviceTime: item.deviceTime,
-            offline: true,
-            latitude: item.latitude ?? 0,
-            longitude: item.longitude ?? 0,
-            accuracy: item.accuracy ?? 0,
-            locationStatus: item.locationStatus as any,
-            deviceInfo: item.deviceInfo,
-            idempotencyKey: item.idempotencyKey,
-          });
-          removeQueue(item.id);
-        } catch { /* retry next time */ }
-      }
-      refreshQueue();
-      void utils.timeTracking.myHistory.invalidate();
-      void utils.timeTracking.shiftStatus.invalidate();
-      void utils.timeTracking.myTimeSummary.invalidate();
-    };
-    window.addEventListener("online", sync);
-    sync();
-    return () => window.removeEventListener("online", sync);
-  }, []);
+  const outbox = useOutboxItems();
+  const queue = useMemo(() => outbox.filter((i) => i.kind === "punch" && i.status !== "failed").map((i) => ({ id: i.id, eventType: i.payload.eventType as PunchType, deviceTime: i.deviceTime })), [outbox]);
 
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const utils = trpc.useUtils();
@@ -110,7 +78,7 @@ export function PunchPanel() {
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone });
   const historyQuery = trpc.timeTracking.myHistory.useQuery({ limit: 30 });
   if (historyQuery.data) cacheSet("punch-history", historyQuery.data);
-  const history = { ...historyQuery, data: historyQuery.data ?? (!isOnline() ? cacheGet<any[]>("punch-history") : undefined) };
+  const history = { ...historyQuery, data: historyQuery.data ?? cacheGet<any[]>("punch-history") ?? undefined };
   const summary = trpc.timeTracking.myTimeSummary.useQuery(undefined, { staleTime: 60_000 });
   const register = trpc.timeTracking.registerEvent.useMutation();
 
@@ -169,6 +137,7 @@ export function PunchPanel() {
     if (action.type === "clock_in" && closed && !window.confirm("Você já encerrou uma jornada hoje. Deseja iniciar uma NOVA jornada? A entrada será registrada normalmente e marcada para conferência do gestor.")) return;
     setBusy(true);
     setError("");
+    let savedOffline = false;
     try {
       await run("Registrando ponto...", async ({ setLabel }) => {
         setLabel("Obtendo sua localização...");
@@ -176,26 +145,36 @@ export function PunchPanel() {
         if (position.accuracy > 10000) {
           throw new Error("O GPS informou uma precisão muito baixa. Ative a localização precisa e tente em um local aberto.");
         }
+        const { deviceTime, clock } = nowEvidence();
+        const clientId = crypto.randomUUID();
         const payload = {
           eventType: action.type,
           timeZone,
-          deviceTime: new Date().toISOString(),
+          deviceTime,
           ...position,
           locationStatus: "success" as const,
           deviceInfo: navigator.userAgent,
-          idempotencyKey: `${action.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          idempotencyKey: clientId,
         };
-        if (!isOnline()) {
-          enqueue(payload);
-          refreshQueue();
-          toast.success(`${action.type === "clock_in" ? "Entrada" : action.type === "clock_out" ? "Saída" : action.type === "break_start" ? "Início do intervalo" : "Retorno"} salva offline às ${hhmm(new Date())}.`);
-          return;
-        }
+        const saveOffline = async () => {
+          await enqueueItem({ id: clientId, kind: "punch", label: punchLabel(action.type, deviceTime), deviceTime, clock, payload: { eventType: action.type, timeZone, latitude: position.latitude, longitude: position.longitude, accuracy: position.accuracy, deviceInfo: navigator.userAgent } });
+          savedOffline = true;
+          requestSync();
+          toast.success(`${action.type === "clock_in" ? "Entrada" : action.type === "clock_out" ? "Saída" : action.type === "break_start" ? "Início do intervalo" : "Retorno"} salva no aparelho às ${hhmm(new Date(deviceTime))}. Será enviada quando a internet voltar.`);
+        };
+        if (!isOnline()) { await saveOffline(); return; }
         setLabel("Registrando ponto...");
-        const saved: any = await register.mutateAsync(payload);
+        let saved: any;
+        try {
+          saved = await register.mutateAsync(payload);
+        } catch (err) {
+          // Rede caiu no meio: guarda com a MESMA chave; se o servidor já tinha gravado, o reenvio não duplica.
+          if (classifyError(err) === "network") { await saveOffline(); return; }
+          throw err;
+        }
         if (saved?.nsr) setLastReceipt({ nsr: saved.nsr });
       });
-      if (isOnline()) {
+      if (!savedOffline) {
         toast.success(`${action.type === "clock_in" ? "Entrada" : action.type === "clock_out" ? "Saída" : action.type === "break_start" ? "Início do intervalo" : "Retorno do intervalo"} registrada às ${hhmm(new Date())}.`);
         await Promise.all([
           utils.timeTracking.myHistory.invalidate(),

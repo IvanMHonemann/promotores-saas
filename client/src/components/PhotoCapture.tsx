@@ -255,7 +255,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
       return;
     }
     if (!isOnline()) {
-      enqueuePhoto(payload);
+      try { await enqueuePhoto(payload); } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível guardar a foto."); return; }
       toast.info("Foto salva offline. Será enviada ao voltar a conexão.");
       return;
     }
@@ -263,7 +263,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
       await upload.mutateAsync(payload);
     } catch {
       // Se falhar, tenta enfileirar
-      enqueuePhoto(payload);
+      try { await enqueuePhoto(payload); } catch (e) { toast.error(e instanceof Error ? e.message : "Não foi possível guardar a foto."); return; }
       toast.info("Foto salva offline. Será enviada ao voltar a conexão.");
     }
   };

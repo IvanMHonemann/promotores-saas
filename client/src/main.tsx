@@ -7,6 +7,7 @@ import { authFetch } from "@/lib/authFetch";
 import App from "./App";
 import "./index.css";
 import { initClientSentry } from "./sentry";
+import { hydrateOfflineCache } from "@/lib/offlineCache";
 
 initClientSentry();
 
@@ -23,17 +24,25 @@ if ("serviceWorker" in navigator) {
   const hadController = Boolean(navigator.serviceWorker.controller);
   window.addEventListener("load", () => {
     let refreshing = false;
-    navigator.serviceWorker.register(`/sw.js?version=${FORCE_RELOAD_VERSION}`).then((registration) => {
+    navigator.serviceWorker.register("/sw.js").then((registration) => {
       void registration.update();
       window.addEventListener("online", () => void registration.update());
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") void registration.update();
       });
+      // Versão nova baixada: NÃO troca sozinha (poderia recarregar no meio de um check-in). Mostra o aviso
+      // "Nova versão disponível — Recarregar" (components/SwUpdatePrompt) e só troca quando o usuário aceitar.
+      const announce = (worker: ServiceWorker | null) => {
+        if (!worker || !navigator.serviceWorker.controller) return;
+        (window as any).__gondupWaitingSW = worker;
+        window.dispatchEvent(new Event("gondup:sw-update"));
+      };
+      if (registration.waiting) announce(registration.waiting);
       registration.addEventListener("updatefound", () => {
         const worker = registration.installing;
         if (!worker) return;
         worker.addEventListener("statechange", () => {
-          if (worker.state === "installed" && navigator.serviceWorker.controller) worker.postMessage({ type: "SKIP_WAITING" });
+          if (worker.state === "installed") announce(worker);
         });
       });
     }).catch((error) => console.warn("Service worker não registrado", error));
@@ -96,10 +105,11 @@ const trpcClient = trpc.createClient({
   ],
 });
 
-createRoot(document.getElementById("root")!).render(
+// Carrega o cache offline (IndexedDB) antes de montar, com limite de tempo para nunca travar a abertura.
+void Promise.race([hydrateOfflineCache(), new Promise((r) => setTimeout(r, 1500))]).finally(() => createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>
     <QueryClientProvider client={queryClient}>
       <App />
     </QueryClientProvider>
   </trpc.Provider>
-);
+));

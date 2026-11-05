@@ -1,83 +1,39 @@
 /**
- * Fila offline de check-in/check-out de visitas.
- * Suporta tanto o fluxo antigo (base64) quanto o novo (blob → base64 quando offline).
+ * Check-in/check-out guardado offline. Agora fica na fila única do IndexedDB (lib/outbox):
+ * o check-in vira um item e a foto da fachada outro, que só sobe depois do check-in.
  */
+import { base64ToBlob, enqueueItem, nowEvidence } from "./outboxDb";
+import { requestSync } from "@/hooks/useOutbox";
 
-const KEY = "gondup:visit-queue";
-
-export type QueuedVisit = {
-  id: string;
+export type QueuedVisitInput = {
   action: "start" | "complete";
   visitId: number;
   storeId: number;
   storeName: string;
-  photoBase64: string;           // sempre base64 para persistir no localStorage
+  photoBase64: string;
   mimeType: string;
   latitude?: number;
   longitude?: number;
   accuracy?: number;
   notes?: string;
-  /** Chave da foto: reaproveitada no reenvio para o servidor não duplicar a foto. */
   idempotencyKey?: string;
-  /** Momento real da captura (queuedAt é só a hora em que entrou na fila). */
   capturedAt?: string;
-  queuedAt: string;
 };
 
-function load(): QueuedVisit[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+export async function enqueueVisit(v: QueuedVisitInput) {
+  const { deviceTime, clock } = nowEvidence();
+  const label = `${v.action === "start" ? "Check-in" : "Check-out"} · ${v.storeName || "Loja"}`;
+  const visit = await enqueueItem({ kind: "visit", label, deviceTime, clock, payload: { action: v.action, visitId: v.visitId, storeId: v.storeId, storeName: v.storeName, latitude: v.latitude, longitude: v.longitude, accuracy: v.accuracy, notes: v.notes } });
+  if (v.photoBase64) {
+    await enqueueItem({
+      kind: "photo", dependsOn: visit.id, label: `Foto do ${label}`, deviceTime: v.capturedAt || deviceTime, clock,
+      blob: base64ToBlob(v.photoBase64, v.mimeType || "image/jpeg"),
+      payload: { storeId: v.storeId, visitId: v.visitId, capturedAt: v.capturedAt || deviceTime, latitude: v.latitude, longitude: v.longitude, accuracy: v.accuracy, locationStatus: v.latitude != null ? "success" : "unavailable", idempotencyKey: (v.idempotencyKey || crypto.randomUUID().replace(/-/g, "")).slice(0, 64) },
+    });
   }
+  requestSync();
+  return visit;
 }
 
-function save(items: QueuedVisit[]): boolean {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(items));
-    return true;
-  } catch (e) {
-    console.warn("Fila de visitas cheia", e);
-    return false;
-  }
-}
-
-export function enqueueVisit(item: Omit<QueuedVisit, "id" | "queuedAt">): QueuedVisit {
-  const entry: QueuedVisit = {
-    ...item,
-    id: crypto.randomUUID(),
-    queuedAt: new Date().toISOString(),
-  };
-  const items = load();
-  items.push(entry);
-  // Antes a falha era silenciosa e o check-in sumia; agora quem chama precisa tratar.
-  if (!save(items)) throw new Error("Sem espaço para guardar o check-in offline neste aparelho.");
-  return entry;
-}
-
-export function listVisits(): QueuedVisit[] {
-  return load();
-}
-
-export function removeVisit(id: string) {
-  save(load().filter((v) => v.id !== id));
-}
-
-export function visitCount(): number {
-  return load().length;
-}
-
-/** Converte Blob para base64 (usado apenas no modo offline) */
-export async function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64 = result.split(",")[1] || result;
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
+/** Converte Blob para base64. */
+export { blobToBase64 } from "./outboxDb";

@@ -1113,13 +1113,24 @@ var init_entitlements = __esm({
 // server/storage.ts
 var storage_exports = {};
 __export(storage_exports, {
+  isStorageConfigured: () => isStorageConfigured,
   storageDelete: () => storageDelete,
+  storageDeleteMany: () => storageDeleteMany,
   storageGet: () => storageGet,
   storageGetSignedUrl: () => storageGetSignedUrl,
+  storageListKeys: () => storageListKeys,
   storagePut: () => storagePut,
+  storagePutExact: () => storagePutExact,
   storageRead: () => storageRead
 });
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "node:crypto";
 function normalizeKey(relKey) {
@@ -1154,14 +1165,31 @@ function buildS3Client() {
   });
   return { bucket, client, publicBaseUrl: process.env.S3_PUBLIC_BASE_URL?.replace(/\/+$/, "") };
 }
+function isStorageConfigured() {
+  return Boolean(getS3Client());
+}
+function publicOrSignedUrl(s3, key) {
+  if (!s3) return Promise.reject(new Error("Storage is not configured."));
+  if (s3.publicBaseUrl) {
+    return Promise.resolve(`${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`);
+  }
+  return getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
+}
 async function storagePut(relKey, data, contentType = "application/octet-stream") {
   const key = appendHashSuffix(normalizeKey(relKey));
   const s3 = getS3Client();
   if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
   const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
   await s3.client.send(new PutObjectCommand({ Bucket: s3.bucket, Key: key, Body: body, ContentType: contentType }));
-  const url = s3.publicBaseUrl ? `${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}` : await getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
-  return { key, url };
+  return { key, url: await publicOrSignedUrl(s3, key) };
+}
+async function storagePutExact(relKey, data, contentType = "application/octet-stream") {
+  const key = normalizeKey(relKey);
+  const s3 = getS3Client();
+  if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
+  const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  await s3.client.send(new PutObjectCommand({ Bucket: s3.bucket, Key: key, Body: body, ContentType: contentType }));
+  return { key, url: await publicOrSignedUrl(s3, key) };
 }
 async function storageGet(relKey) {
   const key = normalizeKey(relKey);
@@ -1171,8 +1199,7 @@ async function storageGetSignedUrl(relKey) {
   const key = normalizeKey(relKey);
   const s3 = getS3Client();
   if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
-  if (s3.publicBaseUrl) return `${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
-  return getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
+  return publicOrSignedUrl(s3, key);
 }
 async function storageRead(relKey) {
   const key = normalizeKey(relKey);
@@ -1193,6 +1220,42 @@ async function storageDelete(relKey) {
   } catch {
     return false;
   }
+}
+async function storageListKeys(prefix) {
+  const s3 = getS3Client();
+  if (!s3) return [];
+  const keys = [];
+  let continuationToken;
+  do {
+    const result = await s3.client.send(
+      new ListObjectsV2Command({
+        Bucket: s3.bucket,
+        Prefix: normalizeKey(prefix),
+        ContinuationToken: continuationToken
+      })
+    );
+    for (const obj of result.Contents || []) {
+      if (obj.Key) keys.push(obj.Key);
+    }
+    continuationToken = result.IsTruncated ? result.NextContinuationToken : void 0;
+  } while (continuationToken);
+  return keys;
+}
+async function storageDeleteMany(keys) {
+  const s3 = getS3Client();
+  if (!s3 || keys.length === 0) return 0;
+  let deleted = 0;
+  for (let i = 0; i < keys.length; i += 1e3) {
+    const chunk = keys.slice(i, i + 1e3).map((Key) => ({ Key: normalizeKey(Key) }));
+    const result = await s3.client.send(
+      new DeleteObjectsCommand({
+        Bucket: s3.bucket,
+        Delete: { Objects: chunk, Quiet: true }
+      })
+    );
+    deleted += result.Deleted?.length ?? chunk.length;
+  }
+  return deleted;
 }
 var cachedS3;
 var init_storage = __esm({
@@ -5895,11 +5958,11 @@ __export(productLookup_exports, {
   lookupProductByCode: () => lookupProductByCode
 });
 import { and as and12, desc as desc5, eq as eq13, inArray as inArray10 } from "drizzle-orm";
-async function fetchJson(url, init = {}, ms2 = 4e3) {
+async function fetchJson(url, init2 = {}, ms2 = 4e3) {
   const ctl = new AbortController();
   const t2 = setTimeout(() => ctl.abort(), ms2);
   try {
-    const r = await fetch(url, { ...init, signal: ctl.signal, headers: { "User-Agent": "PromotoresSaaS/1.0 (consulta de codigo de barras)", Accept: "application/json", ...init.headers || {} } });
+    const r = await fetch(url, { ...init2, signal: ctl.signal, headers: { "User-Agent": "PromotoresSaaS/1.0 (consulta de codigo de barras)", Accept: "application/json", ...init2.headers || {} } });
     return r.ok ? await r.json() : null;
   } catch {
     return null;
@@ -5964,12 +6027,36 @@ var init_productLookup = __esm({
 // server/backup.ts
 var backup_exports = {};
 __export(backup_exports, {
+  BACKUP_PREFIX: () => BACKUP_PREFIX,
+  backupDayPrefix: () => backupDayPrefix,
+  daysToPurge: () => daysToPurge,
   ensureBackupProgressTable: () => ensureBackupProgressTable,
-  runBackupStep: () => runBackupStep
+  purgeOldR2Backups: () => purgeOldR2Backups,
+  retentionDaysFromEnv: () => retentionDaysFromEnv,
+  runBackupStep: () => runBackupStep,
+  runFullBackup: () => runFullBackup
 });
 import crypto3 from "node:crypto";
 import zlib from "node:zlib";
 import { promisify } from "node:util";
+function backupDayPrefix(day) {
+  return `${BACKUP_PREFIX}/${day}`;
+}
+function retentionDaysFromEnv(env2 = process.env) {
+  return Math.max(1, Number(env2.BACKUP_RETENTION_DAYS || 14));
+}
+function daysToPurge(keys, keepDays, now = /* @__PURE__ */ new Date()) {
+  const days = /* @__PURE__ */ new Set();
+  const re = new RegExp(`^${BACKUP_PREFIX}/(\\d{4}-\\d{2}-\\d{2})/`);
+  for (const key of keys) {
+    const m = key.match(re);
+    if (m) days.add(m[1]);
+  }
+  const cutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  cutoff.setUTCDate(cutoff.getUTCDate() - keepDays);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return [...days].filter((d) => d < cutoffStr).sort();
+}
 async function ensureBackupProgressTable(c) {
   await c.query(`CREATE TABLE IF NOT EXISTS backup_progress (
     day varchar(10) NOT NULL,
@@ -5983,17 +6070,44 @@ async function ensureBackupProgressTable(c) {
     PRIMARY KEY (day, tableName)
   )`);
 }
-async function runBackupStep(c, opts) {
+async function runBackupStep(c, opts = { budgetMs: 18e3 }) {
+  if (opts.skipIfNoStorage !== false && !opts.put && !isStorageConfigured()) {
+    return {
+      day: opts.day ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+      complete: true,
+      skipped: true,
+      reason: "storage_not_configured",
+      tables: 0,
+      tablesDone: 0,
+      partsWritten: 0,
+      bytes: 0,
+      manifestKey: null
+    };
+  }
   const started = Date.now();
-  const storagePut2 = opts.put ?? storagePut;
+  const storagePut2 = opts.put ?? storagePutExact;
   const day = opts.day ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const prefix = `backups/database/${day}`;
+  const prefix = backupDayPrefix(day);
   await ensureBackupProgressTable(c);
   const [tableRows] = await c.query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
   const tables = tableRows.map((r) => String(Object.values(r)[0])).filter((n) => !SKIP_TABLES.has(n)).sort();
   let bytes = 0, partsWritten = 0;
-  const [marker] = await c.query("SELECT 1 FROM backup_progress WHERE day = ? AND tableName = '_manifest' AND done = 1", [day]);
-  if (marker.length) return { day, complete: true, skipped: true, tables: tables.length, tablesDone: tables.length, partsWritten: 0, bytes: 0, manifestKey: null };
+  const [marker] = await c.query(
+    "SELECT 1 FROM backup_progress WHERE day = ? AND tableName = '_manifest' AND done = 1",
+    [day]
+  );
+  if (marker.length) {
+    return {
+      day,
+      complete: true,
+      skipped: true,
+      tables: tables.length,
+      tablesDone: tables.length,
+      partsWritten: 0,
+      bytes: 0,
+      manifestKey: null
+    };
+  }
   const [doneRows] = await c.query("SELECT tableName FROM backup_progress WHERE day = ? AND done = 1", [day]);
   const done = new Set(doneRows.map((r) => r.tableName));
   for (const table of tables) {
@@ -6006,15 +6120,18 @@ async function runBackupStep(c, opts) {
     const pk = keys.length === 1 ? keys[0].Column_name : null;
     let finished = false;
     while (Date.now() - started < opts.budgetMs) {
-      const [rows3] = pk ? await c.query(`SELECT * FROM \`${table}\` ${cursor != null ? `WHERE \`${pk}\` > ?` : ""} ORDER BY \`${pk}\` LIMIT ${CHUNK_ROWS}`, cursor != null ? [cursor] : []) : await c.query(`SELECT * FROM \`${table}\` ORDER BY 1 LIMIT ${CHUNK_ROWS} OFFSET ${rowsDone}`);
+      const [rows3] = pk ? await c.query(
+        `SELECT * FROM \`${table}\` ${cursor != null ? `WHERE \`${pk}\` > ?` : ""} ORDER BY \`${pk}\` LIMIT ${CHUNK_ROWS}`,
+        cursor != null ? [cursor] : []
+      ) : await c.query(`SELECT * FROM \`${table}\` ORDER BY 1 LIMIT ${CHUNK_ROWS} OFFSET ${rowsDone}`);
       if (!rows3.length) {
         finished = true;
         break;
       }
       const body = await gzip(Buffer.from(rows3.map((r) => JSON.stringify(r, jsonReplacer)).join("\n") + "\n"));
       const key = `${prefix}/${table}.${String(part).padStart(5, "0")}.jsonl.gz`;
-      await storagePut2(key, body, "application/gzip");
-      files.push({ key, rows: rows3.length, sha256: crypto3.createHash("sha256").update(body).digest("hex") });
+      const stored = await storagePut2(key, body, "application/gzip");
+      files.push({ key: stored.key, rows: rows3.length, sha256: crypto3.createHash("sha256").update(body).digest("hex") });
       bytes += body.length;
       partsWritten += 1;
       part += 1;
@@ -6042,7 +6159,10 @@ async function runBackupStep(c, opts) {
   const complete = tables.every((t2) => done.has(t2));
   let manifestKey = null;
   if (complete) {
-    const [all] = await c.query("SELECT tableName, rowsDone, files FROM backup_progress WHERE day = ? AND tableName <> '_manifest' ORDER BY tableName", [day]);
+    const [all] = await c.query(
+      "SELECT tableName, rowsDone, files FROM backup_progress WHERE day = ? AND tableName <> '_manifest' ORDER BY tableName",
+      [day]
+    );
     const ddl = [];
     for (const t2 of tables) {
       const [d] = await c.query(`SHOW CREATE TABLE \`${t2}\``);
@@ -6050,14 +6170,51 @@ async function runBackupStep(c, opts) {
     }
     const schema = await gzip(Buffer.from(ddl.join("\n\n")));
     await storagePut2(`${prefix}/_schema.sql.gz`, schema, "application/gzip");
-    const manifest = { format: 2, day, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), tables: all.map((r) => ({ name: r.tableName, rows: r.rowsDone, files: JSON.parse(r.files || "[]") })) };
+    const manifest = {
+      format: 2,
+      day,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      tables: all.map((r) => ({ name: r.tableName, rows: r.rowsDone, files: JSON.parse(r.files || "[]") }))
+    };
     const stored = await storagePut2(`${prefix}/_manifest.json`, Buffer.from(JSON.stringify(manifest)), "application/json");
     manifestKey = stored.key;
-    await c.query("INSERT INTO backup_progress (day, tableName, done) VALUES (?, '_manifest', 1) ON DUPLICATE KEY UPDATE done = 1", [day]);
+    await c.query("INSERT INTO backup_progress (day, tableName, done) VALUES (?, '_manifest', 1) ON DUPLICATE KEY UPDATE done = 1", [
+      day
+    ]);
   }
   return { day, complete, tables: tables.length, tablesDone: done.size, partsWritten, bytes, manifestKey };
 }
-var gzip, CHUNK_ROWS, SKIP_TABLES, jsonReplacer;
+async function purgeOldR2Backups(opts = {}) {
+  const keepDays = opts.keepDays ?? retentionDaysFromEnv();
+  const listKeys = opts.listKeys ?? storageListKeys;
+  const deleteMany = opts.deleteMany ?? storageDeleteMany;
+  if (!opts.listKeys && !isStorageConfigured()) {
+    return { keepDays, purgedDays: [], deletedObjects: 0, skipped: true };
+  }
+  const keys = await listKeys(`${BACKUP_PREFIX}/`);
+  const purge = daysToPurge(keys, keepDays, opts.now);
+  let deletedObjects = 0;
+  for (const day of purge) {
+    const dayKeys = keys.filter((k) => k.startsWith(`${BACKUP_PREFIX}/${day}/`));
+    deletedObjects += await deleteMany(dayKeys);
+  }
+  return { keepDays, purgedDays: purge, deletedObjects, skipped: false };
+}
+async function runFullBackup(c, opts = {}) {
+  const budgetMs = opts.budgetMs ?? Number(process.env.BACKUP_BUDGET_MS || 12e4);
+  const maxSteps = opts.maxSteps ?? 50;
+  let last = null;
+  for (let i = 0; i < maxSteps; i++) {
+    last = await runBackupStep(c, { budgetMs, day: opts.day, put: opts.put });
+    if (last.complete || last.reason === "storage_not_configured") break;
+  }
+  let retention = null;
+  if (last?.complete && last.reason !== "storage_not_configured") {
+    retention = await purgeOldR2Backups();
+  }
+  return { backup: last, retention };
+}
+var gzip, CHUNK_ROWS, SKIP_TABLES, BACKUP_PREFIX, jsonReplacer;
 var init_backup = __esm({
   "server/backup.ts"() {
     "use strict";
@@ -6065,6 +6222,7 @@ var init_backup = __esm({
     gzip = promisify(zlib.gzip);
     CHUNK_ROWS = Number(process.env.BACKUP_CHUNK_ROWS || 5e3);
     SKIP_TABLES = /* @__PURE__ */ new Set(["__drizzle_migrations", "member_sessions", "platform_sessions", "backup_progress"]);
+    BACKUP_PREFIX = "backups/database";
     jsonReplacer = (_k, v) => typeof v === "bigint" ? v.toString() : v;
   }
 });
@@ -7575,17 +7733,17 @@ var editableFiles = [
   "package.json",
   "vercel.json"
 ];
-async function github(path2, init = {}) {
+async function github(path2, init2 = {}) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GITHUB_TOKEN n\xE3o est\xE1 configurado na Vercel.");
   const response = await fetch(`${GITHUB_API}${path2}`, {
-    ...init,
+    ...init2,
     headers: {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,
       "X-GitHub-Api-Version": "2022-11-28",
       "Content-Type": "application/json",
-      ...init.headers || {}
+      ...init2.headers || {}
     }
   });
   const body = await response.text();
@@ -8857,8 +9015,16 @@ async function runScheduledMaintenance() {
       expiresAt TIMESTAMP NOT NULL,
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
-    const { runBackupStep: runBackupStep2 } = await Promise.resolve().then(() => (init_backup(), backup_exports));
+    const { runBackupStep: runBackupStep2, purgeOldR2Backups: purgeOldR2Backups2 } = await Promise.resolve().then(() => (init_backup(), backup_exports));
     const backup = await runBackupStep2(connection, { budgetMs: Number(process.env.BACKUP_BUDGET_MS || 18e3) });
+    let backupRetention = null;
+    if (backup.complete && !backup.reason) {
+      try {
+        backupRetention = await purgeOldR2Backups2();
+      } catch (e) {
+        console.warn("[maintenance] backup retention failed", e);
+      }
+    }
     const [trash] = await connection.query("DELETE FROM trash_items WHERE expiresAt <= UTC_TIMESTAMP()");
     const [visitPhotos2] = await connection.query("DELETE FROM visit_photos WHERE expiresAt <= UTC_TIMESTAMP()");
     const [memberSessions3] = await connection.query("DELETE FROM member_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
@@ -8872,7 +9038,7 @@ async function runScheduledMaintenance() {
     } catch (e) {
       console.warn("[maintenance] expire photos failed", e);
     }
-    return { backup, cleaned: { trash: trash.affectedRows, visitPhotos: visitPhotos2.affectedRows, memberSessions: memberSessions3.affectedRows, platformSessions: platformSessions3.affectedRows, ...retention }, expiredPhotos };
+    return { backup, backupRetention, cleaned: { trash: trash.affectedRows, visitPhotos: visitPhotos2.affectedRows, memberSessions: memberSessions3.affectedRows, platformSessions: platformSessions3.affectedRows, ...retention }, expiredPhotos };
   } finally {
     await connection.end();
   }
@@ -8982,6 +9148,81 @@ async function runPhotoMaintenance() {
 
 // server/vercel-entry.ts
 init_uploadLimits();
+
+// server/sentry.ts
+import * as Sentry from "@sentry/node";
+var SENSITIVE_KEYS = /^(password|senha|token|secret|authorization|cookie|credit.?card|cpf|cnpj|ssn)$/i;
+function scrubValue(key, value) {
+  if (SENSITIVE_KEYS.test(key)) return "[Filtered]";
+  if (typeof value === "string" && /password|senha|Bearer\s+[A-Za-z0-9\-._~+/]+=*/i.test(value) && value.length > 20) {
+    return "[Filtered]";
+  }
+  return value;
+}
+function scrubObject(input, depth = 0) {
+  if (depth > 6 || input == null) return input;
+  if (Array.isArray(input)) return input.map((v) => scrubObject(v, depth + 1));
+  if (typeof input !== "object") return input;
+  const out = {};
+  for (const [k, v] of Object.entries(input)) {
+    out[k] = scrubValue(k, scrubObject(v, depth + 1));
+  }
+  return out;
+}
+var initialized = false;
+function initServerSentry(env2 = process.env) {
+  const dsn = (env2.SENTRY_DSN || "").trim();
+  if (!dsn || initialized) return initialized;
+  try {
+    Sentry.init({
+      dsn,
+      environment: env2.SENTRY_ENVIRONMENT || env2.NODE_ENV || "production",
+      tracesSampleRate: Number(env2.SENTRY_TRACES_SAMPLE_RATE || 0.05),
+      sendDefaultPii: false,
+      beforeSend(event) {
+        if (event.request) {
+          if (event.request.headers) {
+            event.request.headers = scrubObject(event.request.headers);
+          }
+          if (event.request.data) {
+            event.request.data = scrubObject(event.request.data);
+          }
+          if (event.request.query_string && typeof event.request.query_string === "string") {
+            event.request.query_string = event.request.query_string.replace(
+              /(password|senha|token)=([^&]*)/gi,
+              "$1=[Filtered]"
+            );
+          }
+        }
+        if (event.extra) event.extra = scrubObject(event.extra);
+        if (event.user) {
+          delete event.user.ip_address;
+          if (event.user.email) {
+            event.user.email = "[Filtered]";
+          }
+        }
+        return event;
+      }
+    });
+    initialized = true;
+    console.log("[sentry] server monitoring enabled");
+  } catch (error) {
+    console.warn("[sentry] failed to init", error);
+  }
+  return initialized;
+}
+function sentryErrorHandler() {
+  if (!initialized) {
+    return (err, _req, _res, next) => next(err);
+  }
+  return (err, _req, _res, next) => {
+    Sentry.captureException(err);
+    next(err);
+  };
+}
+
+// server/vercel-entry.ts
+initServerSentry();
 function securityHeaders(_req, res, next) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -9035,6 +9276,37 @@ async function createApp() {
       console.error("[Maintenance] failed:", error);
       await notifyOwner({ title: "Falha no backup di\xE1rio", content: "O backup autom\xE1tico falhou." }).catch(() => void 0);
       return res.status(500).json({ error: "Scheduled maintenance failed" });
+    }
+  });
+  app.all("/api/scheduled/database-backup", async (req, res) => {
+    if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+    try {
+      if (!isScheduleRequestAuthorized(req)) {
+        return res.status(401).json({ error: "Schedule authentication required" });
+      }
+      const mysql3 = (await import("mysql2/promise")).default;
+      const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
+      if (!url) return res.status(500).json({ error: "Database URL is not configured." });
+      const connection = await mysql3.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 1e4 });
+      try {
+        const { runBackupStep: runBackupStep2, purgeOldR2Backups: purgeOldR2Backups2 } = await Promise.resolve().then(() => (init_backup(), backup_exports));
+        const backup = await runBackupStep2(connection, { budgetMs: Number(process.env.BACKUP_BUDGET_MS || 18e3) });
+        let retention = null;
+        if (backup.complete && !backup.reason) {
+          try {
+            retention = await purgeOldR2Backups2();
+          } catch (e) {
+            console.warn("[backup] retention failed", e);
+          }
+        }
+        return res.json({ ok: true, backup, retention });
+      } finally {
+        await connection.end();
+      }
+    } catch (error) {
+      console.error("[Backup] failed:", error);
+      await notifyOwner({ title: "Falha no backup di\xE1rio", content: "O backup autom\xE1tico falhou." }).catch(() => void 0);
+      return res.status(500).json({ error: "Scheduled backup failed" });
     }
   });
   app.all("/api/scheduled/archive-timesheets", async (req, res) => {
@@ -9097,6 +9369,7 @@ async function createApp() {
     }));
     app.use("*", (_req, res) => res.sendFile(path.resolve(distPath, "index.html")));
   }
+  app.use(sentryErrorHandler());
   return app;
 }
 var appPromise = null;

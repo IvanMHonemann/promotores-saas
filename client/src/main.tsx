@@ -6,6 +6,9 @@ import superjson from "superjson";
 import { authFetch } from "@/lib/authFetch";
 import App from "./App";
 import "./index.css";
+import { initClientSentry } from "./sentry";
+
+initClientSentry();
 
 const FORCE_RELOAD_VERSION = "v18";
 (window as any).__APP_VERSION = FORCE_RELOAD_VERSION;

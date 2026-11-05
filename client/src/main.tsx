@@ -13,6 +13,10 @@ if (typeof window !== "undefined" && window.location.pathname === "/plataforma/t
   localStorage.removeItem("promotores-saas-auth-user");
 }
 if ("serviceWorker" in navigator) {
+  // Na primeira visita não existe service worker controlando a página. Quando o novo SW assume
+  // (clients.claim), o evento controllerchange dispara, mas NÃO há versão antiga para trocar: recarregar
+  // aí refazia o carregamento da página logo após abrir (tela em branco/lenta no primeiro acesso).
+  const hadController = Boolean(navigator.serviceWorker.controller);
   window.addEventListener("load", () => {
     let refreshing = false;
     navigator.serviceWorker.register(`/sw.js?version=${FORCE_RELOAD_VERSION}`).then((registration) => {
@@ -30,7 +34,7 @@ if ("serviceWorker" in navigator) {
       });
     }).catch((error) => console.warn("Service worker não registrado", error));
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (refreshing) return;
+      if (!hadController || refreshing) return;
       refreshing = true;
       // Não limpa o cache aqui: limpar no meio do reload (ex.: arrastar a tela) deixa tela branca.
       const reload = () => {
@@ -49,6 +53,17 @@ if ("serviceWorker" in navigator) {
     });
   });
 }
+
+// Se um chunk lazy (ex.: LoginPage) falhar ao carregar (deploy novo, rede instável), recarrega uma vez
+// em vez de deixar a tela em branco. A trava evita loop de recarregamento.
+window.addEventListener("vite:preloadError", (event) => {
+  event.preventDefault();
+  const KEY = "promotores-saas-chunk-reload";
+  const last = Number(sessionStorage.getItem(KEY) || 0);
+  if (Date.now() - last < 30_000) return;
+  sessionStorage.setItem(KEY, String(Date.now()));
+  (window as any).location.reload();
+});
 
 // Android/iOS podem restaurar uma página antiga da memória ao voltar no histórico.
 // Recarregar nessa situação garante que o usuário receba o deployment atual.

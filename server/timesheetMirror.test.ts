@@ -87,3 +87,25 @@ describe("validade de produtos", () => {
     expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
   });
 });
+
+describe("espelho de ponto: texto das ocorrências", () => {
+  const base = [ev(1, "clock_in", "2026-10-07T11:00:00Z"), ev(5, "break_end", "2026-10-07T16:19:00Z"), ev(4, "clock_out", "2026-10-07T21:00:00Z")];
+  const rows = (events: any[]) => mirrorRows(buildMirror({ events, from: "2026-10-07", to: "2026-10-07" }))[0][12];
+  it("batida incluída não aparece como 'original X → X'", () => {
+    const adj = { originalType: "missing", originalTime: "2026-10-07T15:19:00Z", justification: "Esqueci", reviewedBy: "Ivan" };
+    const text = rows([...base, ev(2, "break_start", "2026-10-07T15:19:00Z", { adjustment: adj })]);
+    expect(text).toContain("Início do intervalo: batida incluída manualmente às 12:19. Justificativa: Esqueci (por Ivan)");
+    expect(text).not.toContain("original");
+  });
+  it("ajuste de horário mostra original e novo sem caracteres fora do Latin-1", () => {
+    const adj = { originalType: "clock_out", originalTime: "2026-10-07T20:30:00Z", justification: "Erro" };
+    const text = rows([ev(1, "clock_in", "2026-10-07T11:00:00Z"), ev(4, "clock_out", "2026-10-07T21:00:00Z", { adjustment: adj })]);
+    expect(text).toBe("Saída: original 17:30 para 18:00. Justificativa: Erro");
+    expect(text).not.toContain("→");
+  });
+  it("ajuste que troca o tipo da marcação mostra os dois tipos", () => {
+    const adj = { originalType: "break_end", originalTime: "2026-10-07T21:00:00Z", justification: "Tipo errado" };
+    const text = rows([ev(1, "clock_in", "2026-10-07T11:00:00Z"), ev(4, "clock_out", "2026-10-07T21:00:00Z", { adjustment: adj })]);
+    expect(text).toContain("original Retorno do intervalo 18:00 para Saída 18:00");
+  });
+});

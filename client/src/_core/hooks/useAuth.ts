@@ -25,6 +25,14 @@ function readCachedUser() {
   }
 }
 
+function hasStoredSessionToken() {
+  try {
+    return Boolean(typeof localStorage !== "undefined" && localStorage.getItem("promotores-saas-session-token"));
+  } catch {
+    return false;
+  }
+}
+
 export function useAuth(options?: UseAuthOptions) {
   const { redirectOnUnauthenticated = false, redirectPath } = options ?? {};
   const utils = trpc.useUtils();
@@ -119,7 +127,11 @@ export function useAuth(options?: UseAuthOptions) {
     // A sessão própria em cache é suficiente para abrir a aplicação enquanto
     // a confirmação online ocorre em segundo plano. Isso evita tela vazia ou
     // spinner prolongado em previews móveis e mantém o acesso offline-first.
-    const authReady = isOffline || Boolean(cachedUser) || meQuery.isFetched;
+    // Visitante sem usuário em cache e sem token de sessão salvo não está logado neste navegador:
+    // mostra a landing/login na hora em vez de esperar o auth.me (que pode demorar com função fria na Vercel).
+    // Se mesmo assim houver sessão válida por cookie, o auth.me atualiza o estado quando responder.
+    const noLocalSession = !cachedUser && !hasStoredSessionToken();
+    const authReady = isOffline || Boolean(cachedUser) || noLocalSession || meQuery.isFetched;
     return {
       user,
       // Mesmo com usuário em cache, não mostre LoginPage enquanto a sessão

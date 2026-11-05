@@ -1,10 +1,28 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
+
+/** Injeta o script de analytics só quando as variáveis existem (senão a URL ficava com %VITE_ANALYTICS_ENDPOINT% literal). */
+function analyticsPlugin(): Plugin {
+  let endpoint = "";
+  let websiteId = "";
+  return {
+    name: "optional-analytics-script",
+    configResolved(config) {
+      const env = loadEnv(config.mode, config.envDir || process.cwd(), "VITE_");
+      endpoint = (process.env.VITE_ANALYTICS_ENDPOINT || env.VITE_ANALYTICS_ENDPOINT || "").trim().replace(/\/+$/, "");
+      websiteId = (process.env.VITE_ANALYTICS_WEBSITE_ID || env.VITE_ANALYTICS_WEBSITE_ID || "").trim();
+    },
+    transformIndexHtml() {
+      if (!endpoint || !websiteId) return [];
+      return [{ tag: "script", attrs: { defer: true, src: `${endpoint}/umami`, "data-website-id": websiteId }, injectTo: "body" as const }];
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), analyticsPlugin()],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),

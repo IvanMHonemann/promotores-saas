@@ -1,3 +1,4 @@
+import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "../../shared/uploadLimits";
 import { z } from "zod";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
@@ -320,7 +321,7 @@ export const storePhotosRouter = router({
       accuracy: z.number().optional(),
       locationStatus: z.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
       // Limite da Vercel: corpo de 4,5 MB; base64 de 4,2 M caracteres ≈ 3,1 MB de imagem.
-      imageBase64: z.string().min(100).max(4_200_000, "Imagem grande demais. Tire a foto novamente."),
+      imageBase64: z.string().min(100).max(MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE),
       mimeType: z.string().max(100).default("image/jpeg"), // ignorado: o tipo real é detectado pelo conteúdo
       storeClientId: z.number().int().positive().optional(),
       idempotencyKey: z.string().min(8).max(64),

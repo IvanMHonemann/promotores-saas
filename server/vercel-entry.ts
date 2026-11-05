@@ -8,6 +8,7 @@ import { createContext } from "./_core/context";
 import { isScheduleRequestAuthorized, timingSafeTokenEqual } from "./scheduleAuth";
 import { runScheduledMaintenance, runMissingPunchAlerts, runPhotoMaintenance } from "./scheduledMaintenance";
 import { notifyOwner } from "./_core/notification";
+import { MAX_BODY_SIZE, isPayloadTooLargeError, payloadTooLargeBody } from "../shared/uploadLimits";
 
 /** Headers de segurança básicos. */
 function securityHeaders(_req: Request, res: Response, next: NextFunction) {
@@ -28,11 +29,18 @@ function securityHeaders(_req: Request, res: Response, next: NextFunction) {
 
 async function createApp() {
   const app = express();
+  app.disable("x-powered-by");
   app.set("trust proxy", 1);
   app.use(securityHeaders);
   app.use(compression());
-  app.use(express.json({ limit: "10mb" }));
-  app.use(express.urlencoded({ limit: "10mb", extended: true }));
+  app.use(express.json({ limit: MAX_BODY_SIZE }));
+  app.use(express.urlencoded({ limit: MAX_BODY_SIZE, extended: true }));
+  // Corpo grande demais: responde com mensagem clara em pt-BR em vez do 413 cru.
+  app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+    if (!isPayloadTooLargeError(err)) return next(err);
+    const path = req.path.startsWith("/api/trpc/") ? req.path.slice("/api/trpc/".length) : undefined;
+    res.status(413).json(payloadTooLargeBody(path));
+  });
   app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
   app.all("/api/scheduled/database-maintenance", async (req, res) => {
     if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" }); // Vercel Cron usa GET

@@ -1,3 +1,4 @@
+import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "@shared/uploadLimits";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Camera, MapPin, RotateCcw, Check, X, Loader2 } from "lucide-react";
@@ -249,6 +250,11 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
       mimeType: "image/jpeg",
       idempotencyKey,
     };
+    // Foto grande demais nunca seria aceita: avisa em vez de enfileirar para sempre.
+    if (base64.length > MAX_PHOTO_BASE64_CHARS) {
+      toast.error(PHOTO_TOO_LARGE_MESSAGE);
+      return;
+    }
     if (!isOnline()) {
       enqueuePhoto(payload);
       toast.info("Foto salva offline. Será enviada ao voltar a conexão.");

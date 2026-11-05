@@ -19,8 +19,12 @@ export async function runScheduledMaintenance() {
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
     // Backup em partes, retomável (cabe no limite de tempo da função). Se "complete" vier false, chame o endpoint de novo.
-    const { runBackupStep } = await import("./backup");
+    const { runBackupStep, purgeOldR2Backups } = await import("./backup");
     const backup = await runBackupStep(connection, { budgetMs: Number(process.env.BACKUP_BUDGET_MS || 18000) });
+    let backupRetention = null as Awaited<ReturnType<typeof purgeOldR2Backups>> | null;
+    if (backup.complete && !(backup as any).reason) {
+      try { backupRetention = await purgeOldR2Backups(); } catch (e) { console.warn("[maintenance] backup retention failed", e); }
+    }
     const [trash] = await connection.query("DELETE FROM trash_items WHERE expiresAt <= UTC_TIMESTAMP()");
     const [visitPhotos] = await connection.query("DELETE FROM visit_photos WHERE expiresAt <= UTC_TIMESTAMP()");
     const [memberSessions] = await connection.query("DELETE FROM member_sessions WHERE expiresAt <= UTC_TIMESTAMP()");
@@ -34,7 +38,7 @@ export async function runScheduledMaintenance() {
     } catch (e) {
       console.warn("[maintenance] expire photos failed", e);
     }
-    return { backup, cleaned: { trash: (trash as any).affectedRows, visitPhotos: (visitPhotos as any).affectedRows, memberSessions: (memberSessions as any).affectedRows, platformSessions: (platformSessions as any).affectedRows, ...retention }, expiredPhotos };
+    return { backup, backupRetention, cleaned: { trash: (trash as any).affectedRows, visitPhotos: (visitPhotos as any).affectedRows, memberSessions: (memberSessions as any).affectedRows, platformSessions: (platformSessions as any).affectedRows, ...retention }, expiredPhotos };
   } finally {
     await connection.end();
   }

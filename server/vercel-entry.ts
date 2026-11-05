@@ -9,6 +9,9 @@ import { isScheduleRequestAuthorized, timingSafeTokenEqual } from "./scheduleAut
 import { runScheduledMaintenance, runMissingPunchAlerts, runPhotoMaintenance } from "./scheduledMaintenance";
 import { notifyOwner } from "./_core/notification";
 import { MAX_BODY_SIZE, isPayloadTooLargeError, payloadTooLargeBody } from "../shared/uploadLimits";
+import { initServerSentry, sentryErrorHandler } from "./sentry";
+
+initServerSentry();
 
 /** Headers de segurança básicos. */
 function securityHeaders(_req: Request, res: Response, next: NextFunction) {
@@ -58,6 +61,35 @@ async function createApp() {
       console.error("[Maintenance] failed:", error);
       await notifyOwner({ title: "Falha no backup diário", content: "O backup automático falhou." }).catch(() => undefined);
       return res.status(500).json({ error: "Scheduled maintenance failed" });
+    }
+  });
+
+  // Backup diário dedicado (mesmo segredo CRON/SCHEDULE). Pode ser chamado várias vezes no dia; retoma até completar.
+  app.all("/api/scheduled/database-backup", async (req, res) => {
+    if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+    try {
+      if (!isScheduleRequestAuthorized(req)) {
+        return res.status(401).json({ error: "Schedule authentication required" });
+      }
+      const mysql = (await import("mysql2/promise")).default;
+      const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
+      if (!url) return res.status(500).json({ error: "Database URL is not configured." });
+      const connection = await mysql.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 10000 });
+      try {
+        const { runBackupStep, purgeOldR2Backups } = await import("./backup");
+        const backup = await runBackupStep(connection, { budgetMs: Number(process.env.BACKUP_BUDGET_MS || 18000) });
+        let retention = null;
+        if (backup.complete && !(backup as any).reason) {
+          try { retention = await purgeOldR2Backups(); } catch (e) { console.warn("[backup] retention failed", e); }
+        }
+        return res.json({ ok: true, backup, retention });
+      } finally {
+        await connection.end();
+      }
+    } catch (error) {
+      console.error("[Backup] failed:", error);
+      await notifyOwner({ title: "Falha no backup diário", content: "O backup automático falhou." }).catch(() => undefined);
+      return res.status(500).json({ error: "Scheduled backup failed" });
     }
   });
 
@@ -124,6 +156,7 @@ async function createApp() {
     }));
     app.use("*", (_req, res) => res.sendFile(path.resolve(distPath, "index.html")));
   }
+  app.use(sentryErrorHandler());
   return app;
 }
 

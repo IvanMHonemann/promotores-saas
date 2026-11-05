@@ -12,6 +12,9 @@ import { notifyOwner } from "./notification";
 import { isScheduleRequestAuthorized } from "../scheduleAuth";
 import crypto from "node:crypto";
 import { MAX_BODY_SIZE, isPayloadTooLargeError, payloadTooLargeBody } from "../../shared/uploadLimits";
+import { initServerSentry, sentryErrorHandler } from "../sentry";
+
+initServerSentry();
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -126,6 +129,34 @@ app.all("/api/scheduled/database-maintenance", async (req, res) => {
     }
   });
 
+  app.all("/api/scheduled/database-backup", async (req, res) => {
+    if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+    try {
+      if (!isScheduleRequestAuthorized(req)) {
+        return res.status(401).json({ error: "Schedule authentication required" });
+      }
+      const mysql = (await import("mysql2/promise")).default;
+      const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
+      if (!url) return res.status(500).json({ error: "Database URL is not configured." });
+      const connection = await mysql.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 10000 });
+      try {
+        const { runBackupStep, purgeOldR2Backups } = await import("../backup");
+        const backup = await runBackupStep(connection, { budgetMs: Number(process.env.BACKUP_BUDGET_MS || 18000) });
+        let retention = null;
+        if (backup.complete && !(backup as any).reason) {
+          try { retention = await purgeOldR2Backups(); } catch (e) { console.warn("[backup] retention failed", e); }
+        }
+        return res.json({ ok: true, backup, retention });
+      } finally {
+        await connection.end();
+      }
+    } catch (error) {
+      console.error("[Backup] failed:", error);
+      await notifyOwner({ title: "Falha no backup diário", content: "O backup automático falhou." }).catch(() => undefined);
+      return res.status(500).json({ error: "Scheduled backup failed" });
+    }
+  });
+
   app.use(
     "/api/trpc",
     (_req, res, next) => {
@@ -144,6 +175,7 @@ app.all("/api/scheduled/database-maintenance", async (req, res) => {
     res.status(404).json({ error: "Not found" });
   });
 
+  app.use(sentryErrorHandler());
   return app;
 }
 

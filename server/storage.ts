@@ -1,4 +1,11 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "node:crypto";
 
@@ -41,6 +48,19 @@ function buildS3Client() {
   return { bucket, client, publicBaseUrl: process.env.S3_PUBLIC_BASE_URL?.replace(/\/+$/, "") };
 }
 
+/** True quando o bucket R2/S3 está configurado (backup e fotos usam isso). */
+export function isStorageConfigured(): boolean {
+  return Boolean(getS3Client());
+}
+
+function publicOrSignedUrl(s3: NonNullable<ReturnType<typeof getS3Client>>, key: string): Promise<string> {
+  if (!s3) return Promise.reject(new Error("Storage is not configured."));
+  if (s3.publicBaseUrl) {
+    return Promise.resolve(`${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`);
+  }
+  return getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
+}
+
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
@@ -51,10 +71,21 @@ export async function storagePut(
   if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
   const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
   await s3.client.send(new PutObjectCommand({ Bucket: s3.bucket, Key: key, Body: body, ContentType: contentType }));
-  const url = s3.publicBaseUrl
-    ? `${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`
-    : await getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
-  return { key, url };
+  return { key, url: await publicOrSignedUrl(s3, key) };
+}
+
+/** Grava com a chave exata (sem sufixo aleatório). Usado pelo backup diário para chaves previsíveis. */
+export async function storagePutExact(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  contentType = "application/octet-stream",
+): Promise<{ key: string; url: string }> {
+  const key = normalizeKey(relKey);
+  const s3 = getS3Client();
+  if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
+  const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  await s3.client.send(new PutObjectCommand({ Bucket: s3.bucket, Key: key, Body: body, ContentType: contentType }));
+  return { key, url: await publicOrSignedUrl(s3, key) };
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
@@ -66,8 +97,7 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
   const key = normalizeKey(relKey);
   const s3 = getS3Client();
   if (!s3) throw new Error("Storage is not configured. Set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY.");
-  if (s3.publicBaseUrl) return `${s3.publicBaseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
-  return getSignedUrl(s3.client, new GetObjectCommand({ Bucket: s3.bucket, Key: key }), { expiresIn: 3600 });
+  return publicOrSignedUrl(s3, key);
 }
 
 export async function storageRead(relKey: string): Promise<{ data: Buffer; contentType?: string }> {
@@ -80,7 +110,6 @@ export async function storageRead(relKey: string): Promise<{ data: Buffer; conte
   return { data: Buffer.from(bytes), contentType: result.ContentType };
 }
 
-
 export async function storageDelete(relKey: string): Promise<boolean> {
   const key = normalizeKey(relKey);
   const s3 = getS3Client();
@@ -91,4 +120,44 @@ export async function storageDelete(relKey: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Lista todas as chaves sob um prefixo (paginado). Retorna [] se o storage não estiver configurado. */
+export async function storageListKeys(prefix: string): Promise<string[]> {
+  const s3 = getS3Client();
+  if (!s3) return [];
+  const keys: string[] = [];
+  let continuationToken: string | undefined;
+  do {
+    const result = await s3.client.send(
+      new ListObjectsV2Command({
+        Bucket: s3.bucket,
+        Prefix: normalizeKey(prefix),
+        ContinuationToken: continuationToken,
+      }),
+    );
+    for (const obj of result.Contents || []) {
+      if (obj.Key) keys.push(obj.Key);
+    }
+    continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+  } while (continuationToken);
+  return keys;
+}
+
+/** Apaga até 1000 chaves por chamada (limite do S3/R2). */
+export async function storageDeleteMany(keys: string[]): Promise<number> {
+  const s3 = getS3Client();
+  if (!s3 || keys.length === 0) return 0;
+  let deleted = 0;
+  for (let i = 0; i < keys.length; i += 1000) {
+    const chunk = keys.slice(i, i + 1000).map((Key) => ({ Key: normalizeKey(Key) }));
+    const result = await s3.client.send(
+      new DeleteObjectsCommand({
+        Bucket: s3.bucket,
+        Delete: { Objects: chunk, Quiet: true },
+      }),
+    );
+    deleted += result.Deleted?.length ?? chunk.length;
+  }
+  return deleted;
 }

@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { commercialFeatureProcedure, companyAdminFeatureProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { memberAccounts, timeEvents, timeCorrectionRequests } from "../../drizzle/schema";
-import { eq, and, desc, gte, lt, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, gte, lt, lte, inArray, sql } from "drizzle-orm";
 import { auditFromCtx } from "../audit";
 import { recordAdjustment } from "./timesheetMirror";
 async function safeAdjustment(data: Parameters<typeof recordAdjustment>[0]) { try { await recordAdjustment(data); } catch (error) { console.error("adjustment log failed", error); } }
@@ -15,6 +15,9 @@ import { storageGetSignedUrl } from "../storage";
 import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared/punchTime";
 import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
+import { punchOrderError } from "@shared/punchOrder";
+
+const inFlightCorrections = new Set<string>();
 
 const timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 type TimeEventType = z.infer<typeof timeEventType>;
@@ -495,6 +498,20 @@ export const timeTrackingRouter = router({
         requestedTime = new Date(input.requestedTime);
       }
 
+      if (!fullDay && input.requestedType) {
+        const day = excuseDay(requestedTime);
+        const start = new Date(`${day}T00:00:00-03:00`), end = new Date(`${day}T23:59:59.999-03:00`);
+        const dayEvents = await database.select({ id: timeEvents.id, type: timeEvents.eventType, time: timeEvents.serverTime }).from(timeEvents)
+          .where(and(eq(timeEvents.companyId, companyId), eq(timeEvents.memberAccountId, memberId), gte(timeEvents.serverTime, start), lte(timeEvents.serverTime, end)));
+        const orderError = punchOrderError(dayEvents as any, { type: input.requestedType, time: requestedTime, replaceId: timeEventId });
+        if (orderError) throw new TRPCError({ code: "BAD_REQUEST", message: orderError });
+      }
+
+      // Evita pedidos duplicados por toque duplo / reenvio simultâneo.
+      const lockKey = `${companyId}:${memberId}:${excuseDay(requestedTime)}:${fullDay ? "day" : input.requestedType}:${timeEventId ?? ""}`;
+      if (inFlightCorrections.has(lockKey)) throw new TRPCError({ code: "CONFLICT", message: "Este pedido já está sendo enviado. Aguarde." });
+      inFlightCorrections.add(lockKey);
+      try {
       const existing = await database.select({
         id: timeCorrectionRequests.id,
         status: timeCorrectionRequests.status,
@@ -565,6 +582,7 @@ export const timeTrackingRouter = router({
         description: fullDay ? `Solicitação de abono (${fullDayExcuseLabel(jType)})` : timeEventId ? "Solicitação de correção de ponto" : "Solicitação de inclusão de batida faltante",
       });
       return { ...inserted, justificationType: input.justificationType || "normal", attachmentKey };
+      } finally { inFlightCorrections.delete(lockKey); }
     }),
 
   correctionRequests: router({

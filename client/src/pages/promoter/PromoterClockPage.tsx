@@ -11,6 +11,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { LocationLabel } from "./geolocation";
 import { localDayKey } from "@/components/PunchPanel";
 import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
+import { punchOrderError, sortPunches } from "@shared/punchOrder";
 
 type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
 type JustificationType = "normal" | "holiday" | "day_off" | "medical_certificate" | "other";
@@ -42,7 +43,11 @@ async function compressImage(file: File): Promise<string> {
 export default function PromoterClockPage() {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const today = localDayKey(new Date(), timeZone);
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    // "Enviar nova correção" abre /ponto?date=AAAA-MM-DD já no dia certo.
+    const fromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("date") : null;
+    return fromUrl && /^\d{4}-\d{2}-\d{2}$/.test(fromUrl) && fromUrl <= today ? fromUrl : today;
+  });
   const [mode, setMode] = useState<"add" | "correct">("add");
   const [selectedEventId, setSelectedEventId] = useState("");
   const [correctTime, setCorrectTime] = useState("");
@@ -59,7 +64,8 @@ export default function PromoterClockPage() {
   const missingPunch = trpc.timeTracking.myMissingPunch.useQuery(undefined, { staleTime: 60000 });
   const corrections = trpc.timeTracking.myCorrections.useQuery();
 
-  const events = history.data ?? [];
+  const events = sortPunches(history.data ?? [], (e) => e.deviceTime || e.serverTime, (e) => e.eventType);
+  const dayPunches = events.map((e) => ({ id: e.id, type: e.eventType as EventType, time: e.deviceTime || e.serverTime }));
   const typesPresent = new Set(events.map((e) => e.eventType as EventType));
 
   const missingList = useMemo(() => {
@@ -147,6 +153,13 @@ export default function PromoterClockPage() {
       toast.error(`Já existe pedido para: ${already.map((type) => labels[type]).join(", ")}`);
       return;
     }
+    const planned = [...dayPunches];
+    for (const type of toSend) {
+      const time = new Date(`${selectedDate}T${missingTimes[type]}:00`);
+      const err = punchOrderError(planned, { type, time });
+      if (err) { toast.error(err); return; }
+      planned.push({ id: null as any, type, time });
+    }
     setSending(true);
     try {
       for (const type of toSend) {
@@ -179,6 +192,8 @@ export default function PromoterClockPage() {
       toast.error("Já existe um pedido pendente ou aprovado para esta batida");
       return;
     }
+    const orderErr = punchOrderError(dayPunches, { type: original.eventType as EventType, time: new Date(`${selectedDate}T${correctTime}:00`), replaceId: eventId });
+    if (orderErr) { toast.error(orderErr); return; }
     correction.mutate({
       timeEventId: eventId,
       requestedType: original.eventType as EventType,

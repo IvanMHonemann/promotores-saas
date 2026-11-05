@@ -1,3 +1,4 @@
+import { createTtlCache } from "./ttlCache";
 import * as db from "./db";
 
 export type SubscriptionStatus =
@@ -34,7 +35,13 @@ function parseDate(value: unknown): Date | null {
  * Verifica se a empresa pode usar o sistema comercial.
  * PLATFORM_ADMIN não passa por aqui (não tem companyId).
  */
-export async function checkSubscriptionAccess(companyId: number): Promise<AccessDecision> {
+const accessCache = createTtlCache<AccessDecision>(30_000);
+export function checkSubscriptionAccess(companyId: number): Promise<AccessDecision> {
+  if (process.env.NODE_ENV === "test") return loadSubscriptionAccess(companyId);
+  return accessCache.get(String(companyId), () => loadSubscriptionAccess(companyId));
+}
+
+async function loadSubscriptionAccess(companyId: number): Promise<AccessDecision> {
   const company = await db.getCompanyById(companyId);
   if (!company) {
     return { allowed: false, status: "none", reason: "Empresa não encontrada." };

@@ -107,7 +107,9 @@ export async function getDb() {
         keepAliveInitialDelay: Math.max(1000, Number(process.env.DB_KEEP_ALIVE_MS || 10000)),
         waitForConnections: true,
         idleTimeout: 60000,
-        maxIdle: 2,
+        // Requisições em lote rodam várias consultas em paralelo; manter as conexões
+        // abertas evita refazer o handshake TLS a cada lote.
+        maxIdle: Math.max(1, Number(process.env.DB_CONNECTION_LIMIT || 10)),
       }));
       // Fail fast if credentials/network are wrong instead of serving a broken pool
       const probe = await (_pool as mysql.Pool).query("SELECT 1 AS ok");

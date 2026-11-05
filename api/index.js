@@ -39,6 +39,39 @@ var init_uploadLimits = __esm({
   }
 });
 
+// server/ttlCache.ts
+function createTtlCache(ttlMs, maxEntries = 500) {
+  const store = /* @__PURE__ */ new Map();
+  return {
+    get(key, load) {
+      const now = Date.now();
+      const hit = store.get(key);
+      if (hit && hit.expiresAt > now) return hit.value;
+      if (store.size >= maxEntries) {
+        for (const [k, v] of store) if (v.expiresAt <= now) store.delete(k);
+        if (store.size >= maxEntries) store.delete(store.keys().next().value);
+      }
+      const value = load();
+      store.set(key, { value, expiresAt: now + ttlMs });
+      value.catch(() => {
+        if (store.get(key)?.value === value) store.delete(key);
+      });
+      return value;
+    },
+    delete(key) {
+      store.delete(key);
+    },
+    clear() {
+      store.clear();
+    }
+  };
+}
+var init_ttlCache = __esm({
+  "server/ttlCache.ts"() {
+    "use strict";
+  }
+});
+
 // drizzle/schema.original.ts
 import { boolean, date, decimal, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 var users, companies, platformAdmins, memberAccounts, memberSessions, platformSessions, clients, extinguishers, serviceOrders, serviceOrderItems, trashItems, systemSettings, subscriptionPlans, companySubscriptions, payments, paymentEvents, auditLogs;
@@ -1305,7 +1338,9 @@ async function getDb() {
         keepAliveInitialDelay: Math.max(1e3, Number(process.env.DB_KEEP_ALIVE_MS || 1e4)),
         waitForConnections: true,
         idleTimeout: 6e4,
-        maxIdle: 2
+        // Requisições em lote rodam várias consultas em paralelo; manter as conexões
+        // abertas evita refazer o handshake TLS a cada lote.
+        maxIdle: Math.max(1, Number(process.env.DB_CONNECTION_LIMIT || 10))
       }));
       const probe = await _pool.query("SELECT 1 AS ok");
       if (!probe) throw new Error("Database probe returned empty result");
@@ -2395,7 +2430,11 @@ function parseDate(value) {
   const d = value instanceof Date ? value : new Date(String(value));
   return Number.isNaN(d.getTime()) ? null : d;
 }
-async function checkSubscriptionAccess(companyId) {
+function checkSubscriptionAccess(companyId) {
+  if (process.env.NODE_ENV === "test") return loadSubscriptionAccess(companyId);
+  return accessCache.get(String(companyId), () => loadSubscriptionAccess(companyId));
+}
+async function loadSubscriptionAccess(companyId) {
   const company = await getCompanyById(companyId);
   if (!company) {
     return { allowed: false, status: "none", reason: "Empresa n\xE3o encontrada." };
@@ -2471,13 +2510,15 @@ async function checkSubscriptionAccess(companyId) {
       return { allowed: false, status: "none", reason: "Status de assinatura desconhecido." };
   }
 }
-var MANUAL_BILLING_MESSAGE, PENDING_GRACE_DAYS;
+var MANUAL_BILLING_MESSAGE, PENDING_GRACE_DAYS, accessCache;
 var init_subscriptionAccess = __esm({
   "server/subscriptionAccess.ts"() {
     "use strict";
+    init_ttlCache();
     init_db();
     MANUAL_BILLING_MESSAGE = "Para contratar ou renovar, fale com o suporte.";
     PENDING_GRACE_DAYS = 7;
+    accessCache = createTtlCache(3e4);
   }
 });
 
@@ -2490,7 +2531,11 @@ __export(entitlements_exports, {
   getMemberEntitlementSnapshot: () => getMemberEntitlementSnapshot
 });
 import { TRPCError as TRPCError2 } from "@trpc/server";
-async function getCompanyEntitlementBase(companyId) {
+function getCompanyEntitlementBase(companyId) {
+  if (process.env.NODE_ENV === "test") return loadCompanyEntitlementBase(companyId);
+  return entitlementBaseCache.get(String(companyId), () => loadCompanyEntitlementBase(companyId));
+}
+async function loadCompanyEntitlementBase(companyId) {
   const resolved = await resolveCompanyPlan(companyId);
   const plan = resolved.plan ?? null;
   const rawKeys = Array.isArray(plan?.featureKeys) ? plan.featureKeys.filter((key) => ENTITLEMENT_KEYS.includes(key)) : [];
@@ -2570,11 +2615,14 @@ async function assertMemberFeatureAccess(input) {
   }
   return { ...base, memberOverrides, effective };
 }
+var entitlementBaseCache;
 var init_entitlements2 = __esm({
   "server/entitlements.ts"() {
     "use strict";
+    init_ttlCache();
     init_db();
     init_entitlements();
+    entitlementBaseCache = createTtlCache(3e4);
   }
 });
 
@@ -4521,7 +4569,7 @@ __export(storePhotos_exports, {
   storePhotosRouter: () => storePhotosRouter
 });
 import { z as z6 } from "zod";
-import { and as and10, desc as desc4, eq as eq10, gte as gte7, lte as lte2, sql as sql11 } from "drizzle-orm";
+import { and as and10, desc as desc4, eq as eq10, gte as gte7, lte as lte3, sql as sql11 } from "drizzle-orm";
 import { TRPCError as TRPCError10 } from "@trpc/server";
 async function moveStorePhotosToTrash(db, accountId, photos, actor) {
   if (photos.length === 0) return;
@@ -4605,7 +4653,7 @@ async function expireOldStorePhotos() {
   const db = await getDb();
   if (!db) return { deleted: 0, errors: 0 };
   const now = /* @__PURE__ */ new Date();
-  const expired = await db.select().from(storePhotos).where(lte2(storePhotos.expiresAt, now)).limit(200);
+  const expired = await db.select().from(storePhotos).where(lte3(storePhotos.expiresAt, now)).limit(200);
   if (expired.length === 0) return { deleted: 0, errors: 0 };
   const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
   let deleted = 0;
@@ -4718,7 +4766,7 @@ var init_storePhotos = __esm({
         else if (input.withoutClient) conditions.push(sql11`store_photos.storeClientId IS NULL`);
         if (memberId !== null) conditions.push(eq10(storePhotos.promoterId, memberId));
         if (input.from) conditions.push(gte7(storePhotos.capturedAt, new Date(input.from)));
-        if (input.to) conditions.push(lte2(storePhotos.capturedAt, new Date(input.to)));
+        if (input.to) conditions.push(lte3(storePhotos.capturedAt, new Date(input.to)));
         if (memberId === null && input.promoterId) conditions.push(eq10(storePhotos.promoterId, input.promoterId));
         const photos = await db.select({
           id: storePhotos.id,
@@ -5309,9 +5357,9 @@ __export(productLookup_exports, {
   lookupProductByCode: () => lookupProductByCode
 });
 import { and as and12, desc as desc5, eq as eq13, inArray as inArray10 } from "drizzle-orm";
-async function fetchJson(url, init = {}, ms = 4e3) {
+async function fetchJson(url, init = {}, ms2 = 4e3) {
   const ctl = new AbortController();
-  const t2 = setTimeout(() => ctl.abort(), ms);
+  const t2 = setTimeout(() => ctl.abort(), ms2);
   try {
     const r = await fetch(url, { ...init, signal: ctl.signal, headers: { "User-Agent": "PromotoresSaaS/1.0 (consulta de codigo de barras)", Accept: "application/json", ...init.headers || {} } });
     return r.ok ? await r.json() : null;
@@ -5509,7 +5557,30 @@ init_mirrorData();
 init_correctionExcuse();
 import { z as z3 } from "zod";
 import { TRPCError as TRPCError7 } from "@trpc/server";
-import { eq as eq7, and as and7, desc as desc2, gte as gte5, lt as lt4, inArray as inArray7, sql as sql7 } from "drizzle-orm";
+import { eq as eq7, and as and7, desc as desc2, gte as gte5, lt as lt4, lte as lte2, inArray as inArray7, sql as sql7 } from "drizzle-orm";
+
+// shared/punchOrder.ts
+var PUNCH_ORDER = ["clock_in", "break_start", "break_end", "clock_out"];
+var PUNCH_LABEL = { clock_in: "Entrada", break_start: "In\xEDcio do intervalo", break_end: "Retorno do intervalo", clock_out: "Sa\xEDda" };
+var ms = (t2) => t2 instanceof Date ? t2.getTime() : new Date(t2).getTime();
+function hhmm(t2, timeZone) {
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(ms(t2)));
+}
+function punchOrderError(existing, change, timeZone = "America/Sao_Paulo") {
+  const all = existing.filter((p) => change.replaceId == null || p.id !== change.replaceId).concat([{ type: change.type, time: change.time }]);
+  const t2 = ms(change.time);
+  for (const other of all) {
+    if (other === all[all.length - 1]) continue;
+    const a = PUNCH_ORDER.indexOf(other.type), b = PUNCH_ORDER.indexOf(change.type);
+    if (a === b) continue;
+    const ot = ms(other.time);
+    if (a < b && ot >= t2) return `${PUNCH_LABEL[change.type]} (${hhmm(t2, timeZone)}) precisa ser depois de ${PUNCH_LABEL[other.type]} (${hhmm(ot, timeZone)}). Confira o hor\xE1rio.`;
+    if (a > b && ot <= t2) return `${PUNCH_LABEL[change.type]} (${hhmm(t2, timeZone)}) precisa ser antes de ${PUNCH_LABEL[other.type]} (${hhmm(ot, timeZone)}). Confira o hor\xE1rio.`;
+  }
+  return null;
+}
+
+// server/modules/timeTracking.ts
 async function safeAdjustment(data) {
   try {
     await recordAdjustment(data);
@@ -5517,6 +5588,7 @@ async function safeAdjustment(data) {
     console.error("adjustment log failed", error);
   }
 }
+var inFlightCorrections = /* @__PURE__ */ new Set();
 var timeEventType = z3.enum(["clock_in", "break_start", "break_end", "clock_out"]);
 function localDay(date3, timeZone) {
   try {
@@ -5917,67 +5989,81 @@ var timeTrackingRouter = router({
       if (!input.requestedTime) throw new TRPCError7({ code: "BAD_REQUEST", message: "Informe o hor\xE1rio da corre\xE7\xE3o." });
       requestedTime = new Date(input.requestedTime);
     }
-    const existing = await database2.select({
-      id: timeCorrectionRequests.id,
-      status: timeCorrectionRequests.status,
-      requestedTime: timeCorrectionRequests.requestedTime,
-      requestedType: timeCorrectionRequests.requestedType,
-      timeEventId: timeCorrectionRequests.timeEventId,
-      justificationType: timeCorrectionRequests.justificationType,
-      justification: timeCorrectionRequests.justification
-    }).from(timeCorrectionRequests).where(and7(
-      eq7(timeCorrectionRequests.companyId, companyId),
-      eq7(timeCorrectionRequests.memberAccountId, memberId),
-      sql7`${timeCorrectionRequests.status} IN ('pending', 'approved')`
-    )).orderBy(desc2(timeCorrectionRequests.createdAt)).limit(100);
-    if (fullDay) {
+    if (!fullDay && input.requestedType) {
       const day = excuseDay(requestedTime);
-      if (existing.some((row2) => looksLikeFullDayExcuse(row2) && excuseDay(row2.requestedTime) === day)) {
-        throw new TRPCError7({ code: "CONFLICT", message: "J\xE1 existe um abono pendente ou aprovado para este dia." });
-      }
-    } else {
-      const day = excuseDay(requestedTime);
-      const samePunch = existing.some(
-        (row2) => !looksLikeFullDayExcuse(row2) && excuseDay(row2.requestedTime) === day && row2.requestedType === input.requestedType && (row2.timeEventId ?? null) === (timeEventId ?? null)
-      );
-      if (samePunch) {
-        throw new TRPCError7({ code: "CONFLICT", message: "J\xE1 existe um pedido pendente ou aprovado para esta batida neste dia." });
-      }
+      const start = /* @__PURE__ */ new Date(`${day}T00:00:00-03:00`), end = /* @__PURE__ */ new Date(`${day}T23:59:59.999-03:00`);
+      const dayEvents = await database2.select({ id: timeEvents.id, type: timeEvents.eventType, time: timeEvents.serverTime }).from(timeEvents).where(and7(eq7(timeEvents.companyId, companyId), eq7(timeEvents.memberAccountId, memberId), gte5(timeEvents.serverTime, start), lte2(timeEvents.serverTime, end)));
+      const orderError = punchOrderError(dayEvents, { type: input.requestedType, time: requestedTime, replaceId: timeEventId });
+      if (orderError) throw new TRPCError7({ code: "BAD_REQUEST", message: orderError });
     }
-    const result = await database2.insert(timeCorrectionRequests).values({
-      companyId,
-      memberAccountId: memberId,
-      timeEventId,
-      requestedType: fullDay ? "clock_in" : input.requestedType,
-      requestedTime,
-      justification: reason,
-      status: "pending",
-      justificationType: jType
-    });
-    const insertedRows = await database2.select().from(timeCorrectionRequests).where(eq7(timeCorrectionRequests.id, Number(result[0]?.insertId))).limit(1);
-    const inserted = insertedRows[0];
-    if (!inserted) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel recuperar a solicita\xE7\xE3o criada." });
-    let attachmentKey = null;
+    const lockKey = `${companyId}:${memberId}:${excuseDay(requestedTime)}:${fullDay ? "day" : input.requestedType}:${timeEventId ?? ""}`;
+    if (inFlightCorrections.has(lockKey)) throw new TRPCError7({ code: "CONFLICT", message: "Este pedido j\xE1 est\xE1 sendo enviado. Aguarde." });
+    inFlightCorrections.add(lockKey);
     try {
-      if (input.attachmentBase64) {
-        attachmentKey = await saveCorrectionAttachment(companyId, inserted.id, input.attachmentBase64);
-      }
-      if (attachmentKey) {
-        await database2.execute(sql7`UPDATE time_correction_requests SET justificationType = ${jType}, attachmentKey = ${attachmentKey} WHERE id = ${inserted.id}`);
+      const existing = await database2.select({
+        id: timeCorrectionRequests.id,
+        status: timeCorrectionRequests.status,
+        requestedTime: timeCorrectionRequests.requestedTime,
+        requestedType: timeCorrectionRequests.requestedType,
+        timeEventId: timeCorrectionRequests.timeEventId,
+        justificationType: timeCorrectionRequests.justificationType,
+        justification: timeCorrectionRequests.justification
+      }).from(timeCorrectionRequests).where(and7(
+        eq7(timeCorrectionRequests.companyId, companyId),
+        eq7(timeCorrectionRequests.memberAccountId, memberId),
+        sql7`${timeCorrectionRequests.status} IN ('pending', 'approved')`
+      )).orderBy(desc2(timeCorrectionRequests.createdAt)).limit(100);
+      if (fullDay) {
+        const day = excuseDay(requestedTime);
+        if (existing.some((row2) => looksLikeFullDayExcuse(row2) && excuseDay(row2.requestedTime) === day)) {
+          throw new TRPCError7({ code: "CONFLICT", message: "J\xE1 existe um abono pendente ou aprovado para este dia." });
+        }
       } else {
-        await database2.execute(sql7`UPDATE time_correction_requests SET justificationType = ${jType} WHERE id = ${inserted.id}`);
+        const day = excuseDay(requestedTime);
+        const samePunch = existing.some(
+          (row2) => !looksLikeFullDayExcuse(row2) && excuseDay(row2.requestedTime) === day && row2.requestedType === input.requestedType && (row2.timeEventId ?? null) === (timeEventId ?? null)
+        );
+        if (samePunch) {
+          throw new TRPCError7({ code: "CONFLICT", message: "J\xE1 existe um pedido pendente ou aprovado para esta batida neste dia." });
+        }
       }
-    } catch (err) {
-      console.warn("correction extras persist skipped", err);
+      const result = await database2.insert(timeCorrectionRequests).values({
+        companyId,
+        memberAccountId: memberId,
+        timeEventId,
+        requestedType: fullDay ? "clock_in" : input.requestedType,
+        requestedTime,
+        justification: reason,
+        status: "pending",
+        justificationType: jType
+      });
+      const insertedRows = await database2.select().from(timeCorrectionRequests).where(eq7(timeCorrectionRequests.id, Number(result[0]?.insertId))).limit(1);
+      const inserted = insertedRows[0];
+      if (!inserted) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel recuperar a solicita\xE7\xE3o criada." });
+      let attachmentKey = null;
+      try {
+        if (input.attachmentBase64) {
+          attachmentKey = await saveCorrectionAttachment(companyId, inserted.id, input.attachmentBase64);
+        }
+        if (attachmentKey) {
+          await database2.execute(sql7`UPDATE time_correction_requests SET justificationType = ${jType}, attachmentKey = ${attachmentKey} WHERE id = ${inserted.id}`);
+        } else {
+          await database2.execute(sql7`UPDATE time_correction_requests SET justificationType = ${jType} WHERE id = ${inserted.id}`);
+        }
+      } catch (err) {
+        console.warn("correction extras persist skipped", err);
+      }
+      await auditFromCtx(ctx, {
+        action: "create",
+        module: "time_tracking",
+        entityType: "correction_request",
+        entityId: inserted.id,
+        description: fullDay ? `Solicita\xE7\xE3o de abono (${fullDayExcuseLabel(jType)})` : timeEventId ? "Solicita\xE7\xE3o de corre\xE7\xE3o de ponto" : "Solicita\xE7\xE3o de inclus\xE3o de batida faltante"
+      });
+      return { ...inserted, justificationType: input.justificationType || "normal", attachmentKey };
+    } finally {
+      inFlightCorrections.delete(lockKey);
     }
-    await auditFromCtx(ctx, {
-      action: "create",
-      module: "time_tracking",
-      entityType: "correction_request",
-      entityId: inserted.id,
-      description: fullDay ? `Solicita\xE7\xE3o de abono (${fullDayExcuseLabel(jType)})` : timeEventId ? "Solicita\xE7\xE3o de corre\xE7\xE3o de ponto" : "Solicita\xE7\xE3o de inclus\xE3o de batida faltante"
-    });
-    return { ...inserted, justificationType: input.justificationType || "normal", attachmentKey };
   }),
   correctionRequests: router({
     pending: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
@@ -6477,11 +6563,12 @@ init_db();
 import { TRPCError as TRPCError13 } from "@trpc/server";
 
 // server/memberAuth.ts
+init_ttlCache();
 init_schema_original();
 init_schema();
 init_db();
 import { createHash as createHash2, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { and as and11, eq as eq11, gt, lte as lte3 } from "drizzle-orm";
+import { and as and11, eq as eq11, gt, lte as lte4 } from "drizzle-orm";
 var SESSION_DAYS = 30;
 var RATE_WINDOW_MS = 15 * 60 * 1e3;
 var RATE_LIMIT = 5;
@@ -6552,34 +6639,58 @@ async function createSession(principal) {
   const rawToken = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1e3);
   if (principal.kind === "platform") {
-    await db.delete(platformSessions).where(and11(eq11(platformSessions.platformAdminId, principal.account.id), lte3(platformSessions.expiresAt, /* @__PURE__ */ new Date())));
+    await db.delete(platformSessions).where(and11(eq11(platformSessions.platformAdminId, principal.account.id), lte4(platformSessions.expiresAt, /* @__PURE__ */ new Date())));
     await db.insert(platformSessions).values({ platformAdminId: principal.account.id, tokenHash: hashToken(rawToken), expiresAt });
     return { rawToken, expiresAt, kind: "platform" };
   }
-  await db.delete(memberSessions).where(and11(eq11(memberSessions.memberAccountId, principal.account.id), lte3(memberSessions.expiresAt, /* @__PURE__ */ new Date())));
+  await db.delete(memberSessions).where(and11(eq11(memberSessions.memberAccountId, principal.account.id), lte4(memberSessions.expiresAt, /* @__PURE__ */ new Date())));
   await db.insert(memberSessions).values({ memberAccountId: principal.account.id, tokenHash: hashToken(rawToken), expiresAt });
   return { rawToken, expiresAt, kind: "company" };
 }
-async function getMemberBySessionToken(rawToken) {
+var SESSION_CACHE_MS = 2e4;
+var memberSessionCache = createTtlCache(SESSION_CACHE_MS);
+var platformSessionCache = createTtlCache(SESSION_CACHE_MS);
+var lastSessionCleanup = 0;
+function cleanupExpiredSessions(db) {
+  const nowMs = Date.now();
+  if (nowMs - lastSessionCleanup < 10 * 6e4) return;
+  lastSessionCleanup = nowMs;
+  const now = new Date(nowMs);
+  void Promise.all([
+    db.delete(memberSessions).where(lte4(memberSessions.expiresAt, now)),
+    db.delete(platformSessions).where(lte4(platformSessions.expiresAt, now))
+  ]).catch(() => void 0);
+}
+function getMemberBySessionToken(rawToken) {
+  if (!rawToken) return Promise.resolve(null);
+  return memberSessionCache.get(hashToken(rawToken), () => loadMemberBySessionToken(rawToken));
+}
+async function loadMemberBySessionToken(rawToken) {
   const db = await getDb();
   if (!db || !rawToken) return null;
   const now = /* @__PURE__ */ new Date();
   const result = await db.select({ account: memberAccounts, session: memberSessions }).from(memberSessions).innerJoin(memberAccounts, eq11(memberSessions.memberAccountId, memberAccounts.id)).innerJoin(companies, eq11(memberAccounts.companyId, companies.id)).where(and11(eq11(memberSessions.tokenHash, hashToken(rawToken)), gt(memberSessions.expiresAt, now), eq11(memberAccounts.active, true), eq11(companies.active, true))).limit(1);
-  await db.delete(memberSessions).where(lte3(memberSessions.expiresAt, now));
+  cleanupExpiredSessions(db);
   return result[0]?.account ?? null;
 }
-async function getPlatformAdminBySessionToken(rawToken) {
+function getPlatformAdminBySessionToken(rawToken) {
+  if (!rawToken) return Promise.resolve(null);
+  return platformSessionCache.get(hashToken(rawToken), () => loadPlatformAdminBySessionToken(rawToken));
+}
+async function loadPlatformAdminBySessionToken(rawToken) {
   const db = await getDb();
   if (!db || !rawToken) return null;
   const now = /* @__PURE__ */ new Date();
   const result = await db.select({ account: platformAdmins, session: platformSessions }).from(platformSessions).innerJoin(platformAdmins, eq11(platformSessions.platformAdminId, platformAdmins.id)).where(and11(eq11(platformSessions.tokenHash, hashToken(rawToken)), gt(platformSessions.expiresAt, now), eq11(platformAdmins.active, true))).limit(1);
-  await db.delete(platformSessions).where(lte3(platformSessions.expiresAt, now));
+  cleanupExpiredSessions(db);
   return result[0]?.account ?? null;
 }
 async function revokeSessions(rawToken) {
   const db = await getDb();
   if (!db || !rawToken) return;
   const tokenHash = hashToken(rawToken);
+  memberSessionCache.delete(tokenHash);
+  platformSessionCache.delete(tokenHash);
   await db.delete(memberSessions).where(eq11(memberSessions.tokenHash, tokenHash));
   await db.delete(platformSessions).where(eq11(platformSessions.tokenHash, tokenHash));
 }
@@ -6890,6 +7001,59 @@ init_db();
 init_email();
 init_audit();
 
+// shared/address.ts
+var UF_BY_STATE = {
+  "acre": "AC",
+  "alagoas": "AL",
+  "amap\xE1": "AP",
+  "amazonas": "AM",
+  "bahia": "BA",
+  "cear\xE1": "CE",
+  "distrito federal": "DF",
+  "esp\xEDrito santo": "ES",
+  "goi\xE1s": "GO",
+  "maranh\xE3o": "MA",
+  "mato grosso": "MT",
+  "mato grosso do sul": "MS",
+  "minas gerais": "MG",
+  "par\xE1": "PA",
+  "para\xEDba": "PB",
+  "paran\xE1": "PR",
+  "pernambuco": "PE",
+  "piau\xED": "PI",
+  "rio de janeiro": "RJ",
+  "rio grande do norte": "RN",
+  "rio grande do sul": "RS",
+  "rond\xF4nia": "RO",
+  "roraima": "RR",
+  "santa catarina": "SC",
+  "s\xE3o paulo": "SP",
+  "sergipe": "SE",
+  "tocantins": "TO"
+};
+function stateToUf(state, iso) {
+  const fromIso = iso?.match(/^BR-([A-Z]{2})$/)?.[1];
+  if (fromIso) return fromIso;
+  return state ? UF_BY_STATE[state.trim().toLowerCase()] ?? state : void 0;
+}
+function formatCep(cep) {
+  const d = (cep || "").replace(/\D/g, "");
+  return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : cep?.trim() || void 0;
+}
+function formatBrAddress(a, displayName) {
+  if (!a) return displayName?.trim() || null;
+  const street = a.road || a.pedestrian || a.residential || a.footway;
+  const streetPart = street ? a.house_number ? `${street}, ${a.house_number}` : street : void 0;
+  const bairro = a.suburb || a.neighbourhood || a.quarter || a.city_district || a.district;
+  const city = a.city || a.town || a.village || a.municipality || a.hamlet;
+  const uf = stateToUf(a.state, a["ISO3166-2-lvl4"]);
+  const cityPart = city ? uf ? `${city}-${uf}` : city : uf;
+  const cep = formatCep(a.postcode);
+  const head = [streetPart, bairro && bairro !== city ? bairro : void 0].filter(Boolean).join(" - ");
+  const parts = [head || void 0, cityPart, cep ? `CEP ${cep}` : void 0].filter(Boolean);
+  return parts.length ? parts.join(", ") : displayName?.trim() || null;
+}
+
 // server/geocoding.ts
 var CACHE_TTL_MS = 60 * 60 * 1e3;
 var MAX_CACHE_ENTRIES = 2e3;
@@ -6901,8 +7065,8 @@ var lastRequestStartedAt = 0;
 function coordinateKey(latitude, longitude) {
   return `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
 }
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms2) {
+  return new Promise((resolve) => setTimeout(resolve, ms2));
 }
 function enqueueRequest(request) {
   const queued = requestQueue.then(async () => {
@@ -6969,6 +7133,45 @@ async function reverseGeocodeAddress(latitude, longitude) {
   } finally {
     inFlight.delete(key);
   }
+}
+var brCache = /* @__PURE__ */ new Map();
+var BR_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
+var lastNominatimAt = 0;
+var nominatimQueue = Promise.resolve();
+async function reverseGeocodeBr(latitude, longitude, fetchImpl = fetch) {
+  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) return null;
+  const key = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+  const hit = brCache.get(key);
+  if (hit && hit.expiresAt > Date.now() && hit.address) return hit.address;
+  let address = null;
+  try {
+    const run = nominatimQueue.then(async () => {
+      const wait = 1100 - (Date.now() - lastNominatimAt);
+      if (wait > 0) await delay(wait);
+      lastNominatimAt = Date.now();
+      const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR`;
+      const res = await fetchImpl(url, { headers: { accept: "application/json", "user-agent": "GondUp/1.0 (https://promotores-saas.vercel.app)" }, signal: AbortSignal.timeout(6e3) });
+      if (!res.ok) {
+        console.warn(`[geocoding] Nominatim HTTP ${res.status}`);
+        return null;
+      }
+      const data = await res.json();
+      return formatBrAddress(data.address, data.display_name);
+    });
+    nominatimQueue = run.then(() => void 0, () => void 0);
+    address = await run;
+  } catch (error) {
+    console.warn("[geocoding] Nominatim falhou", error instanceof Error ? error.name : "erro");
+  }
+  if (!address) address = (await reverseGeocodeAddress(latitude, longitude).catch(() => ({ address: null }))).address;
+  if (address) {
+    if (brCache.size >= MAX_CACHE_ENTRIES) {
+      const k = brCache.keys().next().value;
+      if (k) brCache.delete(k);
+    }
+    brCache.set(key, { address, expiresAt: Date.now() + BR_TTL_MS });
+  }
+  return address;
 }
 
 // server/routers.ts
@@ -7806,6 +8009,10 @@ var appRouter = router({
       console.error("[inventoryAlerts] falha ao consultar validades", error);
       throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel consultar as validades." });
     }
+  }),
+  // Endereço para carimbo de foto/ponto (qualquer membro da empresa). Feito no servidor com cache.
+  geo: router({
+    reverse: companyBillingProcedure.input(z9.object({ latitude: z9.number().min(-90).max(90), longitude: z9.number().min(-180).max(180) })).mutation(async ({ input }) => ({ address: await reverseGeocodeBr(input.latitude, input.longitude) }))
   }),
   trash: router({
     // Qualquer usuário autenticado da empresa; não-administradores só enxergam/operam o que apagaram ou é deles.

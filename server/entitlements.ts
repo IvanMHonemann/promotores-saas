@@ -1,3 +1,4 @@
+import { createTtlCache } from "./ttlCache";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import {
@@ -19,7 +20,13 @@ export type CompanyEntitlementBase = {
   plan: Record<string, unknown> | null;
 };
 
-export async function getCompanyEntitlementBase(companyId: number): Promise<CompanyEntitlementBase> {
+const entitlementBaseCache = createTtlCache<CompanyEntitlementBase>(30_000);
+export function getCompanyEntitlementBase(companyId: number): Promise<CompanyEntitlementBase> {
+  if (process.env.NODE_ENV === "test") return loadCompanyEntitlementBase(companyId);
+  return entitlementBaseCache.get(String(companyId), () => loadCompanyEntitlementBase(companyId));
+}
+
+async function loadCompanyEntitlementBase(companyId: number): Promise<CompanyEntitlementBase> {
   const resolved = await db.resolveCompanyPlan(companyId);
   const plan = (resolved.plan as Record<string, unknown> | null) ?? null;
   const rawKeys = Array.isArray(plan?.featureKeys)

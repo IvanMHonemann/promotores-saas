@@ -7,6 +7,18 @@ import * as db from "../db";
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+function asDateStr(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value.slice(0, 10);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(value.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return String(value).slice(0, 10);
+}
+
 let tableReady: Promise<void> | null = null;
 
 async function ensureVacationSchedulesTable(): Promise<void> {
@@ -132,7 +144,7 @@ export const vacationsRouter = router({
         .innerJoin(memberAccounts, eq(memberAccounts.id, vacationSchedules.memberAccountId))
         .where(and(...conds))
         .orderBy(vacationSchedules.startDate);
-      return rows;
+      return rows.map((row) => ({ ...row, startDate: asDateStr(row.startDate), endDate: asDateStr(row.endDate) }));
     }),
 
   mine: protectedProcedure.query(async ({ ctx }) => {
@@ -144,6 +156,7 @@ export const vacationsRouter = router({
       .from(vacationSchedules)
       .where(and(eq(vacationSchedules.companyId, ctx.accountId), eq(vacationSchedules.memberAccountId, ctx.memberAccountId)))
       .orderBy(vacationSchedules.startDate);
+    return rows.map((row) => ({ ...row, startDate: asDateStr(row.startDate), endDate: asDateStr(row.endDate) }));
   }),
 
   create: commercialFeatureProcedure("timeTracking")
@@ -263,5 +276,6 @@ export const vacationsRouter = router({
           lte(vacationSchedules.startDate, to),
           gte(vacationSchedules.endDate, from),
         ));
+      return rows.map((row) => ({ ...row, startDate: asDateStr(row.startDate), endDate: asDateStr(row.endDate) }));
     }),
 });

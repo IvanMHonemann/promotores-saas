@@ -36,7 +36,7 @@ export default function TimesheetArchivePage() {
   };
 
   return (
-    <DashboardLayout title="Arquivos históricos" description="Espelhos de ponto arquivados mensalmente no armazenamento.">
+    <DashboardLayout title="Arquivos históricos" description="Espelhos de ponto dos meses fechados." help="Todo mês o sistema guarda uma cópia do espelho de ponto. Use aqui para consultar ou baixar meses anteriores.">
       <div className="space-y-6">
         <Card className="border-white/10 bg-slate-900/70 text-white">
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Archive className="h-4 w-4 text-teal-300" />Consultar arquivos</CardTitle></CardHeader>

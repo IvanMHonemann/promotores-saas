@@ -76,7 +76,7 @@ export default function TimesheetMirrorPage() {
     } else { download(file); log("xlsx"); }
   }).catch(() => toast.error("Não foi possível gerar o Excel."));
 
-  return <DashboardLayout title="Espelho de ponto" description="Confira, imprima, exporte e compartilhe as marcações de ponto por funcionário e período.">
+  return <DashboardLayout title="Espelho de ponto" description="Confira, imprima, exporte e compartilhe as marcações de ponto por funcionário e período." help="É o relatório com todas as batidas de um funcionário no período (entrada, intervalo e saída). Escolha a pessoa e as datas para imprimir ou enviar.">
     <div className="space-y-6">
       <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle>Filtros do relatório</CardTitle></CardHeader><CardContent className="space-y-4">
         <div className="grid gap-4 md:grid-cols-3">

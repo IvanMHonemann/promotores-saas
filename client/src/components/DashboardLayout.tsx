@@ -11,16 +11,19 @@ import { SyncIndicator } from "@/components/SyncIndicator";
 import { BrandLogo } from "@/components/BrandLogo";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useSidebarCollapsed } from "@/lib/sidebarState";
+import HelpTip from "@/components/HelpTip";
 
 type Props = {
   title: string;
   description: string;
+  /** Explicação curta mostrada no "?" ao lado do título. */
+  help?: string;
   children: ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
 };
 
-export default function DashboardLayout({ title, description, children, refreshing = false, onRefresh }: Props) {
+export default function DashboardLayout({ title, description, help, children, refreshing = false, onRefresh }: Props) {
   const collapsed = useSidebarCollapsed();
   return (
     // O menu lateral é fixo (280px) em telas largas: reservamos o espaço com padding para ele não cobrir o conteúdo.
@@ -32,7 +35,7 @@ export default function DashboardLayout({ title, description, children, refreshi
             <div className="flex min-w-0 items-center gap-3">
               <SidebarMenuButton />
               <div className="min-w-0">
-                <h1 className="truncate text-2xl font-black tracking-tight sm:mt-1 sm:text-3xl">{title}</h1>
+                <h1 className="flex min-w-0 items-center gap-1 text-2xl font-black tracking-tight sm:mt-1 sm:text-3xl"><span className="truncate">{title}</span>{help && <HelpTip text={help} label={`O que é ${title}?`} />}</h1>
                 <p className="mt-1 hidden text-sm text-slate-300 sm:block">{description}</p>
               </div>
             </div>

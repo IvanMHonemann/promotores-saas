@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { getCurrentPosition } from "./geolocation";
 import { PunchPanel, localDayKey } from "@/components/PunchPanel";
+import PromoterGuide from "@/components/PromoterGuide";
 
 const visitStatus: Record<string, string> = {
   pending: "Pendente",
@@ -108,6 +109,7 @@ export default function PromoterDashboard() {
         </header>
 
         {access.isLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
+        {!access.isLoading && <PromoterGuide hasTimeTracking={hasTimeTracking} hasFieldOperations={hasFieldOperations} />}
         {hasTimeTracking && <PunchPanel />}
 
         {!access.isLoading && !hasTimeTracking && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">O ponto eletrônico e o GPS não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo.</div>}
@@ -241,9 +243,9 @@ function Metric({
     <Tag href={href} className={`block min-h-[96px] bg-[#0b1021] p-3 transition hover:bg-white/[.06] active:bg-white/10 sm:min-h-[108px] sm:p-4 ${className}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300">{label}</p>
+          <p className="text-xs font-bold uppercase tracking-[.12em] text-slate-300">{label}</p>
           <p className={`mt-1 text-3xl font-black leading-none ${tone}`}>{value}</p>
-          <p className="mt-2 text-[11px] text-slate-400">{detail} <span aria-hidden="true">→</span></p>
+          <p className="mt-2 text-sm text-slate-300">{detail} <span aria-hidden="true">→</span></p>
         </div>
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[.04]">
           <Icon className={`h-4 w-4 ${tone}`} />

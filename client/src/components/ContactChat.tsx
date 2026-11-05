@@ -71,7 +71,7 @@ export default function ContactChat({ open, onClose }: { open: boolean; onClose:
                 <dl className="space-y-1.5">
                   {CONTACT_STEPS.map((s, i) => answers[s.field] ? (
                     <div key={s.field} className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1"><dt className="text-[11px] uppercase tracking-wide text-slate-400">{LABELS[s.field]}</dt><dd className="break-words">{answers[s.field]}</dd></div>
+                      <div className="min-w-0 flex-1"><dt className="text-xs uppercase tracking-wide text-slate-400">{LABELS[s.field]}</dt><dd className="break-words">{answers[s.field]}</dd></div>
                       <button type="button" onClick={() => editFrom(i)} aria-label={`Corrigir ${LABELS[s.field]}`} className="rounded-full p-1 text-slate-400 hover:text-white"><Pencil className="h-3.5 w-3.5" /></button>
                     </div>
                   ) : null)}

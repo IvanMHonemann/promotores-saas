@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { useBusy } from "@/components/BusyOverlay";
 import { buildZip } from "@/lib/zip";
 import { canShareFiles, splitShareBatches } from "@/lib/shareFiles";
+import { confirmAction } from "@/components/ConfirmDialog";
+import { toastWithUndo } from "@/lib/undoTrash";
 
 const SHARE_BATCH_SIZE = 10;
 const FETCH_CONCURRENCY = 4;
@@ -200,9 +202,10 @@ export default function StoreGalleryPage() {
   const pending = useMemo(() => listPhotos().filter((p) => isNoStore ? !p.storeId : p.storeId === storeId), [storeId, isNoStore, online, photos.data]);
 
   const utils = trpc.useUtils();
+  const restoreTrash = trpc.trash.restore.useMutation();
   const singleDelete = trpc.storePhotos.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Foto enviada para a lixeira.");
+    onSuccess: (_r, vars) => {
+      toastWithUndo({ message: "Foto enviada para a lixeira.", itemType: "store_photo", originalIds: [vars.photoId], fetchTrash: () => utils.trash.list.fetch() as any, restore: (id) => restoreTrash.mutateAsync({ id }), onRestored: () => { void photos.refetch(); void utils.trash.list.invalidate(); } });
       void photos.refetch();
       void utils.storePhotos.listStoresWithStats.invalidate();
       void utils.trash.list.invalidate();
@@ -211,8 +214,8 @@ export default function StoreGalleryPage() {
   });
 
   const bulkDelete = trpc.storePhotos.bulkDelete.useMutation({
-    onSuccess: (res) => {
-      toast.success(`${res.deleted} foto${res.deleted !== 1 ? "s" : ""} enviada${res.deleted !== 1 ? "s" : ""} para a lixeira.`);
+    onSuccess: (res, vars) => {
+      toastWithUndo({ message: `${res.deleted} foto${res.deleted !== 1 ? "s" : ""} enviada${res.deleted !== 1 ? "s" : ""} para a lixeira.`, itemType: "store_photo", originalIds: vars.photoIds, fetchTrash: () => utils.trash.list.fetch() as any, restore: (id) => restoreTrash.mutateAsync({ id }), onRestored: () => { void photos.refetch(); void utils.trash.list.invalidate(); } });
       setSelected(new Set());
       void photos.refetch();
       void utils.storePhotos.listStoresWithStats.invalidate();
@@ -273,8 +276,8 @@ export default function StoreGalleryPage() {
   const withGps = allPhotos.filter((p) => p.latitude != null).length;
   const lightboxPhoto = lightbox ? allPhotos.find((p) => p.id === lightbox.id) : undefined;
 
-  const deleteOne = (photoId: number) => {
-    if (!confirm("Enviar esta foto para a lixeira? Você pode restaurá-la por 5 dias.")) return;
+  const deleteOne = async (photoId: number) => {
+    if (!(await confirmAction({ title: "Enviar esta foto para a lixeira?", description: "Você pode desfazer agora ou restaurar pela Lixeira em até 5 dias.", confirmLabel: "Enviar para a lixeira" }))) return;
     setLightbox(null);
     void run("Excluindo foto...", () => singleDelete.mutateAsync({ photoId })).catch(() => {});
   };
@@ -383,9 +386,9 @@ export default function StoreGalleryPage() {
     toast.success(`${files.length} foto(s) baixada(s)${files.length > 1 ? " em um arquivo .zip" : ""}.${failed ? ` ${failed} não puderam ser obtidas.` : ""}`);
   };
 
-  const deleteSelected = () => {
+  const deleteSelected = async () => {
     if (selected.size === 0) return;
-    if (!confirm(`Enviar ${selected.size} foto(s) para a lixeira? Você pode restaurá-las por 5 dias.`)) return;
+    if (!(await confirmAction({ title: `Enviar ${selected.size} foto(s) para a lixeira?`, description: "Você pode desfazer agora ou restaurar pela Lixeira em até 5 dias.", confirmLabel: "Enviar para a lixeira" }))) return;
     setSelectMode(false);
     void run("Excluindo fotos...", () => bulkDelete.mutateAsync({ photoIds: Array.from(selected) })).catch(() => {});
   };
@@ -492,7 +495,7 @@ export default function StoreGalleryPage() {
               {pending.map((p) => (
                 <div key={p.id} className="relative aspect-square overflow-hidden rounded-xl bg-slate-800 ring-2 ring-amber-400/50">
                   <img src={`data:image/jpeg;base64,${p.imageBase64}`} alt="Pendente" className="absolute inset-0 h-full w-full object-cover" />
-                  <div className="absolute bottom-1 left-1 rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-slate-950">Pendente</div>
+                  <div className="absolute bottom-1 left-1 rounded bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-slate-950">Pendente</div>
                 </div>
               ))}
             </div>

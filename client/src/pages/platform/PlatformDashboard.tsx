@@ -143,7 +143,7 @@ function CodeScannerView() {
                 <Badge className={signal.status === "warning" ? "bg-amber-400/20 text-amber-300 border-amber-400/40" : "bg-emerald-400/20 text-emerald-300 border-emerald-400/40"}>
                   {signal.status === "warning" ? "Atenção" : signal.status === "pending" ? "Não verificado" : "Operacional"}
                 </Badge>
-                <p className="mt-1 text-[11px] text-slate-400">Latência: {signal.latency}</p>
+                <p className="mt-1 text-xs text-slate-400">Latência: {signal.latency}</p>
               </div>
             </div>
             <p className="mt-3 text-sm text-slate-300 border-t border-white/10 pt-3">
@@ -246,7 +246,7 @@ function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total:
           <Card key={label} className={`rounded-none border-0 bg-[#0b1021] shadow-none ${stats.length % 2 === 1 && index === stats.length - 1 ? "col-span-2" : ""}`}>
             <CardContent className="flex min-h-[142px] items-start justify-between gap-3 p-4 sm:min-h-[160px] sm:p-6">
               <div className="flex min-w-0 flex-col self-stretch">
-                <p className="text-[10px] font-bold uppercase tracking-[.12em] text-slate-300 sm:text-xs sm:tracking-[.14em]">{label}</p>
+                <p className="text-xs font-bold uppercase tracking-[.12em] text-slate-300 sm:text-xs sm:tracking-[.14em]">{label}</p>
                 <p className={`mt-2 text-4xl font-black leading-none ${color}`}>{value}</p>
                 <p className="mt-auto pt-2 text-xs text-slate-300 sm:text-sm">{detail} <span aria-hidden="true">→</span></p>
               </div>

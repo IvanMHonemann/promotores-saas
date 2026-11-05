@@ -22,6 +22,8 @@ const PlatformDashboard = lazy(() => import("./pages/platform/PlatformDashboard"
 const StoresPage = lazy(() => import("./pages/StoresPage"));
 const StoreGalleryPage = lazy(() => import("./pages/StoreGalleryPage"));
 const TimesheetPage = lazy(() => import("./pages/admin/TimesheetPage"));
+const VacationsPage = lazy(() => import("./pages/admin/VacationsPage"));
+const MyVacationsPage = lazy(() => import("./pages/promoter/MyVacationsPage"));
 const TimesheetMirrorPage = lazy(() => import("./pages/admin/TimesheetMirrorPage"));
 const TimesheetArchivePage = lazy(() => import("./pages/admin/TimesheetArchivePage"));
 const CheckInOutPage = lazy(() => import("./pages/admin/CheckInOutPage"));
@@ -238,6 +240,8 @@ function Router() {
       <Route path="/arquivos-historicos"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetArchivePage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/check-in-out"><CompanyAdminProtected><FeatureProtected featureKey="fieldOperations"><CheckInOutPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/cartao-ponto"><AdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetPage /></FeatureProtected></AdminProtected></Route>
+      <Route path="/ferias"><AdminProtected><FeatureProtected featureKey="timeTracking"><VacationsPage /></FeatureProtected></AdminProtected></Route>
+      <Route path="/minhas-ferias"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyVacationsPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/empresas"><PlatformProtected><PlatformCompaniesPage /></PlatformProtected></Route>
       <Route path="/admin/auditoria"><PlatformProtected><PlatformAuditPage /></PlatformProtected></Route>

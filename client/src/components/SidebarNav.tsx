@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X, Archive, ChevronDown } from "lucide-react";
+import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X, Archive, ChevronDown, Palmtree } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useInstallPrompt } from "@/pwa/hooks";
 import { Download } from "lucide-react";
@@ -75,6 +75,7 @@ export function SidebarNav() {
           ...(hasFeature("timeTracking") ? [
             { href: "/ponto", label: "Cartão ponto", icon: Clock3 },
             { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
+            { href: "/minhas-ferias", label: "Minhas férias", icon: Palmtree },
           ] : []),
           { href: "/lojas", label: "Lojas", icon: MapPin },
           { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
@@ -100,6 +101,7 @@ export function SidebarNav() {
             children: [
               { href: "/cartao-ponto", label: "Visualizar ponto", icon: Clock3 },
               ...(role === "company_admin" && hasFeature("timeTracking") ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: FileText }] : []),
+              { href: "/ferias", label: "Férias", icon: Palmtree },
             ],
           }] : []),
           ...(role === "company_admin" && hasFeature("timeTracking") ? [{ href: "/arquivos-historicos", label: "Arquivos históricos", icon: Archive }] : []),

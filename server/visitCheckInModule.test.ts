@@ -61,8 +61,8 @@ describe("módulo visitCheckIn", () => {
   });
 
   it("migração e boot fazem backfill default ON", () => {
-    expect(src("drizzle/0027_visit_checkin_module.sql")).toContain("visitCheckIn");
-    expect(src("drizzle/0027_visit_checkin_module.sql")).toContain("fieldOperations");
+    expect(src("drizzle/0030_visit_checkin_module.sql")).toContain("visitCheckIn");
+    expect(src("drizzle/0030_visit_checkin_module.sql")).toContain("fieldOperations");
     expect(src("server/db.ts")).toContain("ensureVisitCheckInFeature");
     expect(src("docs/visit-checkin-module.md")).toContain("visitCheckIn");
   });

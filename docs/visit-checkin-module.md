@@ -26,4 +26,4 @@ Separado de **Lojas, roteiros e fotos** (`fieldOperations`) e do **Ponto eletrô
 `visitCheckIn` sem `fieldOperations` não tem o que operar (não há lojas/roteiro); o painel da plataforma pode deixar os dois ligados juntos.
 
 ## Default
-Planos Profissional/Empresarial e overrides que já tinham `fieldOperations` recebem `visitCheckIn` ligado (migração `0027_visit_checkin_module.sql` + `ensureVisitCheckInFeature` no boot).
+Planos Profissional/Empresarial e overrides que já tinham `fieldOperations` recebem `visitCheckIn` ligado (migração `0030_visit_checkin_module.sql` + `ensureVisitCheckInFeature` no boot).

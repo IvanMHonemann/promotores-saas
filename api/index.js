@@ -2421,6 +2421,7 @@ var init_db = __esm({
 // server/subscriptionAccess.ts
 var subscriptionAccess_exports = {};
 __export(subscriptionAccess_exports, {
+  DEFAULT_OVERDUE_GRACE_DAYS: () => DEFAULT_OVERDUE_GRACE_DAYS,
   MANUAL_BILLING_MESSAGE: () => MANUAL_BILLING_MESSAGE,
   PENDING_GRACE_DAYS: () => PENDING_GRACE_DAYS,
   checkSubscriptionAccess: () => checkSubscriptionAccess
@@ -2476,7 +2477,7 @@ async function loadSubscriptionAccess(companyId) {
     }
     case "active":
       if (expiresAt && now > expiresAt) {
-        const grace = graceUntil || new Date(expiresAt.getTime() + 3 * 24 * 3600 * 1e3);
+        const grace = graceUntil || new Date(expiresAt.getTime() + DEFAULT_OVERDUE_GRACE_DAYS * 24 * 3600 * 1e3);
         if (now <= grace) {
           return { allowed: true, status: "overdue", expiresAt, graceUntil: grace, reason: "Per\xEDodo de toler\xE2ncia." };
         }
@@ -2492,7 +2493,7 @@ async function loadSubscriptionAccess(companyId) {
       return { allowed: false, status: status2, expiresAt, graceUntil: deadline, reason: `Pagamento pendente h\xE1 mais de ${PENDING_GRACE_DAYS} dias. ${MANUAL_BILLING_MESSAGE}` };
     }
     case "overdue": {
-      const grace = graceUntil || (expiresAt ? new Date(expiresAt.getTime() + 3 * 24 * 3600 * 1e3) : null);
+      const grace = graceUntil || (expiresAt ? new Date(expiresAt.getTime() + DEFAULT_OVERDUE_GRACE_DAYS * 24 * 3600 * 1e3) : null);
       if (grace && now <= grace) {
         return { allowed: true, status: status2, expiresAt, graceUntil: grace, reason: "Per\xEDodo de toler\xE2ncia." };
       }
@@ -2510,7 +2511,7 @@ async function loadSubscriptionAccess(companyId) {
       return { allowed: false, status: "none", reason: "Status de assinatura desconhecido." };
   }
 }
-var MANUAL_BILLING_MESSAGE, PENDING_GRACE_DAYS, accessCache;
+var MANUAL_BILLING_MESSAGE, PENDING_GRACE_DAYS, DEFAULT_OVERDUE_GRACE_DAYS, accessCache;
 var init_subscriptionAccess = __esm({
   "server/subscriptionAccess.ts"() {
     "use strict";
@@ -2518,6 +2519,7 @@ var init_subscriptionAccess = __esm({
     init_db();
     MANUAL_BILLING_MESSAGE = "Para contratar ou renovar, fale com o suporte.";
     PENDING_GRACE_DAYS = 7;
+    DEFAULT_OVERDUE_GRACE_DAYS = 5;
     accessCache = createTtlCache(3e4);
   }
 });
@@ -4449,6 +4451,513 @@ var init_timesheetArchive = __esm({
   }
 });
 
+// shared/pixBrcode.ts
+function sanitizePixText(value, max) {
+  return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+function tlv(id2, value) {
+  const v = String(value);
+  const len = String(v.length).padStart(2, "0");
+  return `${id2}${len}${v}`;
+}
+function crc16Ccitt(payload) {
+  let crc = 65535;
+  for (let i = 0; i < payload.length; i++) {
+    crc ^= payload.charCodeAt(i) << 8;
+    for (let b = 0; b < 8; b++) {
+      crc = crc & 32768 ? (crc << 1 ^ 4129) & 65535 : crc << 1 & 65535;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
+function formatAmount(amount) {
+  const n = typeof amount === "number" ? amount : Number(String(amount).replace(",", "."));
+  if (!Number.isFinite(n) || n < 0) throw new Error("Valor Pix inv\xE1lido.");
+  return n.toFixed(2);
+}
+function buildPixBrcode(input) {
+  const key = String(input.key ?? DEFAULTS.key).trim();
+  if (!key) throw new Error("Chave Pix obrigat\xF3ria.");
+  const name = sanitizePixText(input.name ?? DEFAULTS.name, 25) || DEFAULTS.name;
+  const city = sanitizePixText(input.city ?? DEFAULTS.city, 15) || DEFAULTS.city;
+  const amount = formatAmount(input.amount);
+  const txid = sanitizePixText(input.txid ?? "***", 25) || "***";
+  const gui = tlv("00", "br.gov.bcb.pix") + tlv("01", key);
+  const desc6 = input.description ? tlv("02", sanitizePixText(input.description, 25)) : "";
+  const merchantAccount = tlv("26", gui + desc6);
+  const additional = tlv("62", tlv("05", txid));
+  const body = tlv("00", "01") + tlv("01", "11") + // estático
+  merchantAccount + tlv("52", "0000") + tlv("53", "986") + tlv("54", amount) + tlv("58", "BR") + tlv("59", name) + tlv("60", city) + additional + "6304";
+  return body + crc16Ccitt(body);
+}
+function getDefaultPixConfig() {
+  return {
+    key: typeof process !== "undefined" && process.env?.PIX_KEY?.trim() || DEFAULTS.key,
+    name: sanitizePixText(
+      typeof process !== "undefined" && process.env?.PIX_MERCHANT_NAME || DEFAULTS.name,
+      25
+    ) || DEFAULTS.name,
+    city: sanitizePixText(
+      typeof process !== "undefined" && process.env?.PIX_MERCHANT_CITY || DEFAULTS.city,
+      15
+    ) || DEFAULTS.city,
+    whatsapp: typeof process !== "undefined" && process.env?.PIX_WHATSAPP?.replace(/\D/g, "") || "5551991667804"
+  };
+}
+var DEFAULTS;
+var init_pixBrcode = __esm({
+  "shared/pixBrcode.ts"() {
+    "use strict";
+    DEFAULTS = {
+      key: "ivanhonemann09@gmail.com",
+      name: "IVAN MATEUS HONEMANN",
+      city: "SAPIRANGA"
+    };
+  }
+});
+
+// server/paymentReminder.ts
+var paymentReminder_exports = {};
+__export(paymentReminder_exports, {
+  BLOCK_AFTER_OVERDUE_KEY: () => BLOCK_AFTER_OVERDUE_KEY,
+  MONTHLY_AMOUNT_KEY: () => MONTHLY_AMOUNT_KEY,
+  PRE_DUE_REMINDER_DAYS: () => PRE_DUE_REMINDER_DAYS,
+  addCalendarMonthsIso: () => addCalendarMonthsIso,
+  calendarDaysUntil: () => calendarDaysUntil,
+  getPaymentReminder: () => getPaymentReminder,
+  markCompanyPaid: () => markCompanyPaid,
+  resolveGraceDays: () => resolveGraceDays,
+  resolveMonthlyAmount: () => resolveMonthlyAmount,
+  todayIsoBR: () => todayIsoBR
+});
+function todayIsoBR(now = /* @__PURE__ */ new Date()) {
+  return now.toLocaleDateString("en-CA", { timeZone: BR_TZ });
+}
+function calendarDaysUntil(dueIso, todayIso = todayIsoBR()) {
+  const a = Date.parse(`${todayIso}T12:00:00-03:00`);
+  const b = Date.parse(`${dueIso}T12:00:00-03:00`);
+  return Math.round((b - a) / 864e5);
+}
+function addCalendarMonthsIso(isoDate, months) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const base = new Date(Date.UTC(y, m - 1, d));
+  const targetMonth = base.getUTCMonth() + months;
+  const probe = new Date(Date.UTC(base.getUTCFullYear(), targetMonth, 1));
+  const lastDay = new Date(Date.UTC(probe.getUTCFullYear(), probe.getUTCMonth() + 1, 0)).getUTCDate();
+  probe.setUTCDate(Math.min(d, lastDay));
+  return probe.toISOString().slice(0, 10);
+}
+function toIsoDate(value) {
+  if (!value) return null;
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-CA", { timeZone: BR_TZ });
+}
+function moneyLabel(amount) {
+  return Number(amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function monthLabel(iso) {
+  const [y, m] = iso.split("-").map(Number);
+  const names = ["janeiro", "fevereiro", "mar\xE7o", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  return `${names[(m || 1) - 1]}/${y}`;
+}
+async function resolveMonthlyAmount(companyId) {
+  const custom = (await getSetting(MONTHLY_AMOUNT_KEY, companyId, "")).trim();
+  if (custom && /^\d+(\.\d{1,2})?$/.test(custom) && Number(custom) > 0) return Number(custom).toFixed(2);
+  const resolved = await resolveCompanyPlan(companyId);
+  const fromSub = resolved.subscription?.amount ? String(resolved.subscription.amount) : "";
+  if (fromSub && Number(fromSub) > 0) return Number(fromSub).toFixed(2);
+  const fromPlan = resolved.plan?.price != null ? String(resolved.plan.price) : "";
+  if (fromPlan && Number(fromPlan) > 0) return Number(fromPlan).toFixed(2);
+  return null;
+}
+async function resolveGraceDays(companyId) {
+  const raw = (await getSetting(BLOCK_AFTER_OVERDUE_KEY, companyId, "")).trim();
+  if (raw === "") return DEFAULT_OVERDUE_GRACE_DAYS;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_OVERDUE_GRACE_DAYS;
+  return Math.min(60, Math.floor(n));
+}
+function buildWhatsAppUrl(params) {
+  const text4 = [
+    `Ol\xE1! Segue o comprovante do pagamento GondUp.`,
+    ``,
+    `Empresa: ${params.companyName}`,
+    `Refer\xEAncia: ${params.monthRef}`,
+    `Valor: ${params.amountLabel}`,
+    ``,
+    `(anexe o comprovante do Pix nesta conversa)`
+  ].join("\n");
+  return `https://wa.me/${params.whatsapp}?text=${encodeURIComponent(text4)}`;
+}
+async function getPaymentReminder(companyId, now = /* @__PURE__ */ new Date()) {
+  const company = await getCompanyById(companyId);
+  const pix = getDefaultPixConfig();
+  const empty = {
+    phase: "none",
+    show: false,
+    dismissable: true,
+    companyId,
+    companyName: company?.name ?? "",
+    amount: null,
+    amountLabel: null,
+    dueDate: null,
+    dueDateLabel: null,
+    daysUntilDue: null,
+    daysUntilBlock: null,
+    graceDays: DEFAULT_OVERDUE_GRACE_DAYS,
+    monthRef: null,
+    pixPayload: null,
+    whatsappUrl: null,
+    whatsappNumber: pix.whatsapp,
+    message: ""
+  };
+  if (!company) return empty;
+  const dueDate = toIsoDate(company.subscriptionExpiresAt);
+  const graceDays = await resolveGraceDays(companyId);
+  const amount = await resolveMonthlyAmount(companyId);
+  const today = todayIsoBR(now);
+  if (!dueDate) return { ...empty, companyName: company.name, graceDays, amount, amountLabel: amount ? moneyLabel(amount) : null };
+  const daysUntilDue = calendarDaysUntil(dueDate, today);
+  const daysUntilBlock = daysUntilDue + graceDays;
+  const amountLabel = amount ? moneyLabel(amount) : null;
+  const dueDateLabel = (/* @__PURE__ */ new Date(`${dueDate}T12:00:00-03:00`)).toLocaleDateString("pt-BR", { timeZone: BR_TZ });
+  const monthRef = monthLabel(dueDate);
+  let pixPayload = null;
+  if (amount) {
+    try {
+      pixPayload = buildPixBrcode({
+        key: pix.key,
+        name: pix.name,
+        city: pix.city,
+        amount,
+        description: `GONDUP ${monthRef}`.slice(0, 25),
+        txid: `GONDUP${companyId}${dueDate.replace(/-/g, "").slice(2)}`.slice(0, 25)
+      });
+    } catch {
+      pixPayload = null;
+    }
+  }
+  const whatsappUrl = amountLabel ? buildWhatsAppUrl({ whatsapp: pix.whatsapp, companyName: company.name, monthRef, amountLabel }) : `https://wa.me/${pix.whatsapp}`;
+  const base = {
+    companyId,
+    companyName: company.name,
+    amount,
+    amountLabel,
+    dueDate,
+    dueDateLabel,
+    daysUntilDue,
+    daysUntilBlock,
+    graceDays,
+    monthRef,
+    pixPayload,
+    whatsappUrl,
+    whatsappNumber: pix.whatsapp
+  };
+  if (daysUntilDue < -graceDays) {
+    return {
+      ...base,
+      phase: "blocked",
+      show: true,
+      dismissable: false,
+      message: `O acesso da empresa est\xE1 bloqueado por falta de pagamento. Venceu em ${dueDateLabel}. Regularize via Pix ou WhatsApp.`
+    };
+  }
+  if (daysUntilDue < 0) {
+    const left = Math.max(0, daysUntilBlock);
+    return {
+      ...base,
+      phase: "overdue",
+      show: true,
+      dismissable: false,
+      message: `Pagamento em atraso desde ${dueDateLabel}. O acesso ser\xE1 bloqueado em ${left} dia(s). Pague via Pix ou envie o comprovante no WhatsApp.`
+    };
+  }
+  if (PRE_DUE_REMINDER_DAYS.includes(daysUntilDue)) {
+    return {
+      ...base,
+      phase: "pre_due",
+      show: true,
+      dismissable: true,
+      message: `O pagamento de ${amountLabel ?? "sua mensalidade"} vence em ${daysUntilDue} dia(s) (${dueDateLabel}).`
+    };
+  }
+  return { ...base, phase: "none", show: false, dismissable: true, message: "" };
+}
+async function markCompanyPaid(input) {
+  const { registerCompanyPayment: registerCompanyPayment2 } = await Promise.resolve().then(() => (init_platformCompanies(), platformCompanies_exports));
+  const company = await getCompanyById(input.companyId);
+  if (!company) throw new Error("Empresa n\xE3o encontrada.");
+  const today = todayIsoBR();
+  const amount = (input.amount && /^\d+(\.\d{1,2})?$/.test(input.amount) ? Number(input.amount).toFixed(2) : null) || await resolveMonthlyAmount(input.companyId);
+  if (!amount) throw new Error("Informe o valor mensal da empresa antes de marcar como pago.");
+  const currentDue = toIsoDate(company.subscriptionExpiresAt);
+  const base = currentDue && currentDue > today ? currentDue : today;
+  const periodTo = addCalendarMonthsIso(base, 1);
+  const periodFrom = today;
+  const grace = input.graceDays ?? await resolveGraceDays(input.companyId);
+  return registerCompanyPayment2({
+    companyId: input.companyId,
+    amount,
+    paymentDate: input.paymentDate || today,
+    periodFrom,
+    periodTo,
+    billingType: "PIX",
+    planId: company.planId,
+    graceDays: grace,
+    note: input.note ?? "Marcado como pago (Pix manual)."
+  });
+}
+var PRE_DUE_REMINDER_DAYS, MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, BR_TZ;
+var init_paymentReminder = __esm({
+  "server/paymentReminder.ts"() {
+    "use strict";
+    init_db();
+    init_pixBrcode();
+    init_subscriptionAccess();
+    PRE_DUE_REMINDER_DAYS = [5, 3, 1];
+    MONTHLY_AMOUNT_KEY = "monthly_amount";
+    BLOCK_AFTER_OVERDUE_KEY = "block_after_overdue_days";
+    BR_TZ = "America/Sao_Paulo";
+  }
+});
+
+// server/platformCompanies.ts
+var platformCompanies_exports = {};
+__export(platformCompanies_exports, {
+  archiveCompany: () => archiveCompany,
+  deletePayment: () => deletePayment,
+  endOfDay: () => endOfDay,
+  listCompaniesOverview: () => listCompaniesOverview,
+  listCompanyPayments: () => listCompanyPayments,
+  markCompanyPaid: () => markCompanyPaid,
+  purgeCompany: () => purgeCompany,
+  registerCompanyPayment: () => registerCompanyPayment,
+  resolveGraceDays: () => resolveGraceDays,
+  resolveMonthlyAmount: () => resolveMonthlyAmount,
+  setCompanyBilling: () => setCompanyBilling,
+  setCompanyBlocked: () => setCompanyBlocked,
+  setCompanyPlan: () => setCompanyPlan,
+  startOfDay: () => startOfDay
+});
+import { and as and9, eq as eq9, inArray as inArray9, sql as sql9 } from "drizzle-orm";
+import { TRPCError as TRPCError9 } from "@trpc/server";
+async function database() {
+  const d = await getDb();
+  if (!d) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  return d;
+}
+async function listCompaniesOverview() {
+  const d = await database();
+  const [rows3, plans, pays, counts, admins, flags] = await Promise.all([
+    d.select().from(companies).orderBy(companies.name),
+    d.select().from(subscriptionPlans),
+    d.execute(sql9`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
+    d.execute(sql9`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
+    d.execute(sql9`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
+    d.select().from(systemSettings).where(inArray9(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY]))
+  ]);
+  const planById = new Map(plans.map((p) => [p.id, p]));
+  const map = (r, key = "companyId") => new Map(r[0].map((x) => [Number(x[key]), x]));
+  const payBy = map(pays), countBy = map(counts), adminBy = map(admins);
+  const flagBy = new Map(flags.map((f) => [`${f.accountId}:${f.settingKey}`, f.settingValue]));
+  return rows3.map((c) => {
+    const plan = c.planId ? planById.get(c.planId) : null;
+    const monthlyAmount = flagBy.get(`${c.id}:${MONTHLY_AMOUNT_KEY}`) || (plan?.price != null ? String(plan.price) : null);
+    const blockAfter = flagBy.get(`${c.id}:${BLOCK_AFTER_OVERDUE_KEY}`);
+    return {
+      id: c.id,
+      name: c.name,
+      active: c.active,
+      createdAt: c.createdAt,
+      archivedAt: flagBy.get(`${c.id}:archived_at`) ?? null,
+      blockedReason: flagBy.get(`${c.id}:blocked_reason`) ?? null,
+      planId: c.planId ?? null,
+      planName: plan?.name ?? null,
+      planPrice: plan?.price ?? null,
+      monthlyAmount,
+      blockAfterOverdueDays: blockAfter != null && blockAfter !== "" ? Number(blockAfter) : DEFAULT_OVERDUE_GRACE_DAYS,
+      subscriptionStatus: c.subscriptionStatus ?? null,
+      startedAt: c.subscriptionStartedAt ?? null,
+      expiresAt: c.subscriptionExpiresAt ?? null,
+      graceUntil: c.gracePeriodEndsAt ?? null,
+      lastPayment: payBy.get(c.id)?.lastPayment ?? null,
+      paymentsCount: Number(payBy.get(c.id)?.n ?? 0),
+      users: Number(countBy.get(c.id)?.total ?? 0),
+      activeUsers: Number(countBy.get(c.id)?.ativos ?? 0),
+      adminEmail: adminBy.get(c.id)?.email ?? null,
+      adminName: adminBy.get(c.id)?.name ?? null
+    };
+  });
+}
+async function setCompanyBlocked(companyId, blocked, reason) {
+  const d = await database();
+  const company = await getCompanyById(companyId);
+  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  await updateCompany(companyId, { active: !blocked });
+  if (blocked) await setSetting("blocked_reason", (reason || "").trim().slice(0, 300) || "Acesso bloqueado pelo administrador da plataforma.", companyId);
+  else await d.delete(systemSettings).where(and9(eq9(systemSettings.accountId, companyId), eq9(systemSettings.settingKey, "blocked_reason")));
+  if (blocked) {
+    const ids = (await d.select({ id: memberAccounts.id }).from(memberAccounts).where(eq9(memberAccounts.companyId, companyId))).map((r) => r.id);
+    if (ids.length) await d.delete(memberSessions).where(inArray9(memberSessions.memberAccountId, ids));
+  }
+  return company;
+}
+async function setCompanyPlan(input) {
+  const d = await database();
+  const company = await getCompanyById(input.companyId);
+  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  const plan = await getSubscriptionPlanById(input.planId);
+  if (!plan) throw new TRPCError9({ code: "NOT_FOUND", message: "Plano n\xE3o encontrado." });
+  if (input.endsAt && input.endsAt < input.startsAt) throw new TRPCError9({ code: "BAD_REQUEST", message: "A validade final n\xE3o pode ser anterior ao in\xEDcio." });
+  const latest = await getLatestCompanySubscription(input.companyId);
+  if (latest) await updateCompanySubscription(latest.id, { planId: input.planId, status: input.status, startsAt: input.startsAt, endsAt: input.endsAt ?? null, notes: input.notes ?? latest.notes ?? null });
+  else await createCompanySubscription({ companyId: input.companyId, planId: input.planId, status: input.status, startsAt: input.startsAt, endsAt: input.endsAt ?? null, notes: input.notes ?? null });
+  const end = input.endsAt ? endOfDay(input.endsAt) : null;
+  await d.update(companies).set({
+    planId: input.planId,
+    subscriptionStatus: input.status,
+    subscriptionStartedAt: startOfDay(input.startsAt),
+    subscriptionExpiresAt: end,
+    // tolerância explícita (padrão 5 dias): acesso até o fim do dia de validade + graceDays
+    gracePeriodEndsAt: end ? addDaysDate(end, Math.max(0, input.graceDays ?? DEFAULT_OVERDUE_GRACE_DAYS)) : null
+  }).where(eq9(companies.id, input.companyId));
+  return { success: true };
+}
+async function registerCompanyPayment(input) {
+  const company = await getCompanyById(input.companyId);
+  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (input.periodTo < input.periodFrom) throw new TRPCError9({ code: "BAD_REQUEST", message: "O fim do per\xEDodo pago n\xE3o pode ser anterior ao in\xEDcio." });
+  const planId = input.planId ?? company.planId;
+  if (!planId) throw new TRPCError9({ code: "BAD_REQUEST", message: "Selecione um plano para esta empresa antes de registrar o pagamento." });
+  const latest = await getLatestCompanySubscription(input.companyId);
+  await setCompanyPlan({ companyId: input.companyId, planId, status: "active", startsAt: input.periodFrom, endsAt: input.periodTo, graceDays: input.graceDays ?? DEFAULT_OVERDUE_GRACE_DAYS, notes: input.note ?? latest?.notes ?? null });
+  const sub = await getLatestCompanySubscription(input.companyId);
+  const created = await createPaymentRecord({ companyId: input.companyId, subscriptionId: sub?.id ?? null, amount: input.amount, netAmount: input.amount, billingType: input.billingType, status: "RECEIVED", dueDate: input.periodFrom, paymentDate: input.paymentDate });
+  if (!company.active) await setCompanyBlocked(input.companyId, false);
+  return created;
+}
+async function listCompanyPayments(companyId) {
+  return listPaymentsForCompany(companyId);
+}
+async function deletePayment(id2, companyId) {
+  const d = await database();
+  const r = await d.delete(payments).where(and9(eq9(payments.id, id2), eq9(payments.companyId, companyId)));
+  if (!r[0]?.affectedRows) throw new TRPCError9({ code: "NOT_FOUND", message: "Pagamento n\xE3o encontrado." });
+}
+async function archiveCompany(companyId, archived) {
+  const d = await database();
+  const company = await getCompanyById(companyId);
+  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (archived) {
+    await setCompanyBlocked(companyId, true, "Empresa exclu\xEDda pelo administrador da plataforma.");
+    await setSetting("archived_at", (/* @__PURE__ */ new Date()).toISOString(), companyId);
+  } else {
+    await d.delete(systemSettings).where(and9(eq9(systemSettings.accountId, companyId), eq9(systemSettings.settingKey, "archived_at")));
+    await setCompanyBlocked(companyId, false);
+  }
+  return company;
+}
+async function purgeCompany(companyId, confirmName) {
+  const company = await getCompanyById(companyId);
+  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (company.name.trim() !== confirmName.trim()) throw new TRPCError9({ code: "BAD_REQUEST", message: "O nome digitado n\xE3o confere com o da empresa." });
+  const archived = await getSetting("archived_at", companyId, "");
+  if (!archived) throw new TRPCError9({ code: "PRECONDITION_FAILED", message: "Exclua (arquive) a empresa primeiro; a exclus\xE3o definitiva s\xF3 vale para empresas j\xE1 exclu\xEDdas." });
+  let filesDeleted = 0;
+  try {
+    const d = await database();
+    const [photoRows] = await d.execute(sql9`SELECT fileKey, thumbnailKey FROM store_photos WHERE companyId = ${companyId}`);
+    const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
+    for (const p of photoRows) {
+      for (const k of [p.fileKey, p.thumbnailKey]) if (k) {
+        try {
+          await storageDelete2(k);
+          filesDeleted++;
+        } catch {
+        }
+      }
+    }
+  } catch {
+  }
+  const pool = await getPool();
+  if (!pool) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  const conn = await pool.getConnection();
+  const deleted = {};
+  try {
+    const [cols] = await conn.query(`SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME IN ('companyId','accountId')`);
+    const [memberIdsRows] = await conn.query("SELECT id FROM member_accounts WHERE companyId = ?", [companyId]);
+    const memberIds = memberIdsRows.map((r2) => r2.id);
+    await conn.query("SET FOREIGN_KEY_CHECKS = 0");
+    await conn.beginTransaction();
+    if (memberIds.length) {
+      const [r2] = await conn.query("DELETE FROM member_sessions WHERE memberAccountId IN (?)", [memberIds]);
+      deleted.member_sessions = r2.affectedRows;
+    }
+    const skip = /* @__PURE__ */ new Set(["companies"]);
+    for (const { t: t2, c } of cols) {
+      if (skip.has(t2) || !/^[A-Za-z0-9_]+$/.test(t2)) continue;
+      const [r2] = await conn.query(`DELETE FROM \`${t2}\` WHERE \`${c}\` = ?`, [companyId]);
+      if (r2.affectedRows) deleted[t2] = (deleted[t2] ?? 0) + r2.affectedRows;
+    }
+    const [r] = await conn.query("DELETE FROM companies WHERE id = ?", [companyId]);
+    deleted.companies = r.affectedRows;
+    await conn.commit();
+  } catch (e) {
+    await conn.rollback().catch(() => void 0);
+    throw e;
+  } finally {
+    await conn.query("SET FOREIGN_KEY_CHECKS = 1").catch(() => void 0);
+    conn.release();
+  }
+  return { company, deleted, filesDeleted };
+}
+async function setCompanyBilling(input) {
+  const company = await getCompanyById(input.companyId);
+  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (input.monthlyAmount != null && input.monthlyAmount !== "") {
+    if (!/^\d{1,10}(\.\d{1,2})?$/.test(input.monthlyAmount) || Number(input.monthlyAmount) <= 0) {
+      throw new TRPCError9({ code: "BAD_REQUEST", message: "Valor mensal inv\xE1lido." });
+    }
+    await setSetting(MONTHLY_AMOUNT_KEY, Number(input.monthlyAmount).toFixed(2), input.companyId);
+  }
+  if (input.blockAfterOverdueDays != null) {
+    const n = Math.max(0, Math.min(60, Math.floor(input.blockAfterOverdueDays)));
+    await setSetting(BLOCK_AFTER_OVERDUE_KEY, String(n), input.companyId);
+    if (company.subscriptionExpiresAt) {
+      const end = company.subscriptionExpiresAt instanceof Date ? company.subscriptionExpiresAt : new Date(company.subscriptionExpiresAt);
+      await updateCompanySubscriptionFields(input.companyId, {
+        gracePeriodEndsAt: addDaysDate(end, n)
+      });
+    }
+  }
+  if (input.dueDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) throw new TRPCError9({ code: "BAD_REQUEST", message: "Data de vencimento inv\xE1lida." });
+    const grace = input.blockAfterOverdueDays != null ? Math.max(0, Math.min(60, Math.floor(input.blockAfterOverdueDays))) : await resolveGraceDays(input.companyId);
+    const end = endOfDay(input.dueDate);
+    await updateCompanySubscriptionFields(input.companyId, {
+      subscriptionExpiresAt: end,
+      gracePeriodEndsAt: addDaysDate(end, grace)
+    });
+  }
+  return { success: true, monthlyAmount: await resolveMonthlyAmount(input.companyId), graceDays: await resolveGraceDays(input.companyId) };
+}
+var BR, endOfDay, startOfDay, addDaysDate;
+var init_platformCompanies = __esm({
+  "server/platformCompanies.ts"() {
+    "use strict";
+    init_db();
+    init_schema_original();
+    init_paymentReminder();
+    init_subscriptionAccess();
+    BR = "-03:00";
+    endOfDay = (d) => /* @__PURE__ */ new Date(`${d}T23:59:59${BR}`);
+    startOfDay = (d) => /* @__PURE__ */ new Date(`${d}T00:00:00${BR}`);
+    addDaysDate = (d, n) => new Date(d.getTime() + n * 864e5);
+  }
+});
+
 // server/_core/rateLimit.ts
 function checkRateLimit(key, bucket = "api") {
   const limit = LIMITS[bucket] || LIMITS.api;
@@ -6135,185 +6644,8 @@ init_vacations();
 init_trpc();
 init_db();
 init_audit();
+init_platformCompanies();
 import { z as z5 } from "zod";
-
-// server/platformCompanies.ts
-init_db();
-init_schema_original();
-import { and as and9, eq as eq9, inArray as inArray9, sql as sql9 } from "drizzle-orm";
-import { TRPCError as TRPCError9 } from "@trpc/server";
-var BR = "-03:00";
-var endOfDay = (d) => /* @__PURE__ */ new Date(`${d}T23:59:59${BR}`);
-var startOfDay = (d) => /* @__PURE__ */ new Date(`${d}T00:00:00${BR}`);
-var addDaysDate = (d, n) => new Date(d.getTime() + n * 864e5);
-async function database() {
-  const d = await getDb();
-  if (!d) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-  return d;
-}
-async function listCompaniesOverview() {
-  const d = await database();
-  const [rows3, plans, pays, counts, admins, flags] = await Promise.all([
-    d.select().from(companies).orderBy(companies.name),
-    d.select().from(subscriptionPlans),
-    d.execute(sql9`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
-    d.execute(sql9`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
-    d.execute(sql9`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
-    d.select().from(systemSettings).where(inArray9(systemSettings.settingKey, ["blocked_reason", "archived_at"]))
-  ]);
-  const planById = new Map(plans.map((p) => [p.id, p]));
-  const map = (r, key = "companyId") => new Map(r[0].map((x) => [Number(x[key]), x]));
-  const payBy = map(pays), countBy = map(counts), adminBy = map(admins);
-  const flagBy = new Map(flags.map((f) => [`${f.accountId}:${f.settingKey}`, f.settingValue]));
-  return rows3.map((c) => {
-    const plan = c.planId ? planById.get(c.planId) : null;
-    return {
-      id: c.id,
-      name: c.name,
-      active: c.active,
-      createdAt: c.createdAt,
-      archivedAt: flagBy.get(`${c.id}:archived_at`) ?? null,
-      blockedReason: flagBy.get(`${c.id}:blocked_reason`) ?? null,
-      planId: c.planId ?? null,
-      planName: plan?.name ?? null,
-      planPrice: plan?.price ?? null,
-      subscriptionStatus: c.subscriptionStatus ?? null,
-      startedAt: c.subscriptionStartedAt ?? null,
-      expiresAt: c.subscriptionExpiresAt ?? null,
-      graceUntil: c.gracePeriodEndsAt ?? null,
-      lastPayment: payBy.get(c.id)?.lastPayment ?? null,
-      paymentsCount: Number(payBy.get(c.id)?.n ?? 0),
-      users: Number(countBy.get(c.id)?.total ?? 0),
-      activeUsers: Number(countBy.get(c.id)?.ativos ?? 0),
-      adminEmail: adminBy.get(c.id)?.email ?? null,
-      adminName: adminBy.get(c.id)?.name ?? null
-    };
-  });
-}
-async function setCompanyBlocked(companyId, blocked, reason) {
-  const d = await database();
-  const company = await getCompanyById(companyId);
-  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-  await updateCompany(companyId, { active: !blocked });
-  if (blocked) await setSetting("blocked_reason", (reason || "").trim().slice(0, 300) || "Acesso bloqueado pelo administrador da plataforma.", companyId);
-  else await d.delete(systemSettings).where(and9(eq9(systemSettings.accountId, companyId), eq9(systemSettings.settingKey, "blocked_reason")));
-  if (blocked) {
-    const ids = (await d.select({ id: memberAccounts.id }).from(memberAccounts).where(eq9(memberAccounts.companyId, companyId))).map((r) => r.id);
-    if (ids.length) await d.delete(memberSessions).where(inArray9(memberSessions.memberAccountId, ids));
-  }
-  return company;
-}
-async function setCompanyPlan(input) {
-  const d = await database();
-  const company = await getCompanyById(input.companyId);
-  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-  const plan = await getSubscriptionPlanById(input.planId);
-  if (!plan) throw new TRPCError9({ code: "NOT_FOUND", message: "Plano n\xE3o encontrado." });
-  if (input.endsAt && input.endsAt < input.startsAt) throw new TRPCError9({ code: "BAD_REQUEST", message: "A validade final n\xE3o pode ser anterior ao in\xEDcio." });
-  const latest = await getLatestCompanySubscription(input.companyId);
-  if (latest) await updateCompanySubscription(latest.id, { planId: input.planId, status: input.status, startsAt: input.startsAt, endsAt: input.endsAt ?? null, notes: input.notes ?? latest.notes ?? null });
-  else await createCompanySubscription({ companyId: input.companyId, planId: input.planId, status: input.status, startsAt: input.startsAt, endsAt: input.endsAt ?? null, notes: input.notes ?? null });
-  const end = input.endsAt ? endOfDay(input.endsAt) : null;
-  await d.update(companies).set({
-    planId: input.planId,
-    subscriptionStatus: input.status,
-    subscriptionStartedAt: startOfDay(input.startsAt),
-    subscriptionExpiresAt: end,
-    // tolerância explícita (padrão 0 dia): acesso até o fim do dia de validade + graceDays
-    gracePeriodEndsAt: end ? addDaysDate(end, Math.max(0, input.graceDays ?? 0)) : null
-  }).where(eq9(companies.id, input.companyId));
-  return { success: true };
-}
-async function registerCompanyPayment(input) {
-  const company = await getCompanyById(input.companyId);
-  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-  if (input.periodTo < input.periodFrom) throw new TRPCError9({ code: "BAD_REQUEST", message: "O fim do per\xEDodo pago n\xE3o pode ser anterior ao in\xEDcio." });
-  const planId = input.planId ?? company.planId;
-  if (!planId) throw new TRPCError9({ code: "BAD_REQUEST", message: "Selecione um plano para esta empresa antes de registrar o pagamento." });
-  const latest = await getLatestCompanySubscription(input.companyId);
-  await setCompanyPlan({ companyId: input.companyId, planId, status: "active", startsAt: input.periodFrom, endsAt: input.periodTo, graceDays: input.graceDays ?? 0, notes: input.note ?? latest?.notes ?? null });
-  const sub = await getLatestCompanySubscription(input.companyId);
-  const created = await createPaymentRecord({ companyId: input.companyId, subscriptionId: sub?.id ?? null, amount: input.amount, netAmount: input.amount, billingType: input.billingType, status: "RECEIVED", dueDate: input.periodFrom, paymentDate: input.paymentDate });
-  if (!company.active) await setCompanyBlocked(input.companyId, false);
-  return created;
-}
-async function listCompanyPayments(companyId) {
-  return listPaymentsForCompany(companyId);
-}
-async function deletePayment(id2, companyId) {
-  const d = await database();
-  const r = await d.delete(payments).where(and9(eq9(payments.id, id2), eq9(payments.companyId, companyId)));
-  if (!r[0]?.affectedRows) throw new TRPCError9({ code: "NOT_FOUND", message: "Pagamento n\xE3o encontrado." });
-}
-async function archiveCompany(companyId, archived) {
-  const d = await database();
-  const company = await getCompanyById(companyId);
-  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-  if (archived) {
-    await setCompanyBlocked(companyId, true, "Empresa exclu\xEDda pelo administrador da plataforma.");
-    await setSetting("archived_at", (/* @__PURE__ */ new Date()).toISOString(), companyId);
-  } else {
-    await d.delete(systemSettings).where(and9(eq9(systemSettings.accountId, companyId), eq9(systemSettings.settingKey, "archived_at")));
-    await setCompanyBlocked(companyId, false);
-  }
-  return company;
-}
-async function purgeCompany(companyId, confirmName) {
-  const company = await getCompanyById(companyId);
-  if (!company) throw new TRPCError9({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-  if (company.name.trim() !== confirmName.trim()) throw new TRPCError9({ code: "BAD_REQUEST", message: "O nome digitado n\xE3o confere com o da empresa." });
-  const archived = await getSetting("archived_at", companyId, "");
-  if (!archived) throw new TRPCError9({ code: "PRECONDITION_FAILED", message: "Exclua (arquive) a empresa primeiro; a exclus\xE3o definitiva s\xF3 vale para empresas j\xE1 exclu\xEDdas." });
-  let filesDeleted = 0;
-  try {
-    const d = await database();
-    const [photoRows] = await d.execute(sql9`SELECT fileKey, thumbnailKey FROM store_photos WHERE companyId = ${companyId}`);
-    const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
-    for (const p of photoRows) {
-      for (const k of [p.fileKey, p.thumbnailKey]) if (k) {
-        try {
-          await storageDelete2(k);
-          filesDeleted++;
-        } catch {
-        }
-      }
-    }
-  } catch {
-  }
-  const pool = await getPool();
-  if (!pool) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-  const conn = await pool.getConnection();
-  const deleted = {};
-  try {
-    const [cols] = await conn.query(`SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME IN ('companyId','accountId')`);
-    const [memberIdsRows] = await conn.query("SELECT id FROM member_accounts WHERE companyId = ?", [companyId]);
-    const memberIds = memberIdsRows.map((r2) => r2.id);
-    await conn.query("SET FOREIGN_KEY_CHECKS = 0");
-    await conn.beginTransaction();
-    if (memberIds.length) {
-      const [r2] = await conn.query("DELETE FROM member_sessions WHERE memberAccountId IN (?)", [memberIds]);
-      deleted.member_sessions = r2.affectedRows;
-    }
-    const skip = /* @__PURE__ */ new Set(["companies"]);
-    for (const { t: t2, c } of cols) {
-      if (skip.has(t2) || !/^[A-Za-z0-9_]+$/.test(t2)) continue;
-      const [r2] = await conn.query(`DELETE FROM \`${t2}\` WHERE \`${c}\` = ?`, [companyId]);
-      if (r2.affectedRows) deleted[t2] = (deleted[t2] ?? 0) + r2.affectedRows;
-    }
-    const [r] = await conn.query("DELETE FROM companies WHERE id = ?", [companyId]);
-    deleted.companies = r.affectedRows;
-    await conn.commit();
-  } catch (e) {
-    await conn.rollback().catch(() => void 0);
-    throw e;
-  } finally {
-    await conn.query("SET FOREIGN_KEY_CHECKS = 1").catch(() => void 0);
-    conn.release();
-  }
-  return { company, deleted, filesDeleted };
-}
-
-// server/modules/platformCompanies.ts
 var dateStr3 = z5.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 var status = z5.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]);
 var id = z5.number().int().positive();
@@ -6349,6 +6681,28 @@ var platformCompaniesRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const r = await registerCompanyPayment(input);
     log(ctx, input.companyId, "payment", `Registrou pagamento de R$ ${input.amount} em ${input.paymentDate}; plano v\xE1lido de ${input.periodFrom} a ${input.periodTo}`, input);
+    return r;
+  }),
+  setBilling: platformProcedure.input(z5.object({
+    companyId: id,
+    monthlyAmount: z5.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
+    blockAfterOverdueDays: z5.number().int().min(0).max(60).nullish(),
+    dueDate: dateStr3.nullish()
+  })).mutation(async ({ ctx, input }) => {
+    const r = await setCompanyBilling(input);
+    log(ctx, input.companyId, "update", `Atualizou cobran\xE7a da empresa #${input.companyId}`, input);
+    return r;
+  }),
+  /** Um clique: registra Pix recebido e avança a validade em 1 mês. */
+  markPaid: platformProcedure.input(z5.object({
+    companyId: id,
+    amount: z5.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
+    paymentDate: dateStr3.optional(),
+    graceDays: z5.number().int().min(0).max(60).optional(),
+    note: z5.string().max(500).nullish()
+  })).mutation(async ({ ctx, input }) => {
+    const r = await markCompanyPaid(input);
+    log(ctx, input.companyId, "payment", `Marcou como pago a empresa #${input.companyId}`, input);
     return r;
   }),
   deletePayment: platformProcedure.input(z5.object({ companyId: id, paymentId: id })).mutation(async ({ ctx, input }) => {
@@ -8053,10 +8407,14 @@ var appRouter = router({
       const plan = resolved.plan ? { ...resolved.plan, ...effective, id: effective.id ?? resolved.plan.id, name: effective.name } : effective;
       return { ...resolved, plan, effective };
     }),
-    payments: companyBillingProcedure.query(async ({ ctx }) => listPaymentsForCompany(ctx.accountId))
+    payments: companyBillingProcedure.query(async ({ ctx }) => listPaymentsForCompany(ctx.accountId)),
+    /** Aviso de vencimento + Pix para o administrador da empresa (e tela de bloqueio). */
+    paymentReminder: companyBillingProcedure.query(async ({ ctx }) => {
+      const { getPaymentReminder: getPaymentReminder2 } = await Promise.resolve().then(() => (init_paymentReminder(), paymentReminder_exports));
+      return getPaymentReminder2(ctx.accountId);
+    })
     // Cobrança MANUAL: não há ativação/renovação de plano pelo próprio cliente.
-    // A única via de ativação é platformCompanies.registerPayment (administrador da plataforma).
-    // (mockCheckout/mockCheckoutOpen foram removidos: permitiam ativar plano pago sem pagar.)
+    // A única via de ativação é platformCompanies.registerPayment / markPaid (administrador da plataforma).
   }),
   products: router({
     alertsSimple: protectedProcedure.input(z9.object({ daysAhead: z9.number().optional() }).optional()).query(async ({ ctx, input }) => {

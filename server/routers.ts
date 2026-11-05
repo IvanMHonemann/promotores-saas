@@ -768,9 +768,13 @@ export const appRouter = router({
       return { ...resolved, plan, effective };
     }),
     payments: companyBillingProcedure.query(async ({ ctx }) => db.listPaymentsForCompany(ctx.accountId)),
+    /** Aviso de vencimento + Pix para o administrador da empresa (e tela de bloqueio). */
+    paymentReminder: companyBillingProcedure.query(async ({ ctx }) => {
+      const { getPaymentReminder } = await import("./paymentReminder");
+      return getPaymentReminder(ctx.accountId);
+    }),
     // Cobrança MANUAL: não há ativação/renovação de plano pelo próprio cliente.
-    // A única via de ativação é platformCompanies.registerPayment (administrador da plataforma).
-    // (mockCheckout/mockCheckoutOpen foram removidos: permitiam ativar plano pago sem pagar.)
+    // A única via de ativação é platformCompanies.registerPayment / markPaid (administrador da plataforma).
   }),
 
 

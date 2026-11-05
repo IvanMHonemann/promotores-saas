@@ -64,6 +64,8 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
   const rename = trpc.platformCompanies.rename.useMutation({ onSuccess: ok("Nome atualizado."), onError: fail });
   const setPlan = trpc.platformCompanies.setPlan.useMutation({ onSuccess: ok("Plano e validade salvos."), onError: fail });
   const pay = trpc.platformCompanies.registerPayment.useMutation({ onSuccess: ok("Pagamento registrado e validade atualizada."), onError: fail });
+  const markPaid = trpc.platformCompanies.markPaid.useMutation({ onSuccess: ok("Marcado como pago: validade avançou 1 mês."), onError: fail });
+  const setBilling = trpc.platformCompanies.setBilling.useMutation({ onSuccess: ok("Cobrança atualizada."), onError: fail });
   const delPay = trpc.platformCompanies.deletePayment.useMutation({ onSuccess: ok("Pagamento excluído."), onError: fail });
   const block = trpc.platformCompanies.setBlocked.useMutation({ onSuccess: ok("Situação atualizada."), onError: fail });
   const archive = trpc.platformCompanies.archive.useMutation({ onSuccess: ok("Empresa atualizada."), onError: fail });
@@ -74,7 +76,8 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
   const [status, setStatus] = useState(c.subscriptionStatus ?? "active");
   const [startsAt, setStartsAt] = useState(iso(c.startedAt) || today());
   const [endsAt, setEndsAt] = useState(iso(c.expiresAt));
-  const [grace, setGrace] = useState("0");
+  const [grace, setGrace] = useState(String((c as any).blockAfterOverdueDays ?? 5));
+  const [monthlyAmount, setMonthlyAmount] = useState(String((c as any).monthlyAmount ?? c.planPrice ?? ""));
   const [reason, setReason] = useState(c.blockedReason ?? "");
   const [pay_, setPay] = useState({ amount: c.planPrice ? String(c.planPrice) : "", paymentDate: today(), periodFrom: today(), periodTo: "", billingType: "PIX" as const });
   const [confirm, setConfirm] = useState("");
@@ -93,11 +96,16 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
         <div><Label>Plano</Label><select value={planId} onChange={(e) => setPlanId(e.target.value)} className={sel}><option value="">Selecione…</option>{(plans.data || []).map((p: any) => <option key={p.id} value={p.id}>{p.name} — {money(p.price)}/{p.billingCycle === "yearly" ? "ano" : "mês"}{p.active === false ? " (inativo)" : ""}</option>)}</select></div>
         <div><Label>Situação</Label><select value={status} onChange={(e) => setStatus(e.target.value as any)} className={sel}>{Object.entries(STATUS_LABEL).filter(([k]) => k !== "test").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
         <div><Label>Válido a partir de</Label><Input type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className={inp} /></div>
-        <div><Label>Válido até (inclusive)</Label><Input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className={inp} /></div>
-        <div><Label>Tolerância após o vencimento (dias)</Label><Input inputMode="numeric" value={grace} onChange={(e) => setGrace(e.target.value.replace(/\D/g, ""))} className={inp} /></div>
+        <div><Label>Válido até (inclusive) — vencimento</Label><Input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className={inp} /></div>
+        <div><Label>Valor mensal negociado (R$)</Label><Input inputMode="decimal" value={monthlyAmount} onChange={(e) => setMonthlyAmount(e.target.value.replace(",", "."))} className={inp} placeholder="Ex.: 199.90" /></div>
+        <div><Label>Bloquear após atraso (dias)</Label><Input inputMode="numeric" value={grace} onChange={(e) => setGrace(e.target.value.replace(/\D/g, ""))} className={inp} /><p className="mt-1 text-[11px] text-slate-400">Padrão 5. Nesse período o admin vê aviso vermelho; depois só a tela de Pix.</p></div>
       </div>
-      <Button disabled={!planId || !startsAt || setPlan.isPending} onClick={() => setPlan.mutate({ companyId: c.id, planId: Number(planId), status: status as any, startsAt, endsAt: endsAt || null, graceDays: Number(grace || 0) })} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar plano e validade</Button>
-      <p className="text-xs text-slate-400">Depois do último dia de validade (mais a tolerância), a empresa perde o acesso às funções comerciais e só vê a tela de regularização.</p>
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={!planId || !startsAt || setPlan.isPending} onClick={() => setPlan.mutate({ companyId: c.id, planId: Number(planId), status: status as any, startsAt, endsAt: endsAt || null, graceDays: Number(grace || 5) })} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar plano e validade</Button>
+        <Button disabled={setBilling.isPending || !monthlyAmount || !/^\d+(\.\d{1,2})?$/.test(monthlyAmount)} onClick={() => setBilling.mutate({ companyId: c.id, monthlyAmount, blockAfterOverdueDays: Number(grace || 5), dueDate: endsAt || null })} variant="outline" className="border-white/25 text-white">Salvar valor e tolerância</Button>
+        <Button disabled={markPaid.isPending || !c.planId} onClick={() => { void confirmAction({ title: `Marcar ${c.name} como pago? A validade avança 1 mês e o aviso de Pix some.`, confirmLabel: "Confirmar pagamento" }).then((ok) => ok && markPaid.mutate({ companyId: c.id, amount: monthlyAmount || undefined, graceDays: Number(grace || 5) })); }} className="bg-emerald-500 text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4" />Marcar como pago</Button>
+      </div>
+      <p className="text-xs text-slate-400">Depois do vencimento + tolerância, a empresa só vê a tela de Pix/WhatsApp até você marcar como pago.</p>
     </CardContent></Card>
 
     <CompanyFeaturesCard companyId={c.id} />

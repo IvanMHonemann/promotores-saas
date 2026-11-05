@@ -3,6 +3,8 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { companies, companySubscriptions, memberAccounts, memberSessions, payments, subscriptionPlans, systemSettings } from "../drizzle/schema.original";
+import { MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, markCompanyPaid, resolveMonthlyAmount, resolveGraceDays } from "./paymentReminder";
+import { DEFAULT_OVERDUE_GRACE_DAYS } from "./subscriptionAccess";
 
 const BR = "-03:00";
 export const endOfDay = (d: string) => new Date(`${d}T23:59:59${BR}`);
@@ -23,7 +25,7 @@ export async function listCompaniesOverview() {
     d.execute(sql`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
     d.execute(sql`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
     d.execute(sql`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
-    d.select().from(systemSettings).where(inArray(systemSettings.settingKey, ["blocked_reason", "archived_at"])),
+    d.select().from(systemSettings).where(inArray(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY])),
   ]);
   const planById = new Map(plans.map((p) => [p.id, p]));
   const map = <T,>(r: any, key = "companyId") => new Map<number, T>(((r as any)[0] as any[]).map((x) => [Number(x[key]), x as T]));
@@ -31,11 +33,15 @@ export async function listCompaniesOverview() {
   const flagBy = new Map<string, string>(flags.map((f: any) => [`${f.accountId}:${f.settingKey}`, f.settingValue]));
   return rows.map((c) => {
     const plan = c.planId ? planById.get(c.planId) : null;
+    const monthlyAmount = flagBy.get(`${c.id}:${MONTHLY_AMOUNT_KEY}`) || (plan?.price != null ? String(plan.price) : null);
+    const blockAfter = flagBy.get(`${c.id}:${BLOCK_AFTER_OVERDUE_KEY}`);
     return {
       id: c.id, name: c.name, active: c.active, createdAt: c.createdAt,
       archivedAt: flagBy.get(`${c.id}:archived_at`) ?? null,
       blockedReason: flagBy.get(`${c.id}:blocked_reason`) ?? null,
       planId: c.planId ?? null, planName: plan?.name ?? null, planPrice: plan?.price ?? null,
+      monthlyAmount,
+      blockAfterOverdueDays: blockAfter != null && blockAfter !== "" ? Number(blockAfter) : DEFAULT_OVERDUE_GRACE_DAYS,
       subscriptionStatus: c.subscriptionStatus ?? null,
       startedAt: c.subscriptionStartedAt ?? null, expiresAt: c.subscriptionExpiresAt ?? null, graceUntil: c.gracePeriodEndsAt ?? null,
       lastPayment: payBy.get(c.id)?.lastPayment ?? null, paymentsCount: Number(payBy.get(c.id)?.n ?? 0),
@@ -75,8 +81,8 @@ export async function setCompanyPlan(input: { companyId: number; planId: number;
   await d.update(companies).set({
     planId: input.planId, subscriptionStatus: input.status,
     subscriptionStartedAt: startOfDay(input.startsAt), subscriptionExpiresAt: end,
-    // tolerância explícita (padrão 0 dia): acesso até o fim do dia de validade + graceDays
-    gracePeriodEndsAt: end ? addDaysDate(end, Math.max(0, input.graceDays ?? 0)) : null,
+    // tolerância explícita (padrão 5 dias): acesso até o fim do dia de validade + graceDays
+    gracePeriodEndsAt: end ? addDaysDate(end, Math.max(0, input.graceDays ?? DEFAULT_OVERDUE_GRACE_DAYS)) : null,
   } as any).where(eq(companies.id, input.companyId));
   return { success: true as const };
 }
@@ -89,7 +95,7 @@ export async function registerCompanyPayment(input: { companyId: number; amount:
   const planId = input.planId ?? company.planId;
   if (!planId) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um plano para esta empresa antes de registrar o pagamento." });
   const latest = await db.getLatestCompanySubscription(input.companyId);
-  await setCompanyPlan({ companyId: input.companyId, planId, status: "active", startsAt: input.periodFrom, endsAt: input.periodTo, graceDays: input.graceDays ?? 0, notes: input.note ?? latest?.notes ?? null });
+  await setCompanyPlan({ companyId: input.companyId, planId, status: "active", startsAt: input.periodFrom, endsAt: input.periodTo, graceDays: input.graceDays ?? DEFAULT_OVERDUE_GRACE_DAYS, notes: input.note ?? latest?.notes ?? null });
   const sub = await db.getLatestCompanySubscription(input.companyId);
   const created = await db.createPaymentRecord({ companyId: input.companyId, subscriptionId: sub?.id ?? null, amount: input.amount, netAmount: input.amount, billingType: input.billingType, status: "RECEIVED", dueDate: input.periodFrom, paymentDate: input.paymentDate });
   // pagamento registrado reativa o acesso, se estava bloqueado por inadimplência
@@ -169,3 +175,48 @@ export async function purgeCompany(companyId: number, confirmName: string) {
   }
   return { company, deleted, filesDeleted };
 }
+
+
+/** Valor mensal negociado + tolerância (dias após vencimento) por empresa. */
+export async function setCompanyBilling(input: {
+  companyId: number;
+  monthlyAmount?: string | null;
+  blockAfterOverdueDays?: number | null;
+  dueDate?: string | null;
+}) {
+  const company = await db.getCompanyById(input.companyId);
+  if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+  if (input.monthlyAmount != null && input.monthlyAmount !== "") {
+    if (!/^\d{1,10}(\.\d{1,2})?$/.test(input.monthlyAmount) || Number(input.monthlyAmount) <= 0) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Valor mensal inválido." });
+    }
+    await db.setSetting(MONTHLY_AMOUNT_KEY, Number(input.monthlyAmount).toFixed(2), input.companyId);
+  }
+  if (input.blockAfterOverdueDays != null) {
+    const n = Math.max(0, Math.min(60, Math.floor(input.blockAfterOverdueDays)));
+    await db.setSetting(BLOCK_AFTER_OVERDUE_KEY, String(n), input.companyId);
+    // Alinha gracePeriodEndsAt com a nova tolerância, se houver vencimento.
+    if (company.subscriptionExpiresAt) {
+      const end = company.subscriptionExpiresAt instanceof Date
+        ? company.subscriptionExpiresAt
+        : new Date(company.subscriptionExpiresAt as any);
+      await db.updateCompanySubscriptionFields(input.companyId, {
+        gracePeriodEndsAt: addDaysDate(end, n),
+      });
+    }
+  }
+  if (input.dueDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) throw new TRPCError({ code: "BAD_REQUEST", message: "Data de vencimento inválida." });
+    const grace = input.blockAfterOverdueDays != null
+      ? Math.max(0, Math.min(60, Math.floor(input.blockAfterOverdueDays)))
+      : await resolveGraceDays(input.companyId);
+    const end = endOfDay(input.dueDate);
+    await db.updateCompanySubscriptionFields(input.companyId, {
+      subscriptionExpiresAt: end,
+      gracePeriodEndsAt: addDaysDate(end, grace),
+    });
+  }
+  return { success: true as const, monthlyAmount: await resolveMonthlyAmount(input.companyId), graceDays: await resolveGraceDays(input.companyId) };
+}
+
+export { markCompanyPaid, resolveMonthlyAmount, resolveGraceDays };

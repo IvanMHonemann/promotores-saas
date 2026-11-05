@@ -37,6 +37,7 @@ const TrashPage = lazy(() => import("./pages/TrashPage"));
 const PlatformCompaniesPage = lazy(() => import("./pages/platform/PlatformCompaniesPage"));
 const PlatformAuditPage = lazy(() => import("./pages/platform/PlatformAuditPage"));
 const PlatformCheckInOutTestPage = lazy(() => import("./pages/platform/PlatformCheckInOutTestPage"));
+const PaymentRequiredPage = lazy(() => import("./pages/PaymentRequiredPage"));
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -48,6 +49,24 @@ import { useVisitSync } from "@/hooks/useVisitSync";
 import type { EntitlementKey } from "@shared/entitlements";
 import { useEffect } from "react";
 
+
+/** Se a assinatura passou da tolerância, só mostra a tela de pagamento (exceto admin da plataforma). */
+function SubscriptionGate({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  const access = trpc.billing.access.useQuery(undefined, {
+    enabled: Boolean(user && user.role !== "platform_admin" && user.companyId),
+    staleTime: 30_000,
+    retry: false,
+  });
+  if (loading) return <LoadingScreen />;
+  if (!user || user.role === "platform_admin" || !user.companyId) return <>{children}</>;
+  if (access.isLoading) return <LoadingScreen />;
+  if (access.data && access.data.allowed === false) {
+    return <PaymentRequiredPage />;
+  }
+  return <>{children}</>;
+}
+
 function RedirectHome() { if (typeof window !== "undefined") window.location.replace("/"); return <LoadingScreen />; }
 
 function LoadingScreen() { return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white"><Loader2 className="h-7 w-7 animate-spin text-teal-300" /></div>; }
@@ -56,7 +75,7 @@ function CommercialProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user || user.role === "platform_admin" || !user.companyId) return <RedirectHome />;
-  return <>{children}</>;
+  return <SubscriptionGate>{children}</SubscriptionGate>;
 }
 
 function PlatformProtected({ children }: { children: React.ReactNode }) {
@@ -77,21 +96,22 @@ function AdminProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <RedirectHome />;
-  return <>{children}</>;
+  if (user.role === "platform_admin") return <>{children}</>;
+  return <SubscriptionGate>{children}</SubscriptionGate>;
 }
 
 function CompanyAdminProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user || user.role !== "company_admin") return <RedirectHome />;
-  return <>{children}</>;
+  return <SubscriptionGate>{children}</SubscriptionGate>;
 }
 
 function PromoterProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user || user.role !== "promoter") return <RedirectHome />;
-  return <>{children}</>;
+  return <SubscriptionGate>{children}</SubscriptionGate>;
 }
 
 function isUnauthorizedError(error: unknown): boolean {
@@ -193,8 +213,8 @@ function RootRoute() {
   if (loading) return <LoadingScreen />;
   if (!user) return <LandingPage />;
   if (user.role === "platform_admin") return <PlatformDashboard />;
-  if (user.role === "promoter") return <PromoterDashboard />;
-  if (user.companyId) return <OperationsDashboard />;
+  if (user.role === "promoter") return <SubscriptionGate><PromoterDashboard /></SubscriptionGate>;
+  if (user.companyId) return <SubscriptionGate><OperationsDashboard /></SubscriptionGate>;
   return <LandingPage />;
 }
 

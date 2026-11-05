@@ -4,6 +4,7 @@
  * - attachmentKey (foto de comprovante/atestado no S3)
  * Colunas criadas sob demanda para não quebrar o schema existente.
  */
+import { detectImageMime } from "../mediaKeys";
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import * as db from "../db";
 import { timeCorrectionRequests } from "../../drizzle/schema";
@@ -29,8 +30,12 @@ export async function saveCorrectionAttachment(companyId: number, requestId: num
   const clean = base64.replace(/^data:[^;]+;base64,/, "");
   const buf = Buffer.from(clean, "base64");
   if (buf.length > 8 * 1024 * 1024) throw new Error("Foto muito grande (máx. 8 MB).");
-  const key = `corrections/${companyId}/${requestId}_${Date.now()}.jpg`;
-  const { key: stored } = await storagePut(key, buf, mime);
+  // Confere o conteúdo real (não confia no tipo informado pelo cliente): só JPG, PNG ou WebP.
+  const detected = detectImageMime(buf);
+  if (!detected) throw new Error("O anexo precisa ser uma imagem válida (JPG, PNG ou WebP).");
+  const ext = detected === "image/png" ? "png" : detected === "image/webp" ? "webp" : "jpg";
+  const key = `corrections/${companyId}/${requestId}_${Date.now()}.${ext}`;
+  const { key: stored } = await storagePut(key, buf, detected);
   return stored;
 }
 

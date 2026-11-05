@@ -1,4 +1,5 @@
 /** Gestão de empresas pelo administrador da plataforma: visão geral, plano/validade, pagamentos, bloqueio, arquivamento e exclusão. */
+import { guardedStorageDelete } from "./mediaKeys";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -144,7 +145,7 @@ export async function purgeCompany(companyId: number, confirmName: string) {
     const d = await database();
     const [photoRows]: any = await d.execute(sql`SELECT fileKey, thumbnailKey FROM store_photos WHERE companyId = ${companyId}`);
     const { storageDelete } = await import("./storage");
-    for (const p of photoRows as any[]) { for (const k of [p.fileKey, p.thumbnailKey]) if (k) { try { await storageDelete(k); filesDeleted++; } catch { /* segue */ } } }
+    for (const p of photoRows as any[]) { for (const k of [p.fileKey, p.thumbnailKey]) if (k) { try { if (await guardedStorageDelete(storageDelete, k, companyId)) filesDeleted++; } catch { /* segue */ } } }
   } catch { /* tabela pode não existir */ }
 
   const pool = await db.getPool();

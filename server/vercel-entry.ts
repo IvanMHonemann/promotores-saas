@@ -1,3 +1,4 @@
+import { originGuard } from "./_core/originGuard";
 import express, { type Request, type Response, type NextFunction } from "express";
 import compression from "compression";
 import fs from "fs";
@@ -137,6 +138,7 @@ async function createApp() {
     }
   });
 
+  app.use("/api/trpc", originGuard());
   app.use("/api/trpc", (_req, res, next) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
     next();

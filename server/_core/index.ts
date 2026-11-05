@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import compression from "compression";
+import { originGuard } from "./originGuard";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -159,6 +160,7 @@ app.all("/api/scheduled/database-maintenance", async (req, res) => {
 
   app.use(
     "/api/trpc",
+    originGuard(),
     (_req, res, next) => {
       // auth.me depende do cookie atual e nunca pode ser servido por cache.
       res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");

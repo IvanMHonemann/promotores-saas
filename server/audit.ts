@@ -3,6 +3,7 @@
  * Sempre use companyId da sessão (ctx.accountId), nunca do body do cliente.
  * Não registra senhas, tokens ou credenciais.
  */
+import { neutralizeCsvFormula } from "../shared/csv";
 import { and, count, desc, eq, gte, like, lte, or, sql, type SQL } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { auditLogs, type InsertAuditLog } from "../drizzle/schema";
@@ -434,7 +435,7 @@ export async function exportAuditLogsCsv(filters: AuditListFilters): Promise<str
     "ipAddress",
   ];
   const escape = (v: unknown) => {
-    const s = v == null ? "" : String(v);
+    const s = neutralizeCsvFormula(v);
     if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
     return s;
   };

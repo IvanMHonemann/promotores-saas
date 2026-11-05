@@ -1,3 +1,4 @@
+import { detectImageMime } from "../mediaKeys";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "../../shared/uploadLimits";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -525,6 +526,11 @@ export const timeTrackingRouter = router({
         eq(timeCorrectionRequests.memberAccountId, memberId),
         sql`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
       )).orderBy(desc(timeCorrectionRequests.createdAt)).limit(100);
+
+      if (input.attachmentBase64) {
+        const head = Buffer.from(input.attachmentBase64.replace(/^data:[^;]+;base64,/, "").slice(0, 64), "base64");
+        if (!detectImageMime(head)) throw new TRPCError({ code: "BAD_REQUEST", message: "O anexo precisa ser uma imagem válida (JPG, PNG ou WebP)." });
+      }
 
       if (fullDay) {
         const day = excuseDay(requestedTime);

@@ -13,6 +13,7 @@ import { useOfflineQuery } from "@/lib/useOfflineQuery";
 import { toast } from "sonner";
 import { todayInZone, expiryStatus } from "@shared/expiry";
 import { isValidGtin, looksNumeric } from "@shared/barcode";
+import { neutralizeCsvFormula } from "@shared/csv";
 import { confirmAction } from "@/components/ConfirmDialog";
 import { toastWithUndo } from "@/lib/undoTrash";
 
@@ -26,7 +27,7 @@ function shareProducts(products: Product[]) {
   const text = ["*Produtos e controle de validade*", ...products.map(p => `*${p.description}*\n*Código:* ${p.productCode}\n*Quantidade:* ${p.quantity}\n*Validade:* ${dateLabel(p.expirationDate)}\n*Preço:* ${money(p.price)}`)].join("\n\n");
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
 }
-const csvCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
+const csvCell = (value: string | number) => `"${neutralizeCsvFormula(value).replace(/"/g, '""')}"`;
 function expiryReportCsv(products: Product[], today: string) {
   const rows = [["Código", "Descrição", "Quantidade", "Validade", "Situação", "Preço"], ...products.map(p => {
     const date = dateValue(p.expirationDate);

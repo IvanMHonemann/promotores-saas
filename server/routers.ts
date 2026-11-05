@@ -1,3 +1,4 @@
+import { neutralizeCsvFormula } from "../shared/csv";
 import { MEMBER_COOKIE_NAME } from "@shared/const";
 import { timeTrackingRouter } from "./modules/timeTracking";
 import { timesheetMirrorRouter } from "./modules/timesheetMirror";
@@ -10,6 +11,7 @@ import { z } from "zod";
 import { parse as parseCookie } from "cookie";
 import { TRPCError } from "@trpc/server";
 import { checkRateLimit, getClientIp } from "./_core/rateLimit";
+import { isThrottled, registerThrottleFailure } from "./authThrottle";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -97,6 +99,12 @@ export const appRouter = router({
         paymentConfirmed: z.boolean().refine((v) => v === true, { message: "Confirme o pagamento para criar a conta." }),
       }))
       .mutation(async ({ ctx, input }) => {
+        // Cadastro público: no máximo 5 tentativas por IP a cada 15 min (vale para todas as instâncias).
+        const signupKey = `signup:${getClientIp(ctx.req)}`;
+        if (await isThrottled(signupKey)) {
+          throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitos cadastros deste endereço. Tente novamente em alguns minutos." });
+        }
+        await registerThrottleFailure(signupKey);
         try {
           // Conta só é criada após plano + confirmação de pagamento (mock ou real no futuro)
           const created = await memberAuth.createCompanyWithAdmin({
@@ -119,7 +127,6 @@ export const appRouter = router({
                 userName: input.userName,
                 companyName: input.companyName,
                 email: input.email,
-                password: input.password,
                 recoveryCode: created.recoveryCode,
                 planName,
                 isTrial: true,
@@ -220,7 +227,7 @@ export const appRouter = router({
       .input(z.object({ email: z.string().trim().email() }))
       .mutation(async ({ input }) => {
         const message = "Se o e-mail estiver cadastrado, enviaremos um link para criar uma nova senha. Se não chegar em alguns minutos, use o código de recuperação ou fale com o suporte.";
-        if (!memberAuth.isPasswordResetAvailable() || !memberAuth.allowPasswordResetRequest(input.email)) return { success: true as const, message };
+        if (!memberAuth.isPasswordResetAvailable() || !(await memberAuth.allowPasswordResetRequest(input.email))) return { success: true as const, message };
         try {
           const reset = await memberAuth.createPasswordResetToken(input.email);
           if (reset) await emailService.emailPasswordReset({ to: input.email, userName: reset.userName, token: reset.token });
@@ -615,7 +622,12 @@ export const appRouter = router({
       if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError({ code: "BAD_REQUEST", message: "O administrador não pode remover o próprio nível administrativo." });
       const usersBefore = await memberAuth.listMemberAccounts(ctx.accountId);
       const beforeUser = usersBefore.find((u) => u.id === input.id) || null;
-      await memberAuth.updateCompanyUser(input.id, ctx.accountId, { userName: input.userName, email: input.email, role: input.role });
+      try {
+        await memberAuth.updateCompanyUser(input.id, ctx.accountId, { userName: input.userName, email: input.email, role: input.role });
+      } catch (error: any) {
+        if (error?.message === "A empresa precisa manter pelo menos um administrador ativo.") throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        throw error;
+      }
       const usersAfter = await memberAuth.listMemberAccounts(ctx.accountId);
       const afterUser = usersAfter.find((u) => u.id === input.id) || null;
       const userDiff = diffAuditData(beforeUser, afterUser);
@@ -901,7 +913,12 @@ export const appRouter = router({
         }
       }),
       delete: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-        return db.deleteOperationalRoute(ctx.accountId, input.id);
+        try {
+          return await db.deleteOperationalRoute(ctx.accountId, input.id);
+        } catch (error) {
+          if (error instanceof db.RouteValidationError) throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+          throw error;
+        }
       }),
     }),
     visits: router({
@@ -994,7 +1011,7 @@ export const appRouter = router({
         const result = await listPromoterActivities({ companyId: ctx.accountId, page: 1, pageSize: 10_000, ...input });
         const headers = ["Data/hora", "Promotor", "E-mail", "Atividade", "Área", "Registro", "Descrição", "Detalhes"];
         const values = result.items.map((row: any) => [row.occurredAt, row.userName, row.userEmail, row.action, row.module, row.entityLabel, row.description, typeof row.details === "string" ? row.details : JSON.stringify(row.details ?? {})]);
-        const cell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+        const cell = (value: unknown) => `"${neutralizeCsvFormula(value).replace(/"/g, '""')}"`;
         const csv = `\uFEFF${[headers, ...values].map((line) => line.map(cell).join(";")).join("\r\n")}`;
         return { csv, contentType: "text/csv; charset=utf-8", filename: `atividades-promotores-${ctx.accountId}.csv` } as const;
       }),

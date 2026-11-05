@@ -18,16 +18,18 @@ export default function PlatformDashboard({ section = "overview" }: { section?: 
   const total = companies.data?.length ?? 0;
   const active = companies.data?.filter((company) => company.active).length ?? 0;
   const selectSection = (value: Section) => { window.location.href = SECTION_PATH[value]; };
-  const title = section === "time" ? "Ponto eletrônico" : section === "companies" ? "Empresas" : section === "ai-support" ? "Suporte com IA" : section === "code-scanner" ? "Scanner de Código & Bugs em Tempo Real" : "Visão geral";
+  const title = section === "time" ? "Ponto eletrônico" : section === "companies" ? "Empresas" : section === "ai-support" ? "Suporte com IA" : section === "code-scanner" ? "Erros ao vivo" : "Visão geral";
 
   useEffect(() => {
+    // O GPS só é pedido na área de teste de ponto, não na visão geral.
+    if (section !== "time") return;
     if (!navigator.geolocation || !window.isSecureContext) { setGpsStatus("unavailable"); return; }
     navigator.geolocation.getCurrentPosition(
       () => setGpsStatus("granted"),
       (error) => { setGpsStatus("denied"); if (error.code === 1) toast.error("O navegador bloqueou o GPS. Libere a localização nas permissões do site."); },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
-  }, []);
+  }, [section]);
 
   const requestGps = () => {
     if (!navigator.geolocation || !window.isSecureContext) { setGpsStatus("unavailable"); toast.error("O GPS só funciona em uma conexão HTTPS e em navegador compatível."); return; }
@@ -226,7 +228,7 @@ function PersistentAIChat() {
 }
 
 function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total: number; active: number; onNavigate: (section: Section) => void; gpsStatus: "checking" | "granted" | "denied" | "unavailable"; requestGps: () => void }) {
-  const stats = [{ label: "Empresas cadastradas", value: total, detail: "Ambientes na plataforma", icon: Building2, color: "text-sky-300", bg: "bg-sky-300/10" }, { label: "Empresas ativas", value: active, detail: "Operação em andamento", icon: Activity, color: "text-teal-300", bg: "bg-teal-300/10" }, { label: "Módulos ativos", value: "04", detail: "Recursos disponíveis", icon: CheckCircle2, color: "text-violet-300", bg: "bg-violet-300/10" }];
+  const stats = [{ label: "Empresas cadastradas", value: total, detail: "Ambientes na plataforma", icon: Building2, color: "text-sky-300", bg: "bg-sky-300/10" }, { label: "Empresas ativas", value: active, detail: "Operação em andamento", icon: Activity, color: "text-teal-300", bg: "bg-teal-300/10" }, { label: "Módulos ativos", value: "4", detail: "Recursos disponíveis", icon: CheckCircle2, color: "text-violet-300", bg: "bg-violet-300/10" }];
   return (
     <div className="space-y-6">
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7">
@@ -239,7 +241,6 @@ function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total:
           <div className="flex items-center gap-2 text-sm text-slate-300"><span className="h-2.5 w-2.5 rounded-full bg-teal-300" /> Dados atualizados agora</div>
         </div>
       </div>
-      <GpsPermission status={gpsStatus} onRequest={requestGps} onOpenTime={() => onNavigate("time")} />
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
         {stats.map(({ label, value, detail, icon: Icon, color, bg }, index) => (
           <Card key={label} className={`rounded-none border-0 bg-[#0b1021] shadow-none ${stats.length % 2 === 1 && index === stats.length - 1 ? "col-span-2" : ""}`}>
@@ -259,7 +260,7 @@ function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total:
           <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-300">Acesso rápido</p><h2 className="mt-1 text-xl font-bold">Comece por um módulo</h2></div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <QuickAction icon={ShieldAlert} title="Scanner e Erros (Live)" text="Verifique bugs, rotas e sensores em tempo real." onClick={() => onNavigate("code-scanner")} />
+          <QuickAction icon={ShieldAlert} title="Erros ao vivo" text="Verifique bugs, rotas e sensores em tempo real." onClick={() => onNavigate("code-scanner")} />
           <QuickAction icon={Building2} title="Empresas" text="Consulte os ambientes cadastrados." onClick={() => onNavigate("companies")} />
           <QuickAction icon={ClipboardCheck} title="Testar ponto eletrônico" text="Simule uma jornada completa." highlight onClick={() => onNavigate("time")} />
           <QuickAction icon={Sparkles} title="Suporte com IA" text="Converse com a inteligência artificial da plataforma." onClick={() => onNavigate("ai-support")} />

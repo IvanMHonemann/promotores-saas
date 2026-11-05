@@ -111,7 +111,12 @@ export default function CheckInOutPage() {
         </div>
 
         {visits.isLoading && <p className="text-sm text-slate-300">Carregando visitas...</p>}
-        {!visits.isLoading && !visits.data?.length && <p className="text-sm text-slate-300">Nenhuma visita nesta data.</p>}
+        {!visits.isLoading && !visits.data?.length && (
+          <div className="rounded-2xl border border-dashed border-white/15 p-5 text-center">
+            <p className="font-bold text-white">Nenhuma visita nesta data</p>
+            <p className="mt-1 text-sm text-slate-300">Escolha outra data acima ou monte o roteiro da equipe para as visitas aparecerem aqui.</p>
+            <a href="/#roteiros" className="mt-3 inline-flex h-11 items-center rounded-xl bg-teal-300 px-4 font-bold text-slate-950 hover:bg-teal-200">Montar roteiro</a>
+          </div>)}
 
         <div className="space-y-3">
           {visits.data?.map(({ visit, store }) => (

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import { LocationLabel } from "./geolocation";
-import { localDayKey } from "@/components/PunchPanel";
+import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 
 type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
@@ -204,9 +204,8 @@ export default function PromoterClockPage() {
   return (
     <DashboardLayout title="Cartão ponto" description="Histórico, localização e pedidos de correção.">
       <div className="space-y-4">
-        <Link href="/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-teal-300 hover:text-teal-200">
-          <ArrowLeft className="h-4 w-4" /> Voltar ao painel inicial para bater o ponto
-        </Link>
+        {/* Bater o ponto também aqui: quem abre "Cartão ponto" espera marcar a batida nesta tela. */}
+        <PunchPanel />
 
         <div id="historico" className="scroll-mt-6">
           <Card>

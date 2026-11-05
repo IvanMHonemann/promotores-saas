@@ -95,7 +95,13 @@ export default function AdminUsersPage() {
                   <p className="mt-1 text-xs text-slate-400">{member.email}{member.employeeCode ? ` · matrícula ${member.employeeCode}` : ""}</p>
                 </button>
               ))}
-              {!list.isLoading && rows.length === 0 && <p className="text-sm text-slate-400">Nenhum usuário encontrado.</p>}
+              {!list.isLoading && rows.length === 0 && (q.trim()
+                ? <p className="text-sm text-slate-300">Ninguém encontrado com “{q.trim()}”. Confira o nome ou e-mail.</p>
+                : <div className="rounded-2xl border border-dashed border-teal-300/30 bg-teal-300/5 p-5 text-center">
+                    <p className="font-bold text-white">Convide seu primeiro promotor</p>
+                    <p className="mt-1 text-sm text-slate-300">Cadastre a equipe para ela bater ponto e registrar visitas pelo celular.</p>
+                    <Button className="mt-3 h-11 bg-teal-300 font-bold text-slate-950 hover:bg-teal-200" onClick={() => { setCreating(true); setSelectedId(null); }}><Plus className="h-4 w-4" /> Cadastrar promotor</Button>
+                  </div>)}
             </div>
           </CardContent>
         </Card>

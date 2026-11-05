@@ -113,7 +113,7 @@ export default function StoresPage() {
   return (
     <DashboardLayout
       title="Lojas"
-      description="Veja as evidências fotográficas de cada ponto de venda"
+      description="Veja as fotos das visitas em cada loja"
       onRefresh={() => void stores.refetch()}
     >
       <div className="space-y-4">

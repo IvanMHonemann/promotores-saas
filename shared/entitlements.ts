@@ -26,10 +26,10 @@ export const ENTITLEMENT_CATALOG: ReadonlyArray<{
   { key: "alerts", label: "Alertas", description: "Alertas operacionais e de vencimento." },
   { key: "timeTracking", label: "Ponto eletrônico com GPS", description: "Marcações de jornada, localização e histórico." },
   { key: "fieldOperations", label: "Lojas, roteiros e visitas", description: "Cadastro de lojas, planejamento de roteiros e visitas em campo." },
-  { key: "reports", label: "Relatórios e auditoria", description: "Histórico, relatórios e trilha de auditoria." },
+  { key: "reports", label: "Relatórios e auditoria", description: "Histórico do que foi feito em campo, relatórios e exportação." },
   { key: "teamManagement", label: "Gestão da equipe", description: "Cadastro de usuários e permissões individuais." },
-  { key: "backup", label: "Backup e restauração", description: "Recursos de backup e recuperação da empresa." },
-  { key: "offline", label: "Operação offline / PWA", description: "Acesso aos recursos offline disponíveis no aplicativo." },
+  { key: "backup", label: "Cópia de segurança", description: "Guarda uma cópia dos dados da empresa e permite recuperar se algo for apagado." },
+  { key: "offline", label: "Funciona sem internet", description: "O promotor registra ponto, visitas e fotos sem sinal; tudo é enviado quando a conexão volta." },
 ];
 
 export const PLAN_FEATURES: Readonly<Record<"start" | "profissional" | "empresarial", readonly EntitlementKey[]>> = {

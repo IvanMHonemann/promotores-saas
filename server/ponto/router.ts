@@ -1,3 +1,4 @@
+import { isValidCpf, isValidCpfOrCnpj } from "@shared/brDocs";
 /**
  * "Ponto com valor de prova": comprovantes, aceite do espelho, AFD/AEJ e verificação de integridade.
  * Ver docs/ponto-prova-legal.md.
@@ -16,6 +17,7 @@ import { ensurePunchLedger, toLedgerRow, DEFAULT_TZ, supersededIds } from "./led
 import { buildAej, buildAfd, onlyDigits, sha256, toAejSequence, toLatin1, verifyLedger, formatD, type AejMark, type AejWorker } from "./repFormat";
 import { buildReceiptData, buildReceiptPdf, receiptEmailHtml } from "./receipt";
 import { sendEmail } from "../email";
+import { latestClockChecks, runClockCheck, MAX_DRIFT_MS } from "./clock";
 
 const TZ = DEFAULT_TZ;
 const monthStr = z.string().regex(/^\d{4}-\d{2}$/);
@@ -110,6 +112,30 @@ function fileResponse(content: string, fileName: string) {
   return { fileName, base64: toLatin1(content).toString("base64"), mimeType: "text/plain;charset=iso-8859-1" };
 }
 
+/** O que falta cadastrar para AFD/AEJ/comprovante/espelho saírem completos. */
+export async function dataReadiness(companyId: number) {
+  const legal = await readJson<LegalProfile>("company_legal_profile", companyId);
+  const company: string[] = [];
+  if (!(legal?.legalName || "").trim()) company.push("Razão social");
+  const doc = onlyDigits(legal?.document);
+  if (!doc) company.push("CNPJ/CPF");
+  else if (!isValidCpfOrCnpj(doc)) company.push("CNPJ/CPF válido (o cadastrado não confere)");
+  if (!(legal?.address || "").trim()) company.push("Endereço");
+  const database = await db.getDb();
+  const members = database ? (await database.select({ id: memberAccounts.id, name: memberAccounts.userName, role: memberAccounts.role, active: memberAccounts.active }).from(memberAccounts).where(eq(memberAccounts.companyId, companyId))).filter((m) => m.role !== "company_admin" && m.active) : [];
+  const people: Array<{ memberId: number; name: string; missing: string[] }> = [];
+  for (const m of members) {
+    const l = await readJson<LaborProfile>(`labor_profile:${m.id}`, companyId);
+    const missing: string[] = [];
+    if (!l?.cpf) missing.push("CPF"); else if (!isValidCpf(l.cpf)) missing.push("CPF válido");
+    if (!(l?.jobTitle || "").trim()) missing.push("Cargo");
+    if (!l?.admissionDate) missing.push("Data de admissão");
+    if (!l?.schedule?.length) missing.push("Horário contratual");
+    if (missing.length) people.push({ memberId: m.id, name: m.name, missing });
+  }
+  return { company, people, ok: company.length === 0 && people.length === 0 };
+}
+
 export const pontoLegalRouter = router({
   /** Situação do sistema para a tela do administrador (o que já está pronto e o que depende do Ivan/advogado). */
   status: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
@@ -122,6 +148,7 @@ export const pontoLegalRouter = router({
       developerDocument: Boolean(dev.document),
       signature: false,
       emailEnabled: Boolean(process.env.RESEND_API_KEY || process.env.EMAIL_WEBHOOK_URL),
+      readiness: await dataReadiness(ctx.accountId),
     };
   }),
 
@@ -216,6 +243,19 @@ export const pontoLegalRouter = router({
       return out.sort((x, y) => x.name.localeCompare(y.name, "pt-BR"));
     }),
 
+  // ------------------------------------------------------------------ relógio (Hora Legal Brasileira)
+  clockStatus: companyAdminFeatureProcedure("timeTracking").query(async () => {
+    let checks = await latestClockChecks(10);
+    const last = checks[0] ? new Date(checks[0].checkedAt).getTime() : 0;
+    if (Date.now() - last > 6 * 3600_000) { await runClockCheck("agendado"); checks = await latestClockChecks(10); } // sem cron frequente: confere ao abrir a tela
+    return { limitMs: MAX_DRIFT_MS, checks };
+  }),
+  clockCheck: companyAdminFeatureProcedure("timeTracking").mutation(async ({ ctx }) => {
+    const r = await runClockCheck("manual");
+    void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "clock_check", description: `Conferiu o relógio com a Hora Legal Brasileira: ${r.error ? "falhou" : `${r.worstMs} ms`}` } as any);
+    return r;
+  }),
+
   // ------------------------------------------------------------------ integridade
   verifyIntegrity: companyAdminFeatureProcedure("timeTracking").mutation(async ({ ctx }) => {
     await ensurePunchLedger();
@@ -295,6 +335,7 @@ export const pontoLegalRouter = router({
       for (const r of all) if (r.replacesEventId) replacedBy.set(r.replacesEventId, r);
       const workers: AejWorker[] = [];
       const missingCpf: string[] = [];
+      const missingSchedule: string[] = [];
       for (const m of members) {
         const mine = inPeriod.filter((r) => r.memberAccountId === m.id);
         if (!mine.length) continue;
@@ -315,8 +356,12 @@ export const pontoLegalRouter = router({
           marks.push({ markedAt: r.deviceTime || r.serverTime, tpMarc: "D", seq: 0, fonte: r.origin === "original" ? "O" : "I", motivo: `Substituída por ajuste aprovado por ${by.recordedByName || "administrador"}: ${by.reason || ""}` });
         }
         marks.sort((a, b) => a.markedAt.getTime() - b.markedAt.getTime());
-        const daily = Number(labor?.dailyMinutes || 0);
-        workers.push({ cpf, name: m.name, marks, contract: daily > 0 ? { code: `J${daily}`, dailyMinutes: daily, pairs: [] } : null });
+        const sched = (labor?.schedule || []).filter((p) => Array.isArray(p) && p.length === 2);
+        const schedMinutes = sched.reduce((t, [a, b]) => { const [ah, am] = a.split(":").map(Number); const [bh, bm] = b.split(":").map(Number); return t + ((bh * 60 + bm - ah * 60 - am + 1440) % 1440); }, 0);
+        const daily = Number(labor?.dailyMinutes || 0) || schedMinutes;
+        if (!sched.length) missingSchedule.push(m.name);
+        const pairs = sched.map(([a, b]) => [a.replace(":", ""), b.replace(":", "")] as [string, string]);
+        workers.push({ cpf, name: m.name, marks, contract: daily > 0 ? { code: `J${daily}${pairs.length ? `-${pairs.flat().join("")}` : ""}`, dailyMinutes: daily, pairs } : null });
       }
       const employer = await employerOf(ctx.accountId);
       const dev = developerInfo();
@@ -326,7 +371,7 @@ export const pontoLegalRouter = router({
         ...(!employer.document ? ["CNPJ/CPF da empresa não cadastrado."] : []),
         ...(missingCpf.length ? [`Sem CPF no perfil trabalhista: ${missingCpf.slice(0, 10).join(", ")}${missingCpf.length > 10 ? "…" : ""}.`] : []),
         ...(workers.some((w) => !w.contract) ? ["Há funcionários sem jornada contratual configurada (registro 04 obrigatório na primeira entrada)."] : []),
-        "Horário contratual sai só com a duração (os horários de entrada/saída previstos ainda não são cadastrados no sistema).",
+        ...(missingSchedule.length ? [`Sem horário contratual (entrada/saída previstas): ${missingSchedule.slice(0, 10).join(", ")}${missingSchedule.length > 10 ? "…" : ""}.`] : []),
         "Arquivo sem assinatura digital (.p7s): depende do certificado ICP-Brasil.",
       ];
       void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "aej", description: `Gerou AEJ ${input.from} a ${input.to} (${workers.length} funcionário(s))`, newData: { from: input.from, to: input.to } } as any);

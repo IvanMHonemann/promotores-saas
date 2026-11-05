@@ -91,6 +91,7 @@ export function SidebarNav() {
             { href: "/meu-espelho", label: "Meu espelho do mês", icon: FileText },
             { href: "/minhas-ferias", label: "Minhas férias", icon: Palmtree },
           ] : []),
+          { href: "/meus-dados", label: "Meus dados (LGPD)", icon: ShieldAlert },
           { href: "/lojas", label: "Lojas", icon: MapPin },
           { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
           { href: "/lixeira", label: "Lixeira", icon: Trash2 },

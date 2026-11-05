@@ -6,6 +6,8 @@
  * - sinaliza envio em andamento para que o recarregamento automático do PWA espere.
  */
 
+import { compressImageFile } from "./imageCompress";
+
 export type PreparedPhoto = {
   /** JPEG já comprimido. */
   blob: Blob;
@@ -15,80 +17,10 @@ export type PreparedPhoto = {
   previewUrl: string;
 };
 
-const ATTEMPTS: Array<{ maxSide: number; quality: number }> = [
-  { maxSide: 1280, quality: 0.72 }, // mesmo padrão usado até aqui
-  { maxSide: 1024, quality: 0.6 }, // só se a primeira passada ficar grande demais
-];
-const MAX_BLOB_BYTES = 1_500_000;
-
-async function decode(file: Blob): Promise<{ source: CanvasImageSource; width: number; height: number; release: () => void }> {
-  if (typeof createImageBitmap === "function") {
-    try {
-      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" } as ImageBitmapOptions);
-      return { source: bitmap, width: bitmap.width, height: bitmap.height, release: () => bitmap.close() };
-    } catch {
-      /* cai para <img> */
-    }
-  }
-  const url = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    img.decoding = "async";
-    img.src = url;
-    await img.decode();
-    return { source: img, width: img.naturalWidth, height: img.naturalHeight, release: () => URL.revokeObjectURL(url) };
-  } catch {
-    URL.revokeObjectURL(url);
-    throw new Error("Formato de imagem não suportado. Tire a foto novamente.");
-  }
-}
-
-function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Não foi possível comprimir a foto."))), "image/jpeg", quality);
-  });
-}
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || "");
-      const idx = result.indexOf(",");
-      resolve(idx >= 0 ? result.slice(idx + 1) : result);
-    };
-    reader.onerror = () => reject(new Error("Não foi possível ler a foto."));
-    reader.readAsDataURL(blob);
-  });
-}
-
-/** Nunca devolve a imagem original: se não for possível processar, lança erro (evita enviar multi-MB). */
+/** Usa a compressão única do site (ver imageCompress.ts). Nunca devolve a imagem original. */
 export async function prepareCheckInPhoto(file: Blob): Promise<PreparedPhoto> {
-  const decoded = await decode(file);
-  try {
-    if (!decoded.width || !decoded.height) throw new Error("Imagem inválida. Tire a foto novamente.");
-    let blob: Blob | null = null;
-    for (const attempt of ATTEMPTS) {
-      const scale = Math.min(1, attempt.maxSide / Math.max(decoded.width, decoded.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(decoded.width * scale));
-      canvas.height = Math.max(1, Math.round(decoded.height * scale));
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Não foi possível processar a foto neste aparelho.");
-      ctx.imageSmoothingQuality = "high"; // reduz serrilhado ao diminuir 12MP -> 1280px (e o tamanho do JPEG)
-      ctx.drawImage(decoded.source, 0, 0, canvas.width, canvas.height);
-      blob = await canvasToBlob(canvas, attempt.quality);
-      // libera a memória do canvas antes da próxima tentativa
-      canvas.width = 0;
-      canvas.height = 0;
-      if (blob.size <= MAX_BLOB_BYTES) break;
-    }
-    if (!blob) throw new Error("Não foi possível comprimir a foto.");
-    const base64 = await blobToBase64(blob);
-    return { blob, base64, previewUrl: URL.createObjectURL(blob) };
-  } finally {
-    decoded.release();
-  }
+  const { blob, base64 } = await compressImageFile(file);
+  return { blob, base64, previewUrl: URL.createObjectURL(blob) };
 }
 
 export type GpsFix = { lat: number; lng: number; accuracy: number };

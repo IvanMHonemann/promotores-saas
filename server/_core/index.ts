@@ -11,6 +11,7 @@ import { runScheduledMaintenance } from "../scheduledMaintenance";
 import { notifyOwner } from "./notification";
 import { isScheduleRequestAuthorized } from "../scheduleAuth";
 import crypto from "node:crypto";
+import { MAX_BODY_SIZE, isPayloadTooLargeError, payloadTooLargeBody } from "../../shared/uploadLimits";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -68,8 +69,14 @@ export async function createApp(): Promise<Express> {
   app.use(securityHeaders);
   // Gzip/deflate para HTML, JS/CSS e respostas JSON (reduz ~70% do tráfego).
   app.use(compression());
-  app.use(express.json({ limit: "4500kb" }));
-  app.use(express.urlencoded({ limit: "4500kb", extended: true }));
+  app.use(express.json({ limit: MAX_BODY_SIZE }));
+  app.use(express.urlencoded({ limit: MAX_BODY_SIZE, extended: true }));
+  // Corpo grande demais: responde com mensagem clara em pt-BR em vez do 413 cru.
+  app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+    if (!isPayloadTooLargeError(err)) return next(err);
+    const path = req.path.startsWith("/api/trpc/") ? req.path.slice("/api/trpc/".length) : undefined;
+    res.status(413).json(payloadTooLargeBody(path));
+  });
 
   app.get("/healthz", (_req, res) => {
     res.status(200).json({ ok: true });

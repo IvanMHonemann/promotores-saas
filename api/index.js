@@ -20,6 +20,25 @@ var init_const = __esm({
   }
 });
 
+// shared/uploadLimits.ts
+function payloadTooLargeBody(path2) {
+  return { error: { json: { message: BODY_TOO_LARGE_MESSAGE, code: -32600, data: { code: "PAYLOAD_TOO_LARGE", httpStatus: 413, path: path2 } } } };
+}
+function isPayloadTooLargeError(err) {
+  const e = err;
+  return Boolean(e && (e.type === "entity.too.large" || e.status === 413));
+}
+var MAX_BODY_SIZE, MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE, BODY_TOO_LARGE_MESSAGE;
+var init_uploadLimits = __esm({
+  "shared/uploadLimits.ts"() {
+    "use strict";
+    MAX_BODY_SIZE = "4500kb";
+    MAX_PHOTO_BASE64_CHARS = 42e5;
+    PHOTO_TOO_LARGE_MESSAGE = "Imagem grande demais para enviar. Tire a foto novamente ou use uma resolu\xE7\xE3o menor.";
+    BODY_TOO_LARGE_MESSAGE = "Arquivo grande demais para enviar (m\xE1ximo de 4,5 MB). Tente uma foto ou arquivo menor.";
+  }
+});
+
 // drizzle/schema.original.ts
 import { boolean, date, decimal, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 var users, companies, platformAdmins, memberAccounts, memberSessions, platformSessions, clients, extinguishers, serviceOrders, serviceOrderItems, trashItems, systemSettings, subscriptionPlans, companySubscriptions, payments, paymentEvents, auditLogs;
@@ -4614,6 +4633,7 @@ var RETENTION_DAYS, TRASH_DAYS, storePhotosRouter;
 var init_storePhotos = __esm({
   "server/modules/storePhotos.ts"() {
     "use strict";
+    init_uploadLimits();
     init_schema();
     init_schema_original();
     init_db();
@@ -4799,7 +4819,7 @@ var init_storePhotos = __esm({
         accuracy: z6.number().optional(),
         locationStatus: z6.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
         // Limite da Vercel: corpo de 4,5 MB; base64 de 4,2 M caracteres ≈ 3,1 MB de imagem.
-        imageBase64: z6.string().min(100).max(42e5, "Imagem grande demais. Tire a foto novamente."),
+        imageBase64: z6.string().min(100).max(MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE),
         mimeType: z6.string().max(100).default("image/jpeg"),
         // ignorado: o tipo real é detectado pelo conteúdo
         storeClientId: z6.number().int().positive().optional(),
@@ -5474,6 +5494,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 init_const();
 
 // server/modules/timeTracking.ts
+init_uploadLimits();
 init_trpc();
 init_db();
 init_schema();
@@ -5866,7 +5887,7 @@ var timeTrackingRouter = router({
     date: z3.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     justification: z3.string().max(2e3).optional(),
     justificationType: z3.enum(["normal", "holiday", "day_off", "medical_certificate", "other"]).optional(),
-    attachmentBase64: z3.string().optional()
+    attachmentBase64: z3.string().max(MAX_PHOTO_BASE64_CHARS + 100, PHOTO_TOO_LARGE_MESSAGE).optional()
   })).mutation(async ({ ctx, input }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
@@ -8366,6 +8387,7 @@ async function runPhotoMaintenance() {
 }
 
 // server/vercel-entry.ts
+init_uploadLimits();
 function securityHeaders(_req, res, next) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -8383,11 +8405,17 @@ function securityHeaders(_req, res, next) {
 }
 async function createApp() {
   const app = express();
+  app.disable("x-powered-by");
   app.set("trust proxy", 1);
   app.use(securityHeaders);
   app.use(compression());
-  app.use(express.json({ limit: "10mb" }));
-  app.use(express.urlencoded({ limit: "10mb", extended: true }));
+  app.use(express.json({ limit: MAX_BODY_SIZE }));
+  app.use(express.urlencoded({ limit: MAX_BODY_SIZE, extended: true }));
+  app.use((err, req, res, next) => {
+    if (!isPayloadTooLargeError(err)) return next(err);
+    const path2 = req.path.startsWith("/api/trpc/") ? req.path.slice("/api/trpc/".length) : void 0;
+    res.status(413).json(payloadTooLargeBody(path2));
+  });
   app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
   app.all("/api/scheduled/database-maintenance", async (req, res) => {
     if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });

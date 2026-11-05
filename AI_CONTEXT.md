@@ -118,3 +118,6 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 ## Como manter este arquivo
 
 Atualizar somente quando houver mudança relevante de arquitetura, funcionalidade, decisão ou pendência. Preservar informações anteriores que continuem válidas. Não incluir segredos, tokens, senhas ou trechos longos de conversa.
+
+## Ponto com valor de prova
+Ver docs/ponto-prova-legal.md. Regra: NUNCA dar UPDATE/DELETE em time_events originais; correções via appendTreatment (server/ponto/ledger.ts). Batidas novas só via appendOriginalPunch.

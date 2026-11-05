@@ -36,6 +36,29 @@ export const platformCompaniesRouter = router({
     log(ctx, input.companyId, "payment", `Registrou pagamento de R$ ${input.amount} em ${input.paymentDate}; plano válido de ${input.periodFrom} a ${input.periodTo}`, input);
     return r;
   }),
+
+  setBilling: platformProcedure.input(z.object({
+    companyId: id,
+    monthlyAmount: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
+    blockAfterOverdueDays: z.number().int().min(0).max(60).nullish(),
+    dueDate: dateStr.nullish(),
+  })).mutation(async ({ ctx, input }) => {
+    const r = await pc.setCompanyBilling(input);
+    log(ctx, input.companyId, "update", `Atualizou cobrança da empresa #${input.companyId}`, input);
+    return r;
+  }),
+  /** Um clique: registra Pix recebido e avança a validade em 1 mês. */
+  markPaid: platformProcedure.input(z.object({
+    companyId: id,
+    amount: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
+    paymentDate: dateStr.optional(),
+    graceDays: z.number().int().min(0).max(60).optional(),
+    note: z.string().max(500).nullish(),
+  })).mutation(async ({ ctx, input }) => {
+    const r = await pc.markCompanyPaid(input);
+    log(ctx, input.companyId, "payment", `Marcou como pago a empresa #${input.companyId}`, input);
+    return r;
+  }),
   deletePayment: platformProcedure.input(z.object({ companyId: id, paymentId: id })).mutation(async ({ ctx, input }) => {
     await pc.deletePayment(input.paymentId, input.companyId);
     log(ctx, input.companyId, "delete", `Excluiu o pagamento #${input.paymentId} da empresa #${input.companyId}`);

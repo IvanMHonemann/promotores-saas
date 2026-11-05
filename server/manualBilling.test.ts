@@ -12,7 +12,7 @@ describe("cobrança manual: sem autoativação de plano", () => {
 
   it("billing só expõe consultas (nenhuma mutation de ativação)", () => {
     const billing = procedures.filter((name) => name.startsWith("billing."));
-    expect(billing.sort()).toEqual(["billing.access", "billing.mySubscription", "billing.payments", "billing.plans"]);
+    expect(billing.sort()).toEqual(["billing.access", "billing.mySubscription", "billing.paymentReminder", "billing.payments", "billing.plans"]);
     for (const name of billing) expect((appRouter as any)._def.procedures[name]._def.type).toBe("query");
   });
 

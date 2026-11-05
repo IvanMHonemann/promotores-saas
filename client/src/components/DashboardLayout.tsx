@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import ActingAsBanner from "@/components/ActingAsBanner";
 import MissingPunchAlert from "@/components/MissingPunchAlert";
 import RejectedCorrectionAlert from "@/components/RejectedCorrectionAlert";
+import PaymentReminderBanner from "@/components/PaymentReminderBanner";
 import UpdateAvailableBanner from "@/components/UpdateAvailableBanner";
 import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { SidebarMenuButton, SidebarNav } from "@/components/SidebarNav";
@@ -57,6 +58,7 @@ export default function DashboardLayout({ title, description, help, children, re
           <ActingAsBanner />
           <UpdateAvailableBanner />
           <ErrorBoundary resetKey="layout-alerts">
+            <PaymentReminderBanner />
             <RejectedCorrectionAlert />
             <MissingPunchAlert />
           </ErrorBoundary>

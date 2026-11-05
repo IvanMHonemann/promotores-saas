@@ -25,6 +25,9 @@ export const MANUAL_BILLING_MESSAGE = "Para contratar ou renovar, fale com o sup
 /** Dias de tolerância para o status "pending" (aguardando o primeiro pagamento), contados do início da assinatura. */
 export const PENDING_GRACE_DAYS = 7;
 
+/** Tolerância padrão após o vencimento (dias): o plano continua ativo; depois disso o acesso é bloqueado. Configurável por empresa. */
+export const DEFAULT_OVERDUE_GRACE_DAYS = 5;
+
 function parseDate(value: unknown): Date | null {
   if (!value) return null;
   const d = value instanceof Date ? value : new Date(String(value));
@@ -91,8 +94,8 @@ async function loadSubscriptionAccess(companyId: number): Promise<AccessDecision
     }
     case "active":
       if (expiresAt && now > expiresAt) {
-        // tolerância de 3 dias se não houver grace explícito
-        const grace = graceUntil || new Date(expiresAt.getTime() + 3 * 24 * 3600 * 1000);
+        // tolerância padrão (5 dias) se não houver grace explícito
+        const grace = graceUntil || new Date(expiresAt.getTime() + DEFAULT_OVERDUE_GRACE_DAYS * 24 * 3600 * 1000);
         if (now <= grace) {
           return { allowed: true, status: "overdue", expiresAt, graceUntil: grace, reason: "Período de tolerância." };
         }
@@ -111,7 +114,7 @@ async function loadSubscriptionAccess(companyId: number): Promise<AccessDecision
       return { allowed: false, status, expiresAt, graceUntil: deadline, reason: `Pagamento pendente há mais de ${PENDING_GRACE_DAYS} dias. ${MANUAL_BILLING_MESSAGE}` };
     }
     case "overdue": {
-      const grace = graceUntil || (expiresAt ? new Date(expiresAt.getTime() + 3 * 24 * 3600 * 1000) : null);
+      const grace = graceUntil || (expiresAt ? new Date(expiresAt.getTime() + DEFAULT_OVERDUE_GRACE_DAYS * 24 * 3600 * 1000) : null);
       if (grace && now <= grace) {
         return { allowed: true, status, expiresAt, graceUntil: grace, reason: "Período de tolerância." };
       }

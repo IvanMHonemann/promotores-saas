@@ -2,6 +2,7 @@ import { MEMBER_COOKIE_NAME } from "@shared/const";
 import { timeTrackingRouter } from "./modules/timeTracking";
 import { timesheetMirrorRouter } from "./modules/timesheetMirror";
 import { timesheetArchiveRouter } from "./modules/timesheetArchive";
+import { vacationsRouter } from "./modules/vacations";
 import { platformCompaniesRouter } from "./modules/platformCompanies";
 import { storePhotosRouter } from "./modules/storePhotos";
 import { storeClientsRouter } from "./modules/storeClients";
@@ -59,6 +60,7 @@ export const appRouter = router({
   timeTracking: timeTrackingRouter,
   timesheetMirror: timesheetMirrorRouter,
   timesheetArchive: timesheetArchiveRouter,
+  vacations: vacationsRouter,
   platformCompanies: platformCompaniesRouter,
   storePhotos: storePhotosRouter,
   storeClients: storeClientsRouter,

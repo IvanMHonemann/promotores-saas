@@ -637,3 +637,28 @@ export type InsertVisitPhoto = typeof visitPhotos.$inferInsert;
 
 export type StorePhoto = typeof storePhotos.$inferSelect;
 export type InsertStorePhoto = typeof storePhotos.$inferInsert;
+
+/** Programações de férias dos funcionários. */
+export const vacationSchedules = mysqlTable("vacation_schedules", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
+  memberAccountId: int("memberAccountId").notNull().references(() => memberAccounts.id, { onDelete: "restrict" }),
+  startDate: date("startDate").notNull(),
+  endDate: date("endDate").notNull(),
+  days: int("days").notNull(),
+  status: mysqlEnum("status", ["scheduled", "cancelled"]).default("scheduled").notNull(),
+  notes: text("notes"),
+  createdByMemberAccountId: int("createdByMemberAccountId").notNull().references(() => memberAccounts.id, { onDelete: "restrict" }),
+  updatedByMemberAccountId: int("updatedByMemberAccountId").references(() => memberAccounts.id, { onDelete: "set null" }),
+  cancelledByMemberAccountId: int("cancelledByMemberAccountId").references(() => memberAccounts.id, { onDelete: "set null" }),
+  cancelledAt: timestamp("cancelledAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  companyMemberIdx: index("vacation_schedules_company_member_idx").on(table.companyId, table.memberAccountId),
+  companyDatesIdx: index("vacation_schedules_company_dates_idx").on(table.companyId, table.startDate, table.endDate),
+  statusIdx: index("vacation_schedules_status_idx").on(table.status),
+}));
+
+export type VacationSchedule = typeof vacationSchedules.$inferSelect;
+export type InsertVacationSchedule = typeof vacationSchedules.$inferInsert;

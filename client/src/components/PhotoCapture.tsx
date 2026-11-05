@@ -1,4 +1,5 @@
-import { formatBrAddress, wrapText } from "@shared/address";
+import { wrapText } from "@shared/address";
+import { reverseGeocode } from "@/lib/geocode";
 import { compressCanvas, compressImageFile } from "@/lib/imageCompress";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "@shared/uploadLimits";
 import { useEffect, useRef, useState } from "react";
@@ -12,42 +13,9 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 
 
-const GEO_CACHE_KEY = "gondup:geocode:v2";
-let lastGeocodeAt = 0;
-function geoCacheGet(key: string): string | null {
-  try { return (JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || "{}") as Record<string, string>)[key] ?? null; } catch { return null; }
-}
-function geoCacheSet(key: string, value: string) {
-  try {
-    const all = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || "{}") as Record<string, string>;
-    const keys = Object.keys(all);
-    if (keys.length > 300) delete all[keys[0]];
-    all[key] = value;
-    localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(all));
-  } catch { /* armazenamento cheio: segue sem cache */ }
-}
-
-/** Endereço completo (rua, número, bairro, cidade-UF, CEP) via Nominatim, com cache e no máx. 1 consulta/s. */
-async function reverseGeocode(lat: number, lng: number): Promise<string> {
-  const coords = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`; // ~11 m
-  const cached = geoCacheGet(key);
-  if (cached) return cached;
-  try {
-    const wait = 1100 - (Date.now() - lastGeocodeAt);
-    if (wait > 0) await new Promise(r => setTimeout(r, wait));
-    lastGeocodeAt = Date.now();
-    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR`;
-    const res = await fetch(url, { signal: AbortSignal.timeout?.(6000), headers: { Accept: "application/json" } });
-    if (!res.ok) return `GPS ${coords}`;
-    const data = await res.json();
-    const address = formatBrAddress(data.address, data.display_name);
-    if (!address) return `GPS ${coords}`;
-    geoCacheSet(key, address);
-    return address;
-  } catch {
-    return `GPS ${coords}`; // sem internet ou serviço fora: mantém a coordenada legível
-  }
+/** Endereço completo para o carimbo; se não houver internet/serviço, mantém a coordenada legível. */
+async function stampLocation(lat: number, lng: number): Promise<string> {
+  return (await reverseGeocode(lat, lng)) || `GPS ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
 type GpsFix = { lat: number; lng: number; accuracy: number };
@@ -177,6 +145,8 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
         gpsRef.current = fix;
         setGps(fix);
         setGpsStatus("ok");
+        // Já busca o endereço enquanto o promotor enquadra a foto (fica em cache para o carimbo).
+        void reverseGeocode(fix.lat, fix.lng);
       },
       () => { if (!gpsRef.current) setGpsStatus("denied"); },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
@@ -255,7 +225,7 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
 
   const saveShot = async (s: Shot): Promise<void> => {
     const promoter = user?.name || user?.email || "Promotor";
-    const location = s.gps ? await reverseGeocode(s.gps.lat, s.gps.lng) : "Local não disponível";
+    const location = s.gps ? await stampLocation(s.gps.lat, s.gps.lng) : "Local não disponível";
     const lines = [
       `Promotor: ${promoter}`,
       `Local: ${location}`,

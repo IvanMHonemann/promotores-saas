@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { XCircle, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useLocation } from "wouter";
 import { looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 
 const DISMISS_PREFIX = "dismissed-rejected:";
@@ -12,9 +13,12 @@ function dayKey(iso: string) {
 
 export default function RejectedCorrectionAlert() {
   const { user } = useAuth();
+  const [location] = useLocation();
+  // Só no Início e no Cartão ponto: nas outras telas o aviso atrapalhava o trabalho.
+  const visibleHere = location === "/" || location === "/ponto";
   const isField = user?.role === "promoter" || user?.role === "supervisor";
   const corrections = trpc.timeTracking.myCorrections.useQuery(undefined, {
-    enabled: isField,
+    enabled: isField && visibleHere,
     staleTime: 15_000,
     refetchOnWindowFocus: true,
   });
@@ -31,7 +35,7 @@ export default function RejectedCorrectionAlert() {
     setDismissed(next);
   }, [corrections.dataUpdatedAt]);
 
-  if (!isField || !corrections.data?.length) return null;
+  if (!isField || !visibleHere || !corrections.data?.length) return null;
 
   const rejected = corrections.data
     .map((row: any) => row.request)
@@ -58,38 +62,32 @@ export default function RejectedCorrectionAlert() {
     });
   };
 
+  const entries = [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   return (
-    <div className="mb-5 space-y-3">
-      {[...groups.entries()].map(([day, items]) => {
-        const ids = items.map((item) => item.id);
-        const note = items.find((item) => item.reviewNotes)?.reviewNotes;
-        const dateLabel = new Date(items[0].requestedTime).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-        return (
-          <div key={day} role="alert" className="relative flex items-start gap-3 rounded-2xl border border-rose-400/40 bg-rose-500/15 p-4 pr-14 text-rose-50">
-            <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-300" />
-            <div className="min-w-0 flex-1 text-sm">
-              <p className="font-bold">Pedido de correção recusado</p>
-              <p className="mt-1">
-                {items.some((item) => looksLikeFullDayExcuse(item))
-                  ? `O pedido de abono de ${dateLabel} foi recusado.`
-                  : `${items.length} horário(s) de ${dateLabel} ${items.length > 1 ? "foram recusados" : "foi recusado"}.`}
-              </p>
-              {note && <p className="mt-1 text-rose-100/90">Observação: {note}</p>}
-              <a href={`/ponto?date=${day}#correcoes`} className="mt-1 inline-block font-semibold underline">
-                Enviar nova correção
-              </a>
-            </div>
-            <button
-              type="button"
-              onClick={() => dismiss(ids)}
-              aria-label="Fechar aviso"
-              className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-lg border border-rose-200/40 bg-rose-400/20 text-rose-50 transition hover:bg-rose-400/40"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
+    <section role="alert" className="mb-5 rounded-2xl border border-rose-400/40 bg-rose-500/10 p-3 text-rose-50">
+      <div className="flex items-center gap-2">
+        <XCircle className="h-5 w-5 shrink-0 text-rose-300" />
+        <p className="flex-1 text-sm font-bold">{entries.length > 1 ? `${entries.length} pedidos de correção recusados` : "Pedido de correção recusado"}</p>
+        {entries.length > 1 && <button type="button" onClick={() => dismiss(entries.flatMap(([, items]) => items.map((i) => i.id)))} className="h-11 rounded-lg px-3 text-sm font-semibold text-rose-100 hover:bg-rose-400/20">Fechar todos</button>}
+      </div>
+      <ul className="mt-1 divide-y divide-rose-300/15">
+        {entries.map(([day, items]) => {
+          const ids = items.map((item) => item.id);
+          const note = items.find((item) => item.reviewNotes)?.reviewNotes;
+          const dateLabel = new Date(items[0].requestedTime).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+          const what = items.some((item) => looksLikeFullDayExcuse(item)) ? `Abono de ${dateLabel}` : `${items.length} horário(s) de ${dateLabel}`;
+          return (
+            <li key={day} className="flex items-center gap-2 py-1.5 text-sm">
+              <div className="min-w-0 flex-1">
+                <p>{what}</p>
+                {note && <p className="text-rose-100/80">Observação: {note}</p>}
+              </div>
+              <a href={`/ponto?date=${day}#correcoes`} className="inline-flex h-11 shrink-0 items-center rounded-lg px-2 font-semibold underline">Corrigir</a>
+              <button type="button" onClick={() => dismiss(ids)} aria-label={`Fechar aviso de ${dateLabel}`} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-rose-100 hover:bg-rose-400/20"><X className="h-5 w-5" /></button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

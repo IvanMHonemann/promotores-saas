@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
+import { authFetch } from "@/lib/authFetch";
 import App from "./App";
 import "./index.css";
 
@@ -87,19 +88,7 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      fetch(input, init) {
-        const headers = new Headers(init?.headers || {});
-        const token = typeof localStorage !== "undefined" ? localStorage.getItem("promotores-saas-session-token") : null;
-        if (token) {
-          headers.set("x-session-token", token);
-          headers.set("Authorization", `Bearer ${token}`);
-        }
-        try {
-          const actAs = JSON.parse(localStorage.getItem("promotores-saas-act-as") || "null");
-          if (actAs?.id) headers.set("x-act-as-company", String(actAs.id));
-        } catch { /* sem modo "acessar como empresa" */ }
-        return globalThis.fetch(input, { ...(init ?? {}), headers, credentials: "include" });
-      },
+      fetch: authFetch,
     }),
   ],
 });

@@ -4,6 +4,9 @@ import { Palmtree } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { todayInZone } from "@shared/expiry";
 
+/** AAAA-MM-DD → DD/MM/AAAA */
+const brDate = (iso: string) => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.split("-").reverse().join("/") : iso);
+
 function isoDate(value: unknown): string {
   if (!value) return "";
   if (typeof value === "string") return value.slice(0, 10);
@@ -28,7 +31,7 @@ export default function MyVacationsPage() {
         <CardContent className="space-y-2 text-sm">
           {(mine.data || []).map((row: any) => (
             <div key={row.id} className="rounded-lg border border-white/10 p-3">
-              <p className="font-semibold">{isoDate(row.startDate)} a {isoDate(row.endDate)}</p>
+              <p className="font-semibold">{brDate(isoDate(row.startDate))} a {brDate(isoDate(row.endDate))}</p>
               <p className="text-slate-300">{row.days} dias · {statusLabel(row.status, isoDate(row.startDate), isoDate(row.endDate))}</p>
               {row.notes && <p className="text-xs text-slate-400">{row.notes}</p>}
             </div>

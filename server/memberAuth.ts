@@ -1,3 +1,4 @@
+import { createTtlCache } from "./ttlCache";
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { and, eq, gt, lte } from "drizzle-orm";
 import { companies, companySubscriptions, memberAccounts, memberSessions, platformAdmins, platformSessions, subscriptionPlans } from "../drizzle/schema.original";
@@ -103,7 +104,28 @@ export async function createSession(principal: LoginPrincipal) {
   return { rawToken, expiresAt, kind: "company" as const };
 }
 
-export async function getMemberBySessionToken(rawToken: string) {
+const SESSION_CACHE_MS = 20_000;
+const memberSessionCache = createTtlCache<any>(SESSION_CACHE_MS);
+const platformSessionCache = createTtlCache<any>(SESSION_CACHE_MS);
+let lastSessionCleanup = 0;
+/** Limpa sessões expiradas no máximo a cada 10 min por instância, sem bloquear a requisição. */
+function cleanupExpiredSessions(db: any) {
+  const nowMs = Date.now();
+  if (nowMs - lastSessionCleanup < 10 * 60_000) return;
+  lastSessionCleanup = nowMs;
+  const now = new Date(nowMs);
+  void Promise.all([
+    db.delete(memberSessions).where(lte(memberSessions.expiresAt, now)),
+    db.delete(platformSessions).where(lte(platformSessions.expiresAt, now)),
+  ]).catch(() => undefined);
+}
+
+export function getMemberBySessionToken(rawToken: string) {
+  if (!rawToken) return Promise.resolve(null);
+  return memberSessionCache.get(hashToken(rawToken), () => loadMemberBySessionToken(rawToken));
+}
+
+async function loadMemberBySessionToken(rawToken: string) {
   const db = await getDb();
   if (!db || !rawToken) return null;
   const now = new Date();
@@ -112,11 +134,16 @@ export async function getMemberBySessionToken(rawToken: string) {
     .innerJoin(companies, eq(memberAccounts.companyId, companies.id))
     .where(and(eq(memberSessions.tokenHash, hashToken(rawToken)), gt(memberSessions.expiresAt, now), eq(memberAccounts.active, true), eq(companies.active, true)))
     .limit(1);
-  await db.delete(memberSessions).where(lte(memberSessions.expiresAt, now));
+  cleanupExpiredSessions(db);
   return result[0]?.account ?? null;
 }
 
-export async function getPlatformAdminBySessionToken(rawToken: string) {
+export function getPlatformAdminBySessionToken(rawToken: string) {
+  if (!rawToken) return Promise.resolve(null);
+  return platformSessionCache.get(hashToken(rawToken), () => loadPlatformAdminBySessionToken(rawToken));
+}
+
+async function loadPlatformAdminBySessionToken(rawToken: string) {
   const db = await getDb();
   if (!db || !rawToken) return null;
   const now = new Date();
@@ -124,7 +151,7 @@ export async function getPlatformAdminBySessionToken(rawToken: string) {
     .innerJoin(platformAdmins, eq(platformSessions.platformAdminId, platformAdmins.id))
     .where(and(eq(platformSessions.tokenHash, hashToken(rawToken)), gt(platformSessions.expiresAt, now), eq(platformAdmins.active, true)))
     .limit(1);
-  await db.delete(platformSessions).where(lte(platformSessions.expiresAt, now));
+  cleanupExpiredSessions(db);
   return result[0]?.account ?? null;
 }
 
@@ -132,6 +159,8 @@ export async function revokeSessions(rawToken: string) {
   const db = await getDb();
   if (!db || !rawToken) return;
   const tokenHash = hashToken(rawToken);
+  memberSessionCache.delete(tokenHash);
+  platformSessionCache.delete(tokenHash);
   await db.delete(memberSessions).where(eq(memberSessions.tokenHash, tokenHash));
   await db.delete(platformSessions).where(eq(platformSessions.tokenHash, tokenHash));
 }

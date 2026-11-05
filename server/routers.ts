@@ -20,7 +20,7 @@ import * as db from "./db";
 import * as memberAuth from "./memberAuth";
 import * as emailService from "./email";
 import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory, listPromoterActivities } from "./audit";
-import { reverseGeocodeAddress } from "./geocoding";
+import { reverseGeocodeAddress, reverseGeocodeBr } from "./geocoding";
 import { scopeMemberId, assertStoreAccess, setPromoterStoreAssignments, getPromoterStoreAssignments } from "./storeAccess";
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
@@ -716,6 +716,12 @@ export const appRouter = router({
     if (!ctx.accountId) return [];
     const days = input?.daysAhead || 30;
     try { return await db.getExpiringInventoryProducts(ctx.accountId, days); } catch (error) { console.error("[inventoryAlerts] falha ao consultar validades", error); throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível consultar as validades." }); }
+  }),
+  // Endereço para carimbo de foto/ponto (qualquer membro da empresa). Feito no servidor com cache.
+  geo: router({
+    reverse: companyBillingProcedure
+      .input(z.object({ latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) }))
+      .mutation(async ({ input }) => ({ address: await reverseGeocodeBr(input.latitude, input.longitude) })),
   }),
   trash: router({
     // Qualquer usuário autenticado da empresa; não-administradores só enxergam/operam o que apagaram ou é deles.

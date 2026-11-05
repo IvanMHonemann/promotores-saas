@@ -1,4 +1,4 @@
-import { formatBrAddress } from "@shared/address";
+import { reverseGeocode } from "@/lib/geocode";
 import { useEffect, useState } from "react";
 
 export type Coordinates = {
@@ -48,10 +48,9 @@ export function LocationLabel({ latitude, longitude }: { latitude: number | null
       return;
     }
 
-    fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=pt-BR`)
-      .then((response) => response.json())
-      .then((data: { display_name?: string; address?: Record<string, string> }) => setLabel(formatBrAddress(data.address, data.display_name) || "Endereço não identificado"))
-      .catch(() => setLabel("Endereço indisponível"));
+    let alive = true;
+    void reverseGeocode(latitude, longitude).then((address) => { if (alive) setLabel(address || "Endereço não identificado"); });
+    return () => { alive = false; };
   }, [latitude, longitude]);
 
   return <span>{label}</span>;

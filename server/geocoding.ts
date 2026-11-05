@@ -1,3 +1,4 @@
+import { formatBrAddress } from "@shared/address";
 export type ReverseGeocodeResult = {
   address: string | null;
   configured: boolean;
@@ -104,4 +105,45 @@ export async function reverseGeocodeAddress(
   } finally {
     inFlight.delete(key);
   }
+}
+
+
+const brCache = new Map<string, CacheEntry>();
+const BR_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+let lastNominatimAt = 0;
+let nominatimQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Endereço brasileiro completo (rua, nº, bairro, cidade-UF, CEP) para carimbo de foto e ponto.
+ * Feito no servidor: User-Agent identificado (exigência do Nominatim), cache de 7 dias por ~11 m
+ * e no máx. 1 consulta/s. Se o Nominatim falhar, tenta o Geoapify (quando configurado).
+ */
+export async function reverseGeocodeBr(latitude: number, longitude: number, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) return null;
+  const key = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+  const hit = brCache.get(key);
+  if (hit && hit.expiresAt > Date.now() && hit.address) return hit.address;
+  let address: string | null = null;
+  try {
+    const run = nominatimQueue.then(async () => {
+      const wait = 1100 - (Date.now() - lastNominatimAt);
+      if (wait > 0) await delay(wait);
+      lastNominatimAt = Date.now();
+      const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR`;
+      const res = await fetchImpl(url, { headers: { accept: "application/json", "user-agent": "GondUp/1.0 (https://promotores-saas.vercel.app)" }, signal: AbortSignal.timeout(6_000) });
+      if (!res.ok) { console.warn(`[geocoding] Nominatim HTTP ${res.status}`); return null; }
+      const data = await res.json() as { address?: Record<string, string>; display_name?: string };
+      return formatBrAddress(data.address as any, data.display_name);
+    });
+    nominatimQueue = run.then(() => undefined, () => undefined);
+    address = await run;
+  } catch (error) {
+    console.warn("[geocoding] Nominatim falhou", error instanceof Error ? error.name : "erro");
+  }
+  if (!address) address = (await reverseGeocodeAddress(latitude, longitude).catch(() => ({ address: null }))).address;
+  if (address) {
+    if (brCache.size >= MAX_CACHE_ENTRIES) { const k = brCache.keys().next().value; if (k) brCache.delete(k); }
+    brCache.set(key, { address, expiresAt: Date.now() + BR_TTL_MS });
+  }
+  return address;
 }

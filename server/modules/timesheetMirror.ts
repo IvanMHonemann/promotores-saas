@@ -7,6 +7,8 @@ import { companies, memberAccounts, promoterProfiles, timeEvents } from "../../d
 import { auditFromCtx } from "../audit";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
 import { loadApprovedDayExcuses } from "./correctionExtras";
+import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, OPTIONAL_HOLIDAYS_SETTING } from "./mirrorData";
+import { readTimeAlert } from "../../shared/punchTime";
 
 const TZ = "America/Sao_Paulo";
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -103,6 +105,13 @@ export const timesheetMirrorRouter = router({
     void auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "company_legal_profile", description: "Atualizou dados de identificação da empresa para o espelho de ponto", newData: input });
     return { success: true as const };
   }),
+  /** Configuração do espelho: tratar Carnaval/Corpus Christi (ponto facultativo) como feriado abonado? */
+  getMirrorOptions: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => loadMirrorOptions(ctx.accountId)),
+  saveMirrorOptions: companyAdminFeatureProcedure("timeTracking").input(z.object({ optionalHolidaysAsHoliday: z.boolean() })).mutation(async ({ ctx, input }) => {
+    await db.setSetting(OPTIONAL_HOLIDAYS_SETTING, input.optionalHolidaysAsHoliday ? "1" : "0", ctx.accountId);
+    void auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "mirror_options", description: `Carnaval/Corpus Christi ${input.optionalHolidaysAsHoliday ? "passam a ser abonados como feriado" : "deixam de ser abonados automaticamente"} no espelho de ponto`, newData: input });
+    return { success: true as const };
+  }),
   saveLaborProfile: companyAdminFeatureProcedure("timeTracking").input(z.object({ memberId: z.number().int().positive(), profile: laborSchema })).mutation(async ({ ctx, input }) => {
     const [member] = await companyMembers(ctx.accountId, [input.memberId]);
     if (!member) throw new TRPCError({ code: "NOT_FOUND", message: "Funcionário não encontrado." });
@@ -123,16 +132,12 @@ export const timesheetMirrorRouter = router({
       await ensureAdjustmentsTable();
       const members = await companyMembers(ctx.accountId, input.memberIds);
       if (input.memberIds?.length && members.length !== new Set(input.memberIds).size) throw new TRPCError({ code: "NOT_FOUND", message: "Funcionário não encontrado nesta empresa." });
-      // Janela com folga para turnos que cruzam a meia-noite; o corte por dia local é feito no cálculo.
-      const start = new Date(Date.parse(`${input.from}T00:00:00Z`) - 15 * 3600000);
-      const end = new Date(Date.parse(`${input.to}T00:00:00Z`) + 60 * 3600000);
       const company = (await database.select({ name: companies.name }).from(companies).where(eq(companies.id, ctx.accountId)).limit(1))[0];
       const legal = await readJson<z.infer<typeof legalSchema>>("company_legal_profile", ctx.accountId);
       // Consultas em lote (4 no total, independentes do nº de funcionários) em vez de 3+ por funcionário.
       const memberIds = members.map((m) => m.id);
-      const eventRows = memberIds.length
-        ? await database.select().from(timeEvents).where(and(eq(timeEvents.companyId, ctx.accountId), inArray(timeEvents.memberAccountId, memberIds), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end))).orderBy(timeEvents.serverTime)
-        : [];
+      // Filtra pelo mesmo horário usado no cálculo (deviceTime, senão serverTime): batida offline sincronizada depois não some do mês.
+      const eventRows = await loadMirrorEventRows(ctx.accountId, memberIds, input.from, input.to);
       const eventsByMember = new Map<number, typeof eventRows>();
       for (const r of eventRows) eventsByMember.set(r.memberAccountId, [...(eventsByMember.get(r.memberAccountId) || []), r]);
       const evIds = eventRows.map((r) => r.id);
@@ -147,6 +152,8 @@ export const timesheetMirrorRouter = router({
         for (const r of laborRows) { try { laborByMember.set(Number(String(r.settingKey).split(":")[1]), JSON.parse(r.settingValue)); } catch { /* ignora perfil corrompido */ } }
       }
       const excusesByMember = await loadApprovedDayExcuses(ctx.accountId, memberIds, input.from, input.to);
+      const vacationsByMember = await loadMemberVacations(ctx.accountId, memberIds, input.from, input.to);
+      const options = await loadMirrorOptions(ctx.accountId);
       const results = members.map((m) => {
         const events: MirrorEvent[] = (eventsByMember.get(m.id) || []).map((r) => {
           const a = adjByEvent.get(r.id);
@@ -156,10 +163,11 @@ export const timesheetMirrorRouter = router({
             automatic: /automática/i.test(notes) && /^auto-clock-out:/.test(r.idempotencyKey || ""),
             adjustment: a ? { originalType: a.originalType, originalTime: new Date(a.originalTime).toISOString(), justification: a.justification, reviewedBy: a.reviewedByName, reviewedAt: a.createdAt ? new Date(a.createdAt).toISOString() : null } : null,
             legacyAdjustment: !a && /Ajuste aprovado em/.test(notes),
+            timeAlert: readTimeAlert(notes),
           };
         });
         const labor = laborByMember.get(m.id) ?? null;
-        return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: labor ? { ...labor } : null, report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [] }) };
+        return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: labor ? { ...labor } : null, report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [], vacations: vacationsByMember.get(m.id) || [], options }) };
       });
       void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "timesheet_mirror", description: `Gerou espelho de ponto ${input.from} a ${input.to} (${results.length} funcionário(s))`, newData: { from: input.from, to: input.to, memberIds: results.map((r) => r.member.id) } });
       return { company: { name: company?.name ?? "", legal: legal ?? null }, generatedAt: new Date().toISOString(), timeZone: TZ, results };

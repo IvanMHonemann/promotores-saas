@@ -130,6 +130,8 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
   const company = trpc.timesheetMirror.getCompanyProfile.useQuery(undefined, { staleTime: 30000 });
   const saveCompany = trpc.timesheetMirror.saveCompanyProfile.useMutation({ onSuccess: () => { toast.success("Dados da empresa salvos."); onSaved(); }, onError: (e) => toast.error(e.message) });
   const saveLabor = trpc.timesheetMirror.saveLaborProfile.useMutation({ onSuccess: () => { toast.success("Perfil do funcionário salvo."); onSaved(); }, onError: (e) => toast.error(e.message) });
+  const mirrorOptions = trpc.timesheetMirror.getMirrorOptions.useQuery(undefined, { staleTime: 30000 });
+  const saveOptions = trpc.timesheetMirror.saveMirrorOptions.useMutation({ onSuccess: () => { toast.success("Configuração de feriados salva."); void mirrorOptions.refetch(); onSaved(); }, onError: (e) => toast.error(e.message) });
   const [legal, setLegal] = useState<any>(null);
   const [labor, setLabor] = useState<{ id: string; v: any } | null>(null);
   const legalValue = legal ?? company.data?.legal ?? { legalName: "", document: "", establishment: "", address: "" };
@@ -158,6 +160,8 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
         <div><Label>Endereço</Label><Input value={legalValue.address} onChange={(e) => setLegal({ ...legalValue, address: e.target.value })} className={field} /></div>
       </div>
       <Button onClick={() => saveCompany.mutate(legalValue)} disabled={saveCompany.isPending} className="bg-teal-300 text-slate-950 hover:bg-teal-200"><Save className="mr-2 h-4 w-4" />Salvar empresa</Button></div>
+    <div className="space-y-2 border-t border-white/10 pt-4"><p className="text-sm text-slate-300">Feriados: os nacionais (inclusive 20/11 desde 2024) são abonados automaticamente. Carnaval e Corpus Christi são ponto facultativo.</p>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={mirrorOptions.isLoading || saveOptions.isPending} checked={Boolean(mirrorOptions.data?.optionalHolidaysAsHoliday)} onChange={(e) => saveOptions.mutate({ optionalHolidaysAsHoliday: e.target.checked })} />Minha empresa concede Carnaval e Corpus Christi (abonar como feriado)</label></div>
     <div className="space-y-3 border-t border-white/10 pt-4"><p className="text-sm text-slate-300">Perfil trabalhista — selecione um funcionário no filtro acima. Sem jornada e dias configurados, horas previstas, extras e faltas não são calculadas.</p>
       {!member ? <p className="text-sm text-amber-200">Escolha um funcionário específico para editar o perfil.</p> : <>
         <div className="grid gap-3 md:grid-cols-3">

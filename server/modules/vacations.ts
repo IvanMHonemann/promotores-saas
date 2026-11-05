@@ -21,7 +21,7 @@ function asDateStr(value: unknown): string {
 
 let tableReady: Promise<void> | null = null;
 
-async function ensureVacationSchedulesTable(): Promise<void> {
+export async function ensureVacationSchedulesTable(): Promise<void> {
   if (tableReady) return tableReady;
   tableReady = (async () => {
     const database = await db.getDb();

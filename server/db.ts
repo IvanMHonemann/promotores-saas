@@ -1090,26 +1090,56 @@ export async function createOperationalRoute(input: typeof operationalRoutes.$in
   return rows[0];
 }
 
+export class RouteValidationError extends Error {}
+
+/**
+ * Atualiza o roteiro numa única transação (tudo ou nada), validando que roteiro, promotor e lojas
+ * pertencem à empresa. Visitas já iniciadas/concluídas são preservadas: só as pendentes são realocadas/removidas.
+ */
 export async function updateOperationalRoute(companyId: number, routeId: number, data: { name?: string; promoterId?: number; date?: string; storeIds?: number[] }) {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
-  const updates: any = {};
-  if (data.name) updates.name = data.name;
-  if (data.promoterId) updates.promoterId = data.promoterId;
-  if (data.date) updates.date = data.date.slice(0, 10);
-  if (Object.keys(updates).length) {
-    await database.update(operationalRoutes).set(updates).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, requireAccountId(companyId))));
-  }
-  if (data.promoterId) {
-    await database.update(operationalVisits).set({ promoterId: data.promoterId }).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, requireAccountId(companyId))));
-  }
-  if (data.storeIds && data.storeIds.length) {
-    await database.delete(operationalVisits).where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, requireAccountId(companyId))));
-    for (const storeId of data.storeIds) {
-      await database.insert(operationalVisits).values({ companyId: requireAccountId(companyId), routeId, storeId, promoterId: data.promoterId || 0, status: "pending" });
+  const cid = requireAccountId(companyId);
+  return database.transaction(async (tx) => {
+    const [route] = await tx.select().from(operationalRoutes).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, cid))).limit(1);
+    if (!route) throw new RouteValidationError("Roteiro não encontrado para esta empresa.");
+
+    if (data.promoterId) {
+      const [promoter] = await tx.select({ id: memberAccounts.id }).from(memberAccounts)
+        .where(and(eq(memberAccounts.id, data.promoterId), eq(memberAccounts.companyId, cid), eq(memberAccounts.active, true))).limit(1);
+      if (!promoter) throw new RouteValidationError("O promotor selecionado não pertence a esta empresa ou está inativo.");
     }
-  }
-  return { success: true };
+    const uniqueStoreIds = data.storeIds ? [...new Set(data.storeIds)].filter((id) => Number.isInteger(id) && id > 0) : [];
+    if (uniqueStoreIds.length) {
+      const stores = await tx.select({ id: operationalStores.id }).from(operationalStores)
+        .where(and(inArray(operationalStores.id, uniqueStoreIds), eq(operationalStores.companyId, cid), eq(operationalStores.active, true)));
+      if (stores.length !== uniqueStoreIds.length) throw new RouteValidationError("Uma ou mais lojas não pertencem a esta empresa.");
+    }
+
+    const updates: any = {};
+    if (data.name) updates.name = data.name;
+    if (data.promoterId) updates.promoterId = data.promoterId;
+    if (data.date) updates.date = data.date.slice(0, 10);
+    if (Object.keys(updates).length) {
+      await tx.update(operationalRoutes).set(updates).where(and(eq(operationalRoutes.id, routeId), eq(operationalRoutes.companyId, cid)));
+    }
+    if (data.promoterId) {
+      await tx.update(operationalVisits).set({ promoterId: data.promoterId })
+        .where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, cid), eq(operationalVisits.status, "pending")));
+    }
+    if (uniqueStoreIds.length) {
+      const current = await tx.select({ id: operationalVisits.id, storeId: operationalVisits.storeId, status: operationalVisits.status }).from(operationalVisits)
+        .where(and(eq(operationalVisits.routeId, routeId), eq(operationalVisits.companyId, cid)));
+      const wanted = new Set(uniqueStoreIds);
+      const removable = current.filter((v) => !(v.storeId != null && wanted.has(v.storeId)) && v.status === "pending").map((v) => v.id);
+      if (removable.length) await tx.delete(operationalVisits).where(and(inArray(operationalVisits.id, removable), eq(operationalVisits.companyId, cid)));
+      const existingStores = new Set(current.map((v) => v.storeId));
+      const promoterId = data.promoterId ?? route.promoterId ?? 0;
+      const toCreate = uniqueStoreIds.filter((storeId) => !existingStores.has(storeId));
+      if (toCreate.length) await tx.insert(operationalVisits).values(toCreate.map((storeId) => ({ companyId: cid, routeId, storeId, promoterId, status: "pending" as const })));
+    }
+    return { success: true };
+  });
 }
 
 export async function deleteOperationalRoute(companyId: number, routeId: number) {
@@ -1149,8 +1179,8 @@ export async function listOperationalVisits(companyId: number, options: { id?: n
   if (options.date) conditions.push(eq(operationalRoutes.date, options.date as any));
   const rows = await database.select({ visit: operationalVisits, store: operationalStores })
     .from(operationalVisits)
-    .innerJoin(operationalStores, eq(operationalVisits.storeId, operationalStores.id))
-    .innerJoin(operationalRoutes, eq(operationalVisits.routeId, operationalRoutes.id))
+    .innerJoin(operationalStores, and(eq(operationalVisits.storeId, operationalStores.id), eq(operationalStores.companyId, operationalVisits.companyId)))
+    .innerJoin(operationalRoutes, and(eq(operationalVisits.routeId, operationalRoutes.id), eq(operationalRoutes.companyId, operationalVisits.companyId)))
     .where(and(...conditions))
     .orderBy(operationalVisits.plannedStart, operationalVisits.id);
   return rows;

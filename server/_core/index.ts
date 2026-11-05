@@ -9,6 +9,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { runScheduledMaintenance } from "../scheduledMaintenance";
 import { notifyOwner } from "./notification";
+import { isScheduleRequestAuthorized } from "../scheduleAuth";
 import crypto from "node:crypto";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -103,11 +104,9 @@ export async function createApp(): Promise<Express> {
     }
   });
 
-app.post("/api/scheduled/database-maintenance", async (req, res) => {
+app.all("/api/scheduled/database-maintenance", async (req, res) => {
     try {
-      const configuredSecret = process.env.SCHEDULE_SECRET;
-      const suppliedSecret = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.headers["x-schedule-secret"];
-      if (!configuredSecret || typeof suppliedSecret !== "string" || !timingSafeTokenEqual(configuredSecret, suppliedSecret)) {
+      if (!isScheduleRequestAuthorized(req)) {
         return res.status(401).json({ error: "Schedule authentication required" });
       }
       const result = await runScheduledMaintenance();

@@ -351,7 +351,8 @@ export default function LandingPage() {
           <p>GONDUP · Gestão inteligente de equipes de campo</p>
           <div className="flex gap-5">
             <button className="hover:text-white" onClick={() => navigate("/login")}>Entrar</button>
-            <button className="hover:text-white" onClick={() => navigate("/login")}>Entrar</button>
+            <button className="hover:text-white" onClick={() => navigate("/termos")}>Termos de Uso</button>
+            <button className="hover:text-white" onClick={() => navigate("/privacidade")}>Privacidade</button>
           </div>
         </div>
       </footer>

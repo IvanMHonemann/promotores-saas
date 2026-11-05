@@ -12,7 +12,7 @@ describe("menu lateral da empresa", () => {
       ["Equipe e ponto", ["Promotores e equipe", "Cartão-ponto", "Espelho de ponto", "Férias"]],
       ["Relatórios", ["Auditoria", "Ponto: prova legal", "Arquivos históricos"]],
     ]);
-    expect(r.account.items.map((i) => i.label)).toEqual(["Meus módulos", "Lixeira"]);
+    expect(r.account.items.map((i) => i.label)).toEqual(["LGPD e privacidade", "Meus módulos", "Lixeira"]);
   });
   it("supervisor não vê grupos vazios nem itens de admin", () => {
     const r = buildCompanyGroups("supervisor", all);

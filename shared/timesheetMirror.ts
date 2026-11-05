@@ -36,6 +36,8 @@ export type LaborProfile = {
   cpf?: string | null;
   /** Jornada diária contratada em minutos (somente se configurada). */
   dailyMinutes?: number | null;
+  /** Horário contratual (pares entrada/saída HH:MM). */
+  schedule?: Array<[string, string]> | null;
   /** Intervalo previsto em minutos (informativo). */
   intervalMinutes?: number | null;
   /** Dias úteis da semana (0=domingo ... 6=sábado). Se ausente, não se calcula previsto/faltas. */

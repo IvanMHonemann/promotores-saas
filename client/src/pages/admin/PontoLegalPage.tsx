@@ -20,6 +20,8 @@ function Item({ ok, title, hint }: { ok: boolean; title: string; hint: string })
 export default function PontoLegalPage() {
   const status = trpc.pontoLegal.status.useQuery();
   const verify = trpc.pontoLegal.verifyIntegrity.useMutation();
+  const clock = trpc.pontoLegal.clockStatus.useQuery();
+  const clockCheck = trpc.pontoLegal.clockCheck.useMutation({ onSuccess: () => void clock.refetch(), onError: (e) => toast.error(e.message) });
   const afd = trpc.pontoLegal.exportAfd.useMutation();
   const aej = trpc.pontoLegal.exportAej.useMutation();
   const firstDay = `${currentMonthSP(-1)}-01`;
@@ -62,6 +64,37 @@ export default function PontoLegalPage() {
                 <Item ok={s.signature} title="Assinatura ICP-Brasil (.p7s) do AFD/AEJ" hint="pendente: os arquivos saem sem assinatura até haver certificado digital" />
               </ul>
             )}
+          </CardContent>
+        </Card>
+
+        {s?.readiness && (
+          <Card className={s.readiness.ok ? "border-emerald-300/30 bg-emerald-950/30" : "border-amber-300/40 bg-amber-950/30"}>
+            <CardHeader><CardTitle className="text-base">Cadastro para AFD, AEJ, comprovante e espelho</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {s.readiness.ok ? <p className="text-emerald-200">Tudo cadastrado.</p> : <>
+                <p className="text-slate-300">Os arquivos saem mesmo assim, mas com campos em branco ou zerados — o que enfraquece a prova. Complete em <a href="/espelho-ponto" className="font-bold text-teal-300 underline">Espelho de ponto → Dados para o espelho</a>.</p>
+                {s.readiness.company.length > 0 && <p><b>Empresa:</b> falta {s.readiness.company.join(", ")}.</p>}
+                {s.readiness.people.length > 0 && <ul className="list-disc pl-5 text-xs">{s.readiness.people.slice(0, 30).map((p: any) => <li key={p.memberId}><b>{p.name}</b>: falta {p.missing.join(", ")}</li>)}{s.readiness.people.length > 30 && <li>…e mais {s.readiness.people.length - 30}</li>}</ul>}
+              </>}
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className="border-white/10 bg-slate-900/70">
+          <CardHeader><CardTitle className="text-base">Relógio x Hora Legal Brasileira</CardTitle></CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-slate-300">A Portaria 671 exige no máximo 30 segundos de diferença para a hora oficial (NTP.br, Observatório Nacional). O sistema confere todo dia, ao abrir esta tela (se a última conferência tiver mais de 6 horas) e quando você pedir. Cada conferência fica gravada na auditoria.</p>
+            <Button variant="secondary" onClick={() => clockCheck.mutate()} disabled={clockCheck.isPending}>{clockCheck.isPending ? "Conferindo..." : "Conferir agora"}</Button>
+            {(() => {
+              const last = clock.data?.checks?.[0];
+              if (!last) return <p className="text-slate-400">Nenhuma conferência ainda.</p>;
+              if (last.error) return <p className="text-amber-200">Última tentativa ({fmtDateTimeSP(last.checkedAt)}) não conseguiu falar com a hora oficial: {last.error}</p>;
+              const worst = Math.max(Math.abs(last.serverOffsetMs), Math.abs(last.databaseOffsetMs ?? 0));
+              return <div className={`rounded-lg border p-3 ${last.ok ? "border-emerald-300/40 bg-emerald-400/10" : "border-rose-300/40 bg-rose-400/10"}`}>
+                <p className="font-bold">{last.ok ? "Dentro do limite" : "FORA DO LIMITE de 30 s — avise o suporte"}: diferença de {(worst / 1000).toFixed(2)} s</p>
+                <p className="text-xs text-slate-300">Servidor {last.serverOffsetMs} ms · banco de dados (que carimba as batidas) {last.databaseOffsetMs ?? "?"} ms · fonte {last.source} ({last.method === "sntp" ? "NTP" : "HTTPS, precisão ~1 s"}) · {fmtDateTimeSP(last.checkedAt)}</p>
+              </div>;
+            })()}
           </CardContent>
         </Card>
 

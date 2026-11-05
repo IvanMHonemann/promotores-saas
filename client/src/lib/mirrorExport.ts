@@ -75,7 +75,7 @@ export function missingLegalFields(data: MirrorData, r: MirrorResult): string[] 
 }
 export const periodLabel = (r: MirrorReport) => `${fmtDate(r.from)} a ${fmtDate(r.to)}`;
 export const LEGEND = "Legenda (horário de Brasília, America/Sao_Paulo): * = marcação ajustada por correção aprovada (original e justificativa em Ocorrências); + = batida incluída manualmente; # = ajuste antigo sem original estruturado; A = saída automática do sistema; ? = sincronização pendente. — = não aplicável/não configurado. DSR = descanso semanal remunerado.";
-export const DISCLAIMER = "Documento gerado pelo GondUp a partir das marcações registradas (originais preservados; correções viram registros à parte). Serve para conferência e arquivo da empresa. A conformidade plena com a Portaria MTP 671/2021 (REP-P) depende ainda do registro no INPI e da assinatura digital ICP-Brasil do empregador/desenvolvedor.";
+export const DISCLAIMER = "Documento gerado pelo GondUp a partir das batidas registradas. A batida original é preservada; correções viram registros à parte. Serve para conferência e arquivo da empresa.";
 
 const safe = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "arquivo";
 export const fileBase = (data: MirrorData, r?: MirrorResult) =>
@@ -122,7 +122,7 @@ function acceptanceHtml(r: MirrorResult): string {
   return `<div class="accept"><p><b>Aceite eletrônico:</b> ${esc(dec)} em ${esc(when)} (Brasília).` +
     (a.stillValid === false ? " <b>Atenção:</b> houve mudança depois deste aceite." : "") +
     (a.comment ? ` Comentário: ${esc(a.comment)}.` : "") +
-    `</p><p class="hash">Hash do documento: <code>${esc(a.documentHash)}</code></p></div>`;
+    `</p><p class="hash">Código do documento: <code>${esc(a.documentHash)}</code></p></div>`;
 }
 function htmlFor(data: MirrorData, r: MirrorResult) {
   const miss = missingLegalFields(data, r);
@@ -274,7 +274,7 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
     const dec = a.decision === "accepted" ? "confirmado eletronicamente pelo funcionario" : "contestado eletronicamente pelo funcionario";
     doc.setFontSize(8).setFont("helvetica", "normal").setTextColor(20, 90, 80);
     const accLines = doc.splitTextToSize(
-      pdfSafe(`Aceite eletrônico: ${dec} em ${when} (Brasília).${a.stillValid === false ? " ATENÇÃO: houve mudança depois deste aceite." : ""}${a.comment ? ` Comentário: ${a.comment}.` : ""} Hash: ${a.documentHash}`),
+      pdfSafe(`Confirmação no app: ${dec} em ${when} (Brasília).${a.stillValid === false ? " ATENÇÃO: o espelho mudou depois desta confirmação." : ""}${a.comment ? ` Comentário: ${a.comment}.` : ""} Código: ${a.documentHash}`),
       W - 2 * M,
     ) as string[];
     for (const line of accLines) { doc.text(line, M, y); y += 3.6; }
@@ -282,7 +282,7 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
     y += 1;
   } else if (r.documentHash) {
     doc.setFontSize(7.5).setFont("helvetica", "normal").setTextColor(80);
-    doc.text(pdfSafe(`Código do documento (hash): ${r.documentHash}`), M, y);
+    doc.text(pdfSafe(`Código do documento: ${r.documentHash}`), M, y);
     doc.setTextColor(0);
     y += 4;
   }
@@ -358,7 +358,7 @@ export async function buildMirrorPdf(data: MirrorData): Promise<Blob> {
     doc.setPage(i);
     const meta = pageMeta[i - 1] || { memberName: "", companyName: data.company.name, stamp: stamp(data), hash: null };
     doc.setFontSize(7).setFont("helvetica", "normal").setTextColor(100);
-    const hashBit = meta.hash ? ` · hash ${meta.hash}…` : "";
+    const hashBit = meta.hash ? ` · cód. ${meta.hash}…` : "";
     doc.text(
       pdfSafe(`${meta.companyName} · Espelho de ponto · ${meta.memberName} · emitido em ${meta.stamp} (Brasília)${hashBit} · página ${i} de ${total}`),
       10, 210 - 5,

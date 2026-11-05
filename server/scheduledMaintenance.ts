@@ -46,18 +46,28 @@ export async function runScheduledMaintenance() {
 }
 
 /**
- * Retenção do log de auditoria (ele só cresce). Padrão: 2 anos; registros do módulo de ponto (time_tracking) 5 anos.
- * Configure com AUDIT_RETENTION_DAYS e AUDIT_RETENTION_TIME_DAYS. Apaga em lotes para não travar a tabela.
+ * Retenção do log de auditoria (ele só cresce). Padrão: 2 anos para módulos gerais.
+ * Registros do ponto (module = 'time_tracking') são prova trabalhista: por padrão NUNCA são apagados.
+ * Se AUDIT_RETENTION_TIME_DAYS for definido, vale no mínimo 7 anos (5 de prescrição + 2 após a rescisão).
+ * Marcações de ponto (time_events), solicitações de correção e aceites do espelho não são apagados por nenhuma rotina.
  */
+export const MIN_TIME_AUDIT_RETENTION_DAYS = 7 * 365;
+export function timeAuditRetentionDays(): number | null {
+  const raw = Number(process.env.AUDIT_RETENTION_TIME_DAYS || 0);
+  if (!raw || !Number.isFinite(raw)) return null;
+  return Math.max(MIN_TIME_AUDIT_RETENTION_DAYS, raw);
+}
 export async function purgeOldAuditLogs(connection: mysql.Connection) {
   const general = Math.max(90, Number(process.env.AUDIT_RETENTION_DAYS || 730));
-  const timeDays = Math.max(general, Number(process.env.AUDIT_RETENTION_TIME_DAYS || 1825));
+  const timeDays = timeAuditRetentionDays();
   let auditLogs = 0;
   try {
     for (let i = 0; i < 10; i++) {
       const [r]: any = await connection.query(
-        `DELETE FROM audit_logs WHERE (module <> 'time_tracking' AND createdAt < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)) OR (module = 'time_tracking' AND createdAt < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)) LIMIT 5000`,
-        [general, timeDays],
+        timeDays == null
+          ? `DELETE FROM audit_logs WHERE module <> 'time_tracking' AND createdAt < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY) LIMIT 5000`
+          : `DELETE FROM audit_logs WHERE (module <> 'time_tracking' AND createdAt < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)) OR (module = 'time_tracking' AND createdAt < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? DAY)) LIMIT 5000`,
+        timeDays == null ? [general] : [general, timeDays],
       );
       auditLogs += r.affectedRows || 0;
       if ((r.affectedRows || 0) < 5000) break;

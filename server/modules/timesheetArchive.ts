@@ -14,7 +14,7 @@ import { buildMirror, type LaborProfile, type MirrorEvent, MIRROR_HEADERS, mirro
 import { storagePut, storageGetSignedUrl } from "../storage";
 import { ensureAdjustmentsTable } from "./timesheetMirror";
 import { loadApprovedDayExcuses } from "./correctionExtras";
-import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
+import { loadAdjustmentsByEvent, loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, toMirrorEvents } from "./mirrorData";
 import { readTimeAlert } from "../../shared/punchTime";
 
 const TZ = "America/Sao_Paulo";
@@ -138,14 +138,12 @@ export async function archiveClosedMonth(companyId: number, year: number, month:
   const excusesByMember = await loadApprovedDayExcuses(companyId, ids, from, to);
   const vacationsByMember = await loadMemberVacations(companyId, ids, from, to);
   const options = await loadMirrorOptions(companyId);
+  const adjByEvent = await loadAdjustmentsByEvent(companyId, ids);
   const results: ArchiveResult[] = [];
   for (const m of members) {
     try {
       const labor = await readJson<LaborProfile>(`labor_profile:${m.id}`, companyId);
-      const events: MirrorEvent[] = (byMember.get(m.id) || []).map((r) => ({
-        id: r.id, type: r.eventType, time: (r.deviceTime || r.serverTime).toISOString(),
-        receivedAt: r.serverTime.toISOString(), synced: r.synced, notes: r.notes, timeAlert: readTimeAlert(r.notes),
-      }));
+      const events: MirrorEvent[] = toMirrorEvents(byMember.get(m.id) || [], adjByEvent);
       const report = buildMirror({ events, from, to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [], vacations: vacationsByMember.get(m.id) || [], options });
       const buf = await buildPdfBuffer({
         companyName: company?.name ?? "", memberName: m.name, employeeCode: m.employeeCode ?? null, from, to, report,

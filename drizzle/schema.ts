@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar, double } from "drizzle-orm/mysql-core";
+import { bigint, boolean, date, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar, double } from "drizzle-orm/mysql-core";
 
 /** Identidades OAuth do provedor; somente a identidade do proprietário pode ser platform_admin. */
 export const users = mysqlTable("users", {
@@ -340,6 +340,28 @@ export const timeEvents = mysqlTable("time_events", {
   synced: boolean("synced").default(true).notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // --- Livro de ponto à prova de alteração (Portaria 671; ver server/ponto/ledger.ts e drizzle/0026) ---
+  /** Número Sequencial de Registro por empresa (só marcações originais). */
+  nsr: bigint("nsr", { mode: "number" }),
+  /** SHA-256 do registro (tipo 7 do AFD para originais; cadeia própria para tratamentos). */
+  recordHash: varchar("recordHash", { length: 64 }),
+  prevHash: varchar("prevHash", { length: 64 }),
+  /** SHA-256 do conteúdo completo (tipo, horários, GPS) da marcação original. */
+  contentHash: varchar("contentHash", { length: 64 }),
+  timeZone: varchar("timeZone", { length: 64 }),
+  collectorId: varchar("collectorId", { length: 8 }),
+  offline: boolean("offline").default(false).notNull(),
+  /** Horário informado pelo aparelho (sempre guardado, mesmo quando divergente). */
+  clientTime: timestamp("clientTime"),
+  workerCpf: varchar("workerCpf", { length: 14 }),
+  /** original = batida do funcionário; inclusion = incluída por tratamento; adjustment = substitui replacesEventId. */
+  origin: varchar("origin", { length: 16 }).default("original").notNull(),
+  replacesEventId: int("replacesEventId"),
+  correctionRequestId: int("correctionRequestId"),
+  recordedByMemberId: int("recordedByMemberId"),
+  recordedByName: varchar("recordedByName", { length: 255 }),
+  reason: text("reason"),
+  sealedLegacy: boolean("sealedLegacy").default(false).notNull(),
 }, (table) => ({
   companyIdx: index("time_events_company_idx").on(table.companyId),
   memberIdx: index("time_events_member_idx").on(table.memberAccountId),

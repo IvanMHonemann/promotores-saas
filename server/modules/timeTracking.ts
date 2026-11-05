@@ -17,6 +17,8 @@ import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared
 import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
 import { punchOrderError } from "@shared/punchOrder";
+import { appendOriginalPunch, appendTreatment, effectiveRows, ensurePunchLedger, NEW_SHIFT_MARKER } from "../ponto/ledger";
+import { effectiveEventTime } from "./mirrorData";
 
 const inFlightCorrections = new Set<string>();
 
@@ -46,32 +48,58 @@ function isValidTransition(last: TimeEventType | undefined, next: TimeEventType)
 
 type Db = NonNullable<Awaited<ReturnType<typeof db.getDb>>>;
 type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+/**
+ * Aplica uma solicitação aprovada SEM alterar a marcação original (Portaria 671, art. 74 IV):
+ * - correção de batida existente => novo registro "adjustment" que aponta para a original (replacesEventId);
+ * - batida esquecida => novo registro "inclusion".
+ * A original continua no banco, no AFD e na verificação de integridade; no cálculo ela passa a ser "desconsiderada".
+ */
 async function applyApprovedCorrection(database: DbOrTx, request: typeof timeCorrectionRequests.$inferSelect, ctx: { accountId: number; memberAccountId?: number | null; user?: { name?: string | null } | null }, opts?: { skipMissing?: boolean }) {
   if (looksLikeFullDayExcuse(request)) return;
+  await ensurePunchLedger();
+  const decidedByName = ctx.user?.name || `Administrador #${ctx.memberAccountId ?? "?"}`;
   if (request.timeEventId) {
     const event = (await database.select().from(timeEvents).where(and(eq(timeEvents.id, request.timeEventId), eq(timeEvents.companyId, ctx.accountId))).limit(1))[0];
     if (!event) {
       if (opts?.skipMissing) return;
       throw new TRPCError({ code: "NOT_FOUND", message: "A marcação original não foi encontrada." });
     }
-    const previous = `${event.eventType} em ${(event.deviceTime || event.serverTime).toISOString()}`;
-    const note = `Ajuste aprovado em ${new Date().toISOString()} pelo administrador. Antes: ${previous}. Motivo do funcionário: ${request.justification}`;
-    await safeAdjustment({ companyId: ctx.accountId, timeEventId: event.id, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime: event.deviceTime || event.serverTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
-    await database.update(timeEvents).set({ eventType: request.requestedType, deviceTime: request.requestedTime, notes: `${event.notes ? `${event.notes}\n` : ""}${note}` }).where(eq(timeEvents.id, event.id));
+    const already = await database.select({ id: timeEvents.id }).from(timeEvents).where(and(eq(timeEvents.companyId, ctx.accountId), eq(timeEvents.replacesEventId, event.id))).limit(1);
+    if (already[0]) {
+      if (opts?.skipMissing) return;
+      throw new TRPCError({ code: "CONFLICT", message: "Esta marcação já foi corrigida. Peça a correção sobre a marcação atual." });
+    }
+    const originalTime = event.deviceTime || event.serverTime;
+    const newId = await appendTreatment(database, {
+      companyId: ctx.accountId,
+      memberAccountId: event.memberAccountId,
+      kind: "adjustment",
+      replacesEventId: event.id,
+      eventType: request.requestedType,
+      markedAt: request.requestedTime,
+      reason: request.justification,
+      correctionRequestId: request.id,
+      decidedByMemberId: ctx.memberAccountId ?? null,
+      decidedByName,
+      notes: `Ajuste aprovado. Original preservada: ${event.eventType} em ${originalTime.toISOString()} (registro #${event.id}${event.nsr ? `, NSR ${event.nsr}` : ""}).`,
+      timeZone: event.timeZone || undefined,
+    });
+    await safeAdjustment({ companyId: ctx.accountId, timeEventId: newId, correctionRequestId: request.id, memberAccountId: event.memberAccountId, originalType: event.eventType, originalTime, correctedType: request.requestedType, correctedTime: request.requestedTime, justification: request.justification, reviewedByMemberId: ctx.memberAccountId ?? null, reviewedByName: ctx.user?.name ?? null });
     return;
   }
-  const note = `Batida incluída via solicitação aprovada em ${new Date().toISOString()}. Motivo: ${request.justification}`;
-  const insertResult = await database.insert(timeEvents).values({
+  const newEventId = await appendTreatment(database, {
     companyId: request.companyId,
     memberAccountId: request.memberAccountId,
+    kind: "inclusion",
+    replacesEventId: null,
     eventType: request.requestedType,
-    deviceTime: request.requestedTime,
-    serverTime: new Date(),
-    notes: note,
-    synced: true,
-    locationStatus: "unavailable",
+    markedAt: request.requestedTime,
+    reason: request.justification,
+    correctionRequestId: request.id,
+    decidedByMemberId: ctx.memberAccountId ?? null,
+    decidedByName,
+    notes: `Batida incluída por solicitação aprovada (não é marcação original do funcionário).`,
   });
-  const newEventId = Number((insertResult as any)[0]?.insertId);
   if (newEventId) {
     await safeAdjustment({
       companyId: ctx.accountId,
@@ -100,7 +128,8 @@ export const timeTrackingRouter = router({
       const database = await db.getDb();
       if (!database) return { status: "clock_in_required" as const, active: false, timeZone, localDate: localDay(new Date(), timeZone) };
       const today = localDay(new Date(), timeZone);
-      const events = await database.select().from(timeEvents).where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId))).orderBy(desc(timeEvents.serverTime)).limit(100);
+      await ensurePunchLedger();
+      const events = await effectiveRows(await database.select().from(timeEvents).where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId))).orderBy(desc(effectiveEventTime)).limit(100));
       const todayEvents = events.filter((event) => localDay(event.deviceTime || event.serverTime, timeZone) === today);
       const last = todayEvents[0];
       const active = Boolean(last && last.eventType !== "clock_out");
@@ -115,7 +144,10 @@ export const timeTrackingRouter = router({
       const timeZone = input?.timeZone || "UTC";
       const today = localDay(new Date(), timeZone);
       const since = new Date(Date.now() - 36 * 60 * 60 * 1000);
-      const rows = await database.select({
+      await ensurePunchLedger();
+      const rawRows = await database.select({
+        id: timeEvents.id,
+        companyId: timeEvents.companyId,
         promoterId: memberAccounts.id,
         promoterName: memberAccounts.userName,
         eventType: timeEvents.eventType,
@@ -137,6 +169,7 @@ export const timeTrackingRouter = router({
         ))
         .orderBy(desc(timeEvents.serverTime))
         .limit(5000);
+      const rows = await effectiveRows(rawRows);
 
       const eventsByPromoter = new Map<number, typeof rows>();
       for (const row of rows) {
@@ -148,7 +181,7 @@ export const timeTrackingRouter = router({
 
       const presence = [];
       for (const [promoterId, promoterEvents] of eventsByPromoter) {
-        const chronological = [...promoterEvents].sort((a, b) => a.serverTime.getTime() - b.serverTime.getTime());
+        const chronological = [...promoterEvents].sort((a, b) => (a.deviceTime || a.serverTime).getTime() - (b.deviceTime || b.serverTime).getTime());
         const entry = chronological.find((event) => event.eventType === "clock_in");
         const last = chronological[chronological.length - 1];
         if (!entry || !last) continue;
@@ -193,6 +226,7 @@ export const timeTrackingRouter = router({
       }
       const database = await db.getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+      await ensurePunchLedger();
 
       if (input.idempotencyKey) {
         const existing = await database.select().from(timeEvents)
@@ -207,39 +241,42 @@ export const timeTrackingRouter = router({
 
       // Horário oficial: o do servidor, salvo tolerância de 5 min ou marcação offline legítima (ver shared/punchTime).
       const punchTime = resolvePunchTime({ deviceTime: input.deviceTime ? new Date(input.deviceTime) : null, serverNow: new Date(), offline: input.offline });
-      const notesWithAlert = [input.notes, punchTime.note].filter(Boolean).join("\n") || undefined;
-
       const today = localDay(punchTime.effectiveTime, input.timeZone);
-      const recent = await database.select().from(timeEvents)
+      const recent = await effectiveRows(await database.select().from(timeEvents)
         .where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId)))
-        .orderBy(desc(timeEvents.serverTime)).limit(100);
+        .orderBy(desc(effectiveEventTime)).limit(100));
       const todayEvents = recent.filter((event) => localDay(event.deviceTime || event.serverTime, input.timeZone) === today);
       const lastToday = todayEvents[0]?.eventType as TimeEventType | undefined;
-      if (input.eventType === "clock_in" && lastToday === "clock_out") throw new TRPCError({ code: "BAD_REQUEST", message: "A jornada de hoje já foi encerrada. O próximo acesso será liberado no próximo dia." });
+      // Portaria 671, art. 74 I: o sistema não pode restringir horários de marcação. Uma nova entrada depois da
+      // saída no mesmo dia é aceita e fica sinalizada para o administrador conferir (ex.: dupla pegada, retorno).
+      const newShiftSameDay = input.eventType === "clock_in" && lastToday === "clock_out";
+      const notesWithAlert = [input.notes, punchTime.note, newShiftSameDay ? `${NEW_SHIFT_MARKER} Nova entrada registrada depois da saída no mesmo dia.` : null].filter(Boolean).join("\n") || undefined;
       if (input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) throw new TRPCError({ code: "BAD_REQUEST", message: "Bata a entrada antes de registrar este evento." });
       if (!isValidTransition(lastToday, input.eventType)) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "Sequência de marcação inválida. Confira o último evento do ponto." });
       }
 
-      let result: any;
+      let insertedId: number;
       try {
-        result = await database.insert(timeEvents).values({
+        insertedId = await appendOriginalPunch({
           companyId,
           memberAccountId: memberId,
           eventType: input.eventType,
-          deviceTime: punchTime.deviceTimeToStore,
+          deviceTimeToStore: punchTime.deviceTimeToStore,
+          clientTime: input.deviceTime ? new Date(input.deviceTime) : null,
           latitude: input.latitude,
           longitude: input.longitude,
           accuracy: input.accuracy,
-          locationStatus: input.locationStatus || "success",
+          locationStatus: "success",
           locationError: input.locationError,
           deviceInfo: input.deviceInfo,
           idempotencyKey: input.idempotencyKey,
           notes: notesWithAlert,
-          synced: true,
+          timeZone: input.timeZone,
+          offline: punchTime.alert === "offline",
         });
       } catch (error: any) {
-        const duplicate = error?.code === "ER_DUP_ENTRY" || /duplicate entry/i.test(String(error?.message ?? ""));
+        const duplicate = error?.code === "ER_DUP_ENTRY" || /duplicate entry/i.test(String(error?.message ?? error?.cause?.message ?? ""));
         if (!duplicate || !input.idempotencyKey) throw error;
         const existing = await database.select().from(timeEvents)
           .where(eq(timeEvents.idempotencyKey, input.idempotencyKey)).limit(1);
@@ -248,7 +285,7 @@ export const timeTrackingRouter = router({
         }
         throw new TRPCError({ code: "CONFLICT", message: "Esta chave de idempotência não pode ser reutilizada nesta sessão." });
       }
-      const insertedRows = await database.select().from(timeEvents).where(eq(timeEvents.id, Number((result as any)[0]?.insertId))).limit(1);
+      const insertedRows = await database.select().from(timeEvents).where(eq(timeEvents.id, insertedId)).limit(1);
       const inserted = insertedRows[0];
       if (!inserted) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível recuperar a marcação criada." });
 
@@ -257,7 +294,7 @@ export const timeTrackingRouter = router({
         module: "time_tracking",
         entityType: "time_event",
         entityId: inserted.id,
-        description: `Marcação de ponto: ${input.eventType}${punchTime.alert === "server_time_used" ? ` — ALERTA: ${punchTime.note?.replace(TIME_ALERT_MARKER, "").trim()}` : punchTime.alert === "offline" ? " (feita offline)" : ""}`,
+        description: `Marcação de ponto (NSR ${inserted.nsr ?? "?"}): ${input.eventType}${newShiftSameDay ? " — nova entrada após saída no mesmo dia" : ""}${punchTime.alert === "server_time_used" ? ` — ALERTA: ${punchTime.note?.replace(TIME_ALERT_MARKER, "").trim()}` : punchTime.alert === "offline" ? " (feita offline)" : ""}`,
       });
       return inserted;
     }),
@@ -270,9 +307,10 @@ export const timeTrackingRouter = router({
       const [year, mon] = input.month.split("-").map(Number);
       const start = new Date(Date.UTC(year, mon - 1, 1));
       const end = new Date(Date.UTC(year, mon, 1));
-      return database.select().from(timeEvents)
-        .where(and(eq(timeEvents.memberAccountId, input.memberId), eq(timeEvents.companyId, ctx.accountId), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end)))
-        .orderBy(timeEvents.serverTime);
+      await ensurePunchLedger();
+      return effectiveRows(await database.select().from(timeEvents)
+        .where(and(eq(timeEvents.memberAccountId, input.memberId), eq(timeEvents.companyId, ctx.accountId), gte(effectiveEventTime, start), lt(effectiveEventTime, end)))
+        .orderBy(effectiveEventTime));
     }),
 
   companyApprovedExcuses: companyAdminFeatureProcedure("timeTracking")
@@ -352,12 +390,13 @@ export const timeTrackingRouter = router({
       if (input?.date) {
         const start = new Date(`${input.date}T00:00:00.000Z`);
         const end = new Date(start.getTime() + 86400000);
-        conditions.push(gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end));
+        conditions.push(gte(effectiveEventTime, start), lt(effectiveEventTime, end));
       }
-      return database.select().from(timeEvents)
+      await ensurePunchLedger();
+      return effectiveRows(await database.select().from(timeEvents)
         .where(and(...conditions))
-        .orderBy(desc(timeEvents.serverTime))
-        .limit(input?.limit || 100);
+        .orderBy(desc(effectiveEventTime))
+        .limit(input?.limit || 100));
     }),
 
   myTimeSummary: commercialFeatureProcedure("timeTracking")
@@ -484,6 +523,7 @@ export const timeTrackingRouter = router({
       if (fullDay) {
         timeEventId = null;
       } else if (input.timeEventId) {
+        await ensurePunchLedger();
         const event = await database.select().from(timeEvents).where(and(eq(timeEvents.id, input.timeEventId), eq(timeEvents.companyId, companyId), eq(timeEvents.memberAccountId, memberId))).limit(1);
         if (!event[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Marcação não encontrada para este funcionário." });
         timeEventId = input.timeEventId;
@@ -502,8 +542,10 @@ export const timeTrackingRouter = router({
       if (!fullDay && input.requestedType) {
         const day = excuseDay(requestedTime);
         const start = new Date(`${day}T00:00:00-03:00`), end = new Date(`${day}T23:59:59.999-03:00`);
-        const dayEvents = await database.select({ id: timeEvents.id, type: timeEvents.eventType, time: timeEvents.serverTime }).from(timeEvents)
-          .where(and(eq(timeEvents.companyId, companyId), eq(timeEvents.memberAccountId, memberId), gte(timeEvents.serverTime, start), lte(timeEvents.serverTime, end)));
+        await ensurePunchLedger();
+        const dayRows = await effectiveRows(await database.select({ id: timeEvents.id, companyId: timeEvents.companyId, type: timeEvents.eventType, deviceTime: timeEvents.deviceTime, serverTime: timeEvents.serverTime }).from(timeEvents)
+          .where(and(eq(timeEvents.companyId, companyId), eq(timeEvents.memberAccountId, memberId), gte(effectiveEventTime, start), lte(effectiveEventTime, end))));
+        const dayEvents = dayRows.map((r) => ({ id: r.id, type: r.type, time: r.deviceTime || r.serverTime }));
         const orderError = punchOrderError(dayEvents as any, { type: input.requestedType, time: requestedTime, replaceId: timeEventId });
         if (orderError) throw new TRPCError({ code: "BAD_REQUEST", message: orderError });
       }

@@ -83,7 +83,7 @@ export function SidebarNav() {
     : role === "promoter"
       ? [
           { href: "/", label: "Painel inicial", icon: LayoutDashboard },
-          { href: "/produtos", label: "Produtos e validades", icon: Package },
+          ...(hasFeature("products") ? [{ href: "/produtos", label: "Produtos e validades", icon: Package }] : []),
           ...(hasFeature("timeTracking") ? [
             { href: "/ponto", label: "Cartão ponto", icon: Clock3 },
             { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },

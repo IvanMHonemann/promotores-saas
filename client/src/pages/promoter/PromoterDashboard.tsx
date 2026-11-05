@@ -30,8 +30,8 @@ export default function PromoterDashboard() {
   const cachedAccess = cacheGet<any>("entitlements");
   if (accessQuery.data) cacheSet("entitlements", accessQuery.data);
   const access = { ...accessQuery, data: accessQuery.data ?? (!isOnline() ? cachedAccess : undefined) };
-  const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
-  const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
+  const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
+  const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
   const visitsQuery = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations, staleTime: 0, refetchOnWindowFocus: true });
   useEffect(() => {

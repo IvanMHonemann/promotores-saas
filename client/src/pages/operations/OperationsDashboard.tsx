@@ -45,8 +45,8 @@ export default function OperationsDashboard() {
   const isCompanyAdmin = user?.role === "company_admin";
   const isSupervisor = user?.role === "supervisor";
   const access = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
-  const hasFieldOperations = Boolean(access.data?.effective.fieldOperations);
-  const hasTimeTracking = Boolean(access.data?.effective.timeTracking);
+  const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
+  const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
   const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
   const routes = trpc.operations.routes.list.useQuery(undefined, { enabled: hasFieldOperations });
   const weeklyQuery = trpc.operations.routes.weekly.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });

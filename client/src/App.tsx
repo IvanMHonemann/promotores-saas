@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { PwaStatusBar } from "./components/PwaStatusBar";
@@ -141,7 +141,7 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
     return <LoadingScreen />;
   }
 
-  if (!access.data?.effective[featureKey]) {
+  if (!access.data?.effective?.[featureKey]) {
     if (featureKey === "timeTracking" && access.data) return <RedirectHome />;
     if (!isOnline() && cachedEntitlements?.effective) {
       return <>{children}</>;
@@ -194,7 +194,9 @@ function RootRoute() {
 }
 
 function Router() {
+  const [location] = useLocation();
   return (
+    <ErrorBoundary resetKey={location}>
     <Switch>
       <Route path="/reset">
         {() => {
@@ -256,6 +258,7 @@ function Router() {
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
+    </ErrorBoundary>
   );
 }
 

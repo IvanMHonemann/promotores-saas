@@ -217,6 +217,23 @@ export async function emailAccountCreated(input: {
   });
 }
 
+/** Link de redefinição de senha (válido por 1 hora). */
+export async function emailPasswordReset(input: { to: string; userName: string; token: string }) {
+  const link = `${getAppPublicUrl()}/redefinir-senha?token=${encodeURIComponent(input.token)}`;
+  const html = layout(
+    "Redefinição de senha",
+    `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Olá, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Recebemos um pedido para redefinir a senha da sua conta. O link vale por 1 hora e só pode ser usado uma vez.</p>
+    ${cta(link, "Criar nova senha")}
+    <p style="margin:16px 0 0;color:#8b93ad;font-size:13px;">Se você não pediu isso, ignore este e-mail: sua senha continua a mesma.</p>`,
+  );
+  return sendEmail({
+    to: input.to,
+    subject: "GondUp — Redefinição de senha",
+    html,
+    text: `Redefinição de senha\nAcesse o link (vale por 1 hora): ${link}\nSe você não pediu isso, ignore este e-mail.`,
+  });
+}
+
 /** Compra / upgrade de plano. */
 export async function emailPlanChanged(input: {
   to: string;

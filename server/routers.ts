@@ -215,6 +215,29 @@ export const appRouter = router({
         return { success: true, recoveryCode: recovered.recoveryCode } as const;
       }),
 
+    /** "Esqueci minha senha": resposta sempre igual (não revela se o e-mail existe). */
+    requestPasswordReset: publicProcedure
+      .input(z.object({ email: z.string().trim().email() }))
+      .mutation(async ({ input }) => {
+        const message = "Se o e-mail estiver cadastrado, enviaremos um link para criar uma nova senha. Se não chegar em alguns minutos, use o código de recuperação ou fale com o suporte.";
+        if (!memberAuth.isPasswordResetAvailable() || !memberAuth.allowPasswordResetRequest(input.email)) return { success: true as const, message };
+        try {
+          const reset = await memberAuth.createPasswordResetToken(input.email);
+          if (reset) await emailService.emailPasswordReset({ to: input.email, userName: reset.userName, token: reset.token });
+        } catch (error) {
+          console.warn("[auth] password reset request failed", error);
+        }
+        return { success: true as const, message };
+      }),
+
+    resetPasswordWithToken: publicProcedure
+      .input(z.object({ token: z.string().min(10).max(2000), newPassword: z.string().min(8, "A nova senha deve ter pelo menos 8 caracteres").max(200) }))
+      .mutation(async ({ input }) => {
+        const ok = await memberAuth.resetPasswordWithToken(input.token, input.newPassword);
+        if (!ok) throw new TRPCError({ code: "UNAUTHORIZED", message: "Link inválido ou expirado. Peça um novo link." });
+        return { success: true as const };
+      }),
+
     changePassword: publicProcedure
       .use(async opts => {
         if (!opts.ctx.user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Please login (10001)" });
@@ -841,7 +864,17 @@ export const appRouter = router({
       }),
       update: companyAdminProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().optional(), promoterId: z.number().int().positive().optional(), date: z.string().optional(), storeIds: z.array(z.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
-        return db.updateOperationalRoute(ctx.accountId, id, data);
+        if (data.promoterId) {
+          const members = await memberAuth.listMemberAccounts(ctx.accountId);
+          const promoter = members.find((member) => member.id === data.promoterId && member.role === "promoter" && member.active);
+          if (!promoter) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        }
+        try {
+          return await db.updateOperationalRoute(ctx.accountId, id, data);
+        } catch (error) {
+          if (error instanceof db.RouteValidationError) throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+          throw error;
+        }
       }),
       delete: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
         return db.deleteOperationalRoute(ctx.accountId, input.id);

@@ -73,6 +73,7 @@ export function PunchPanel() {
             eventType: item.eventType,
             timeZone: item.timeZone,
             deviceTime: item.deviceTime,
+            offline: true,
             latitude: item.latitude ?? 0,
             longitude: item.longitude ?? 0,
             accuracy: item.accuracy ?? 0,

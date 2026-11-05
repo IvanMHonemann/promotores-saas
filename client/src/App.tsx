@@ -7,11 +7,15 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { PwaStatusBar } from "./components/PwaStatusBar";
 import { BusyProvider } from "./components/BusyOverlay";
+import { GlobalMutationIndicator } from "./components/GlobalMutationIndicator";
 
 // Code-splitting: cada página vira um chunk carregado sob demanda.
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
+const LegalPage = lazy(() => import("./pages/LegalPage"));
 const MyAccountPage = lazy(() => import("./pages/MyAccountPage"));
 const CompanyModulesPage = lazy(() => import("./pages/CompanyModulesPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
@@ -233,6 +237,10 @@ function Router() {
         }}
       </Route>
       <Route path="/login" component={LoginPage} />
+      <Route path="/esqueci-senha" component={ForgotPasswordPage} />
+      <Route path="/redefinir-senha" component={ResetPasswordPage} />
+      <Route path="/termos">{() => <LegalPage kind="termos" />}</Route>
+      <Route path="/privacidade">{() => <LegalPage kind="privacidade" />}</Route>
       <Route path="/produtos"><CommercialProtected><ProductsPage /></CommercialProtected></Route>
       <Route path="/lojas/:storeId"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoreGalleryPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lojas"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoresPage /></FeatureProtected></CommercialProtected></Route>
@@ -273,6 +281,7 @@ function App() {
         <TooltipProvider>
           <BusyProvider>
             <Toaster />
+            <GlobalMutationIndicator />
             <PwaStatusBar />
             <Suspense fallback={<LoadingScreen />}>
               <Router />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X, Archive, ChevronDown, Palmtree } from "lucide-react";
+import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X, Archive, ChevronDown, ChevronsLeft, Palmtree } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useInstallPrompt } from "@/pwa/hooks";
 import { Download } from "lucide-react";
@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
 import { trpc } from "@/lib/trpc";
 import type { EntitlementKey } from "@shared/entitlements";
+import { setSidebarCollapsed, useSidebarCollapsed } from "@/lib/sidebarState";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const roleLabels: Record<string, string> = {
   platform_admin: "Administrador geral",
@@ -41,6 +43,7 @@ function InstallButton() {
 export function SidebarNav() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const collapsed = useSidebarCollapsed();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const entitlements = trpc.entitlements.mine.useQuery(undefined, {
     enabled: Boolean(user && user.role !== "platform_admin"),
@@ -54,6 +57,8 @@ export function SidebarNav() {
     return () => window.removeEventListener("promotores:open-sidebar", openMenu);
   }, []);
   const role = user?.role;
+  // Enquanto os módulos não carregam, mostramos um carregamento no lugar do menu (evita o menu reduzido no primeiro acesso).
+  const loadingModules = role !== "platform_admin" && Boolean(user) && entitlements.isLoading && !entitlements.data;
   const hasFeature = (key: EntitlementKey) => Boolean(entitlements.data?.effective?.[key]);
   const toggle = (label: string) => setExpanded((prev) => ({ ...prev, [label]: !prev[label] }));
 
@@ -114,13 +119,14 @@ export function SidebarNav() {
   const close = () => setOpen(false);
 
   return <>
-    {open && <button type="button" className="fixed inset-0 z-40 bg-slate-950/75 lg:hidden" onClick={close} aria-label="Fechar menu" />}
-    <aside className={`${open ? "translate-x-0" : "-translate-x-full"} fixed inset-y-0 left-0 z-50 flex w-[280px] flex-col border-r border-white/10 bg-[#091525] p-5 shadow-2xl transition-transform lg:translate-x-0 lg:shadow-none`}>
-      <div className="flex items-center justify-between"><BrandLogo height={40} /><button type="button" className="rounded-lg p-2 text-slate-300 hover:bg-white/10 lg:hidden" onClick={close} aria-label="Fechar menu"><X className="h-5 w-5" /></button></div>
+    {open && <button type="button" className={`fixed inset-0 z-40 bg-slate-950/75 ${collapsed ? "" : "lg:hidden"}`} onClick={close} aria-label="Fechar menu" />}
+    <aside className={`${open ? "translate-x-0" : collapsed ? "-translate-x-full" : "-translate-x-full lg:translate-x-0"} fixed inset-y-0 left-0 z-50 flex w-[280px] max-w-[85vw] flex-col overflow-y-auto border-r border-white/10 bg-[#091525] p-5 shadow-2xl transition-transform ${collapsed ? "" : "lg:shadow-none"}`}>
+      <div className="flex items-center justify-between"><BrandLogo height={40} /><div className="flex items-center gap-1">{!collapsed && <button type="button" className="hidden rounded-lg p-2 text-slate-300 hover:bg-white/10 lg:block" onClick={() => setSidebarCollapsed(true)} aria-label="Recolher menu" title="Recolher menu"><ChevronsLeft className="h-5 w-5" /></button>}<button type="button" className={`rounded-lg p-2 text-slate-300 hover:bg-white/10 ${collapsed ? "" : "lg:hidden"}`} onClick={close} aria-label="Fechar menu"><X className="h-5 w-5" /></button></div></div>
       <div className="mt-9 rounded-2xl border border-teal-300/20 bg-gradient-to-br from-teal-300/15 to-transparent p-4"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-teal-300 font-black text-slate-950">{(user?.name || user?.email || "U").slice(0, 1).toUpperCase()}</div><div className="min-w-0"><p className="truncate text-sm font-bold text-white">{user?.name || "Usuário"}</p><p className="truncate text-xs text-slate-300">{roleLabels[role || ""] || "Usuário"}</p></div></div><div className="mt-4 flex items-center gap-2 text-xs text-teal-200"><span className="h-2 w-2 rounded-full bg-teal-300 shadow-[0_0_12px_#5eead4]" /> Sistema operacional</div></div>
       <nav className="mt-8 space-y-1.5">
         <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-slate-400">Navegação</p>
-        {links.map((item) => {
+        {loadingModules && <div role="status" aria-label="Carregando menu" className="space-y-2">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-11 w-full rounded-xl bg-white/10" />)}</div>}
+        {!loadingModules && links.map((item) => {
           if (item.children && item.children.length > 0) {
             const isOpen = !!expanded[item.label];
             const Icon = item.icon;
@@ -178,5 +184,11 @@ export function SidebarNav() {
 }
 
 export function SidebarMenuButton() {
-  return <button type="button" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-slate-200 hover:bg-white/10 hover:text-white lg:hidden" onClick={() => window.dispatchEvent(new Event("promotores:open-sidebar"))} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button>;
+  const collapsed = useSidebarCollapsed();
+  const onClick = () => {
+    // Em tela larga com o menu recolhido, o botão restaura o menu fixo; nas demais, abre o menu sobreposto.
+    if (collapsed && window.matchMedia("(min-width: 1024px)").matches) setSidebarCollapsed(false);
+    else window.dispatchEvent(new Event("promotores:open-sidebar"));
+  };
+  return <button type="button" className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[.04] text-slate-200 hover:bg-white/10 hover:text-white ${collapsed ? "" : "lg:hidden"}`} onClick={onClick} aria-label="Abrir menu"><Menu className="h-5 w-5" /></button>;
 }

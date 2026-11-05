@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { and, eq, gt, lte } from "drizzle-orm";
 import { companies, companySubscriptions, memberAccounts, memberSessions, platformAdmins, platformSessions, subscriptionPlans } from "../drizzle/schema.original";
 import { promoterProfiles } from "../drizzle/schema";
@@ -206,6 +206,90 @@ export async function recoverPassword(email: string, recoveryCode: string, newPa
 
   registerFailure(key);
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Redefinição de senha por link (e-mail). Token sem estado, assinado com JWT_SECRET:
+//   payload = { k: "platform"|"company", id, exp } + assinatura HMAC que inclui um trecho do hash da
+//   senha ATUAL. Assim o link só funciona uma vez (depois da troca o hash muda) e expira em 1 hora.
+// Não precisa de tabela nova. Sem JWT_SECRET configurado, o recurso fica desativado.
+// ---------------------------------------------------------------------------
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
+
+function resetSecret() {
+  return process.env.JWT_SECRET || "";
+}
+
+function signResetToken(kind: "platform" | "company", id: number, exp: number, passwordHash: string) {
+  const payload = Buffer.from(JSON.stringify({ k: kind, id, exp })).toString("base64url");
+  const mac = createHmac("sha256", resetSecret()).update(`${payload}.${passwordHash.slice(-24)}`).digest("base64url");
+  return `${payload}.${mac}`;
+}
+
+function parseResetToken(token: string): { k: "platform" | "company"; id: number; exp: number; payload: string; mac: string } | null {
+  const [payload, mac] = String(token || "").split(".");
+  if (!payload || !mac) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if ((data.k !== "platform" && data.k !== "company") || !Number.isInteger(data.id) || typeof data.exp !== "number") return null;
+    return { ...data, payload, mac };
+  } catch {
+    return null;
+  }
+}
+
+export function isPasswordResetAvailable() {
+  return Boolean(resetSecret());
+}
+
+/** Gera o token de redefinição para o e-mail. Devolve null se o e-mail não existe/está inativo (não revele isso ao usuário). */
+export async function createPasswordResetToken(email: string): Promise<{ token: string; userName: string } | null> {
+  if (!isPasswordResetAvailable()) return null;
+  const normalizedEmail = email.trim().toLowerCase();
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+  const exp = Date.now() + RESET_TOKEN_TTL_MS;
+  const platform = (await db.select().from(platformAdmins).where(eq(platformAdmins.email, normalizedEmail)).limit(1))[0];
+  if (platform?.active) return { token: signResetToken("platform", platform.id, exp, platform.passwordHash), userName: platform.userName || normalizedEmail };
+  const member = (await db.select().from(memberAccounts).where(eq(memberAccounts.email, normalizedEmail)).limit(1))[0];
+  if (member?.active) return { token: signResetToken("company", member.id, exp, member.passwordHash), userName: member.userName || normalizedEmail };
+  return null;
+}
+
+/** Valida o token e troca a senha. Encerra todas as sessões da conta. */
+export async function resetPasswordWithToken(token: string, newPassword: string): Promise<boolean> {
+  if (!isPasswordResetAvailable()) return false;
+  const parsed = parseResetToken(token);
+  if (!parsed || parsed.exp < Date.now()) return false;
+  const key = `reset:${parsed.k}:${parsed.id}`;
+  if (isRateLimited(key)) return false;
+  const db = await getDb();
+  if (!db) throw new Error("Database not connected");
+  const account = parsed.k === "platform"
+    ? (await db.select().from(platformAdmins).where(eq(platformAdmins.id, parsed.id)).limit(1))[0]
+    : (await db.select().from(memberAccounts).where(eq(memberAccounts.id, parsed.id)).limit(1))[0];
+  if (!account || !account.active) { registerFailure(key); return false; }
+  const expected = signResetToken(parsed.k, parsed.id, parsed.exp, account.passwordHash);
+  const a = Buffer.from(expected);
+  const b = Buffer.from(`${parsed.payload}.${parsed.mac}`);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) { registerFailure(key); return false; }
+  if (parsed.k === "platform") {
+    await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq(platformAdmins.id, parsed.id));
+    await db.delete(platformSessions).where(eq(platformSessions.platformAdminId, parsed.id));
+  } else {
+    await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq(memberAccounts.id, parsed.id));
+    await db.delete(memberSessions).where(eq(memberSessions.memberAccountId, parsed.id));
+  }
+  clearRateLimit(key);
+  return true;
+}
+
+/** Limita pedidos de redefinição por e-mail (5 por 15 min, por instância). */
+export function allowPasswordResetRequest(email: string) {
+  const key = `resetreq:${email.trim().toLowerCase()}`;
+  if (isRateLimited(key)) return false;
+  registerFailure(key);
+  return true;
 }
 
 export async function createCompanyWithAdmin(input: {

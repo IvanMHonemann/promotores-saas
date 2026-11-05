@@ -495,7 +495,7 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
       ma.userName, ma.email AS userEmail, te.serverTime AS occurredAt,
       'time_tracking' AS module, te.eventType AS action, 'time_event' AS entityType,
       'Ponto eletrônico' AS entityLabel,
-      CONCAT('Registro de ponto: ', CASE te.eventType WHEN 'clock_in' THEN 'entrada' WHEN 'break_start' THEN 'início de intervalo' WHEN 'break_end' THEN 'fim de intervalo' WHEN 'clock_out' THEN 'saída' ELSE te.eventType END) AS description,
+      CONCAT('Registro de ponto: ', CASE te.eventType WHEN 'clock_in' THEN 'entrada' WHEN 'break_start' THEN 'início de intervalo' WHEN 'break_end' THEN 'fim de intervalo' WHEN 'clock_out' THEN 'saída' ELSE te.eventType END, CASE WHEN te.notes LIKE '%[ALERTA-HORARIO]%' THEN ' · ALERTA: horário do aparelho divergente do servidor (considerado o do servidor)' WHEN te.notes LIKE '%[MARCACAO-OFFLINE]%' THEN ' · feita offline' ELSE '' END) AS description,
       JSON_OBJECT('tipo', te.eventType, 'horário do servidor', te.serverTime, 'horário do dispositivo', te.deviceTime, 'situação da localização', te.locationStatus, 'latitude', te.latitude, 'longitude', te.longitude, 'precisão GPS (m)', te.accuracy, 'observações', te.notes, 'dispositivo', te.deviceInfo) AS details
     FROM time_events te INNER JOIN member_accounts ma ON ma.id = te.memberAccountId AND ma.companyId = te.companyId
     WHERE te.companyId = ? AND ma.role NOT IN ('company_admin', 'admin', 'supervisor')

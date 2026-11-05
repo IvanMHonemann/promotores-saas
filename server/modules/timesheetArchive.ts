@@ -14,6 +14,8 @@ import { buildMirror, type LaborProfile, type MirrorEvent, MIRROR_HEADERS, mirro
 import { storagePut, storageGetSignedUrl } from "../storage";
 import { ensureAdjustmentsTable } from "./timesheetMirror";
 import { loadApprovedDayExcuses } from "./correctionExtras";
+import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
+import { readTimeAlert } from "../../shared/punchTime";
 
 const TZ = "America/Sao_Paulo";
 const GRACE_DAYS = 5;
@@ -128,25 +130,23 @@ export async function archiveClosedMonth(companyId: number, year: number, month:
 
   const members = await companyMembers(companyId, memberIds);
   const company = (await database.select({ name: companies.name }).from(companies).where(eq(companies.id, companyId)).limit(1))[0];
-  const start = new Date(Date.parse(`${from}T00:00:00Z`) - 15 * 3600000);
-  const end = new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 3600000);
   const ids = members.map((m) => m.id);
-  const eventRows = ids.length
-    ? await database.select().from(timeEvents).where(and(eq(timeEvents.companyId, companyId), inArray(timeEvents.memberAccountId, ids), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end))).orderBy(timeEvents.serverTime)
-    : [];
+  const eventRows = await loadMirrorEventRows(companyId, ids, from, to);
   const byMember = new Map<number, typeof eventRows>();
   for (const r of eventRows) byMember.set(r.memberAccountId, [...(byMember.get(r.memberAccountId) || []), r]);
 
   const excusesByMember = await loadApprovedDayExcuses(companyId, ids, from, to);
+  const vacationsByMember = await loadMemberVacations(companyId, ids, from, to);
+  const options = await loadMirrorOptions(companyId);
   const results: ArchiveResult[] = [];
   for (const m of members) {
     try {
       const labor = await readJson<LaborProfile>(`labor_profile:${m.id}`, companyId);
       const events: MirrorEvent[] = (byMember.get(m.id) || []).map((r) => ({
         id: r.id, type: r.eventType, time: (r.deviceTime || r.serverTime).toISOString(),
-        receivedAt: r.serverTime.toISOString(), synced: r.synced, notes: r.notes,
+        receivedAt: r.serverTime.toISOString(), synced: r.synced, notes: r.notes, timeAlert: readTimeAlert(r.notes),
       }));
-      const report = buildMirror({ events, from, to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [] });
+      const report = buildMirror({ events, from, to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [], vacations: vacationsByMember.get(m.id) || [], options });
       const buf = await buildPdfBuffer({
         companyName: company?.name ?? "", memberName: m.name, employeeCode: m.employeeCode ?? null, from, to, report,
       });

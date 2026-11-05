@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, ClipboardList, Clock3, MapPin } from "lucide-react";
+import { AlertTriangle, ClipboardList, Clock3, Loader2, MapPin } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
@@ -107,9 +107,10 @@ export default function PromoterDashboard() {
           </a>}
         </header>
 
+        {access.isLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
         {hasTimeTracking && <PunchPanel />}
 
-        {!hasTimeTracking && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">O ponto eletrônico e o GPS não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo.</div>}
+        {!access.isLoading && !hasTimeTracking && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">O ponto eletrônico e o GPS não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo.</div>}
         {hasFieldOperations && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
           <div className="rounded-2xl border border-amber-300/40 bg-amber-300/15 p-4 text-sm font-medium text-amber-50">
             {shift.data?.status === "closed"
@@ -153,7 +154,7 @@ export default function PromoterDashboard() {
           </div>
         </section>
 
-        {!hasFieldOperations && <div className="rounded-2xl border border-slate-400/25 bg-slate-400/10 p-4 text-sm text-slate-200">Roteiros e visitas não estão liberados para esta empresa.</div>}
+        {!access.isLoading && !hasFieldOperations && <div className="rounded-2xl border border-slate-400/25 bg-slate-400/10 p-4 text-sm text-slate-200">Roteiros e visitas não estão liberados para esta empresa.</div>}
         {hasFieldOperations && <section id="roteiro" className="scroll-mt-6">
           <Card>
             <CardHeader>

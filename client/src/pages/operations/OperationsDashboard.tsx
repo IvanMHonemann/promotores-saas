@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bell, Check, CheckCircle2, Clock3, ClipboardList, MapPin, Users, X } from "lucide-react";
+import { AlertTriangle, Bell, Check, CheckCircle2, Clock3, ClipboardList, Loader2, MapPin, Users, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useOfflineQuery } from "@/lib/useOfflineQuery";
@@ -160,6 +160,7 @@ export default function OperationsDashboard() {
     <DashboardLayout title={title} description={description} onRefresh={() => window.location.reload()}>
       {visibleSection === "overview" && (
         <Overview
+          accessLoading={access.isLoading}
           isPromoter={user?.role === "promoter"}
           todayVisits={visits.data || []}
           metrics={metrics}
@@ -206,7 +207,7 @@ export default function OperationsDashboard() {
   );
 }
 
-function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
+function Overview({ accessLoading = false, isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
   const activePromoters = presence.filter((entry: CompanyPresenceEntry) => entry.active).length;
   return (
     <div className="space-y-6">
@@ -217,13 +218,14 @@ function Overview({ isPromoter, todayVisits = [], metrics, visitsFailed, hasFiel
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar.</p>
       </div>
 
+      {accessLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
       {hasFieldOperations && <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
         {hasTimeTracking && <Metric label="Em atendimento" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Com ponto aberto" href={isCompanyAdmin ? "/check-in-out" : undefined} />}
         <Metric label="Visitas hoje" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Planejadas" href="#visitas" />
         <Metric label="Lojas" value={metrics.storeCount} icon={MapPin} tone="text-sky-300" hint="Cadastradas" href="/lojas" />
         <Metric label="A vencer" value={metrics.expiring} icon={AlertTriangle} tone="text-amber-300" hint="Próx. 30 dias" href="/produtos" />
       </div>}
-      {!hasFieldOperations && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">Roteiros, lojas e visitas não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo de operação de campo.</div>}
+      {!accessLoading && !hasFieldOperations && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">Roteiros, lojas e visitas não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo de operação de campo.</div>}
       {hasFieldOperations && visitsFailed && <p role="alert" className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">Não foi possível carregar os indicadores de visitas. Atualize o painel e tente novamente.</p>}
 
       {hasFieldOperations && (

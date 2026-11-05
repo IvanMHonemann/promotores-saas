@@ -5,9 +5,9 @@ import path from "path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
+import { isScheduleRequestAuthorized, timingSafeTokenEqual } from "./scheduleAuth";
 import { runScheduledMaintenance, runMissingPunchAlerts, runPhotoMaintenance } from "./scheduledMaintenance";
 import { notifyOwner } from "./_core/notification";
-import crypto from "node:crypto";
 
 /** Headers de segurança básicos. */
 function securityHeaders(_req: Request, res: Response, next: NextFunction) {
@@ -26,15 +26,6 @@ function securityHeaders(_req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-function timingSafeTokenEqual(a: string, b: string): boolean {
-  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length || a.length === 0) return false;
-  try {
-    return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
-  } catch {
-    return false;
-  }
-}
-
 async function createApp() {
   const app = express();
   app.set("trust proxy", 1);
@@ -43,11 +34,10 @@ async function createApp() {
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ limit: "10mb", extended: true }));
   app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
-  app.post("/api/scheduled/database-maintenance", async (req, res) => {
+  app.all("/api/scheduled/database-maintenance", async (req, res) => {
+    if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" }); // Vercel Cron usa GET
     try {
-      const configuredSecret = process.env.SCHEDULE_SECRET;
-      const suppliedSecret = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.headers["x-schedule-secret"];
-      if (!configuredSecret || typeof suppliedSecret !== "string" || !timingSafeTokenEqual(configuredSecret, suppliedSecret)) {
+      if (!isScheduleRequestAuthorized(req)) {
         return res.status(401).json({ error: "Schedule authentication required" });
       }
       const result = await runScheduledMaintenance();
@@ -64,11 +54,10 @@ async function createApp() {
   });
 
   // Arquivamento histórico de espelhos de ponto (meses fechados). Idempotente.
-  app.post("/api/scheduled/archive-timesheets", async (req, res) => {
+  app.all("/api/scheduled/archive-timesheets", async (req, res) => {
+    if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
     try {
-      const configuredSecret = process.env.SCHEDULE_SECRET;
-      const suppliedSecret = req.headers.authorization?.replace(/^Bearer\s+/i, "") || req.headers["x-schedule-secret"];
-      if (!configuredSecret || typeof suppliedSecret !== "string" || !timingSafeTokenEqual(configuredSecret, suppliedSecret)) {
+      if (!isScheduleRequestAuthorized(req)) {
         return res.status(401).json({ error: "Schedule authentication required" });
       }
       const { runTimesheetArchiveJob } = await import("./modules/timesheetArchive");

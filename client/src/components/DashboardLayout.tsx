@@ -10,6 +10,7 @@ import { SidebarMenuButton, SidebarNav } from "@/components/SidebarNav";
 import { SyncIndicator } from "@/components/SyncIndicator";
 import { BrandLogo } from "@/components/BrandLogo";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { useSidebarCollapsed } from "@/lib/sidebarState";
 
 type Props = {
   title: string;
@@ -20,9 +21,11 @@ type Props = {
 };
 
 export default function DashboardLayout({ title, description, children, refreshing = false, onRefresh }: Props) {
+  const collapsed = useSidebarCollapsed();
   return (
-    <main className="saas-page min-h-screen bg-[#07111f] text-white">
-      <div className="mx-auto flex min-h-screen max-w-[1480px]">
+    // O menu lateral é fixo (280px) em telas largas: reservamos o espaço com padding para ele não cobrir o conteúdo.
+    <main className={`saas-page min-h-screen bg-[#07111f] text-white transition-[padding] ${collapsed ? "" : "lg:pl-[280px]"}`}>
+      <div className="mx-auto flex min-h-screen max-w-[1200px]">
         <SidebarNav />
         <section className="min-w-0 flex-1 px-4 pb-20 pt-4 sm:px-7 sm:pt-6 lg:px-10 lg:pt-8">
           <header className="mb-7 flex items-center justify-between gap-3 border-b border-white/10 pb-5">

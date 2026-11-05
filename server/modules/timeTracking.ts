@@ -11,6 +11,8 @@ import { findMissingPunches } from "../missingPunch";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
 import { ensureCorrectionExtras, loadApprovedDayExcuses, saveCorrectionAttachment } from "./correctionExtras";
 import { storageGetSignedUrl } from "../storage";
+import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared/punchTime";
+import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
 
 const timeEventType = z.enum(["clock_in", "break_start", "break_end", "clock_out"]);
@@ -163,6 +165,8 @@ export const timeTrackingRouter = router({
     .input(z.object({
       eventType: timeEventType,
       deviceTime: z.string().datetime().optional(),
+      /** true quando a marcação foi guardada sem internet e está sendo sincronizada agora. */
+      offline: z.boolean().optional(),
       latitude: z.number().min(-90).max(90),
       longitude: z.number().min(-180).max(180),
       accuracy: z.number().finite().nonnegative().max(10000),
@@ -194,7 +198,11 @@ export const timeTrackingRouter = router({
         }
       }
 
-      const today = localDay(new Date(), input.timeZone);
+      // Horário oficial: o do servidor, salvo tolerância de 5 min ou marcação offline legítima (ver shared/punchTime).
+      const punchTime = resolvePunchTime({ deviceTime: input.deviceTime ? new Date(input.deviceTime) : null, serverNow: new Date(), offline: input.offline });
+      const notesWithAlert = [input.notes, punchTime.note].filter(Boolean).join("\n") || undefined;
+
+      const today = localDay(punchTime.effectiveTime, input.timeZone);
       const recent = await database.select().from(timeEvents)
         .where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId)))
         .orderBy(desc(timeEvents.serverTime)).limit(100);
@@ -212,7 +220,7 @@ export const timeTrackingRouter = router({
           companyId,
           memberAccountId: memberId,
           eventType: input.eventType,
-          deviceTime: input.deviceTime ? new Date(input.deviceTime) : null,
+          deviceTime: punchTime.deviceTimeToStore,
           latitude: input.latitude,
           longitude: input.longitude,
           accuracy: input.accuracy,
@@ -220,7 +228,7 @@ export const timeTrackingRouter = router({
           locationError: input.locationError,
           deviceInfo: input.deviceInfo,
           idempotencyKey: input.idempotencyKey,
-          notes: input.notes,
+          notes: notesWithAlert,
           synced: true,
         });
       } catch (error: any) {
@@ -242,7 +250,7 @@ export const timeTrackingRouter = router({
         module: "time_tracking",
         entityType: "time_event",
         entityId: inserted.id,
-        description: `Marcação de ponto: ${input.eventType}`,
+        description: `Marcação de ponto: ${input.eventType}${punchTime.alert === "server_time_used" ? ` — ALERTA: ${punchTime.note?.replace(TIME_ALERT_MARKER, "").trim()}` : punchTime.alert === "offline" ? " (feita offline)" : ""}`,
       });
       return inserted;
     }),
@@ -372,12 +380,7 @@ export const timeTrackingRouter = router({
       const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
       const to = `${today.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
 
-      // Folga para turnos que cruzam meia-noite; o corte por dia local é feito no cálculo.
-      const start = new Date(Date.parse(`${from}T00:00:00Z`) - 15 * 3600000);
-      const end = new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 3600000);
-      const rows = await database.select().from(timeEvents)
-        .where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId), gte(timeEvents.serverTime, start), lt(timeEvents.serverTime, end)))
-        .orderBy(timeEvents.serverTime);
+      const rows = await loadMirrorEventRows(companyId, [memberId], from, to);
 
       const events: MirrorEvent[] = rows.map((row) => ({
         id: row.id,
@@ -386,6 +389,7 @@ export const timeTrackingRouter = router({
         receivedAt: row.serverTime.toISOString(),
         synced: row.synced,
         notes: row.notes,
+        timeAlert: readTimeAlert(row.notes),
       }));
 
       let labor: LaborProfile | null = null;
@@ -395,7 +399,9 @@ export const timeTrackingRouter = router({
       } catch { labor = null; }
 
       const excusesByMember = await loadApprovedDayExcuses(companyId, [memberId], from, to);
-      const report = buildMirror({ events, from, to, timeZone, labor, excuses: excusesByMember.get(memberId) || [] });
+      const vacationsByMember = await loadMemberVacations(companyId, [memberId], from, to);
+      const options = await loadMirrorOptions(companyId);
+      const report = buildMirror({ events, from, to, timeZone, labor, excuses: excusesByMember.get(memberId) || [], vacations: vacationsByMember.get(memberId) || [], options });
       const configured = Boolean(labor?.dailyMinutes && labor.dailyMinutes > 0 && labor.workdays?.length);
       const openToday = report.days.find((day) => day.date === today && day.issues.some((issue) => issue.startsWith("Jornada incompleta")));
 

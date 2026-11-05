@@ -1,4 +1,4 @@
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
@@ -9,7 +9,8 @@ export default function CompanyModulesPage() {
   const entitlements = trpc.entitlements.mine.useQuery(undefined, { staleTime: 60_000 });
   const effective = entitlements.data?.effective ?? {};
   const enabled = ENTITLEMENT_CATALOG.filter((item) => effective[item.key]);
-  const disabled = ENTITLEMENT_CATALOG.filter((item) => !effective[item.key]);
+  // Enquanto os módulos não carregam, não mostramos "não liberados" (evita a mensagem errada no primeiro acesso).
+  const disabled = entitlements.data ? ENTITLEMENT_CATALOG.filter((item) => !effective[item.key]) : [];
 
   return (
     <DashboardLayout
@@ -37,10 +38,11 @@ export default function CompanyModulesPage() {
         <Card className="border-white/10 bg-slate-900/70 text-white">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base text-slate-300">
-              <XCircle className="h-5 w-5" /> Não liberados ({disabled.length})
+              <XCircle className="h-5 w-5" /> Não liberados{entitlements.data ? ` (${disabled.length})` : ""}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
+            {entitlements.isLoading && <p className="flex items-center gap-2 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</p>}
             {disabled.map((item) => (
               <div key={item.key} className="rounded-lg border border-white/10 bg-white/5 p-3 opacity-70">
                 <p className="font-semibold">{item.label}</p>

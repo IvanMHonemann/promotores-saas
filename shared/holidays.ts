@@ -3,7 +3,15 @@
  * Usado para identificar automaticamente e abonar falta de batida no cartão ponto,
  * sem impedir o registro de ponto nesses dias.
  */
-export type Holiday = { date: string; name: string }; // date = YYYY-MM-DD
+export type Holiday = {
+  date: string; // YYYY-MM-DD
+  name: string;
+  /**
+   * Ponto facultativo (não é feriado nacional por lei): Carnaval e Corpus Christi.
+   * Não é abonado automaticamente, a menos que a empresa configure o contrário.
+   */
+  optional?: boolean;
+};
 
 function easterSunday(year: number): Date {
   // Algoritmo de Meeus/Jones/Butcher
@@ -34,7 +42,7 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-const FIXED: Array<{ md: string; name: string }> = [
+const FIXED: Array<{ md: string; name: string; fromYear?: number }> = [
   { md: "01-01", name: "Confraternização Universal" },
   { md: "04-21", name: "Tiradentes" },
   { md: "05-01", name: "Dia do Trabalho" },
@@ -42,6 +50,7 @@ const FIXED: Array<{ md: string; name: string }> = [
   { md: "10-12", name: "Nossa Senhora Aparecida" },
   { md: "11-02", name: "Finados" },
   { md: "11-15", name: "Proclamação da República" },
+  { md: "11-20", name: "Dia Nacional de Zumbi e da Consciência Negra", fromYear: 2024 }, // Lei 14.759/2023 (feriado nacional a partir de 2024)
   { md: "12-25", name: "Natal" },
 ];
 
@@ -51,7 +60,7 @@ export function getBrazilianHoliday(dateStr: string): Holiday | null {
   const [y] = dateStr.split("-").map(Number);
   if (y < 2020 || y > 2035) return null;
 
-  const fixed = FIXED.find((f) => dateStr.endsWith(f.md));
+  const fixed = FIXED.find((f) => dateStr.endsWith(f.md) && (!f.fromYear || y >= f.fromYear));
   if (fixed) return { date: dateStr, name: fixed.name };
 
   const easter = easterSunday(y);
@@ -60,14 +69,16 @@ export function getBrazilianHoliday(dateStr: string): Holiday | null {
   const corpusChristi = addDays(easter, 60);
 
   const movable: Holiday[] = [
-    { date: ymd(carnival), name: "Carnaval" },
-    { date: ymd(addDays(carnival, -1)), name: "Carnaval (segunda)" },
+    { date: ymd(carnival), name: "Carnaval", optional: true },
+    { date: ymd(addDays(carnival, -1)), name: "Carnaval (segunda)", optional: true },
     { date: ymd(goodFriday), name: "Sexta-feira Santa" },
-    { date: ymd(corpusChristi), name: "Corpus Christi" },
+    { date: ymd(corpusChristi), name: "Corpus Christi", optional: true },
   ];
   return movable.find((h) => h.date === dateStr) ?? null;
 }
 
+/** true só para feriados nacionais por lei (exclui pontos facultativos como Carnaval e Corpus Christi). */
 export function isBrazilianHoliday(dateStr: string): boolean {
-  return getBrazilianHoliday(dateStr) != null;
+  const h = getBrazilianHoliday(dateStr);
+  return h != null && !h.optional;
 }

@@ -26,6 +26,8 @@ export type MirrorEvent = {
   adjustment?: { originalType: MarkType; originalTime: string; justification: string; reviewedBy?: string | null; reviewedAt?: string | null } | null;
   /** Ajuste antigo (anterior ao registro estruturado), só com texto livre em notes. */
   legacyAdjustment?: boolean;
+  /** Alerta de horário gravado na marcação (ver shared/punchTime). */
+  timeAlert?: { kind: "server_time_used" | "offline"; text: string } | null;
 };
 
 export type LaborProfile = {
@@ -60,6 +62,12 @@ export type DayRow = {
   issues: string[];
   holiday?: string | null;
   excuse?: { type: FullDayExcuseType; label: string; justification?: string | null } | null;
+  /** Ponto facultativo (Carnaval, Corpus Christi) quando a empresa NÃO o trata como feriado: não abonado. */
+  optionalHoliday?: string | null;
+  /** Dia dentro de férias programadas (abonado como "Férias"). */
+  vacation?: boolean;
+  /** Alertas de horário da marcação (aparelho x servidor / offline). */
+  timeAlerts?: string[];
 };
 
 export type MirrorTotals = {
@@ -93,8 +101,13 @@ function nightOverlap(aMs: number, bMs: number, tz: string, start: number, end: 
 }
 
 export type DayExcuseInput = { date: string; type: string; justification?: string | null };
+export type VacationRange = { startDate: string; endDate: string }; // YYYY-MM-DD, inclusive
+export type MirrorOptions = {
+  /** Se true, Carnaval e Corpus Christi (ponto facultativo) são tratados como feriado abonado. Padrão: false. */
+  optionalHolidaysAsHoliday?: boolean;
+};
 
-export function buildMirror(input: { events: MirrorEvent[]; from: string; to: string; timeZone?: string; labor?: LaborProfile | null; excuses?: DayExcuseInput[] }): MirrorReport {
+export function buildMirror(input: { events: MirrorEvent[]; from: string; to: string; timeZone?: string; labor?: LaborProfile | null; excuses?: DayExcuseInput[]; vacations?: VacationRange[]; options?: MirrorOptions }): MirrorReport {
   const tz = input.timeZone || "America/Sao_Paulo";
   const labor = input.labor || null;
   const events = [...input.events].sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
@@ -128,7 +141,10 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
 
   const days: DayRow[] = [];
   for (let d = input.from; d <= input.to; d = addDay(d, 1)) {
-    const holiday = getBrazilianHoliday(d);
+    const rawHoliday = getBrazilianHoliday(d);
+    const holiday = rawHoliday && (!rawHoliday.optional || input.options?.optionalHolidaysAsHoliday) ? rawHoliday : null;
+    const optionalHoliday = rawHoliday && rawHoliday.optional && !holiday ? rawHoliday.name : null;
+    const onVacation = (input.vacations || []).some((v) => d >= v.startDate && d <= v.endDate);
     const dayShifts = byDate.get(d) || [];
     const issues: string[] = [];
     const marks: DayRow["marks"] = [];
@@ -157,6 +173,12 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
       }
       if (openIn != null || openBreak != null) issues.push("Jornada incompleta: falta marcação de saída ou retorno");
     }
+    const timeAlerts: string[] = [];
+    for (const sh of dayShifts) for (const ev of sh.events) {
+      if (ev.timeAlert?.kind === "server_time_used") timeAlerts.push(`${MARK_LABEL[ev.type]}: ${ev.timeAlert.text}`);
+      else if (ev.timeAlert?.kind === "offline") timeAlerts.push(`${MARK_LABEL[ev.type]}: ${ev.timeAlert.text}`);
+    }
+    for (const t of timeAlerts) issues.push(`ALERTA de horário — ${t}`);
     if (marks.some((m) => !m.synced)) issues.push("Marcação com sincronização pendente");
     if (marks.some((m) => m.kind === "automatic")) issues.push("Saída automática do sistema (não marcada pelo funcionário)");
     if (marks.some((m) => m.kind === "legacy_adjusted")) issues.push("Ajuste antigo sem registro estruturado do valor original (ver observações da marcação)");
@@ -167,7 +189,7 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     const excuse = excuseRow && isFullDayExcuseType(excuseRow.type)
       ? { type: excuseRow.type, label: fullDayExcuseLabel(excuseRow.type), justification: excuseRow.justification || null }
       : null;
-    const excused = Boolean(holiday || excuse);
+    const excused = Boolean(holiday || excuse || onVacation);
 
     // Feriado nacional: abona falta de batida automaticamente, mas permite ponto normal se houver marcações.
     if (holiday) {
@@ -177,6 +199,8 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
       const extra = excuse.justification ? ` — ${excuse.justification}` : "";
       issues.push(`${excuse.label} — dia abonado${extra}`);
     }
+    if (onVacation) issues.push(hasMarks ? "Férias programadas — há marcações neste dia (conferir)" : "Férias — dia abonado");
+    if (optionalHoliday) issues.push(`Ponto facultativo: ${optionalHoliday} — não abonado automaticamente (a empresa pode abonar pela correção de ponto ou ativar esse abono na configuração)`);
     if (!hasMarks && isWorkday && !excused) {
       issues.push("Sem marcações em dia previsto — verificar falta, abono ou justificativa (não informados)");
     }
@@ -192,6 +216,9 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
       issues,
       holiday: holiday?.name ?? null,
       excuse,
+      optionalHoliday,
+      vacation: onVacation,
+      timeAlerts,
     });
   }
 
@@ -210,12 +237,16 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
     automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
     pendingSyncMarks: marked.reduce((a, x) => a + x.marks.filter((m) => !m.synced).length, 0),
-    daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday && !x.excuse).length : null,
+    daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday && !x.excuse && !x.vacation).length : null,
   };
   if (!daily) notes.push("Jornada contratada não configurada para este funcionário: horas previstas, diferenças e horas extras não foram calculadas.");
   if (!workdays) notes.push("Dias de trabalho da semana não configurados: faltas e dias previstos não foram apurados.");
   if (!night) notes.push("Adicional noturno e hora reduzida não configurados: não calculados.");
-  notes.push("Feriados nacionais são identificados e abonados automaticamente (falta de batida não gera déficit). O ponto continua liberado nesses dias.");
+  notes.push("Feriados nacionais (inclui 20/11 a partir de 2024) são identificados e abonados automaticamente (falta de batida não gera déficit). O ponto continua liberado nesses dias.");
+  notes.push(input.options?.optionalHolidaysAsHoliday
+    ? "Carnaval e Corpus Christi (ponto facultativo) estão sendo tratados como feriado, conforme a configuração da empresa."
+    : "Carnaval e Corpus Christi são ponto facultativo e NÃO são abonados automaticamente; a empresa pode ativar esse abono na configuração. Feriados estaduais e municipais não são identificados.");
+  notes.push("Férias programadas (cadastro de Férias) abonam o dia inteiro como \"Férias\", sem criar batidas.");
   notes.push("Folga, feriado e atestado aprovados na correção de ponto abonam o dia inteiro, sem criar batidas.");
   notes.push("Banco de horas, compensções, abonos manuais e tolerância (CLT art. 58 §1º) dependem de regras/convenção não cadastradas e não foram aplicados.");
   return { from: input.from, to: input.to, timeZone: tz, days, totals, notes };

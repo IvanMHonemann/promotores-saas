@@ -38,6 +38,7 @@ export function memberLines(r: MirrorResult): Array<[string, string]> {
     ["Cargo/função", lab?.jobTitle || roleLabel(r.member.role)],
     ["Admissão", lab?.admissionDate ? fmtDate(lab.admissionDate) : NOT_INFORMED],
     ["Jornada contratada", lab?.dailyMinutes ? `${Math.floor(lab.dailyMinutes / 60)}h${String(lab.dailyMinutes % 60).padStart(2, "0")} por dia` : "Não configurada"],
+    ["Horário contratual", lab?.schedule?.length ? lab.schedule.map(([a, b]) => `${a}–${b}`).join(", ") : NOT_INFORMED],
   ];
 }
 export const periodLabel = (r: MirrorReport) => `${fmtDate(r.from)} a ${fmtDate(r.to)}`;

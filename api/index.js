@@ -20,6 +20,25 @@ var init_const = __esm({
   }
 });
 
+// shared/uploadLimits.ts
+function payloadTooLargeBody(path2) {
+  return { error: { json: { message: BODY_TOO_LARGE_MESSAGE, code: -32600, data: { code: "PAYLOAD_TOO_LARGE", httpStatus: 413, path: path2 } } } };
+}
+function isPayloadTooLargeError(err) {
+  const e = err;
+  return Boolean(e && (e.type === "entity.too.large" || e.status === 413));
+}
+var MAX_BODY_SIZE, MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE, BODY_TOO_LARGE_MESSAGE;
+var init_uploadLimits = __esm({
+  "shared/uploadLimits.ts"() {
+    "use strict";
+    MAX_BODY_SIZE = "4500kb";
+    MAX_PHOTO_BASE64_CHARS = 42e5;
+    PHOTO_TOO_LARGE_MESSAGE = "Imagem grande demais para enviar. Tire a foto novamente ou use uma resolu\xE7\xE3o menor.";
+    BODY_TOO_LARGE_MESSAGE = "Arquivo grande demais para enviar (m\xE1ximo de 4,5 MB). Tente uma foto ou arquivo menor.";
+  }
+});
+
 // drizzle/schema.original.ts
 import { boolean, date, decimal, index, int, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 var users, companies, platformAdmins, memberAccounts, memberSessions, platformSessions, clients, extinguishers, serviceOrders, serviceOrderItems, trashItems, systemSettings, subscriptionPlans, companySubscriptions, payments, paymentEvents, auditLogs;
@@ -4382,25 +4401,6 @@ var init_timesheetArchive = __esm({
   }
 });
 
-// shared/uploadLimits.ts
-function payloadTooLargeBody(path2) {
-  return { error: { json: { message: BODY_TOO_LARGE_MESSAGE, code: -32600, data: { code: "PAYLOAD_TOO_LARGE", httpStatus: 413, path: path2 } } } };
-}
-function isPayloadTooLargeError(err) {
-  const e = err;
-  return Boolean(e && (e.type === "entity.too.large" || e.status === 413));
-}
-var MAX_BODY_SIZE, MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE, BODY_TOO_LARGE_MESSAGE;
-var init_uploadLimits = __esm({
-  "shared/uploadLimits.ts"() {
-    "use strict";
-    MAX_BODY_SIZE = "4500kb";
-    MAX_PHOTO_BASE64_CHARS = 42e5;
-    PHOTO_TOO_LARGE_MESSAGE = "Imagem grande demais para enviar. Tire a foto novamente ou use uma resolu\xE7\xE3o menor.";
-    BODY_TOO_LARGE_MESSAGE = "Arquivo grande demais para enviar (m\xE1ximo de 4,5 MB). Tente uma foto ou arquivo menor.";
-  }
-});
-
 // server/_core/rateLimit.ts
 function checkRateLimit(key, bucket = "api") {
   const limit = LIMITS[bucket] || LIMITS.api;
@@ -5494,6 +5494,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 init_const();
 
 // server/modules/timeTracking.ts
+init_uploadLimits();
 init_trpc();
 init_db();
 init_schema();
@@ -5886,7 +5887,7 @@ var timeTrackingRouter = router({
     date: z3.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     justification: z3.string().max(2e3).optional(),
     justificationType: z3.enum(["normal", "holiday", "day_off", "medical_certificate", "other"]).optional(),
-    attachmentBase64: z3.string().optional()
+    attachmentBase64: z3.string().max(MAX_PHOTO_BASE64_CHARS + 100, PHOTO_TOO_LARGE_MESSAGE).optional()
   })).mutation(async ({ ctx, input }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;

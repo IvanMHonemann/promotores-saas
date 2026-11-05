@@ -1,3 +1,4 @@
+import { compressImageFile } from "@/lib/imageCompress";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { ArrowLeft, CalendarDays, CheckCircle2, MapPin, Plus, Send, ShieldCheck, X, Camera, Loader2 } from "lucide-react";
@@ -32,31 +33,9 @@ const justificationLabels: Record<JustificationType, string> = {
 const order: EventType[] = ["clock_in", "break_start", "break_end", "clock_out"];
 
 
-/** Comprime a imagem no cliente (máx. 1280px, qualidade 0.72) para armazenamento leve. */
+/** Comprime a imagem no cliente com o utilitário único do site (~1600 px, até ~500 KB). */
 async function compressImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const max = 1280;
-      let { width, height } = img;
-      if (width > max || height > max) {
-        const ratio = Math.min(max / width, max / height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) { reject(new Error("canvas")); return; }
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL("image/jpeg", 0.72));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("image")); };
-    img.src = url;
-  });
+  return (await compressImageFile(file)).dataUrl;
 }
 
 
@@ -119,8 +98,8 @@ export default function PromoterClockPage() {
       const compressed = await compressImage(file);
       setPhotoBase64(compressed);
       setPhotoPreview(compressed);
-    } catch {
-      toast.error("Não foi possível processar a foto");
+    } catch (err: any) {
+      toast.error(err?.message || "Não foi possível processar a foto");
       setPhotoPreview(null);
     } finally {
       URL.revokeObjectURL(instant);

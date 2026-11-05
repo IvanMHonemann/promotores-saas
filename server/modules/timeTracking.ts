@@ -1,3 +1,4 @@
+import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "../../shared/uploadLimits";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { commercialFeatureProcedure, companyAdminFeatureProcedure, router } from "../_core/trpc";
@@ -460,7 +461,7 @@ export const timeTrackingRouter = router({
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       justification: z.string().max(2000).optional(),
       justificationType: z.enum(["normal", "holiday", "day_off", "medical_certificate", "other"]).optional(),
-      attachmentBase64: z.string().optional(),
+      attachmentBase64: z.string().max(MAX_PHOTO_BASE64_CHARS + 100, PHOTO_TOO_LARGE_MESSAGE).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const companyId = ctx.accountId;

@@ -1,3 +1,4 @@
+import { compressCanvas, compressImageFile } from "@/lib/imageCompress";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "@shared/uploadLimits";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -79,7 +80,7 @@ function applyWatermark(
         ctx.fillText(line, 12 + padX, y);
       });
 
-      resolve(canvas.toDataURL("image/jpeg", 0.82).split(",")[1]);
+      compressCanvas(canvas).then(r => resolve(r.base64), reject);
     };
     img.onerror = () => reject(new Error("Falha ao processar imagem"));
     img.src = dataUrl;
@@ -217,11 +218,10 @@ export function PhotoCapture({ storeId, storeName, storeClientId, clientName, vi
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setShot({ dataUrl: reader.result as string, capturedAt: new Date(), gps: gpsRef.current, gpsStatus: gpsRef.current ? "ok" : gpsStatus });
-    };
-    reader.readAsDataURL(file);
+// Já comprime aqui (orientação EXIF corrigida, ~1600 px) para não segurar a foto original de vários MB.
+    compressImageFile(file)
+      .then(r => setShot({ dataUrl: r.dataUrl, capturedAt: new Date(), gps: gpsRef.current, gpsStatus: gpsRef.current ? "ok" : gpsStatus }))
+      .catch(err => toast.error(err?.message || "Não foi possível processar a foto."));
   };
 
   const saveShot = async (s: Shot): Promise<void> => {

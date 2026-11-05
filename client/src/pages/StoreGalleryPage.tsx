@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { ArrowLeft, Camera, Check, ChevronDown, Download, ListChecks, MapPin, MessageCircle, Share2, Trash2, UserRound, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -12,6 +12,7 @@ import { useOnline } from "@/hooks/useOnline";
 import { toast } from "sonner";
 import { useBusy } from "@/components/BusyOverlay";
 import { buildZip } from "@/lib/zip";
+import { canShareFiles, splitShareBatches } from "@/lib/shareFiles";
 
 const SHARE_BATCH_SIZE = 10;
 const FETCH_CONCURRENCY = 4;
@@ -166,6 +167,10 @@ export default function StoreGalleryPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(null);
   const [ready, setReady] = useState<{ files: File[]; failed: number; sent: number[] } | null>(null);
+  // Fotos selecionadas já baixadas em segundo plano: assim o toque em "Enviar" abre o compartilhamento
+  // na hora (o navegador só permite compartilhar logo após um toque).
+  const fileCache = useRef(new Map<number, File>());
+  const [prefetching, setPrefetching] = useState(0);
   const { run } = useBusy();
 
   const stores = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { staleTime: 30000 });
@@ -302,32 +307,72 @@ export default function StoreGalleryPage() {
       saveFile(zip, `fotos-${storeLabel}-${new Date().toISOString().slice(0, 10)}.zip`);
     });
 
+  useEffect(() => {
+    const missing = Array.from(selected).filter((id) => !fileCache.current.has(id));
+    if (!missing.length || !online) return;
+    let cancelled = false;
+    setPrefetching((n) => n + 1);
+    void mapPool(missing, FETCH_CONCURRENCY, async (id) => {
+      const f = await getImageFile(id, storeLabel, `foto-${storeLabel}-${id}`);
+      if (f && !cancelled) fileCache.current.set(id, f);
+      return f;
+    }, () => {}).finally(() => setPrefetching((n) => n - 1));
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, online]);
+
+  const openShare = (files: File[], index: number, total: number): Promise<boolean> =>
+    navigator
+      .share({ files, title: total > 1 ? `Fotos - ${store?.name || "Loja"} (${index + 1}/${total})` : `Fotos - ${store?.name || "Loja"}` })
+      .then(() => true)
+      .catch((e: any) => {
+        if (e?.name === "AbortError") return false;
+        throw e;
+      });
+
+  /** Enviar: abre direto o compartilhamento do aparelho (WhatsApp etc.), sem tela de "Baixar tudo". */
   const shareSelected = async () => {
     if (selected.size === 0) return toast.info("Selecione ao menos uma foto.");
-    const { files, failed } = await prepareSelectedFiles("Preparando fotos para compartilhar...");
+    const ids = Array.from(selected);
+    let files = ids.map((id) => fileCache.current.get(id)).filter((f): f is File => !!f);
+    let failed = 0;
+    const allCached = files.length === ids.length;
+    if (!allCached) {
+      const prepared = await prepareSelectedFiles("Preparando fotos para compartilhar...");
+      files = prepared.files;
+      failed = prepared.failed;
+    }
     if (files.length === 0) return toast.error("Não foi possível obter as imagens.");
-    const canShareFiles = typeof navigator.share === "function" && (navigator.canShare?.({ files: files.slice(0, SHARE_BATCH_SIZE) }) ?? true);
-    if (!canShareFiles) {
+    if (!canShareFiles(files.slice(0, SHARE_BATCH_SIZE))) {
       await downloadFiles(files);
-      toast.info("Compartilhamento direto indisponível neste aparelho. Baixei as fotos em um .zip para você enviar manualmente.");
+      toast.info("Este aparelho não permite compartilhar fotos direto. Baixei as fotos para você enviar pelo WhatsApp.");
       return;
     }
-    // O navegador só abre o compartilhamento a partir de um toque do usuário. Como a preparação das
-    // fotos demora, pedimos um novo toque (botão abaixo) em vez de tentar compartilhar "sem gesto".
-    setReady({ files, failed, sent: [] });
+    const batches = splitShareBatches(files, SHARE_BATCH_SIZE);
+    try {
+      // Fotos já prontas: abre na hora, dentro do toque.
+      const ok = await openShare(batches[0], 0, batches.length);
+      if (batches.length > 1 || failed) setReady({ files, failed, sent: ok ? [0] : [] });
+    } catch {
+      // O navegador perdeu o "toque" enquanto preparava: um toque a mais abre o compartilhamento.
+      setReady({ files, failed, sent: [] });
+    }
   };
 
   const shareBatch = (index: number) => {
     if (!ready) return;
-    const batch = ready.files.slice(index * SHARE_BATCH_SIZE, (index + 1) * SHARE_BATCH_SIZE);
+    const batches = splitShareBatches(ready.files, SHARE_BATCH_SIZE);
     // IMPORTANTE: sem nenhum "await" antes — precisa rodar dentro do toque.
-    navigator
-      .share({ files: batch, title: `Fotos - ${store?.name || "Loja"}` })
-      .then(() => setReady((r) => (r ? { ...r, sent: Array.from(new Set([...r.sent, index])) } : r)))
-      .catch((e: any) => {
-        if (e?.name === "AbortError") return;
-        toast.error("Não foi possível abrir o compartilhamento. Use \"Baixar tudo (.zip)\".");
-      });
+    openShare(batches[index], index, batches.length)
+      .then((ok) => {
+        if (!ok) return;
+        setReady((r) => {
+          if (!r) return r;
+          const sent = Array.from(new Set([...r.sent, index]));
+          return sent.length >= batches.length && !r.failed ? null : { ...r, sent };
+        });
+      })
+      .catch(() => toast.error("Não foi possível abrir o compartilhamento. Tente novamente."));
   };
 
   const downloadSelected = async () => {
@@ -521,10 +566,10 @@ export default function StoreGalleryPage() {
                 <UserRound className="mr-1.5 h-4 w-4" /> Mover
               </Button>
               <Button className="h-11 bg-teal-400 font-bold text-slate-950 hover:bg-teal-300" onClick={shareSelected} disabled={selected.size === 0}>
-                <Share2 className="mr-1.5 h-4 w-4" /> Enviar
+                <Share2 className="mr-1.5 h-4 w-4" /> {prefetching > 0 ? "Preparando..." : "Enviar"}
               </Button>
               <Button className="h-11 bg-slate-600 font-bold text-white hover:bg-slate-500" onClick={downloadSelected} disabled={selected.size === 0}>
-                <Download className="mr-1.5 h-4 w-4" /> Baixar
+                <Download className="mr-1.5 h-4 w-4" /> {selected.size >= 2 ? "Baixar tudo (.zip)" : "Baixar foto"}
               </Button>
               <Button className="h-11 bg-rose-500 font-bold text-white hover:bg-rose-400" onClick={deleteSelected} disabled={selected.size === 0 || bulkDelete.isPending}>
                 <Trash2 className="mr-1.5 h-4 w-4" /> Excluir
@@ -555,20 +600,18 @@ export default function StoreGalleryPage() {
         <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/75 p-4 sm:items-center" onClick={() => setReady(null)}>
           <div className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-900 p-5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <p className="font-bold text-white">Compartilhar {ready.files.length} foto(s)</p>
+              <p className="font-bold text-white">Enviar {ready.files.length} foto(s) pelo WhatsApp</p>
               <button type="button" onClick={() => setReady(null)} aria-label="Fechar" className="rounded-full p-1.5 text-slate-200 hover:bg-white/10"><X className="h-5 w-5" /></button>
             </div>
+            <p className="mb-3 text-sm text-slate-300">{Math.ceil(ready.files.length / SHARE_BATCH_SIZE) > 1 ? `O aparelho envia até ${SHARE_BATCH_SIZE} fotos por vez. Toque em cada lote.` : "Toque para abrir o compartilhamento."}</p>
             {ready.failed > 0 && <p className="mb-2 text-sm text-amber-200">{ready.failed} foto(s) não puderam ser obtidas.</p>}
             <div className="space-y-2">
               {Array.from({ length: Math.ceil(ready.files.length / SHARE_BATCH_SIZE) }, (_, i) => (
                 <Button key={i} className="h-11 w-full bg-teal-400 font-bold text-slate-950 hover:bg-teal-300" onClick={() => shareBatch(i)}>
-                  <MessageCircle className="mr-2 h-4 w-4" /> {ready.sent.includes(i) ? "Enviado" : `Enviar lote ${i + 1}`}
+                  <MessageCircle className="mr-2 h-4 w-4" /> {ready.sent.includes(i) ? "Enviado ✓" : Math.ceil(ready.files.length / SHARE_BATCH_SIZE) > 1 ? `Enviar lote ${i + 1}` : "Enviar pelo WhatsApp"}
                 </Button>
               ))}
             </div>
-            <Button className="mt-3 h-11 w-full bg-slate-600 font-bold text-white hover:bg-slate-500" onClick={() => downloadFiles(ready.files)}>
-              <Download className="mr-2 h-4 w-4" /> Baixar tudo (.zip)
-            </Button>
           </div>
         </div>
       )}
@@ -576,9 +619,12 @@ export default function StoreGalleryPage() {
       {lightbox && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90 p-4" onClick={() => setLightbox(null)}>
           <img src={lightbox.url} alt="" className="max-h-[85vh] max-w-full rounded-lg" onClick={(e) => e.stopPropagation()} />
-          <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 gap-3">
+          <div className="absolute inset-x-0 bottom-6 flex flex-wrap justify-center gap-2 px-4">
             <Button className="bg-slate-700 text-white hover:bg-slate-600" onClick={(e) => { e.stopPropagation(); void shareOne(lightbox.id); }}>
               <Share2 className="mr-1.5 h-4 w-4" /> Compartilhar
+            </Button>
+            <Button className="bg-slate-700 text-white hover:bg-slate-600" onClick={(e) => { e.stopPropagation(); void run("Baixando foto...", () => downloadImage(lightbox.id, storeLabel)); }}>
+              <Download className="mr-1.5 h-4 w-4" /> Baixar
             </Button>
             <Button className="bg-rose-500 text-white hover:bg-rose-400" onClick={(e) => { e.stopPropagation(); deleteOne(lightbox.id); }}>
               <Trash2 className="mr-1.5 h-4 w-4" /> Excluir

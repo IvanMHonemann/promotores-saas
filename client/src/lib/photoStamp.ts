@@ -1,4 +1,4 @@
-import { pickStampLocation, wrapText } from "@shared/address";
+import { addressHasStreet, pickStampLocation, wrapText } from "@shared/address";
 import { reverseGeocode } from "@/lib/geocode";
 import { compressCanvas } from "@/lib/imageCompress";
 
@@ -73,4 +73,26 @@ export function stampLines(o: { promoter: string; location: string; storeName: s
     ...(o.clientName ? [`Cliente: ${o.clientName}`] : []),
     `Data: ${o.capturedAt.toLocaleDateString("pt-BR")}  Hora: ${o.capturedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
   ];
+}
+
+/** Remove CEP do endereço do carimbo (não é necessário na foto). */
+export function stripCep(address: string): string {
+  return address
+    .replace(/,?\s*(CEP:?\s*)?\d{5}-?\d{3}/gi, "")
+    .replace(/\s*,\s*,/g, ",")
+    .replace(/[\s,–-]+$/, "")
+    .trim();
+}
+
+/**
+ * Endereço real para o carimbo (rua/bairro/cidade, sem CEP).
+ * Retorna null se ainda não há endereço confiável: a câmera não deve liberar a foto.
+ */
+export async function resolveStampAddress(lat: number, lng: number, storeAddress?: string | null): Promise<string | null> {
+  const geocoded = await reverseGeocode(lat, lng);
+  const geo = geocoded?.trim() || null;
+  if (geo && addressHasStreet(geo)) return stripCep(geo);
+  const store = storeAddress?.trim() || null;
+  if (store) return stripCep(store);
+  return null;
 }

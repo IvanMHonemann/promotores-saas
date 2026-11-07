@@ -6,14 +6,13 @@ import { enqueueVisit } from "@/lib/visitQueue";
 import { enqueuePhoto } from "@/lib/photoQueue";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { applyWatermark, stampLines, stampLocation } from "@/lib/photoStamp";
+import { applyWatermark, resolveStampAddress, stampLines } from "@/lib/photoStamp";
 import {
   errorMessage,
   isRetryableError,
   markUploading,
   prepareCheckInPhoto,
   startGpsLookup,
-  waitFor,
   withTimeout,
   type GpsFix,
   type PreparedPhoto,
@@ -35,7 +34,6 @@ type Shot = PreparedPhoto & { capturedAt: string; idempotencyKey: string };
 
 const VISIT_TIMEOUT_MS = 20_000;
 const PHOTO_TIMEOUT_MS = 28_000; // a função serverless da Vercel encerra em 30 s
-const GPS_WAIT_MS = 3_000; // antes esperava até 10 s a cada confirmação
 
 export function VisitCheckIn({
   action,
@@ -58,10 +56,23 @@ export function VisitCheckIn({
   const shotRef = useRef<Shot | null>(null);
   const { client } = trpc.useUtils();
   const { user } = useAuth();
+  // Endereço real obrigatório no carimbo: a foto só é liberada depois de descobrir GPS + endereço.
+  const [loc, setLoc] = useState<{ gps: GpsFix; address: string } | null>(null);
+  const [locFailed, setLocFailed] = useState(false);
+  const locRef = useRef<{ gps: GpsFix; address: string } | null>(null);
+  const locate = () => {
+    setLocFailed(false);
+    gpsRef.current = startGpsLookup();
+    void gpsRef.current.then(async (fix) => {
+      const address = fix ? await resolveStampAddress(fix.lat, fix.lng, storeAddress) : null;
+      if (fix && address) { locRef.current = { gps: fix, address }; setLoc(locRef.current); }
+      else setLocFailed(true);
+    });
+  };
 
   // O GPS começa a ser lido ao abrir a tela, enquanto o promotor tira a foto.
   useEffect(() => {
-    gpsRef.current = startGpsLookup();
+    locate();
     return () => {
       if (shotRef.current) URL.revokeObjectURL(shotRef.current.previewUrl);
     };
@@ -75,6 +86,10 @@ export function VisitCheckIn({
 
   const capture = () => {
     if (busy || processing) return;
+    if (!locRef.current) {
+      toast.error("Aguarde a localização e o endereço antes de tirar a foto.");
+      return;
+    }
     inputRef.current?.click();
   };
 
@@ -124,9 +139,7 @@ export function VisitCheckIn({
     markUploading(1);
     try {
       setStep("Obtendo localização...");
-      const position = gpsRef.current
-        ? await waitFor(gpsRef.current, GPS_WAIT_MS, null)
-        : null;
+      const position = locRef.current?.gps ?? null;
 
       const visitInput = {
         id: visitId,
@@ -138,9 +151,7 @@ export function VisitCheckIn({
       setStep("Aplicando carimbo...");
       let imageBase64 = current.base64;
       try {
-        const location = position
-          ? await stampLocation(position.lat, position.lng, storeAddress)
-          : storeAddress?.trim() || "Local não disponível";
+        const location = locRef.current?.address || storeAddress?.trim() || "Local não disponível";
         imageBase64 = await applyWatermark(
           `data:image/jpeg;base64,${current.base64}`,
           stampLines({
@@ -330,12 +341,21 @@ export function VisitCheckIn({
             <Loader2 className="h-4 w-4 animate-spin" /> Processando foto...
           </div>
         ) : !shot ? (
-          <Button
-            onClick={capture}
-            className={`mt-4 w-full gap-2 text-slate-950 ${accent}`}
-          >
-            <Camera className="h-5 w-5" /> Tirar foto da fachada
-          </Button>
+          <div className="mt-4 space-y-2">
+            <p className="text-center text-xs text-slate-300" role="status">
+              {loc ? `Local: ${loc.address}` : locFailed ? "Não foi possível obter o endereço. Ative a localização e tente de novo." : "Buscando localização e endereço..."}
+            </p>
+            {locFailed && !loc && (
+              <Button onClick={locate} variant="outline" className="w-full">Tentar localizar de novo</Button>
+            )}
+            <Button
+              onClick={capture}
+              disabled={!loc}
+              className={`w-full gap-2 text-slate-950 ${accent}`}
+            >
+              {loc ? <Camera className="h-5 w-5" /> : <Loader2 className="h-5 w-5 animate-spin" />} Tirar foto da fachada
+            </Button>
+          </div>
         ) : (
           <div className="mt-4">
             <img

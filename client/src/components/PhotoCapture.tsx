@@ -1,6 +1,6 @@
 import { reverseGeocode } from "@/lib/geocode";
 import { compressImageFile } from "@/lib/imageCompress";
-import { applyWatermark, stampLocation } from "@/lib/photoStamp";
+import { applyWatermark, resolveStampAddress, stampLines } from "@/lib/photoStamp";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "@shared/uploadLimits";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -15,7 +15,7 @@ import { toast } from "sonner";
 
 type GpsFix = { lat: number; lng: number; accuracy: number };
 type GpsStatus = "pending" | "ok" | "denied";
-type Shot = { dataUrl: string; capturedAt: Date; gps: GpsFix | null; gpsStatus: GpsStatus };
+type Shot = { dataUrl: string; capturedAt: Date; gps: GpsFix | null; gpsStatus: GpsStatus; address: string };
 
 type Props = {
   /** Loja da foto. Omitir ou passar null para foto sem loja vinculada. */
@@ -39,12 +39,15 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
   const gpsRef = useRef<GpsFix | null>(null);
   const sessionRef = useRef(0);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const addressRef = useRef<string | null>(null);
+  const resolvingRef = useRef(false);
 
   const [open, setOpen] = useState(false);
   const [live, setLive] = useState(false); // câmera ao vivo disponível (senão usa a câmera do aparelho)
   const [shot, setShot] = useState<Shot | null>(null); // foto tirada, aguardando "Manter" ou "Refazer"
   const [gps, setGps] = useState<GpsFix | null>(null);
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>("pending");
+  const [address, setAddress] = useState<string | null>(null);
   const [saved, setSaved] = useState(0);
   const [pending, setPending] = useState(0);
 
@@ -80,6 +83,9 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
   const startGps = () => {
     gpsRef.current = null;
     setGps(null);
+    addressRef.current = null;
+    setAddress(null);
+    resolvingRef.current = false;
     if (!navigator.geolocation) {
       setGpsStatus("denied");
       return;
@@ -91,11 +97,16 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
         gpsRef.current = fix;
         setGps(fix);
         setGpsStatus("ok");
-        // Já busca o endereço enquanto o promotor enquadra a foto (fica em cache para o carimbo).
-        void reverseGeocode(fix.lat, fix.lng);
+        // Endereço real obrigatório: a foto só é liberada depois de descobrir rua/bairro/cidade.
+        if (!addressRef.current && !resolvingRef.current) {
+          resolvingRef.current = true;
+          void resolveStampAddress(fix.lat, fix.lng, storeAddress)
+            .then((a) => { if (a) { addressRef.current = a; setAddress(a); } })
+            .finally(() => { resolvingRef.current = false; });
+        }
       },
       () => { if (!gpsRef.current) setGpsStatus("denied"); },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 },
     );
   };
 
@@ -106,8 +117,7 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     setSaved(0);
     startGps();
     if (!navigator.mediaDevices?.getUserMedia) {
-      setLive(false);
-      fileRef.current?.click();
+      setLive(false); // a câmera do aparelho abre pelo botão, depois que a localização estiver pronta
       return;
     }
     try {
@@ -125,7 +135,6 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
       if (session !== sessionRef.current) return;
       setLive(false);
       toast.info("Não foi possível abrir a câmera dentro do app. Usando a câmera do aparelho.");
-      fileRef.current?.click();
     }
   };
 
@@ -142,6 +151,10 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
   const takePhoto = () => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) return;
+    if (!gpsRef.current || !addressRef.current) {
+      toast.error("Aguarde a localização e o endereço antes de tirar a foto.");
+      return;
+    }
     const maxSide = 1600;
     const scale = Math.min(1, maxSide / Math.max(v.videoWidth, v.videoHeight));
     const canvas = document.createElement("canvas");
@@ -154,7 +167,8 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
       dataUrl: canvas.toDataURL("image/jpeg", 0.9),
       capturedAt: new Date(),
       gps: gpsRef.current,
-      gpsStatus: gpsRef.current ? "ok" : gpsStatus,
+      gpsStatus: "ok",
+      address: addressRef.current,
     });
   };
 
@@ -163,22 +177,20 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    const addr = addressRef.current;
+    if (!gpsRef.current || !addr) {
+      toast.error("Aguarde a localização e o endereço antes de tirar a foto.");
+      return;
+    }
 // Já comprime aqui (orientação EXIF corrigida, ~1600 px) para não segurar a foto original de vários MB.
     compressImageFile(file)
-      .then(r => setShot({ dataUrl: r.dataUrl, capturedAt: new Date(), gps: gpsRef.current, gpsStatus: gpsRef.current ? "ok" : gpsStatus }))
+      .then(r => setShot({ dataUrl: r.dataUrl, capturedAt: new Date(), gps: gpsRef.current, gpsStatus: "ok", address: addr }))
       .catch(err => toast.error(err?.message || "Não foi possível processar a foto."));
   };
 
   const saveShot = async (s: Shot): Promise<void> => {
     const promoter = user?.name || user?.email || "Promotor";
-    const location = s.gps ? await stampLocation(s.gps.lat, s.gps.lng, storeAddress) : (storeAddress?.trim() || "Local não disponível");
-    const lines = [
-      `Promotor: ${promoter}`,
-      `Local: ${location}`,
-      `Loja: ${storeName}`,
-      ...(clientName ? [`Cliente: ${clientName}`] : []),
-      `Data: ${s.capturedAt.toLocaleDateString("pt-BR")}  Hora: ${s.capturedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
-    ];
+    const lines = stampLines({ promoter, location: s.address, storeName, clientName, capturedAt: s.capturedAt });
     const base64 = await applyWatermark(s.dataUrl, lines);
     // Cada foto tem a sua chave: evita o servidor tratar fotos diferentes como repetidas.
     const idempotencyKey = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
@@ -236,9 +248,15 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     if (!live) fileRef.current?.click();
   };
 
-  const gpsLabel =
-    gpsStatus === "ok" && gps ? `GPS ±${Math.round(gps.accuracy)} m` : gpsStatus === "pending" ? "Buscando GPS..." : "Sem GPS";
-  const gpsColor = gpsStatus === "ok" ? "text-teal-300" : gpsStatus === "pending" ? "text-slate-200" : "text-amber-300";
+  const ready = gpsStatus === "ok" && !!gps && !!address;
+  const gpsLabel = ready
+    ? `Localização OK ±${Math.round(gps!.accuracy)} m`
+    : gpsStatus === "denied"
+      ? "Ative a localização para tirar a foto"
+      : gps
+        ? "Buscando endereço..."
+        : "Buscando localização...";
+  const gpsColor = ready ? "text-teal-300" : gpsStatus === "denied" ? "text-amber-300" : "text-slate-200";
 
   return (
     <div className="space-y-2">
@@ -268,8 +286,8 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
               {!live && !shot && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-center">
                   <Camera className="h-12 w-12 text-slate-300" />
-                  <p className="text-sm text-slate-200">Toque para abrir a câmera do aparelho.</p>
-                  <Button type="button" className="h-12 bg-teal-400 px-8 text-base font-bold text-slate-950 hover:bg-teal-300" onClick={() => fileRef.current?.click()}>
+                  <p className="text-sm text-slate-200">{ready ? "Toque para abrir a câmera do aparelho." : "Aguardando a localização e o endereço..."}</p>
+                  <Button type="button" className="h-12 bg-teal-400 px-8 text-base font-bold text-slate-950 hover:bg-teal-300" disabled={!ready} onClick={() => fileRef.current?.click()}>
                     <Camera className="mr-2 h-5 w-5" /> Tirar foto
                   </Button>
                 </div>
@@ -281,8 +299,9 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
                 </button>
                 <div className="flex flex-col items-end gap-1.5 text-xs font-semibold">
                   <span className={`inline-flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 ${gpsColor}`}>
-                    <MapPin className="h-3.5 w-3.5" /> {gpsLabel}
+                    {ready ? <MapPin className="h-3.5 w-3.5" /> : gpsStatus === "denied" ? <MapPin className="h-3.5 w-3.5" /> : <Loader2 className="h-3.5 w-3.5 animate-spin" />} {gpsLabel}
                   </span>
+                  {ready && <span className="max-w-[16rem] truncate rounded-full bg-black/60 px-2.5 py-1 text-white">{address}</span>}
                   {(saved > 0 || pending > 0) && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-white" role="status">
                       {pending > 0 ? <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-300" /> : <Check className="h-3.5 w-3.5 text-emerald-300" />}
@@ -312,8 +331,9 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
                     <button
                       type="button"
                       onClick={takePhoto}
-                      aria-label="Tirar foto"
-                      className="mx-auto h-[72px] w-[72px] rounded-full border-4 border-white bg-white/90 transition-transform active:scale-90"
+                      disabled={!ready}
+                      aria-label={ready ? "Tirar foto" : "Aguardando localização"}
+                      className="mx-auto h-[72px] w-[72px] rounded-full border-4 border-white bg-white/90 transition-transform active:scale-90 disabled:opacity-30"
                     />
                   ) : (
                     <span />

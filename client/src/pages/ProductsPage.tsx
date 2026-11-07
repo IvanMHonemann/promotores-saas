@@ -247,6 +247,7 @@ export default function ProductsPage() {
 
   return <DashboardLayout title="Produtos e validades" description="Cadastre produtos por loja e indústria, acompanhe lotes e receba alertas de validade.">
     <div className="space-y-6">
+      {!formOpen && <div><Button type="button" onClick={() => { setFormOpen(true); setRequestId(newRequestId()); }} className="h-12 w-full bg-teal-300 text-base font-bold text-slate-950 hover:bg-teal-200"><Plus className="mr-2 h-5 w-5"/>Cadastrar produto</Button></div>}
       <Card className="border-amber-300/25 bg-amber-300/10 text-white"><CardContent className="flex flex-col justify-between gap-3 p-4 lg:flex-row lg:items-center">
         <div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300"/><div>
           <p className="font-bold">Alerta de validade: vencidos e próximos {alertDays} dias</p>
@@ -301,9 +302,7 @@ export default function ProductsPage() {
         </form>
         <p className="text-xs text-slate-400">Mesmo produto, loja, indústria, lote e validade: a quantidade é somada ao registro que já existe.</p>
       </CardContent></Card>
-      ) : (
-        <div className="order-2 xl:order-none"><Button type="button" onClick={() => { setFormOpen(true); setRequestId(newRequestId()); }} className="h-12 w-full bg-teal-300 text-base font-bold text-slate-950 hover:bg-teal-200"><Plus className="mr-2 h-5 w-5"/>Cadastrar produto</Button></div>
-      )}
+      ) : null}
       <Card className="order-1 border-white/10 bg-slate-900/70 text-white xl:order-none"><CardHeader><CardTitle className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2"><Package className="h-5 w-5 text-teal-300"/>Estoque e validade</span><Button type="button" variant="outline" onClick={() => void doExport()} disabled={exportCsv.isPending} className="h-11 border-white/20 text-sm text-white sm:h-9"><Download className="mr-1 h-4 w-4"/>Exportar CSV</Button></CardTitle></CardHeader><CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="relative sm:col-span-2 lg:col-span-3"><Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400 sm:top-3"/><Input aria-label="Buscar produtos" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por código, descrição ou lote" className={`${field} pl-9`}/></div>

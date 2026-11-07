@@ -1,6 +1,6 @@
-import { pickStampLocation, wrapText } from "@shared/address";
 import { reverseGeocode } from "@/lib/geocode";
-import { compressCanvas, compressImageFile } from "@/lib/imageCompress";
+import { compressImageFile } from "@/lib/imageCompress";
+import { ADDRESS_TIMEOUT_MS, applyWatermark, resolveStampAddress, stampLines } from "@/lib/photoStamp";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "@shared/uploadLimits";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -13,19 +13,9 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 
 
-/** Endereço completo para o carimbo; se o GPS vier só com cidade/CEP, usa o endereço cadastrado da loja. */
-async function stampLocation(lat: number, lng: number, storeAddress?: string | null): Promise<string> {
-  const geocoded = await reverseGeocode(lat, lng);
-  return pickStampLocation({
-    geocoded,
-    storeAddress,
-    coordsFallback: `GPS ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
-  });
-}
-
 type GpsFix = { lat: number; lng: number; accuracy: number };
 type GpsStatus = "pending" | "ok" | "denied";
-type Shot = { dataUrl: string; capturedAt: Date; gps: GpsFix | null; gpsStatus: GpsStatus };
+type Shot = { dataUrl: string; capturedAt: Date; gps: GpsFix | null; gpsStatus: GpsStatus; address: string };
 
 type Props = {
   /** Loja da foto. Omitir ou passar null para foto sem loja vinculada. */
@@ -40,57 +30,6 @@ type Props = {
   onCaptured: () => void;
 };
 
-function applyWatermark(
-  dataUrl: string,
-  lines: string[],
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const maxSide = 1600;
-      let { width, height } = img;
-      if (width > maxSide || height > maxSide) {
-        const scale = maxSide / Math.max(width, height);
-        width = Math.round(width * scale);
-        height = Math.round(height * scale);
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return reject(new Error("Canvas indisponível"));
-      ctx.drawImage(img, 0, 0, width, height);
-
-      // Fundo só atrás de cada linha de texto
-      const fontSize = Math.max(16, Math.round(width / 42));
-      const lineH = fontSize + 10;
-      const padX = 8;
-      const padY = 4;
-      ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
-      ctx.textBaseline = "top";
-      // Quebra linhas longas (ex.: endereço completo) para caberem na foto.
-      const maxTextW = width - 24 - padX * 2;
-      lines = lines.flatMap(l => wrapText(l, maxTextW, t => ctx.measureText(t).width));
-      const startY = height - (lineH * lines.length) - 16;
-      lines.forEach((line, i) => {
-        const y = startY + i * lineH;
-        const metrics = ctx.measureText(line);
-        const textW = metrics.width;
-        ctx.fillStyle = "rgba(0,0,0,0.65)";
-        ctx.beginPath();
-        ctx.roundRect(12, y - padY, textW + padX * 2, fontSize + padY * 2, 4);
-        ctx.fill();
-        ctx.fillStyle = "#ffffff";
-        ctx.fillText(line, 12 + padX, y);
-      });
-
-      compressCanvas(canvas).then(r => resolve(r.base64), reject);
-    };
-    img.onerror = () => reject(new Error("Falha ao processar imagem"));
-    img.src = dataUrl;
-  });
-}
-
 export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, clientName, visitId, onCaptured }: Props) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -100,12 +39,32 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
   const gpsRef = useRef<GpsFix | null>(null);
   const sessionRef = useRef(0);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const addressRef = useRef<string | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resolvingRef = useRef(false);
 
   const [open, setOpen] = useState(false);
   const [live, setLive] = useState(false); // câmera ao vivo disponível (senão usa a câmera do aparelho)
   const [shot, setShot] = useState<Shot | null>(null); // foto tirada, aguardando "Manter" ou "Refazer"
   const [gps, setGps] = useState<GpsFix | null>(null);
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>("pending");
+  const [address, setAddress] = useState<string | null>(null);
+  const [online, setOnline] = useState(isOnline());
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener("online", up);
+    window.addEventListener("offline", down);
+    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+  }, []);
+  /** Sem internet não dá para descobrir o endereço: usa o endereço cadastrado e não bloqueia a foto. */
+  const offlineAddress = () => {
+    const store = storeAddress?.trim();
+    if (store) return store;
+    const g = gpsRef.current;
+    return g ? `GPS ${g.lat.toFixed(5)}, ${g.lng.toFixed(5)}` : "Sem conexão: endereço não disponível";
+  };
+  const currentAddress = (): string | null => addressRef.current || (isOnline() ? null : offlineAddress());
   const [saved, setSaved] = useState(0);
   const [pending, setPending] = useState(0);
 
@@ -116,6 +75,8 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     streamRef.current = null;
     if (watchRef.current != null && navigator.geolocation) navigator.geolocation.clearWatch(watchRef.current);
     watchRef.current = null;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
   };
 
   // Libera câmera e GPS se a tela for fechada com a câmera aberta.
@@ -141,22 +102,36 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
   const startGps = () => {
     gpsRef.current = null;
     setGps(null);
+    addressRef.current = null;
+    setAddress(null);
+    resolvingRef.current = false;
     if (!navigator.geolocation) {
       setGpsStatus("denied");
       return;
     }
     setGpsStatus("pending");
+    // GPS demorando demais para achar o endereço: usa o endereço cadastrado da loja.
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      const store = storeAddress?.trim();
+      if (!addressRef.current && store) { addressRef.current = store; setAddress(store); }
+    }, ADDRESS_TIMEOUT_MS);
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
         gpsRef.current = fix;
         setGps(fix);
         setGpsStatus("ok");
-        // Já busca o endereço enquanto o promotor enquadra a foto (fica em cache para o carimbo).
-        void reverseGeocode(fix.lat, fix.lng);
+        // Endereço real obrigatório: a foto só é liberada depois de descobrir rua/bairro/cidade.
+        if (!addressRef.current && !resolvingRef.current) {
+          resolvingRef.current = true;
+          void resolveStampAddress(fix.lat, fix.lng)
+            .then((a) => { if (a) { addressRef.current = a; setAddress(a); } })
+            .finally(() => { resolvingRef.current = false; });
+        }
       },
       () => { if (!gpsRef.current) setGpsStatus("denied"); },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 },
     );
   };
 
@@ -167,8 +142,7 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     setSaved(0);
     startGps();
     if (!navigator.mediaDevices?.getUserMedia) {
-      setLive(false);
-      fileRef.current?.click();
+      setLive(false); // a câmera do aparelho abre pelo botão, depois que a localização estiver pronta
       return;
     }
     try {
@@ -186,7 +160,6 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
       if (session !== sessionRef.current) return;
       setLive(false);
       toast.info("Não foi possível abrir a câmera dentro do app. Usando a câmera do aparelho.");
-      fileRef.current?.click();
     }
   };
 
@@ -203,6 +176,11 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
   const takePhoto = () => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) return;
+    const addr = currentAddress();
+    if (!addr) {
+      toast.error("Aguarde a localização e o endereço antes de tirar a foto.");
+      return;
+    }
     const maxSide = 1600;
     const scale = Math.min(1, maxSide / Math.max(v.videoWidth, v.videoHeight));
     const canvas = document.createElement("canvas");
@@ -216,6 +194,7 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
       capturedAt: new Date(),
       gps: gpsRef.current,
       gpsStatus: gpsRef.current ? "ok" : gpsStatus,
+      address: addr,
     });
   };
 
@@ -224,22 +203,20 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    const addr = currentAddress();
+    if (!addr) {
+      toast.error("Aguarde a localização e o endereço antes de tirar a foto.");
+      return;
+    }
 // Já comprime aqui (orientação EXIF corrigida, ~1600 px) para não segurar a foto original de vários MB.
     compressImageFile(file)
-      .then(r => setShot({ dataUrl: r.dataUrl, capturedAt: new Date(), gps: gpsRef.current, gpsStatus: gpsRef.current ? "ok" : gpsStatus }))
+      .then(r => setShot({ dataUrl: r.dataUrl, capturedAt: new Date(), gps: gpsRef.current, gpsStatus: gpsRef.current ? "ok" : gpsStatus, address: addr }))
       .catch(err => toast.error(err?.message || "Não foi possível processar a foto."));
   };
 
   const saveShot = async (s: Shot): Promise<void> => {
     const promoter = user?.name || user?.email || "Promotor";
-    const location = s.gps ? await stampLocation(s.gps.lat, s.gps.lng, storeAddress) : (storeAddress?.trim() || "Local não disponível");
-    const lines = [
-      `Promotor: ${promoter}`,
-      `Local: ${location}`,
-      `Loja: ${storeName}`,
-      ...(clientName ? [`Cliente: ${clientName}`] : []),
-      `Data: ${s.capturedAt.toLocaleDateString("pt-BR")}  Hora: ${s.capturedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`,
-    ];
+    const lines = stampLines({ promoter, location: s.address, storeName, clientName, capturedAt: s.capturedAt });
     const base64 = await applyWatermark(s.dataUrl, lines);
     // Cada foto tem a sua chave: evita o servidor tratar fotos diferentes como repetidas.
     const idempotencyKey = crypto.randomUUID().replace(/-/g, "").slice(0, 32);
@@ -297,9 +274,18 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     if (!live) fileRef.current?.click();
   };
 
-  const gpsLabel =
-    gpsStatus === "ok" && gps ? `GPS ±${Math.round(gps.accuracy)} m` : gpsStatus === "pending" ? "Buscando GPS..." : "Sem GPS";
-  const gpsColor = gpsStatus === "ok" ? "text-teal-300" : gpsStatus === "pending" ? "text-slate-200" : "text-amber-300";
+  const located = gpsStatus === "ok" && !!gps && !!address;
+  const ready = located || !online;
+  const gpsLabel = located
+    ? `Localização OK ±${Math.round(gps!.accuracy)} m`
+    : !online
+      ? "Sem internet: usando endereço cadastrado"
+    : gpsStatus === "denied"
+      ? "Ative a localização para tirar a foto"
+      : gps
+        ? "Buscando endereço..."
+        : "Buscando localização...";
+  const gpsColor = ready ? "text-teal-300" : gpsStatus === "denied" ? "text-amber-300" : "text-slate-200";
 
   return (
     <div className="space-y-2">
@@ -329,8 +315,8 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
               {!live && !shot && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-center">
                   <Camera className="h-12 w-12 text-slate-300" />
-                  <p className="text-sm text-slate-200">Toque para abrir a câmera do aparelho.</p>
-                  <Button type="button" className="h-12 bg-teal-400 px-8 text-base font-bold text-slate-950 hover:bg-teal-300" onClick={() => fileRef.current?.click()}>
+                  <p className="text-sm text-slate-200">{ready ? "Toque para abrir a câmera do aparelho." : "Aguardando a localização e o endereço..."}</p>
+                  <Button type="button" className="h-12 bg-teal-400 px-8 text-base font-bold text-slate-950 hover:bg-teal-300" disabled={!ready} onClick={() => fileRef.current?.click()}>
                     <Camera className="mr-2 h-5 w-5" /> Tirar foto
                   </Button>
                 </div>
@@ -342,8 +328,9 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
                 </button>
                 <div className="flex flex-col items-end gap-1.5 text-xs font-semibold">
                   <span className={`inline-flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 ${gpsColor}`}>
-                    <MapPin className="h-3.5 w-3.5" /> {gpsLabel}
+                    {ready ? <MapPin className="h-3.5 w-3.5" /> : gpsStatus === "denied" ? <MapPin className="h-3.5 w-3.5" /> : <Loader2 className="h-3.5 w-3.5 animate-spin" />} {gpsLabel}
                   </span>
+                  {ready && <span className="max-w-[16rem] truncate rounded-full bg-black/60 px-2.5 py-1 text-white">{address || offlineAddress()}</span>}
                   {(saved > 0 || pending > 0) && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-white" role="status">
                       {pending > 0 ? <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-300" /> : <Check className="h-3.5 w-3.5 text-emerald-300" />}
@@ -373,8 +360,9 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
                     <button
                       type="button"
                       onClick={takePhoto}
-                      aria-label="Tirar foto"
-                      className="mx-auto h-[72px] w-[72px] rounded-full border-4 border-white bg-white/90 transition-transform active:scale-90"
+                      disabled={!ready}
+                      aria-label={ready ? "Tirar foto" : "Aguardando localização"}
+                      className="mx-auto h-[72px] w-[72px] rounded-full border-4 border-white bg-white/90 transition-transform active:scale-90 disabled:opacity-30"
                     />
                   ) : (
                     <span />

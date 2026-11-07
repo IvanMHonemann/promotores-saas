@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { enqueueVisit } from "@/lib/visitQueue";
 import { enqueuePhoto } from "@/lib/photoQueue";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { applyWatermark, stampLines, stampLocation } from "@/lib/photoStamp";
 import {
   errorMessage,
   isRetryableError,
@@ -22,6 +24,8 @@ type Props = {
   visitId: number;
   storeId: number;
   storeName: string;
+  /** Endereço cadastrado da loja, usado no carimbo se o GPS vier incompleto. */
+  storeAddress?: string | null;
   onDone: () => void;
   onCancel: () => void;
   sandbox?: boolean;
@@ -38,6 +42,7 @@ export function VisitCheckIn({
   visitId,
   storeId,
   storeName,
+  storeAddress,
   onDone,
   onCancel,
   sandbox = false,
@@ -52,6 +57,7 @@ export function VisitCheckIn({
   const gpsRef = useRef<Promise<GpsFix | null> | null>(null);
   const shotRef = useRef<Shot | null>(null);
   const { client } = trpc.useUtils();
+  const { user } = useAuth();
 
   // O GPS começa a ser lido ao abrir a tela, enquanto o promotor tira a foto.
   useEffect(() => {
@@ -128,6 +134,25 @@ export function VisitCheckIn({
         longitude: position?.lng,
         accuracy: position?.accuracy,
       };
+      // Carimbo (promotor, local, loja, data e hora) igual às demais fotos.
+      setStep("Aplicando carimbo...");
+      let imageBase64 = current.base64;
+      try {
+        const location = position
+          ? await stampLocation(position.lat, position.lng, storeAddress)
+          : storeAddress?.trim() || "Local não disponível";
+        imageBase64 = await applyWatermark(
+          `data:image/jpeg;base64,${current.base64}`,
+          stampLines({
+            promoter: user?.name || user?.email || "Promotor",
+            location,
+            storeName,
+            capturedAt: new Date(current.capturedAt),
+          })
+        );
+      } catch {
+        // Se o carimbo falhar, envia a foto mesmo assim para não travar a visita.
+      }
       const photoInput = {
         storeId,
         visitId,
@@ -138,7 +163,7 @@ export function VisitCheckIn({
         locationStatus: position
           ? ("success" as const)
           : ("unavailable" as const),
-        imageBase64: current.base64,
+        imageBase64,
         mimeType: "image/jpeg",
         idempotencyKey: current.idempotencyKey,
       };
@@ -200,7 +225,7 @@ export function VisitCheckIn({
             visitId,
             storeId,
             storeName,
-            photoBase64: current.base64,
+            photoBase64: imageBase64,
             mimeType: "image/jpeg",
             latitude: position?.lat,
             longitude: position?.lng,
@@ -241,7 +266,7 @@ export function VisitCheckIn({
           longitude: position?.lng,
           accuracy: position?.accuracy,
           locationStatus: photoInput.locationStatus,
-          imageBase64: current.base64,
+          imageBase64,
           mimeType: "image/jpeg",
           idempotencyKey: current.idempotencyKey,
         });

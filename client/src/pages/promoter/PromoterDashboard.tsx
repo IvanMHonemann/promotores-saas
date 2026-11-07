@@ -24,7 +24,7 @@ const visitStatus: Record<string, string> = {
 };
 
 export default function PromoterDashboard() {
-  const [checkIn, setCheckIn] = useState<{ action: "start" | "complete"; visitId: number; storeId: number; storeName: string } | null>(null);
+  const [checkIn, setCheckIn] = useState<{ action: "start" | "complete"; visitId: number; storeId: number; storeName: string; storeAddress?: string | null } | null>(null);
   const { user } = useAuth();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const todayParts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
@@ -200,7 +200,7 @@ export default function PromoterDashboard() {
                           toast.error(`Não é possível fazer check-in em outra loja. Realize o check-out em "${openVisit.store.name}" primeiro.`);
                           return;
                         }
-                        setCheckIn({ action: "start", visitId: visit.id, storeId: store.id, storeName: store.name });
+                        setCheckIn({ action: "start", visitId: visit.id, storeId: store.id, storeName: store.name, storeAddress: store.address || null });
                       }}
                       disabled={!canManageVisits || (openVisit != null && openVisit.visit.id !== visit.id)}
                     >
@@ -210,7 +210,7 @@ export default function PromoterDashboard() {
                   {hasVisitCheckIn && visit.status === "in_progress" && (
                     <>
                       <VisitTimer startTime={visit.actualStart} />
-                      <Button className="mt-3 w-full bg-amber-500 text-slate-950 hover:bg-amber-400" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
+                      <Button className="mt-3 w-full bg-amber-500 text-slate-950 hover:bg-amber-400" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name, storeAddress: store.address || null })} disabled={!canManageVisits}>
                         Check-out (foto da fachada)
                       </Button>
                     </>

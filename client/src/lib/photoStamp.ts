@@ -88,11 +88,13 @@ export function stripCep(address: string): string {
  * Endereço real para o carimbo (rua/bairro/cidade, sem CEP).
  * Retorna null se ainda não há endereço confiável: a câmera não deve liberar a foto.
  */
-export async function resolveStampAddress(lat: number, lng: number, storeAddress?: string | null): Promise<string | null> {
+export async function resolveStampAddress(lat: number, lng: number): Promise<string | null> {
   const geocoded = await reverseGeocode(lat, lng);
   const geo = geocoded?.trim() || null;
   if (geo && addressHasStreet(geo)) return stripCep(geo);
-  const store = storeAddress?.trim() || null;
-  if (store) return stripCep(store);
-  return null;
+  return null; // sem rua: continua tentando; o endereço cadastrado só entra depois do tempo limite
+
 }
+
+/** Tempo máximo esperando o endereço do GPS antes de usar o endereço cadastrado da loja. */
+export const ADDRESS_TIMEOUT_MS = 15_000;

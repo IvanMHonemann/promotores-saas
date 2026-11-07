@@ -1,6 +1,6 @@
 import { reverseGeocode } from "@/lib/geocode";
 import { compressImageFile } from "@/lib/imageCompress";
-import { applyWatermark, resolveStampAddress, stampLines } from "@/lib/photoStamp";
+import { ADDRESS_TIMEOUT_MS, applyWatermark, resolveStampAddress, stampLines } from "@/lib/photoStamp";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "@shared/uploadLimits";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -40,6 +40,7 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
   const sessionRef = useRef(0);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const addressRef = useRef<string | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resolvingRef = useRef(false);
 
   const [open, setOpen] = useState(false);
@@ -74,6 +75,8 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     streamRef.current = null;
     if (watchRef.current != null && navigator.geolocation) navigator.geolocation.clearWatch(watchRef.current);
     watchRef.current = null;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = null;
   };
 
   // Libera câmera e GPS se a tela for fechada com a câmera aberta.
@@ -107,6 +110,12 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
       return;
     }
     setGpsStatus("pending");
+    // GPS demorando demais para achar o endereço: usa o endereço cadastrado da loja.
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      const store = storeAddress?.trim();
+      if (!addressRef.current && store) { addressRef.current = store; setAddress(store); }
+    }, ADDRESS_TIMEOUT_MS);
     watchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const fix = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
@@ -116,7 +125,7 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
         // Endereço real obrigatório: a foto só é liberada depois de descobrir rua/bairro/cidade.
         if (!addressRef.current && !resolvingRef.current) {
           resolvingRef.current = true;
-          void resolveStampAddress(fix.lat, fix.lng, storeAddress)
+          void resolveStampAddress(fix.lat, fix.lng)
             .then((a) => { if (a) { addressRef.current = a; setAddress(a); } })
             .finally(() => { resolvingRef.current = false; });
         }

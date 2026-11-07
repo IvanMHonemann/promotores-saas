@@ -6,7 +6,7 @@ import { enqueueVisit } from "@/lib/visitQueue";
 import { enqueuePhoto } from "@/lib/photoQueue";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { applyWatermark, resolveStampAddress, stampLines } from "@/lib/photoStamp";
+import { ADDRESS_TIMEOUT_MS, applyWatermark, resolveStampAddress, stampLines } from "@/lib/photoStamp";
 import {
   errorMessage,
   isRetryableError,
@@ -62,16 +62,29 @@ export function VisitCheckIn({
   const locRef = useRef<{ gps: GpsFix | null; address: string } | null>(null);
   const locate = () => {
     setLocFailed(false);
-    gpsRef.current = startGpsLookup();
-    void gpsRef.current.then(async (fix) => {
-      const address = fix ? await resolveStampAddress(fix.lat, fix.lng, storeAddress) : null;
-      if (fix && address) { locRef.current = { gps: fix, address }; setLoc(locRef.current); }
-      else if (!navigator.onLine) {
-        // Sem internet: usa o endereço cadastrado da loja e não bloqueia.
-        locRef.current = { gps: fix, address: storeAddress?.trim() || "Sem conexão: endereço não disponível" };
-        setLoc(locRef.current);
-      } else setLocFailed(true);
-    });
+    const deadline = Date.now() + ADDRESS_TIMEOUT_MS;
+    const store = storeAddress?.trim() || null;
+    const finish = (gps: GpsFix | null, address: string) => {
+      locRef.current = { gps, address };
+      setLoc(locRef.current);
+    };
+    void (async () => {
+      let fix: GpsFix | null = null;
+      // Tenta achar o endereço completo pelo GPS; só usa o cadastrado se demorar demais ou sem internet.
+      while (Date.now() < deadline) {
+        gpsRef.current = startGpsLookup();
+        fix = (await gpsRef.current) ?? fix;
+        if (!navigator.onLine) break;
+        if (fix) {
+          const address = await resolveStampAddress(fix.lat, fix.lng);
+          if (address) return finish(fix, address);
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (store) return finish(fix, store);
+      if (!navigator.onLine) return finish(fix, "Sem conexão: endereço não disponível");
+      setLocFailed(true);
+    })();
   };
 
   // O GPS começa a ser lido ao abrir a tela, enquanto o promotor tira a foto.

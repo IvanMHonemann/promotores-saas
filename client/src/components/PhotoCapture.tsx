@@ -48,6 +48,22 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
   const [gps, setGps] = useState<GpsFix | null>(null);
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>("pending");
   const [address, setAddress] = useState<string | null>(null);
+  const [online, setOnline] = useState(isOnline());
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener("online", up);
+    window.addEventListener("offline", down);
+    return () => { window.removeEventListener("online", up); window.removeEventListener("offline", down); };
+  }, []);
+  /** Sem internet não dá para descobrir o endereço: usa o endereço cadastrado e não bloqueia a foto. */
+  const offlineAddress = () => {
+    const store = storeAddress?.trim();
+    if (store) return store;
+    const g = gpsRef.current;
+    return g ? `GPS ${g.lat.toFixed(5)}, ${g.lng.toFixed(5)}` : "Sem conexão: endereço não disponível";
+  };
+  const currentAddress = (): string | null => addressRef.current || (isOnline() ? null : offlineAddress());
   const [saved, setSaved] = useState(0);
   const [pending, setPending] = useState(0);
 
@@ -151,7 +167,8 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
   const takePhoto = () => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) return;
-    if (!gpsRef.current || !addressRef.current) {
+    const addr = currentAddress();
+    if (!addr) {
       toast.error("Aguarde a localização e o endereço antes de tirar a foto.");
       return;
     }
@@ -167,8 +184,8 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
       dataUrl: canvas.toDataURL("image/jpeg", 0.9),
       capturedAt: new Date(),
       gps: gpsRef.current,
-      gpsStatus: "ok",
-      address: addressRef.current,
+      gpsStatus: gpsRef.current ? "ok" : gpsStatus,
+      address: addr,
     });
   };
 
@@ -177,14 +194,14 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const addr = addressRef.current;
-    if (!gpsRef.current || !addr) {
+    const addr = currentAddress();
+    if (!addr) {
       toast.error("Aguarde a localização e o endereço antes de tirar a foto.");
       return;
     }
 // Já comprime aqui (orientação EXIF corrigida, ~1600 px) para não segurar a foto original de vários MB.
     compressImageFile(file)
-      .then(r => setShot({ dataUrl: r.dataUrl, capturedAt: new Date(), gps: gpsRef.current, gpsStatus: "ok", address: addr }))
+      .then(r => setShot({ dataUrl: r.dataUrl, capturedAt: new Date(), gps: gpsRef.current, gpsStatus: gpsRef.current ? "ok" : gpsStatus, address: addr }))
       .catch(err => toast.error(err?.message || "Não foi possível processar a foto."));
   };
 
@@ -248,9 +265,12 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
     if (!live) fileRef.current?.click();
   };
 
-  const ready = gpsStatus === "ok" && !!gps && !!address;
-  const gpsLabel = ready
+  const located = gpsStatus === "ok" && !!gps && !!address;
+  const ready = located || !online;
+  const gpsLabel = located
     ? `Localização OK ±${Math.round(gps!.accuracy)} m`
+    : !online
+      ? "Sem internet: usando endereço cadastrado"
     : gpsStatus === "denied"
       ? "Ative a localização para tirar a foto"
       : gps
@@ -301,7 +321,7 @@ export function PhotoCapture({ storeId, storeName, storeAddress, storeClientId, 
                   <span className={`inline-flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 ${gpsColor}`}>
                     {ready ? <MapPin className="h-3.5 w-3.5" /> : gpsStatus === "denied" ? <MapPin className="h-3.5 w-3.5" /> : <Loader2 className="h-3.5 w-3.5 animate-spin" />} {gpsLabel}
                   </span>
-                  {ready && <span className="max-w-[16rem] truncate rounded-full bg-black/60 px-2.5 py-1 text-white">{address}</span>}
+                  {ready && <span className="max-w-[16rem] truncate rounded-full bg-black/60 px-2.5 py-1 text-white">{address || offlineAddress()}</span>}
                   {(saved > 0 || pending > 0) && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-white" role="status">
                       {pending > 0 ? <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-300" /> : <Check className="h-3.5 w-3.5 text-emerald-300" />}

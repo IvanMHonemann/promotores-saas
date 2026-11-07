@@ -57,16 +57,20 @@ export function VisitCheckIn({
   const { client } = trpc.useUtils();
   const { user } = useAuth();
   // Endereço real obrigatório no carimbo: a foto só é liberada depois de descobrir GPS + endereço.
-  const [loc, setLoc] = useState<{ gps: GpsFix; address: string } | null>(null);
+  const [loc, setLoc] = useState<{ gps: GpsFix | null; address: string } | null>(null);
   const [locFailed, setLocFailed] = useState(false);
-  const locRef = useRef<{ gps: GpsFix; address: string } | null>(null);
+  const locRef = useRef<{ gps: GpsFix | null; address: string } | null>(null);
   const locate = () => {
     setLocFailed(false);
     gpsRef.current = startGpsLookup();
     void gpsRef.current.then(async (fix) => {
       const address = fix ? await resolveStampAddress(fix.lat, fix.lng, storeAddress) : null;
       if (fix && address) { locRef.current = { gps: fix, address }; setLoc(locRef.current); }
-      else setLocFailed(true);
+      else if (!navigator.onLine) {
+        // Sem internet: usa o endereço cadastrado da loja e não bloqueia.
+        locRef.current = { gps: fix, address: storeAddress?.trim() || "Sem conexão: endereço não disponível" };
+        setLoc(locRef.current);
+      } else setLocFailed(true);
     });
   };
 

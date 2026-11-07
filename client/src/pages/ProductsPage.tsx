@@ -1,5 +1,6 @@
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Barcode, Camera, CameraOff, Check, ChevronLeft, ChevronRight, Download, ImageIcon, Loader2, MessageCircle, Package, Pencil, Plus, Printer, Search, Share2, Trash2, X } from "lucide-react";
+import { AlertTriangle, Barcode, Camera, CameraOff, Check, ChevronLeft, ChevronRight, Download, ImageIcon, Loader2, MessageCircle, MoreVertical, Package, Pencil, Plus, Printer, Search, Share2, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useBusy } from "@/components/BusyOverlay";
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
@@ -56,6 +57,8 @@ export default function ProductsPage() {
   const [storeFilter, setStoreFilter] = useState<number | undefined>(undefined);
   const [industryFilter, setIndustryFilter] = useState("");
   const [mine, setMine] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const activeFilters = [storeFilter != null, !!industryFilter, !!from, !!to, mine].filter(Boolean).length;
   const [page, setPage] = useState(1);
   const filters = { search: debouncedSearch || undefined, expiry, storeId: storeFilter, clientName: industryFilter || undefined, from: from || undefined, to: to || undefined, mine: mine || undefined };
   useEffect(() => { setPage(1); }, [debouncedSearch, expiry, storeFilter, industryFilter, from, to, mine]);
@@ -303,18 +306,26 @@ export default function ProductsPage() {
         <p className="text-xs text-slate-400">Mesmo produto, loja, indústria, lote e validade: a quantidade é somada ao registro que já existe.</p>
       </CardContent></Card>
       ) : null}
-      <Card className="order-1 border-white/10 bg-slate-900/70 text-white xl:order-none"><CardHeader><CardTitle className="flex flex-wrap items-center justify-between gap-2"><span className="flex items-center gap-2"><Package className="h-5 w-5 text-teal-300"/>Estoque e validade</span><Button type="button" variant="outline" onClick={() => void doExport()} disabled={exportCsv.isPending} className="h-11 border-white/20 text-sm text-white sm:h-9"><Download className="mr-1 h-4 w-4"/>Exportar CSV</Button></CardTitle></CardHeader><CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="relative sm:col-span-2 lg:col-span-3"><Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400 sm:top-3"/><Input aria-label="Buscar produtos" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por código, descrição ou lote" className={`${field} pl-9`}/></div>
-          <select aria-label="Filtrar por loja" value={storeFilter ?? ""} onChange={(e) => setStoreFilter(e.target.value ? Number(e.target.value) : undefined)} className={selectCls}><option value="">Todas as lojas</option>{(stores.data || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-          <select aria-label="Filtrar por indústria" value={industryFilter} onChange={(e) => setIndustryFilter(e.target.value)} className={selectCls}><option value="">Todas as indústrias</option>{(industries.data || []).map((n) => <option key={n} value={n}>{n}</option>)}<option value="__none__">Sem indústria</option></select>
-          <select aria-label="Filtrar por validade" value={expiry} onChange={(e) => setExpiry(e.target.value as Expiry)} className={selectCls}><option value="all">Todas as validades</option><option value="alert">Vencidos e a vencer</option><option value="expired">Vencidos</option><option value="near">Vencem em até {alertDays} dias</option><option value="valid">Dentro da validade</option></select>
-          <Input aria-label="Validade de" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={field}/>
-          <Input aria-label="Validade até" type="date" value={to} onChange={(e) => setTo(e.target.value)} className={field}/>
-          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="h-5 w-5" checked={mine} onChange={(e) => setMine(e.target.checked)}/>Só os que eu cadastrei</label>
+      <Card className="order-1 border-white/10 bg-slate-900/70 text-white xl:order-none"><CardHeader><CardTitle className="flex items-center justify-between gap-2"><span className="flex items-center gap-2"><Package className="h-5 w-5 text-teal-300"/>Estoque e validade</span><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="outline" aria-label="Mais opções" className="h-11 border-white/20 px-3 text-white sm:h-9"><MoreVertical className="h-5 w-5"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem disabled={exportCsv.isPending} onSelect={() => void doExport()}><Download className="mr-2 h-4 w-4"/>Exportar CSV</DropdownMenuItem></DropdownMenuContent></DropdownMenu></CardTitle></CardHeader><CardContent className="space-y-4">
+        <div className="space-y-3">
+          <div className="relative"><Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400 sm:top-3"/><Input aria-label="Buscar produtos" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar produto ou código" className={`${field} pl-9`}/></div>
+          <div className="flex gap-2">
+            <select aria-label="Filtrar por validade" value={expiry} onChange={(e) => setExpiry(e.target.value as Expiry)} className={`${selectCls} flex-1`}><option value="all">Todas as validades</option><option value="alert">Vencidos e a vencer</option><option value="expired">Vencidos</option><option value="near">Vencem em até {alertDays} dias</option><option value="valid">Dentro da validade</option></select>
+            <Button type="button" variant="outline" onClick={() => setShowFilters((v) => !v)} className="h-11 shrink-0 border-white/20 text-white">{showFilters ? "Fechar filtros" : `Filtros${activeFilters ? ` (${activeFilters})` : ""}`}</Button>
+          </div>
+          {showFilters && <div className="grid gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs text-slate-400">Loja<select aria-label="Filtrar por loja" value={storeFilter ?? ""} onChange={(e) => setStoreFilter(e.target.value ? Number(e.target.value) : undefined)} className={selectCls}><option value="">Todas as lojas</option>{(stores.data || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+            <label className="space-y-1 text-xs text-slate-400">Indústria<select aria-label="Filtrar por indústria" value={industryFilter} onChange={(e) => setIndustryFilter(e.target.value)} className={selectCls}><option value="">Todas as indústrias</option>{(industries.data || []).map((n) => <option key={n} value={n}>{n}</option>)}<option value="__none__">Sem indústria</option></select></label>
+            <label className="space-y-1 text-xs text-slate-400">Validade a partir de<Input aria-label="Validade de" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={field}/></label>
+            <label className="space-y-1 text-xs text-slate-400">Validade até<Input aria-label="Validade até" type="date" value={to} onChange={(e) => setTo(e.target.value)} className={field}/></label>
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="h-5 w-5" checked={mine} onChange={(e) => setMine(e.target.checked)}/>Só os que eu cadastrei</label>
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              {activeFilters > 0 && <Button type="button" variant="ghost" onClick={() => { setStoreFilter(undefined); setIndustryFilter(""); setFrom(""); setTo(""); setMine(false); }} className="h-11 text-slate-300">Limpar filtros</Button>}
+            </div>
+          </div>}
         </div>
         {selectedIds.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-300/20 bg-teal-300/5 p-3"><span className="text-sm font-semibold text-teal-100">{selectedIds.length} produto(s) selecionado(s)</span><div className="flex flex-wrap gap-2"><Button onClick={() => shareProducts(selectedProducts, today, alertDays)} className="h-11 bg-emerald-600 text-white hover:bg-emerald-500 sm:h-9"><MessageCircle className="mr-1 h-4 w-4"/>WhatsApp</Button><Button variant="outline" disabled={remove.isPending} onClick={() => confirmRemove(selectedIds)} className="h-11 border-rose-300/30 text-rose-200 sm:h-9"><Trash2 className="mr-1 h-4 w-4"/>Excluir selecionados</Button></div></div>}
-        {manageable.length > 0 && <label className="flex min-h-11 w-fit cursor-pointer items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="h-5 w-5" checked={allSelected} onChange={toggleAll}/>Selecionar os que posso alterar nesta página</label>}
+        {manageable.length > 0 && <label className="flex min-h-11 w-fit cursor-pointer items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="h-5 w-5" checked={allSelected} onChange={toggleAll}/>Selecionar todos</label>}
         {products.isLoading && <p className="flex items-center gap-2 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin"/>Carregando produtos...</p>}
         {products.isError && <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-rose-200">Não foi possível carregar os produtos.<Button variant="outline" onClick={() => products.refetch()} className="h-11 border-rose-300/30 text-rose-100 sm:h-9">Tentar de novo</Button></div>}
         {!products.isLoading && !products.isError && rows.length === 0 && <div className="rounded-xl border border-dashed border-white/15 p-8 text-center text-sm text-slate-300"><Barcode className="mx-auto mb-2 h-8 w-8 text-slate-500"/>Nenhum produto encontrado.</div>}

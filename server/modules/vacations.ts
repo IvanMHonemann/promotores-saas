@@ -151,7 +151,7 @@ export const vacationsRouter = router({
     if (!ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN" });
     await ensureVacationSchedulesTable();
     const database = await requireDb();
-    return database
+    const rows = await database
       .select()
       .from(vacationSchedules)
       .where(and(eq(vacationSchedules.companyId, ctx.accountId), eq(vacationSchedules.memberAccountId, ctx.memberAccountId)))
@@ -256,7 +256,7 @@ export const vacationsRouter = router({
       const to = input.month
         ? `${input.year}-${String(input.month).padStart(2, "0")}-${String(last).padStart(2, "0")}`
         : `${input.year}-12-31`;
-      return database
+      const rows = await database
         .select({
           id: vacationSchedules.id,
           memberAccountId: vacationSchedules.memberAccountId,

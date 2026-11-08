@@ -8,6 +8,7 @@ import { vacationsRouter } from "./modules/vacations";
 import { platformCompaniesRouter } from "./modules/platformCompanies";
 import { storePhotosRouter } from "./modules/storePhotos";
 import { storeClientsRouter } from "./modules/storeClients";
+import { productsRouter } from "./modules/products";
 import { z } from "zod";
 import { parse as parseCookie } from "cookie";
 import { TRPCError } from "@trpc/server";
@@ -43,21 +44,6 @@ const platformTestKey = (platformAdminId: number | undefined, fallbackId: number
 const getPlatformTestSession = (key: number): PlatformTestSession => platformTestSessions.get(key) ?? { status: "pending", photoCount: 0, lastPhotoAt: null, lastLatitude: null, lastLongitude: null };
 
 
-const productInput = z.object({
-  productCode: z.string().trim().min(1).max(64),
-  description: z.string().trim().min(1).max(500),
-  quantity: z.number().int().min(0).max(2147483647),
-  expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  price: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/),
-  storeId: z.number().int().positive().nullish(),
-});
-/** Garante que a loja informada pertence à empresa (e é visível ao usuário) antes de vincular a um produto. */
-async function assertStoreInCompany(ctx: any, storeId?: number | null): Promise<number | null> {
-  if (!storeId) return null;
-  const database = await db.getDb();
-  await assertStoreAccess(database, ctx, storeId); // lança NOT_FOUND se a loja não for da empresa/visível ao usuário
-  return storeId;
-}
 
 export const appRouter = router({
   system: systemRouter,
@@ -727,10 +713,11 @@ export const appRouter = router({
     }),
   }),
 
-  inventoryAlerts: protectedProcedure.input(z.object({ daysAhead: z.number().optional() }).optional()).query(async ({ ctx, input }) => {
-    if (!ctx.accountId) return [];
-    const days = input?.daysAhead || 30;
-    try { return await db.getExpiringInventoryProducts(ctx.accountId, days); } catch (error) { console.error("[inventoryAlerts] falha ao consultar validades", error); throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível consultar as validades." }); }
+  inventoryAlerts: protectedProcedure.input(z.object({ daysAhead: z.number().optional() }).optional()).query(async ({ ctx }) => {
+    // Vencidos + a vencer na janela configurada pela empresa (o daysAhead antigo é ignorado). Módulo desligado: lista vazia.
+    if (!ctx.accountId || !ctx.user || ctx.user.role === "platform_admin") return [];
+    const { inventoryAlertsFor } = await import("./modules/products");
+    try { return await inventoryAlertsFor(ctx as any); } catch (error) { console.error("[inventoryAlerts] falha ao consultar validades", error); throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível consultar as validades." }); }
   }),
   // Endereço para carimbo de foto/ponto (qualquer membro da empresa). Feito no servidor com cache.
   geo: router({
@@ -793,51 +780,7 @@ export const appRouter = router({
   }),
 
 
-  products: router({
-    alertsSimple: protectedProcedure.input(z.object({ daysAhead: z.number().optional() }).optional()).query(async ({ ctx, input }) => {
-      if (!ctx.accountId) return [];
-      const days = input?.daysAhead || 30;
-      try { return await db.getExpiringInventoryProducts(ctx.accountId, days); } catch { return []; }
-    }),
-    /** Descobre a descrição pelo código de barras: 1º produtos já cadastrados pela empresa, 2º bases abertas (e Cosmos, se houver token). */
-    lookupByCode: companyBillingProcedure.input(z.object({ code: z.string().trim().min(6).max(64) })).query(async ({ ctx, input }) => {
-      const { lookupProductByCode } = await import("./productLookup");
-      return lookupProductByCode(ctx.accountId, input.code);
-    }),
-    list: companyBillingProcedure.input(z.object({
-      search: z.string().max(100).optional(),
-      expiry: z.enum(["all", "expired", "near", "valid"]).optional(),
-      storeId: z.number().int().positive().optional(),
-      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    }).optional()).query(({ ctx, input }) => db.listInventoryProducts(ctx.accountId, input ?? {})),
-    create: companyBillingProcedure.input(productInput).mutation(async ({ ctx, input }) => {
-      const storeId = await assertStoreInCompany(ctx, input.storeId);
-      const product = await db.createInventoryProduct({ ...input, storeId, companyId: ctx.accountId, createdByMemberId: ctx.memberAccountId ?? null, expirationDate: input.expirationDate as any, price: input.price });
-      void auditFromCtx(ctx, { action: "create", module: "products", entityType: "product", entityId: product?.id, entityLabel: input.description, description: `Cadastrou produto: ${input.description}`, newData: input });
-      return product;
-    }),
-    update: companyBillingProcedure.input(productInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
-      const before = await db.getInventoryProduct(ctx.accountId, id);
-      if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "Produto não encontrado." });
-      const storeId = await assertStoreInCompany(ctx, data.storeId);
-      const product = await db.updateInventoryProduct(ctx.accountId, id, { ...data, storeId, expirationDate: data.expirationDate as any });
-      if (product) void auditFromCtx(ctx, { action: "update", module: "products", entityType: "product", entityId: id, entityLabel: product.description, description: `Alterou produto: ${product.description}`, oldData: before, newData: product });
-      return product;
-    }),
-    delete: companyBillingProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-      const before = await db.getInventoryProduct(ctx.accountId, input.id);
-      const result = await db.deleteInventoryProduct(ctx.accountId, input.id, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
-      if (before) void auditFromCtx(ctx, { action: "delete", module: "products", entityType: "product", entityId: input.id, entityLabel: before.description, description: `Enviou produto à lixeira: ${before.description}`, oldData: before });
-      return result;
-    }),
-    deleteMany: companyBillingProcedure.input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
-      const result = await db.deleteInventoryProducts(ctx.accountId, input.ids, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
-      void auditFromCtx(ctx, { action: "delete", module: "products", entityType: "product_bulk", entityLabel: `${result.deleted} produtos`, description: `Enviou ${result.deleted} produto(s) à lixeira`, newData: { productIds: input.ids, count: result.deleted } });
-      return result;
-    }),
-  }),
+  products: productsRouter,
   operations: router({
     promoters: router({
       list: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
@@ -937,7 +880,7 @@ export const appRouter = router({
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), routeId: z.number().int().positive().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
       /** Marcas "registrado offline" (horário do aparelho x recebimento) para os relatórios do gestor. */
       offlineMarks: commercialFeatureProcedure("fieldOperations").input(z.object({ visitIds: z.array(z.number().int().positive()).max(500) })).query(({ ctx, input }) => listVisitOfflineMarks(ctx.accountId, input.visitIds)),
-      start: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
+      start: commercialFeatureProcedure("visitCheckIn").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
         const promoterId = scopeMemberId(ctx);
         // Reenvio da fila offline com a mesma chave: devolve a visita sem regravar nada.
         if (input.clientId) {
@@ -978,7 +921,7 @@ export const appRouter = router({
         if (input.clientId) await recordSubmission({ companyId: ctx.accountId, memberAccountId: ctx.memberAccountId ?? null, clientId: input.clientId, kind: "visit_start", entityId: input.id, deviceTime: input.deviceTime ? new Date(input.deviceTime) : null, offline: when.offline, alert: when.clockAlert ?? when.timeNote });
         return started;
       }),
-      complete: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), notes: z.string().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
+      complete: commercialFeatureProcedure("visitCheckIn").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), notes: z.string().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
         const [owned] = await db.listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? undefined });
         if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "Visita não encontrada para esta empresa." });
         if (input.clientId) {

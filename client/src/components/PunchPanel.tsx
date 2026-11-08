@@ -292,12 +292,6 @@ export function PunchPanel() {
           </div>
         )}
 
-        {lastReceipt && (
-          <p className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-teal-300/40 bg-teal-400/10 p-3 text-xs text-teal-50">
-            <span><FileCheck2 className="mr-1 inline h-4 w-4" />Marcação registrada com NSR {lastReceipt.nsr}. Seu comprovante já está disponível.</span>
-            <Link href="/meus-comprovantes" className="shrink-0 font-bold text-teal-200 underline">Ver comprovante</Link>
-          </p>
-        )}
         {error && <p role="alert" className="mt-3 rounded-xl border border-rose-300/40 bg-rose-400/15 p-3 text-sm font-semibold text-rose-100">{error}</p>}
 
         <ol className="mt-5 grid grid-cols-4 gap-2" aria-label="Marcações de hoje">

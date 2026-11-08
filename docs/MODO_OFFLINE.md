@@ -21,7 +21,7 @@
   Se a hora da marcação não bate com o tempo decorrido, a marcação recebe `[ALERTA-RELOGIO]` (shared/offlineClock.ts).
 - Batida offline fora da sequência é aceita (a Portaria proíbe restringir marcação) e recebe `[SEQUENCIA-OFFLINE]`.
 - Visitas: `operations.visits.start/complete` aceitam `clientId`, `deviceTime`, `offline` e `clock`; a tabela
-  `offline_submissions` (drizzle/0027, criada sozinha no primeiro uso) guarda a chave e a marca "registrado offline".
+  `offline_submissions` (drizzle/0033_offline_submissions.sql, criada sozinha no primeiro uso) guarda a chave e a marca "registrado offline".
 
 ## Onde o gestor vê
 - Espelho de ponto (PDF/planilha): símbolo `o` = registrada offline, com legenda e total do mês.

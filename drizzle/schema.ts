@@ -278,6 +278,11 @@ export const inventoryProducts = mysqlTable("inventory_products", {
   expirationDate: date("expirationDate").notNull(),
   price: decimal("price", { precision: 12, scale: 2 }).notNull().default("0.00"),
   storeId: int("storeId"),
+  /** Indústria (cliente da loja, tabela store_clients). */
+  storeClientId: int("storeClientId"),
+  lot: varchar("lot", { length: 64 }),
+  /** Foto da etiqueta no R2: product-photos/{companyId}/... */
+  photoKey: varchar("photoKey", { length: 512 }),
   createdByMemberId: int("createdByMemberId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

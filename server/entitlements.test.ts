@@ -6,6 +6,7 @@ describe("resolução de módulos", () => {
     expect(PLAN_FEATURES.start).not.toContain("timeTracking");
     expect(PLAN_FEATURES.start).not.toContain("fieldOperations");
     expect(PLAN_FEATURES.profissional).toContain("timeTracking");
+    expect(PLAN_FEATURES.profissional).toContain("visitCheckIn");
     expect(PLAN_FEATURES.profissional).toContain("teamManagement");
     expect(PLAN_FEATURES.empresarial).toContain("timeTracking");
     expect(PLAN_FEATURES.empresarial).toContain("backup");

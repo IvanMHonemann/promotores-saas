@@ -6,7 +6,7 @@
  */
 
 /** Prefixos de mídia por empresa. `backups/` fica de fora de propósito. */
-export const TENANT_MEDIA_AREAS = ["store-photos", "corrections", "archives"] as const;
+export const TENANT_MEDIA_AREAS = ["store-photos", "corrections", "archives", "product-photos"] as const;
 export type TenantMediaArea = (typeof TENANT_MEDIA_AREAS)[number];
 
 const SAFE_CHARS = /^[A-Za-z0-9._\-/]+$/;
@@ -40,7 +40,7 @@ export function isTenantMediaKey(
 export function isDeletableMediaKey(key: unknown, companyId?: number): key is string {
   if (typeof key !== "string" || key.length === 0 || key.length > 512) return false;
   if (!SAFE_CHARS.test(key) || hasTraversal(key)) return false;
-  const match = /^(store-photos|corrections|archives)\/(\d+)\//.exec(key);
+  const match = /^(store-photos|corrections|archives|product-photos)\/(\d+)\//.exec(key);
   if (!match) return false;
   return companyId == null || Number(match[2]) === companyId;
 }

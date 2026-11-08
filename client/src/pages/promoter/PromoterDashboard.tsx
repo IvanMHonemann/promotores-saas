@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { daysUntil, todayInZone } from "@shared/expiry";
 import { AlertTriangle, ClipboardList, Clock3, Loader2, MapPin } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -16,6 +17,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { getCurrentPosition } from "./geolocation";
 import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 import PromoterGuide from "@/components/PromoterGuide";
+import { canManageFieldVisits } from "@/lib/visitAccess";
 
 const visitStatus: Record<string, string> = {
   pending: "Pendente",
@@ -24,7 +26,7 @@ const visitStatus: Record<string, string> = {
 };
 
 export default function PromoterDashboard() {
-  const [checkIn, setCheckIn] = useState<{ action: "start" | "complete"; visitId: number; storeId: number; storeName: string } | null>(null);
+  const [checkIn, setCheckIn] = useState<{ action: "start" | "complete"; visitId: number; storeId: number; storeName: string; storeAddress?: string | null } | null>(null);
   const { user } = useAuth();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const todayParts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
@@ -35,6 +37,8 @@ export default function PromoterDashboard() {
   const access = { ...accessQuery, data: accessQuery.data ?? cachedAccess ?? undefined };
   const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
   const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
+  const hasProducts = Boolean(access.data?.effective?.products);
+  const hasVisitCheckIn = Boolean(access.data?.effective?.visitCheckIn);
   const shiftQuery = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
   const outboxItems = useOutboxItems();
   useEffect(() => { if (shiftQuery.data) cacheSet(`shift-${today}`, shiftQuery.data); }, [shiftQuery.data, today]);
@@ -56,7 +60,7 @@ export default function PromoterDashboard() {
   };
   const utils = trpc.useUtils();
   const rows = hasFieldOperations ? applyQueuedVisits(visits.data || [], outboxItems) : [];
-  const alertsQuery = trpc.inventoryAlerts.useQuery({ daysAhead: 30 }, { staleTime: 60000 });
+  const alertsQuery = trpc.inventoryAlerts.useQuery(undefined, { enabled: hasProducts, staleTime: 60000 });
   const alerts = useOfflineQuery(alertsQuery, "alerts");
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 30 }, { enabled: hasTimeTracking });
   const storesQuery = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
@@ -96,21 +100,29 @@ export default function PromoterDashboard() {
   const firstName = user?.name?.trim().split(/\s+/)[0] || "promotor";
   const completed = rows.filter(({ visit }) => visit.status === "completed").length;
   const inProgress = rows.filter(({ visit }) => visit.status === "in_progress").length;
-  const canManageVisits = hasFieldOperations && active && !shift.isLoading && !shift.error && !startVisit.isPending && !completeVisit.isPending;
+  const canManageVisits = canManageFieldVisits({
+    hasFieldOperations,
+    hasVisitCheckIn,
+    hasTimeTracking,
+    shiftActive: Boolean(shift.data?.active),
+    shiftLoading: shift.isLoading,
+    shiftError: Boolean(shift.error),
+    mutationPending: startVisit.isPending || completeVisit.isPending,
+  });
 
   const openVisit = rows.find(({ visit }) => visit.status === "in_progress");
 
   return (
     <DashboardLayout
       title="Painel inicial"
-      description="Ponto, roteiro e alertas do dia."
+      description={hasTimeTracking ? "Ponto, roteiro e alertas do dia." : "Roteiro e alertas do dia."}
       onRefresh={() => window.location.reload()}
     >
       <div className="space-y-5">
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-2xl font-black text-white sm:text-3xl">Olá, {firstName}</h2>
-            <p className="mt-1 text-sm text-slate-200">Bata o ponto aqui e siga para o seu roteiro de hoje.</p>
+            <p className="mt-1 text-sm text-slate-200">{hasTimeTracking ? "Bata o ponto aqui e siga para o seu roteiro de hoje." : hasVisitCheckIn ? "Siga o roteiro de hoje e registre as visitas nas lojas." : hasFieldOperations ? "Consulte o roteiro e registre fotos nas lojas." : "Alertas e tarefas do dia."}</p>
           </div>
           {hasFieldOperations && <a href="#roteiro" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition hover:bg-white/15">
             <ClipboardList className="h-4 w-4 text-teal-300" /> Meu roteiro
@@ -118,11 +130,10 @@ export default function PromoterDashboard() {
         </header>
 
         {access.isLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
-        {!access.isLoading && <PromoterGuide hasTimeTracking={hasTimeTracking} hasFieldOperations={hasFieldOperations} />}
+        {!access.isLoading && <PromoterGuide hasTimeTracking={hasTimeTracking} hasFieldOperations={hasFieldOperations} hasVisitCheckIn={hasVisitCheckIn} />}
         {hasTimeTracking && <PunchPanel />}
 
-        {!access.isLoading && !hasTimeTracking && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">O ponto eletrônico e o GPS não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo.</div>}
-        {hasFieldOperations && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
+        {hasFieldOperations && hasVisitCheckIn && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
           <div className="rounded-2xl border border-amber-300/40 bg-amber-300/15 p-4 text-sm font-medium text-amber-50">
             {shift.data?.status === "closed"
               ? "Sua jornada foi encerrada. O roteiro continua disponível para consulta."
@@ -130,26 +141,26 @@ export default function PromoterDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
+        <div className={`grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 ${hasTimeTracking ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2"}`}>
           <Metric label="Lojas" detail="Cadastradas" value={storeCount} icon={MapPin} tone="text-sky-300" href="/lojas" />
-          <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-teal-300" href="/ponto" />
-          <Metric label="A vencer" detail="Próx. 30 dias" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" href="/produtos" />
+          {hasTimeTracking && <Metric label="Marcações" detail="Ponto de hoje" value={punchesToday} icon={Clock3} tone="text-teal-300" href="/ponto" />}
+          {hasProducts && <Metric label="Validades" detail="Vencidos e a vencer" value={expiringCount} icon={AlertTriangle} tone="text-amber-300" href="/produtos" />}
         </div>
 
-        <section className="rounded-2xl border-2 border-amber-400/40 bg-amber-400/10 p-4">
+        {hasProducts && <section className="rounded-2xl border-2 border-amber-400/40 bg-amber-400/10 p-4">
           <h3 className="flex items-center gap-2 text-base font-bold text-amber-100">
             <AlertTriangle className="h-5 w-5 text-amber-300" /> Alertas de validade
             {expiringCount > 0 && <span className="ml-auto rounded-full bg-amber-400 px-2 py-0.5 text-xs font-bold text-slate-950">{expiringCount}</span>}
           </h3>
           {alerts.isLoading && <p className="mt-3 text-sm text-amber-100/70">Carregando produtos...</p>}
-          {alerts.isError && <p className="mt-3 text-sm text-rose-200">Não foi possível carregar. Verifique se o módulo de alertas está ativo.</p>}
+          {alerts.isError && <p className="mt-3 text-sm text-rose-200">Não foi possível carregar os alertas de validade.</p>}
           {!alerts.isLoading && !alerts.isError && expiringCount === 0 && (
-            <p className="mt-3 text-sm text-amber-100/70">Nenhum produto perto do vencimento nos próximos 30 dias.</p>
+            <p className="mt-3 text-sm text-amber-100/70">Nenhum produto vencido ou perto do vencimento.</p>
           )}
           <div className="mt-3 space-y-2">
             {(alerts.data || []).slice(0, 5).map((item: any) => {
-              const exp = item.expirationDate ? new Date(item.expirationDate) : null;
-              const days = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+              // Validade é data de calendário: compara com "hoje" no fuso de Brasília (sem erro de fuso/horário).
+              const days = item.expirationDate ? daysUntil(String(item.expirationDate).slice(0, 10), todayInZone()) : null;
               return (
                 <div key={item.id} className="flex items-center justify-between rounded-xl border border-amber-300/20 bg-slate-950/60 px-3 py-2.5">
                   <div>
@@ -157,13 +168,13 @@ export default function PromoterDashboard() {
                     <p className="text-xs text-slate-400">{item.productCode || ""}</p>
                   </div>
                   <span className="rounded-lg bg-amber-400/20 px-2 py-1 text-xs font-bold text-amber-200">
-                    {days == null ? "—" : days < 0 ? "Vencido" : `${days}d`}
+                    {days == null ? "—" : days < 0 ? "Vencido" : days === 0 ? "Hoje" : `${days}d`}
                   </span>
                 </div>
               );
             })}
           </div>
-        </section>
+        </section>}
 
         {!access.isLoading && !hasFieldOperations && <div className="rounded-2xl border border-slate-400/25 bg-slate-400/10 p-4 text-sm text-slate-200">Roteiros e visitas não estão liberados para esta empresa.</div>}
         {hasFieldOperations && <section id="roteiro" className="scroll-mt-6">
@@ -189,11 +200,11 @@ export default function PromoterDashboard() {
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <Badge variant="outline" className="border-white/20 text-slate-200">{visitStatus[visit.status] || visit.status}</Badge>
+                      {hasVisitCheckIn && <Badge variant="outline" className="border-white/20 text-slate-200">{visitStatus[visit.status] || visit.status}</Badge>}
                       {(row as any).queued && <Badge variant="outline" className="border-amber-300/50 text-amber-200">Aguardando envio</Badge>}
                     </div>
                   </div>
-                  {visit.status === "pending" && (
+                  {hasVisitCheckIn && visit.status === "pending" && (
                     <Button
                       className="mt-3 w-full bg-teal-500 text-slate-950 hover:bg-teal-400"
                       onClick={() => {
@@ -201,17 +212,17 @@ export default function PromoterDashboard() {
                           toast.error(`Não é possível fazer check-in em outra loja. Realize o check-out em "${openVisit.store.name}" primeiro.`);
                           return;
                         }
-                        setCheckIn({ action: "start", visitId: visit.id, storeId: store.id, storeName: store.name });
+                        setCheckIn({ action: "start", visitId: visit.id, storeId: store.id, storeName: store.name, storeAddress: store.address || null });
                       }}
                       disabled={!canManageVisits || (openVisit != null && openVisit.visit.id !== visit.id)}
                     >
                       Check-in (foto da fachada)
                     </Button>
                   )}
-                  {visit.status === "in_progress" && (
+                  {hasVisitCheckIn && visit.status === "in_progress" && (
                     <>
                       <VisitTimer startTime={visit.actualStart} />
-                      <Button className="mt-3 w-full bg-amber-500 text-slate-950 hover:bg-amber-400" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name })} disabled={!canManageVisits}>
+                      <Button className="mt-3 w-full bg-amber-500 text-slate-950 hover:bg-amber-400" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name, storeAddress: store.address || null })} disabled={!canManageVisits}>
                         Check-out (foto da fachada)
                       </Button>
                     </>

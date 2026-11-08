@@ -181,8 +181,10 @@ export default function StoreGalleryPage() {
   const store = stores.data?.find((s) => s.id === storeId) ?? cacheGet<any[]>("stores")?.find((s) => s.id === storeId);
 
   const today = new Date().toISOString().slice(0, 10);
-  const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000 });
-  const activeVisit = visits.data?.find((v: any) => v.visit?.status === "in_progress" && v.store?.id === storeId);
+  const entitlements = trpc.entitlements.mine.useQuery(undefined, { staleTime: 60_000 });
+  const hasVisitCheckIn = Boolean(entitlements.data?.effective?.visitCheckIn);
+  const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000, enabled: hasVisitCheckIn });
+  const activeVisit = hasVisitCheckIn ? visits.data?.find((v: any) => v.visit?.status === "in_progress" && v.store?.id === storeId) : undefined;
 
   const photos = trpc.storePhotos.listByStore.useQuery(
     { storeId: isNoStore ? undefined : storeId, from: from || undefined, to: to || undefined, storeClientId: typeof clientFilter === "number" ? clientFilter : undefined, withoutClient: clientFilter === "none" ? true : undefined },
@@ -444,7 +446,7 @@ export default function StoreGalleryPage() {
           </div>
         )}
         {store && !isNoStore && (
-          <StoreClientsPanel storeId={storeId} storeName={store.name} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />
+          <StoreClientsPanel storeId={storeId} storeName={store.name} storeAddress={store.address || null} visitId={activeVisit?.visit?.id} filter={clientFilter} onFilter={setClientFilter} onChanged={() => { void photos.refetch(); void utils.storePhotos.listStoresWithStats.invalidate(); }} legacyPhotos={legacyPhotos} />
         )}
 
         <section className="rounded-2xl border border-white/15 bg-slate-800/70 p-4 shadow-lg shadow-black/20">

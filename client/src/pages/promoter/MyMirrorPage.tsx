@@ -150,7 +150,7 @@ export default function MyMirrorPage() {
               <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSignature className="h-4 w-4 text-teal-300" />Confirmar ou contestar</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <p className="text-slate-300">
-                  Ao confirmar, guardamos a data e hora, o endereço IP, o aparelho usado e um código (hash) que identifica exatamente
+                  Ao confirmar, guardamos a data e hora, o endereço da conexão, o aparelho usado e um código que identifica exatamente
                   esta versão do espelho. Se algo estiver errado, conteste e explique — e peça a correção em “Cartão ponto”.
                 </p>
                 <label className="flex items-start gap-2"><input type="checkbox" checked={read} onChange={(e) => setRead(e.target.checked)} className="mt-1" />Li todas as marcações do mês acima.</label>

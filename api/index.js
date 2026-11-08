@@ -1085,8 +1085,8 @@ async function setPromoterStoreAssignments(db, companyId, promoterId, storeIds) 
 async function getPromoterStoreAssignments(db, companyId, promoterId) {
   await ensurePromoterStoreAssignmentsTable(db);
   const res = await db.execute(sql`SELECT storeId FROM promoter_store_assignments WHERE companyId = ${companyId} AND promoterId = ${promoterId}`);
-  const rows4 = Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [];
-  return rows4.map((r) => Number(r.storeId));
+  const rows3 = Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [];
+  return rows3.map((r) => Number(r.storeId));
 }
 async function assertStoreAccess(db, ctx, storeId) {
   const memberId = scopeMemberId(ctx);
@@ -1742,10 +1742,10 @@ function isMissingEntitlementsTable(error) {
 }
 async function replaceSubscriptionPlanFeatures(database2, planId, featureKeys) {
   const enabled = new Set(featureKeys);
-  const rows4 = ENTITLEMENT_KEYS.map((featureKey) => ({ planId, featureKey, enabled: enabled.has(featureKey) }));
+  const rows3 = ENTITLEMENT_KEYS.map((featureKey) => ({ planId, featureKey, enabled: enabled.has(featureKey) }));
   await database2.transaction(async (tx) => {
     await tx.delete(subscriptionPlanFeatures).where(eq2(subscriptionPlanFeatures.planId, planId));
-    await tx.insert(subscriptionPlanFeatures).values(rows4);
+    await tx.insert(subscriptionPlanFeatures).values(rows3);
   });
 }
 async function attachPlanFeatureKeys(database2, plans) {
@@ -1772,8 +1772,8 @@ async function getCompanyFeatureOverrides(companyId) {
   const database2 = await getDb();
   if (!database2) return {};
   try {
-    const rows4 = await database2.select({ featureKey: companyFeatureOverrides.featureKey, enabled: companyFeatureOverrides.enabled }).from(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, companyId));
-    return Object.fromEntries(rows4.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, Boolean(row2.enabled)]));
+    const rows3 = await database2.select({ featureKey: companyFeatureOverrides.featureKey, enabled: companyFeatureOverrides.enabled }).from(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, companyId));
+    return Object.fromEntries(rows3.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, Boolean(row2.enabled)]));
   } catch (error) {
     if (isMissingEntitlementsTable(error)) return {};
     throw error;
@@ -1785,8 +1785,8 @@ async function getMemberFeatureModes(memberAccountId, companyId) {
   const account = await database2.select({ id: memberAccounts2.id }).from(memberAccounts2).where(and2(eq2(memberAccounts2.id, memberAccountId), eq2(memberAccounts2.companyId, companyId))).limit(1);
   if (!account[0]) return {};
   try {
-    const rows4 = await database2.select({ featureKey: memberFeaturePermissions.featureKey, mode: memberFeaturePermissions.mode }).from(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, memberAccountId));
-    return Object.fromEntries(rows4.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, row2.mode]));
+    const rows3 = await database2.select({ featureKey: memberFeaturePermissions.featureKey, mode: memberFeaturePermissions.mode }).from(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, memberAccountId));
+    return Object.fromEntries(rows3.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, row2.mode]));
   } catch (error) {
     if (isMissingEntitlementsTable(error)) return {};
     throw error;
@@ -1795,26 +1795,26 @@ async function getMemberFeatureModes(memberAccountId, companyId) {
 async function replaceCompanyFeatureOverrides(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
-  const rows4 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+  const rows3 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
     const enabled = input.overrides[featureKey];
     return enabled == null ? [] : [{ companyId: input.companyId, featureKey, enabled, reason: input.reason ?? null, updatedByPlatformAdminId: input.updatedByPlatformAdminId }];
   });
   await database2.transaction(async (tx) => {
     await tx.delete(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, input.companyId));
-    if (rows4.length) await tx.insert(companyFeatureOverrides).values(rows4);
+    if (rows3.length) await tx.insert(companyFeatureOverrides).values(rows3);
   });
   return { success: true };
 }
 async function replaceMemberFeatureModes(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
-  const rows4 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+  const rows3 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
     const mode = input.modes[featureKey];
     return !mode || mode === "inherit" ? [] : [{ memberAccountId: input.memberAccountId, featureKey, mode, updatedByMemberAccountId: input.updatedByMemberAccountId }];
   });
   await database2.transaction(async (tx) => {
     await tx.delete(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, input.memberAccountId));
-    if (rows4.length) await tx.insert(memberFeaturePermissions).values(rows4);
+    if (rows3.length) await tx.insert(memberFeaturePermissions).values(rows3);
   });
   return { success: true };
 }
@@ -1854,7 +1854,7 @@ async function updateSubscriptionPlan(id2, data) {
 async function listCompanySubscriptions() {
   const db = await getDb();
   if (!db) return [];
-  const rows4 = await db.select({
+  const rows3 = await db.select({
     id: companySubscriptions.id,
     companyId: companySubscriptions.companyId,
     planId: companySubscriptions.planId,
@@ -1871,7 +1871,7 @@ async function listCompanySubscriptions() {
     maxClients: subscriptionPlans.maxClients,
     maxExtinguishers: subscriptionPlans.maxExtinguishers
   }).from(companySubscriptions).innerJoin(companies, eq2(companySubscriptions.companyId, companies.id)).innerJoin(subscriptionPlans, eq2(companySubscriptions.planId, subscriptionPlans.id)).orderBy(desc(companySubscriptions.createdAt));
-  return rows4;
+  return rows3;
 }
 async function getSubscriptionStats() {
   const db = await getDb();
@@ -1915,8 +1915,8 @@ async function updateCompanySubscription(id2, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   await db.update(companySubscriptions).set(data).where(eq2(companySubscriptions.id, id2));
-  const rows4 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.id, id2)).limit(1);
-  const sub = rows4[0];
+  const rows3 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.id, id2)).limit(1);
+  const sub = rows3[0];
   if (sub) {
     const patch = {};
     if (data.planId !== void 0) patch.planId = data.planId;
@@ -1932,8 +1932,8 @@ async function updateCompanySubscription(id2, data) {
 async function getSubscriptionPlanById(planId) {
   const database2 = await getDb();
   if (!database2) return null;
-  const rows4 = await database2.select().from(subscriptionPlans).where(eq2(subscriptionPlans.id, planId)).limit(1);
-  return (await attachPlanFeatureKeys(database2, rows4))[0] ?? null;
+  const rows3 = await database2.select().from(subscriptionPlans).where(eq2(subscriptionPlans.id, planId)).limit(1);
+  return (await attachPlanFeatureKeys(database2, rows3))[0] ?? null;
 }
 async function resolveCompanyPlan(companyId) {
   const db = await getDb();
@@ -1961,12 +1961,12 @@ async function resolveCompanyPlan(companyId) {
 async function getLatestCompanySubscription(companyId) {
   const db = await getDb();
   if (!db) return null;
-  const rows4 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.companyId, companyId)).orderBy(desc(companySubscriptions.createdAt));
-  if (!rows4.length) return null;
-  const preferred = rows4.find(
+  const rows3 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.companyId, companyId)).orderBy(desc(companySubscriptions.createdAt));
+  if (!rows3.length) return null;
+  const preferred = rows3.find(
     (r) => ["active", "trial", "test", "pending", "overdue"].includes(String(r.status))
   );
-  return preferred ?? rows4[0];
+  return preferred ?? rows3[0];
 }
 async function updateCompanySubscriptionFields(companyId, data) {
   const db = await getDb();
@@ -2019,8 +2019,8 @@ async function createPaymentRecord(data) {
 async function findPaymentEventByEventId(eventId) {
   const db = await getDb();
   if (!db) return null;
-  const rows4 = await db.select().from(paymentEvents).where(eq2(paymentEvents.eventId, eventId)).limit(1);
-  return rows4[0] ?? null;
+  const rows3 = await db.select().from(paymentEvents).where(eq2(paymentEvents.eventId, eventId)).limit(1);
+  return rows3[0] ?? null;
 }
 async function recordPaymentEvent(data) {
   const db = await getDb();
@@ -2167,8 +2167,8 @@ async function createOperationalStore(input, ownerMemberAccountId) {
   const result = await database2.insert(stores).values(input);
   const storeId = Number(result[0]?.insertId);
   if (ownerMemberAccountId) await recordStoreOwner(database2, { storeId, companyId: input.companyId, memberAccountId: ownerMemberAccountId });
-  const rows4 = await database2.select().from(stores).where(eq2(stores.id, storeId)).limit(1);
-  return rows4[0];
+  const rows3 = await database2.select().from(stores).where(eq2(stores.id, storeId)).limit(1);
+  return rows3[0];
 }
 async function updateOperationalStore(companyId, id2, patch) {
   const database2 = await getDb();
@@ -2370,8 +2370,8 @@ async function createOperationalRoute(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
   const result = await database2.insert(routes).values(input);
-  const rows4 = await database2.select().from(routes).where(eq2(routes.id, Number(result[0]?.insertId))).limit(1);
-  return rows4[0];
+  const rows3 = await database2.select().from(routes).where(eq2(routes.id, Number(result[0]?.insertId))).limit(1);
+  return rows3[0];
 }
 async function updateOperationalRoute(companyId, routeId, data) {
   const database2 = await getDb();
@@ -2434,8 +2434,8 @@ async function createOperationalRouteWithVisits(input) {
     const result = await tx.insert(routes).values(input.route);
     const routeId = Number(result[0]?.insertId);
     await tx.insert(visits).values(stores2.map((store) => ({ companyId, routeId, storeId: store.id, promoterId: input.route.promoterId, status: "pending" })));
-    const rows4 = await tx.select().from(routes).where(eq2(routes.id, routeId)).limit(1);
-    return rows4[0];
+    const rows3 = await tx.select().from(routes).where(eq2(routes.id, routeId)).limit(1);
+    return rows3[0];
   });
 }
 async function listOperationalVisits(companyId, options = {}) {
@@ -2446,15 +2446,15 @@ async function listOperationalVisits(companyId, options = {}) {
   if (options.promoterId) conditions.push(eq2(visits.promoterId, options.promoterId));
   if (options.routeId) conditions.push(eq2(visits.routeId, options.routeId));
   if (options.date) conditions.push(eq2(routes.date, options.date));
-  const rows4 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, and2(eq2(visits.storeId, stores.id), eq2(stores.companyId, visits.companyId))).innerJoin(routes, and2(eq2(visits.routeId, routes.id), eq2(routes.companyId, visits.companyId))).where(and2(...conditions)).orderBy(visits.plannedStart, visits.id);
-  return rows4;
+  const rows3 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, and2(eq2(visits.storeId, stores.id), eq2(stores.companyId, visits.companyId))).innerJoin(routes, and2(eq2(visits.routeId, routes.id), eq2(routes.companyId, visits.companyId))).where(and2(...conditions)).orderBy(visits.plannedStart, visits.id);
+  return rows3;
 }
 async function updateOperationalVisit(companyId, id2, data) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
   await database2.update(visits).set(data).where(and2(eq2(visits.id, id2), eq2(visits.companyId, requireAccountId(companyId))));
-  const rows4 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq2(visits.storeId, stores.id)).where(and2(eq2(visits.id, id2), eq2(visits.companyId, companyId))).limit(1);
-  return rows4[0];
+  const rows3 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq2(visits.storeId, stores.id)).where(and2(eq2(visits.id, id2), eq2(visits.companyId, companyId))).limit(1);
+  return rows3[0];
 }
 async function autoCloseStaleVisits(companyId, promoterId, today) {
   try {
@@ -2614,12 +2614,12 @@ async function deleteInventoryProducts(companyId, ids, actor) {
   await ensureTrashTable();
   await ensureInventoryProductsSchema();
   return database2.transaction(async (tx) => {
-    const rows4 = await tx.select().from(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
-    if (rows4.length !== uniqueIds.length) throw new Error("Um ou mais produtos n\xE3o existem ou n\xE3o pertencem \xE0 sua empresa.");
+    const rows3 = await tx.select().from(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
+    if (rows3.length !== uniqueIds.length) throw new Error("Um ou mais produtos n\xE3o existem ou n\xE3o pertencem \xE0 sua empresa.");
     const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1e3);
-    await tx.insert(trashItems).values(rows4.map((product) => ({ accountId: tenant, deletedByMemberId: actor?.memberId ?? null, deletedByName: actor?.name ?? null, ownerMemberId: product.createdByMemberId ?? null, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
+    await tx.insert(trashItems).values(rows3.map((product) => ({ accountId: tenant, deletedByMemberId: actor?.memberId ?? null, deletedByName: actor?.name ?? null, ownerMemberId: product.createdByMemberId ?? null, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
     await tx.delete(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
-    return { deleted: rows4.length };
+    return { deleted: rows3.length };
   });
 }
 async function deleteInventoryProduct(companyId, id2, actor) {
@@ -3182,12 +3182,12 @@ async function listAuditLogs(filters = {}) {
       params
     );
     const total = Number(countRows[0]?.value || 0);
-    const [rows4] = await pool.query(
+    const [rows3] = await pool.query(
       `SELECT * FROM \`audit_logs\` ${whereSql} ORDER BY \`createdAt\` DESC, \`id\` DESC LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
     return {
-      items: rows4 || [],
+      items: rows3 || [],
       total,
       page,
       pageSize
@@ -3202,11 +3202,11 @@ async function listAuditLogs(filters = {}) {
         params
       );
       const total = Number(countRows[0]?.value || 0);
-      const [rows4] = await pool.query(
+      const [rows3] = await pool.query(
         `SELECT * FROM \`audit_logs\` ${whereSql} ORDER BY \`createdAt\` DESC, \`id\` DESC LIMIT ? OFFSET ?`,
         [...params, pageSize, offset]
       );
-      return { items: rows4 || [], total, page, pageSize };
+      return { items: rows3 || [], total, page, pageSize };
     } catch (err2) {
       console.warn("[audit] list failed permanently", err2);
       return { items: [], total: 0, page, pageSize };
@@ -3219,17 +3219,17 @@ async function getAuditLogById(id2, companyId) {
   if (!pool) return null;
   try {
     if (companyId != null) {
-      const [rows5] = await pool.query(
+      const [rows4] = await pool.query(
         "SELECT * FROM `audit_logs` WHERE `id` = ? AND `companyId` = ? LIMIT 1",
         [id2, companyId]
       );
-      return rows5[0] || null;
+      return rows4[0] || null;
     }
-    const [rows4] = await pool.query(
+    const [rows3] = await pool.query(
       "SELECT * FROM `audit_logs` WHERE `id` = ? LIMIT 1",
       [id2]
     );
-    return rows4[0] || null;
+    return rows3[0] || null;
   } catch (err) {
     console.warn("[audit] getById failed", err);
     return null;
@@ -3376,8 +3376,8 @@ async function listPromoterActivities(filters) {
   try {
     const [countRows] = await pool.query(`SELECT COUNT(*) AS value ${tableSql}`, params);
     const total = Number(countRows[0]?.value || 0);
-    const [rows4] = await pool.query(`SELECT activity.* ${tableSql} ORDER BY activity.occurredAt DESC, activity.activityId DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
-    return { items: rows4 || [], total, page, pageSize };
+    const [rows3] = await pool.query(`SELECT activity.* ${tableSql} ORDER BY activity.occurredAt DESC, activity.activityId DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
+    return { items: rows3 || [], total, page, pageSize };
   } catch (err) {
     console.warn("[audit] promoter activity query failed", err);
     throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel carregar as atividades dos promotores. Tente novamente em instantes." });
@@ -3809,14 +3809,14 @@ async function loadApprovedDayExcuses(companyId, memberIds, from, to) {
   await ensureCorrectionExtras();
   const start = new Date(Date.parse(`${from}T00:00:00Z`) - 15 * 36e5);
   const end = new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 36e5);
-  const rows4 = await database2.select().from(timeCorrectionRequests).where(and3(
+  const rows3 = await database2.select().from(timeCorrectionRequests).where(and3(
     eq3(timeCorrectionRequests.companyId, companyId),
     inArray2(timeCorrectionRequests.memberAccountId, memberIds),
     eq3(timeCorrectionRequests.status, "approved"),
     gte(timeCorrectionRequests.requestedTime, start),
     lt(timeCorrectionRequests.requestedTime, end)
   ));
-  for (const row2 of rows4) {
+  for (const row2 of rows3) {
     if (!looksLikeFullDayExcuse(row2)) continue;
     const date3 = excuseDay(row2.requestedTime);
     if (date3 < from || date3 > to) continue;
@@ -3954,10 +3954,10 @@ function treatmentHash(t2, previousHash) {
   ].join("|");
   return sha256(payload + (previousHash || ""));
 }
-function verifyLedger(rows4) {
+function verifyLedger(rows3) {
   const problems = [];
-  const originals = rows4.filter((r) => r.origin === "original").sort((a, b) => (a.nsr ?? Infinity) - (b.nsr ?? Infinity) || a.id - b.id);
-  const treatments = rows4.filter((r) => r.origin !== "original").sort((a, b) => a.id - b.id);
+  const originals = rows3.filter((r) => r.origin === "original").sort((a, b) => (a.nsr ?? Infinity) - (b.nsr ?? Infinity) || a.id - b.id);
+  const treatments = rows3.filter((r) => r.origin !== "original").sort((a, b) => a.id - b.id);
   let prev = null;
   let expectedNsr = 1;
   const seen = /* @__PURE__ */ new Set();
@@ -4117,8 +4117,8 @@ async function loadWorkerCpf(companyId, memberId) {
 }
 async function lockState(tx, companyId) {
   await tx.execute(sql4`INSERT IGNORE INTO rep_ledger_state (companyId, lastNsr) VALUES (${companyId}, 0)`);
-  const [rows4] = await tx.execute(sql4`SELECT lastNsr, lastHash, lastTreatmentHash, initializedAt FROM rep_ledger_state WHERE companyId = ${companyId} FOR UPDATE`);
-  const row2 = rows4?.[0] ?? {};
+  const [rows3] = await tx.execute(sql4`SELECT lastNsr, lastHash, lastTreatmentHash, initializedAt FROM rep_ledger_state WHERE companyId = ${companyId} FOR UPDATE`);
+  const row2 = rows3?.[0] ?? {};
   let state = { lastNsr: Number(row2.lastNsr ?? 0), lastHash: row2.lastHash ?? null, lastTreatmentHash: row2.lastTreatmentHash ?? null };
   if (!row2.initializedAt) {
     state = await sealLegacy(tx, companyId, state);
@@ -4127,11 +4127,11 @@ async function lockState(tx, companyId) {
   return state;
 }
 async function sealLegacy(tx, companyId, state) {
-  const [rows4] = await tx.execute(sql4`SELECT id, memberAccountId, eventType, serverTime, deviceTime, latitude, longitude, accuracy, notes FROM time_events WHERE companyId = ${companyId} AND recordHash IS NULL ORDER BY id`);
-  if (!rows4?.length) return state;
+  const [rows3] = await tx.execute(sql4`SELECT id, memberAccountId, eventType, serverTime, deviceTime, latitude, longitude, accuracy, notes FROM time_events WHERE companyId = ${companyId} AND recordHash IS NULL ORDER BY id`);
+  if (!rows3?.length) return state;
   const cpfCache = /* @__PURE__ */ new Map();
   let { lastNsr, lastHash, lastTreatmentHash } = state;
-  for (const r of rows4) {
+  for (const r of rows3) {
     const memberId = Number(r.memberAccountId);
     if (!cpfCache.has(memberId)) cpfCache.set(memberId, await loadWorkerCpf(companyId, memberId));
     const cpf = cpfCache.get(memberId) ?? null;
@@ -4246,16 +4246,16 @@ async function supersededIds(companyId, ids) {
   if (!database2) return out;
   for (let i = 0; i < ids.length; i += 1e3) {
     const chunk = ids.slice(i, i + 1e3);
-    const rows4 = await database2.select({ id: timeEvents.replacesEventId }).from(timeEvents).where(and4(eq4(timeEvents.companyId, companyId), inArray3(timeEvents.replacesEventId, chunk)));
-    for (const r of rows4) if (r.id != null) out.add(Number(r.id));
+    const rows3 = await database2.select({ id: timeEvents.replacesEventId }).from(timeEvents).where(and4(eq4(timeEvents.companyId, companyId), inArray3(timeEvents.replacesEventId, chunk)));
+    for (const r of rows3) if (r.id != null) out.add(Number(r.id));
   }
   return out;
 }
-async function effectiveRows(rows4) {
-  if (!rows4.length) return rows4;
-  const companyId = rows4[0].companyId;
-  const gone = await supersededIds(companyId, rows4.map((r) => r.id));
-  return gone.size ? rows4.filter((r) => !gone.has(r.id)) : rows4;
+async function effectiveRows(rows3) {
+  if (!rows3.length) return rows3;
+  const companyId = rows3[0].companyId;
+  const gone = await supersededIds(companyId, rows3.map((r) => r.id));
+  return gone.size ? rows3.filter((r) => !gone.has(r.id)) : rows3;
 }
 function toLedgerRow(r) {
   return {
@@ -4438,7 +4438,7 @@ var init_vacations = __esm({
         if (input?.status && input.status !== "all") conds.push(eq5(vacationSchedules.status, input.status));
         if (input?.from) conds.push(gte2(vacationSchedules.endDate, input.from));
         if (input?.to) conds.push(lte(vacationSchedules.startDate, input.to));
-        const rows4 = await database2.select({
+        const rows3 = await database2.select({
           id: vacationSchedules.id,
           memberAccountId: vacationSchedules.memberAccountId,
           startDate: vacationSchedules.startDate,
@@ -4453,14 +4453,14 @@ var init_vacations = __esm({
           cancelledByMemberAccountId: vacationSchedules.cancelledByMemberAccountId,
           memberName: memberAccounts2.userName
         }).from(vacationSchedules).innerJoin(memberAccounts2, eq5(memberAccounts2.id, vacationSchedules.memberAccountId)).where(and5(...conds)).orderBy(vacationSchedules.startDate);
-        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+        return rows3.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
       }),
       mine: protectedProcedure.query(async ({ ctx }) => {
         if (!ctx.memberAccountId) throw new TRPCError5({ code: "FORBIDDEN" });
         await ensureVacationSchedulesTable();
         const database2 = await requireDb();
-        return database2.select().from(vacationSchedules).where(and5(eq5(vacationSchedules.companyId, ctx.accountId), eq5(vacationSchedules.memberAccountId, ctx.memberAccountId))).orderBy(vacationSchedules.startDate);
-        return rows.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+        const rows3 = await database2.select().from(vacationSchedules).where(and5(eq5(vacationSchedules.companyId, ctx.accountId), eq5(vacationSchedules.memberAccountId, ctx.memberAccountId))).orderBy(vacationSchedules.startDate);
+        return rows3.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
       }),
       create: commercialFeatureProcedure("timeTracking").input(z.object({
         memberAccountId: z.number().int().positive(),
@@ -4541,7 +4541,7 @@ var init_vacations = __esm({
         const from = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-01` : `${input.year}-01-01`;
         const last = new Date(input.year, input.month, 0).getDate();
         const to = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-${String(last).padStart(2, "0")}` : `${input.year}-12-31`;
-        return database2.select({
+        const rows3 = await database2.select({
           id: vacationSchedules.id,
           memberAccountId: vacationSchedules.memberAccountId,
           memberName: memberAccounts2.userName,
@@ -4557,7 +4557,7 @@ var init_vacations = __esm({
           lte(vacationSchedules.startDate, to),
           gte2(vacationSchedules.endDate, from)
         ));
-        return rows.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+        return rows3.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
       })
     });
   }
@@ -4587,8 +4587,8 @@ async function loadMemberVacations(companyId, memberIds, from, to) {
     await ensureVacationSchedulesTable2();
     const database2 = await getDb();
     if (!database2) return map;
-    const rows4 = await database2.select({ memberAccountId: vacationSchedules.memberAccountId, startDate: vacationSchedules.startDate, endDate: vacationSchedules.endDate }).from(vacationSchedules).where(and6(eq6(vacationSchedules.companyId, companyId), eq6(vacationSchedules.status, "scheduled"), inArray5(vacationSchedules.memberAccountId, memberIds)));
-    for (const r of rows4) {
+    const rows3 = await database2.select({ memberAccountId: vacationSchedules.memberAccountId, startDate: vacationSchedules.startDate, endDate: vacationSchedules.endDate }).from(vacationSchedules).where(and6(eq6(vacationSchedules.companyId, companyId), eq6(vacationSchedules.status, "scheduled"), inArray5(vacationSchedules.memberAccountId, memberIds)));
+    for (const r of rows3) {
       const startDate = dateOnly(r.startDate), endDate = dateOnly(r.endDate);
       if (!startDate || !endDate || endDate < from || startDate > to) continue;
       map.set(r.memberAccountId, [...map.get(r.memberAccountId) || [], { startDate, endDate }]);
@@ -4615,15 +4615,15 @@ async function loadAdjustmentsByEvent(companyId, memberIds) {
   try {
     const { ensureAdjustmentsTable: ensureAdjustmentsTable2 } = await Promise.resolve().then(() => (init_timesheetMirror2(), timesheetMirror_exports));
     await ensureAdjustmentsTable2();
-    const rows4 = (await database2.execute(sql5`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${companyId} AND memberAccountId IN (${sql5.join(memberIds.map((id2) => sql5`${id2}`), sql5`, `)}) ORDER BY id`))[0];
-    for (const a of rows4) if (!map.has(Number(a.timeEventId))) map.set(Number(a.timeEventId), a);
+    const rows3 = (await database2.execute(sql5`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${companyId} AND memberAccountId IN (${sql5.join(memberIds.map((id2) => sql5`${id2}`), sql5`, `)}) ORDER BY id`))[0];
+    for (const a of rows3) if (!map.has(Number(a.timeEventId))) map.set(Number(a.timeEventId), a);
   } catch (error) {
     console.warn("[mirror] ajustes indispon\xEDveis", error);
   }
   return map;
 }
-function toMirrorEvents(rows4, adjByEvent) {
-  return rows4.map((r) => {
+function toMirrorEvents(rows3, adjByEvent) {
+  return rows3.map((r) => {
     const a = adjByEvent.get(r.id);
     const notes = r.notes || "";
     const inclusion = r.origin === "inclusion";
@@ -4715,8 +4715,8 @@ async function companyMembers(companyId, memberIds) {
   if (!database2) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
   const where = [eq7(memberAccounts2.companyId, companyId)];
   if (memberIds?.length) where.push(inArray6(memberAccounts2.id, memberIds));
-  const rows4 = await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq7(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and7(...where));
-  return rows4.filter((r) => r.role !== "company_admin");
+  const rows3 = await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq7(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and7(...where));
+  return rows3.filter((r) => r.role !== "company_admin");
 }
 var TZ, dateStr2, hm, adjustmentsReady, legalSchema, laborSchema, timesheetMirrorRouter;
 var init_timesheetMirror2 = __esm({
@@ -4969,8 +4969,8 @@ function row(label, value) {
     <td style="padding:8px 0;color:#fff;font-size:14px;font-weight:600;vertical-align:top;">${escapeHtml(value)}</td>
   </tr>`;
 }
-function dataTable(rows4) {
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:12px 0 20px;">${rows4.map(([l, v]) => row(l, v)).join("")}</table>`;
+function dataTable(rows3) {
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:12px 0 20px;">${rows3.map(([l, v]) => row(l, v)).join("")}</table>`;
 }
 function cta(href, label) {
   return `<p style="margin:20px 0 8px;"><a href="${escapeHtml(href)}" style="display:inline-block;background:#e10600;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:999px;">${escapeHtml(label)}</a></p>`;
@@ -5051,18 +5051,18 @@ async function sendEmail(input) {
 async function emailAccountCreated(input) {
   const loginUrl = `${getAppPublicUrl()}/?login=1`;
   const planLine = input.planName ? `${input.planName}${input.isTrial ? " (teste gr\xE1tis)" : ""}` : input.isTrial ? "Teste gr\xE1tis" : "N\xE3o informado";
-  const rows4 = [
+  const rows3 = [
     ["Empresa", input.companyName],
     ["Respons\xE1vel", input.userName],
     ["E-mail de acesso", input.email]
   ];
-  if (input.password) rows4.push(["Senha", input.password]);
-  rows4.push(["C\xF3digo de redefini\xE7\xE3o", input.recoveryCode]);
-  rows4.push(["Plano", planLine]);
+  if (input.password) rows3.push(["Senha", input.password]);
+  rows3.push(["C\xF3digo de redefini\xE7\xE3o", input.recoveryCode]);
+  rows3.push(["Plano", planLine]);
   const html = layout(
     "Sua conta GondUp foi criada",
     `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Sua conta foi criada com sucesso. Guarde estes dados em local seguro.</p>
-    ${dataTable(rows4)}
+    ${dataTable(rows3)}
     <p style="margin:0 0 8px;color:#c4cae0;font-size:13px;line-height:1.5;">Use o <strong style="color:#fff;">c\xF3digo de redefini\xE7\xE3o</strong> se precisar trocar a senha na tela de recupera\xE7\xE3o.</p>
     ${cta(loginUrl, "Entrar no GondUp")}`
   );
@@ -5098,17 +5098,17 @@ Se voc\xEA n\xE3o pediu isso, ignore este e-mail.`
 }
 async function emailPlanChanged(input) {
   const title = input.isUpgrade ? "Upgrade de plano confirmado" : "Plano adquirido";
-  const rows4 = [
+  const rows3 = [
     ["Empresa", input.companyName],
     ["Plano", input.planName],
     ["Status", input.status]
   ];
-  if (input.amount) rows4.push(["Valor", `R$ ${input.amount}`]);
-  if (input.periodEnd) rows4.push(["V\xE1lido at\xE9", input.periodEnd]);
+  if (input.amount) rows3.push(["Valor", `R$ ${input.amount}`]);
+  if (input.periodEnd) rows3.push(["V\xE1lido at\xE9", input.periodEnd]);
   const html = layout(
     title,
     `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Registramos a altera\xE7\xE3o do plano da sua empresa.</p>
-    ${dataTable(rows4)}
+    ${dataTable(rows3)}
     ${cta(`${getAppPublicUrl()}/minha-assinatura`, "Ver minha assinatura")}`
   );
   return sendEmail({
@@ -5242,14 +5242,14 @@ async function companyMembers2(companyId, memberIds) {
   if (!database2) throw new Error("Banco de dados indispon\xEDvel.");
   const where = [eq10(memberAccounts2.companyId, companyId)];
   if (memberIds?.length) where.push(inArray10(memberAccounts2.id, memberIds));
-  const rows4 = await database2.select({
+  const rows3 = await database2.select({
     id: memberAccounts2.id,
     name: memberAccounts2.userName,
     role: memberAccounts2.role,
     active: memberAccounts2.active,
     employeeCode: promoterProfiles.employeeCode
   }).from(memberAccounts2).leftJoin(promoterProfiles, eq10(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and10(...where));
-  return rows4.filter((r) => r.role !== "company_admin");
+  return rows3.filter((r) => r.role !== "company_admin");
 }
 async function buildPdfBuffer(opts) {
   const { jsPDF } = await import("jspdf");
@@ -5423,20 +5423,20 @@ var init_timesheetArchive = __esm({
         if (input?.memberId) conds.push(sql10`a.memberAccountId = ${input.memberId}`);
         if (input?.year) conds.push(sql10`a.year = ${input.year}`);
         if (input?.month) conds.push(sql10`a.month = ${input.month}`);
-        const rows4 = (await database2.execute(sql10`SELECT a.*, m.userName AS memberName
+        const rows3 = (await database2.execute(sql10`SELECT a.*, m.userName AS memberName
         FROM timesheet_archives a
         LEFT JOIN member_accounts m ON m.id = a.memberAccountId AND m.companyId = a.companyId
         WHERE ${sql10.join(conds, sql10` AND `)}
         ORDER BY a.year DESC, a.month DESC, a.memberAccountId, a.version DESC
         LIMIT 500`))[0] ?? [];
-        return rows4;
+        return rows3;
       }),
       downloadUrl: companyAdminFeatureProcedure("timeTracking").input(z5.object({ id: z5.number().int().positive() })).query(async ({ ctx, input }) => {
         await ensureTimesheetArchivesTable();
         const database2 = await getDb();
         if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
-        const rows4 = (await database2.execute(sql10`SELECT fileKey, status FROM timesheet_archives WHERE id = ${input.id} AND companyId = ${ctx.accountId} LIMIT 1`))[0] ?? [];
-        const row2 = rows4[0];
+        const rows3 = (await database2.execute(sql10`SELECT fileKey, status FROM timesheet_archives WHERE id = ${input.id} AND companyId = ${ctx.accountId} LIMIT 1`))[0] ?? [];
+        const row2 = rows3[0];
         if (!row2 || row2.status !== "ready" || !row2.fileKey) throw new TRPCError9({ code: "NOT_FOUND", message: "Arquivo n\xE3o encontrado ou indispon\xEDvel." });
         const url = await storageGetSignedUrl(row2.fileKey);
         return { url };
@@ -5780,7 +5780,7 @@ async function database() {
 }
 async function listCompaniesOverview() {
   const d = await database();
-  const [rows4, plans, pays, counts, admins, flags] = await Promise.all([
+  const [rows3, plans, pays, counts, admins, flags] = await Promise.all([
     d.select().from(companies).orderBy(companies.name),
     d.select().from(subscriptionPlans),
     d.execute(sql11`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
@@ -5792,7 +5792,7 @@ async function listCompaniesOverview() {
   const map = (r, key = "companyId") => new Map(r[0].map((x) => [Number(x[key]), x]));
   const payBy = map(pays), countBy = map(counts), adminBy = map(admins);
   const flagBy = new Map(flags.map((f) => [`${f.accountId}:${f.settingKey}`, f.settingValue]));
-  return rows4.map((c) => {
+  return rows3.map((c) => {
     const plan = c.planId ? planById.get(c.planId) : null;
     const monthlyAmount = flagBy.get(`${c.id}:${MONTHLY_AMOUNT_KEY}`) || (plan?.price != null ? String(plan.price) : null);
     const blockAfter = flagBy.get(`${c.id}:${BLOCK_AFTER_OVERDUE_KEY}`);
@@ -6247,7 +6247,7 @@ var init_storePhotos = __esm({
           conditions.push(eq12(stores.city, input.city));
         }
         try {
-          const rows4 = await db.select({
+          const rows3 = await db.select({
             id: stores.id,
             name: stores.name,
             city: stores.city,
@@ -6256,11 +6256,11 @@ var init_storePhotos = __esm({
             photoCount: sql13`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
             lastActivity: sql13`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`
           }).from(stores).where(and12(...conditions)).orderBy(desc5(stores.updatedAt));
-          return rows4;
+          return rows3;
         } catch (err) {
           if (String(err?.message || "").includes("store_photos") || err?.code === "ER_NO_SUCH_TABLE") {
-            const rows4 = await db.select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address }).from(stores).where(and12(...conditions)).orderBy(desc5(stores.updatedAt));
-            return rows4.map((r) => ({ ...r, photoCount: 0, lastActivity: null }));
+            const rows3 = await db.select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address }).from(stores).where(and12(...conditions)).orderBy(desc5(stores.updatedAt));
+            return rows3.map((r) => ({ ...r, photoCount: 0, lastActivity: null }));
           }
           throw err;
         }
@@ -6628,9 +6628,9 @@ function storeLabel(row2) {
   if (!row2.storeName || row2.storeActive === false) return row2.storeName ? `${row2.storeName} (loja removida)` : "Loja removida";
   return row2.storeName;
 }
-function productsCsv(rows4, today, alertDays) {
+function productsCsv(rows3, today, alertDays) {
   const header = ["Ind\xFAstria", "Loja", "C\xF3digo", "Descri\xE7\xE3o", "Lote", "Quantidade", "Validade", "Situa\xE7\xE3o", "Pre\xE7o (R$)", "Cadastrado por"];
-  const lines = rows4.map((p) => {
+  const lines = rows3.map((p) => {
     const iso = String(p.expirationDate).slice(0, 10);
     return [p.clientName || "Sem ind\xFAstria", storeLabel(p), p.productCode, p.description, p.lot || "", String(p.quantity), formatDateBR(iso), situationLabel(iso, today, alertDays), Number(p.price).toFixed(2).replace(".", ","), p.createdByName || ""];
   });
@@ -6700,8 +6700,8 @@ async function lookupProductByCode(companyId, rawCode) {
   if (database2) {
     await ensureInventoryProductsSchema();
     const codes = [.../* @__PURE__ */ new Set([rawCode.trim(), ...variants])];
-    const rows4 = await database2.select({ description: inventoryProducts.description, price: inventoryProducts.price, productCode: inventoryProducts.productCode }).from(inventoryProducts).where(and13(eq13(inventoryProducts.companyId, companyId), inArray12(inventoryProducts.productCode, codes))).orderBy(desc6(inventoryProducts.id)).limit(1);
-    if (rows4[0]) return { found: true, source: "company", description: rows4[0].description, price: String(rows4[0].price), code: rows4[0].productCode };
+    const rows3 = await database2.select({ description: inventoryProducts.description, price: inventoryProducts.price, productCode: inventoryProducts.productCode }).from(inventoryProducts).where(and13(eq13(inventoryProducts.companyId, companyId), inArray12(inventoryProducts.productCode, codes))).orderBy(desc6(inventoryProducts.id)).limit(1);
+    if (rows3[0]) return { found: true, source: "company", description: rows3[0].description, price: String(rows3[0].price), code: rows3[0].productCode };
   }
   if (!variants.length) return { found: false, source: null, description: "", code };
   const token = process.env.COSMOS_API_TOKEN;
@@ -7156,29 +7156,29 @@ async function runBackupStep(c, opts = { budgetMs: 18e3 }) {
     const pk = keys.length === 1 ? keys[0].Column_name : null;
     let finished = false;
     while (Date.now() - started < opts.budgetMs) {
-      const [rows4] = pk ? await c.query(
+      const [rows3] = pk ? await c.query(
         `SELECT * FROM \`${table2}\` ${cursor != null ? `WHERE \`${pk}\` > ?` : ""} ORDER BY \`${pk}\` LIMIT ${CHUNK_ROWS}`,
         cursor != null ? [cursor] : []
       ) : await c.query(`SELECT * FROM \`${table2}\` ORDER BY 1 LIMIT ${CHUNK_ROWS} OFFSET ${rowsDone}`);
-      if (!rows4.length) {
+      if (!rows3.length) {
         finished = true;
         break;
       }
-      const body = await gzip(Buffer.from(rows4.map((r) => JSON.stringify(r, jsonReplacer)).join("\n") + "\n"));
+      const body = await gzip(Buffer.from(rows3.map((r) => JSON.stringify(r, jsonReplacer)).join("\n") + "\n"));
       const key = `${prefix}/${table2}.${String(part).padStart(5, "0")}.jsonl.gz`;
       const stored = await storagePut2(key, body, "application/gzip");
-      files.push({ key: stored.key, rows: rows4.length, sha256: crypto3.createHash("sha256").update(body).digest("hex") });
+      files.push({ key: stored.key, rows: rows3.length, sha256: crypto3.createHash("sha256").update(body).digest("hex") });
       bytes += body.length;
       partsWritten += 1;
       part += 1;
-      rowsDone += rows4.length;
-      if (pk) cursor = String(rows4[rows4.length - 1][pk]);
+      rowsDone += rows3.length;
+      if (pk) cursor = String(rows3[rows3.length - 1][pk]);
       await c.query(
         `INSERT INTO backup_progress (day, tableName, cursorValue, part, rowsDone, done, files) VALUES (?,?,?,?,?,0,?)
          ON DUPLICATE KEY UPDATE cursorValue = VALUES(cursorValue), part = VALUES(part), rowsDone = VALUES(rowsDone), files = VALUES(files)`,
         [day, table2, cursor, part, rowsDone, JSON.stringify(files)]
       );
-      if (rows4.length < CHUNK_ROWS) {
+      if (rows3.length < CHUNK_ROWS) {
         finished = true;
         break;
       }
@@ -7487,9 +7487,9 @@ var timeTrackingRouter = router({
       eq8(memberAccounts2.role, "promoter"),
       gte5(timeEvents.serverTime, since)
     )).orderBy(desc2(timeEvents.serverTime)).limit(5e3);
-    const rows4 = await effectiveRows(rawRows);
+    const rows3 = await effectiveRows(rawRows);
     const eventsByPromoter = /* @__PURE__ */ new Map();
-    for (const row2 of rows4) {
+    for (const row2 of rows3) {
       if (localDay(row2.deviceTime || row2.serverTime, timeZone) !== today) continue;
       const promoterEvents = eventsByPromoter.get(row2.promoterId) || [];
       promoterEvents.push(row2);
@@ -7643,7 +7643,7 @@ var timeTrackingRouter = router({
     const database2 = await getDb();
     if (!database2) return found;
     const memberIds = [...new Set(found.map((m) => m.memberId))];
-    const rows4 = await database2.select({
+    const rows3 = await database2.select({
       memberAccountId: timeCorrectionRequests.memberAccountId,
       requestedTime: timeCorrectionRequests.requestedTime
     }).from(timeCorrectionRequests).where(and8(
@@ -7652,7 +7652,7 @@ var timeTrackingRouter = router({
       sql8`${timeCorrectionRequests.status} IN ('pending', 'approved')`
     )).orderBy(desc2(timeCorrectionRequests.createdAt)).limit(500);
     const covered = /* @__PURE__ */ new Set();
-    for (const row2 of rows4) {
+    for (const row2 of rows3) {
       const day = excuseDay(row2.requestedTime);
       covered.add(`${row2.memberAccountId}:${day}`);
     }
@@ -7696,8 +7696,8 @@ var timeTrackingRouter = router({
     const from = `${today.slice(0, 7)}-01`;
     const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const to = `${today.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
-    const rows4 = await loadMirrorEventRows(companyId, [memberId], from, to);
-    const events = rows4.map((row2) => ({
+    const rows3 = await loadMirrorEventRows(companyId, [memberId], from, to);
+    const events = rows3.map((row2) => ({
       id: row2.id,
       type: row2.eventType,
       time: (row2.deviceTime || row2.serverTime).toISOString(),
@@ -7880,12 +7880,12 @@ var timeTrackingRouter = router({
       const database2 = await getDb();
       if (!database2) return [];
       await ensureCorrectionExtras();
-      const rows4 = await database2.select({
+      const rows3 = await database2.select({
         request: timeCorrectionRequests,
         event: timeEvents,
         employee: { userName: memberAccounts2.userName }
       }).from(timeCorrectionRequests).innerJoin(memberAccounts2, eq8(timeCorrectionRequests.memberAccountId, memberAccounts2.id)).leftJoin(timeEvents, eq8(timeCorrectionRequests.timeEventId, timeEvents.id)).where(and8(eq8(timeCorrectionRequests.companyId, ctx.accountId), eq8(timeCorrectionRequests.status, "pending"))).orderBy(desc2(timeCorrectionRequests.createdAt));
-      return Promise.all(rows4.map(async (row2) => {
+      return Promise.all(rows3.map(async (row2) => {
         const key = row2.request.attachmentKey;
         let attachmentUrl = null;
         if (key) {
@@ -7901,8 +7901,8 @@ var timeTrackingRouter = router({
     review: companyAdminFeatureProcedure("timeTracking").input(z3.object({ id: z3.number().int().positive(), status: z3.enum(["approved", "rejected"]), reviewNotes: z3.string().max(1e3).optional() })).mutation(async ({ ctx, input }) => {
       const database2 = await getDb();
       if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-      const rows4 = await database2.select().from(timeCorrectionRequests).where(and8(eq8(timeCorrectionRequests.id, input.id), eq8(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
-      const request = rows4[0];
+      const rows3 = await database2.select().from(timeCorrectionRequests).where(and8(eq8(timeCorrectionRequests.id, input.id), eq8(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
+      const request = rows3[0];
       if (!request) throw new TRPCError7({ code: "NOT_FOUND", message: "Solicita\xE7\xE3o de corre\xE7\xE3o n\xE3o encontrada." });
       if (request.status !== "pending") throw new TRPCError7({ code: "BAD_REQUEST", message: "Esta solicita\xE7\xE3o j\xE1 foi analisada." });
       await database2.transaction(async (tx) => {
@@ -7919,8 +7919,8 @@ var timeTrackingRouter = router({
       if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
       let done = 0;
       for (const id2 of input.ids) {
-        const rows4 = await database2.select().from(timeCorrectionRequests).where(and8(eq8(timeCorrectionRequests.id, id2), eq8(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
-        const request = rows4[0];
+        const rows3 = await database2.select().from(timeCorrectionRequests).where(and8(eq8(timeCorrectionRequests.id, id2), eq8(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
+        const request = rows3[0];
         if (!request || request.status !== "pending") continue;
         const applied = await database2.transaction(async (tx) => {
           const claimed = await tx.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: /* @__PURE__ */ new Date(), reviewNotes: input.reviewNotes || null }).where(and8(eq8(timeCorrectionRequests.id, request.id), eq8(timeCorrectionRequests.status, "pending")));
@@ -8047,7 +8047,7 @@ async function buildReceiptPdf(r) {
 }
 function receiptEmailHtml(r) {
   const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const rows4 = [
+  const rows3 = [
     ["N\xFAmero da batida", r.nsr != null ? String(r.nsr).padStart(9, "0") : "-"],
     ["Marca\xE7\xE3o", r.eventLabel],
     ["Data e hora", `${r.markedLocal} (${r.timeZone})`],
@@ -8058,7 +8058,7 @@ function receiptEmailHtml(r) {
     ["C\xF3digo de seguran\xE7a", r.hash || "-"]
   ];
   return `<h2 style="margin:0 0 8px">Comprovante de Registro de Ponto</h2>
-<table style="border-collapse:collapse;font-size:14px">${rows4.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;font-weight:bold;vertical-align:top">${esc(k)}</td><td style="padding:4px 0;word-break:break-all">${esc(v)}</td></tr>`).join("")}</table>
+<table style="border-collapse:collapse;font-size:14px">${rows3.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;font-weight:bold;vertical-align:top">${esc(k)}</td><td style="padding:4px 0;word-break:break-all">${esc(v)}</td></tr>`).join("")}</table>
 <p style="font-size:12px;color:#555">Guarde este e-mail. Voc\xEA tamb\xE9m pode baixar o comprovante em PDF no aplicativo (Ponto &gt; Comprovantes).</p>`;
 }
 
@@ -8118,13 +8118,13 @@ async function memberMonthMirror(companyId, memberId, month) {
   if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
   const member = (await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq9(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and9(eq9(memberAccounts2.id, memberId), eq9(memberAccounts2.companyId, companyId))).limit(1))[0];
   if (!member) throw new TRPCError8({ code: "NOT_FOUND", message: "Funcion\xE1rio n\xE3o encontrado." });
-  const rows4 = await loadMirrorEventRows(companyId, [memberId], from, to);
+  const rows3 = await loadMirrorEventRows(companyId, [memberId], from, to);
   const adj = await loadAdjustmentsByEvent(companyId, [memberId]);
   const labor = await readJson2(`labor_profile:${memberId}`, companyId);
   const excuses = (await loadApprovedDayExcuses(companyId, [memberId], from, to)).get(memberId) || [];
   const vacations = (await loadMemberVacations(companyId, [memberId], from, to)).get(memberId) || [];
   const options = await loadMirrorOptions(companyId);
-  const report = buildMirror({ events: toMirrorEvents(rows4, adj), from, to, timeZone: TZ3, labor, excuses, vacations, options });
+  const report = buildMirror({ events: toMirrorEvents(rows3, adj), from, to, timeZone: TZ3, labor, excuses, vacations, options });
   const employer = await employerOf(companyId);
   const document = {
     v: 1,
@@ -8141,9 +8141,9 @@ async function latestAcceptances(companyId, month, memberIds) {
   const database2 = await getDb();
   if (!database2) return /* @__PURE__ */ new Map();
   const filter = memberIds?.length ? sql9` AND memberAccountId IN (${sql9.join(memberIds.map((id2) => sql9`${id2}`), sql9`, `)})` : sql9``;
-  const [rows4] = await database2.execute(sql9`SELECT id, memberAccountId, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND month = ${month}${filter} ORDER BY id DESC`);
+  const [rows3] = await database2.execute(sql9`SELECT id, memberAccountId, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND month = ${month}${filter} ORDER BY id DESC`);
   const map = /* @__PURE__ */ new Map();
-  for (const r of rows4) if (!map.has(Number(r.memberAccountId))) map.set(Number(r.memberAccountId), r);
+  for (const r of rows3) if (!map.has(Number(r.memberAccountId))) map.set(Number(r.memberAccountId), r);
   return map;
 }
 function rangeUtc(from, to) {
@@ -8195,9 +8195,9 @@ var pontoLegalRouter = router({
     const database2 = await getDb();
     if (!database2) return [];
     const since = new Date(Date.now() - (input?.days ?? 30) * 864e5);
-    const rows4 = await database2.select({ id: timeEvents.id, nsr: timeEvents.nsr, eventType: timeEvents.eventType, serverTime: timeEvents.serverTime, deviceTime: timeEvents.deviceTime, recordHash: timeEvents.recordHash, origin: timeEvents.origin, timeZone: timeEvents.timeZone, offline: timeEvents.offline }).from(timeEvents).where(and9(eq9(timeEvents.companyId, ctx.accountId), eq9(timeEvents.memberAccountId, ctx.memberAccountId), gte6(timeEvents.serverTime, since))).orderBy(desc3(timeEvents.serverTime)).limit(500);
-    const gone = await supersededIds(ctx.accountId, rows4.map((r) => r.id));
-    return rows4.map((r) => ({ ...r, markedAt: r.deviceTime || r.serverTime, superseded: gone.has(r.id) }));
+    const rows3 = await database2.select({ id: timeEvents.id, nsr: timeEvents.nsr, eventType: timeEvents.eventType, serverTime: timeEvents.serverTime, deviceTime: timeEvents.deviceTime, recordHash: timeEvents.recordHash, origin: timeEvents.origin, timeZone: timeEvents.timeZone, offline: timeEvents.offline }).from(timeEvents).where(and9(eq9(timeEvents.companyId, ctx.accountId), eq9(timeEvents.memberAccountId, ctx.memberAccountId), gte6(timeEvents.serverTime, since))).orderBy(desc3(timeEvents.serverTime)).limit(500);
+    const gone = await supersededIds(ctx.accountId, rows3.map((r) => r.id));
+    return rows3.map((r) => ({ ...r, markedAt: r.deviceTime || r.serverTime, superseded: gone.has(r.id) }));
   }),
   receipt: commercialFeatureProcedure("timeTracking").input(z4.object({ eventId: z4.number().int().positive() })).query(async ({ ctx, input }) => (await loadReceipt(ctx, input.eventId)).data),
   receiptPdf: commercialFeatureProcedure("timeTracking").input(z4.object({ eventId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -8273,12 +8273,12 @@ var pontoLegalRouter = router({
     await ensurePunchLedger();
     const database2 = await getDb();
     if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-    const rows4 = await database2.select().from(timeEvents).where(eq9(timeEvents.companyId, ctx.accountId)).orderBy(asc(timeEvents.id));
-    const result = verifyLedger(rows4.map(toLedgerRow));
+    const rows3 = await database2.select().from(timeEvents).where(eq9(timeEvents.companyId, ctx.accountId)).orderBy(asc(timeEvents.id));
+    const result = verifyLedger(rows3.map(toLedgerRow));
     const [stateRows] = await database2.execute(sql9`SELECT lastNsr, lastHash, initializedAt FROM rep_ledger_state WHERE companyId = ${ctx.accountId}`);
     const state = stateRows?.[0] ?? null;
     const stateMismatch = state && Number(state.lastNsr) !== result.lastNsr;
-    const legacy = rows4.filter((r) => r.sealedLegacy).length;
+    const legacy = rows3.filter((r) => r.sealedLegacy).length;
     void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "integrity_check", description: `Verifica\xE7\xE3o de integridade do ponto: ${result.ok && !stateMismatch ? "OK" : `${result.problems.length} problema(s)`}` });
     return {
       ok: result.ok && !stateMismatch,
@@ -8302,7 +8302,7 @@ var pontoLegalRouter = router({
     const database2 = await getDb();
     if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     const { start, end } = rangeUtc(input.from, input.to);
-    const rows4 = (await database2.select().from(timeEvents).where(and9(eq9(timeEvents.companyId, ctx.accountId), eq9(timeEvents.origin, "original"), gte6(effectiveEventTime, start), lt5(effectiveEventTime, end))).orderBy(asc(timeEvents.nsr))).filter((r) => r.nsr != null && r.recordHash).filter((r) => {
+    const rows3 = (await database2.select().from(timeEvents).where(and9(eq9(timeEvents.companyId, ctx.accountId), eq9(timeEvents.origin, "original"), gte6(effectiveEventTime, start), lt5(effectiveEventTime, end))).orderBy(asc(timeEvents.nsr))).filter((r) => r.nsr != null && r.recordHash).filter((r) => {
       const d = formatD(r.deviceTime || r.serverTime, r.timeZone || TZ3);
       return d >= input.from && d <= input.to;
     });
@@ -8316,14 +8316,14 @@ var pontoLegalRouter = router({
       to: input.to,
       generatedAt: /* @__PURE__ */ new Date(),
       timeZone: TZ3,
-      punches: rows4.map((r) => ({ nsr: Number(r.nsr), markedAt: r.deviceTime || r.serverTime, recordedAt: r.serverTime, cpf: r.workerCpf, timeZone: r.timeZone || TZ3, collector: r.collectorId || "02", offline: Boolean(r.offline), hash: r.recordHash }))
+      punches: rows3.map((r) => ({ nsr: Number(r.nsr), markedAt: r.deviceTime || r.serverTime, recordedAt: r.serverTime, cpf: r.workerCpf, timeZone: r.timeZone || TZ3, collector: r.collectorId || "02", offline: Boolean(r.offline), hash: r.recordHash }))
     });
     const warnings = [
       ...!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto \u2192 Dados da empresa."] : [],
-      ...rows4.some((r) => !r.workerCpf) ? [`${rows4.filter((r) => !r.workerCpf).length} batida(s) sem CPF do funcion\xE1rio. Complete o cadastro no Espelho de ponto (vale para as pr\xF3ximas batidas).`] : []
+      ...rows3.some((r) => !r.workerCpf) ? [`${rows3.filter((r) => !r.workerCpf).length} batida(s) sem CPF do funcion\xE1rio. Complete o cadastro no Espelho de ponto (vale para as pr\xF3ximas batidas).`] : []
     ];
-    void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "afd", description: `Gerou AFD ${input.from} a ${input.to} (${rows4.length} marca\xE7\xF5es)`, newData: { from: input.from, to: input.to, count: rows4.length } });
-    return { ...fileResponse(afd.content, afd.fileName), count: rows4.length, warnings };
+    void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "afd", description: `Gerou AFD ${input.from} a ${input.to} (${rows3.length} marca\xE7\xF5es)`, newData: { from: input.from, to: input.to, count: rows3.length } });
+    return { ...fileResponse(afd.content, afd.fileName), count: rows3.length, warnings };
   }),
   exportAej: companyAdminFeatureProcedure("timeTracking").input(z4.object({ from: dateStr3, to: dateStr3 })).mutation(async ({ ctx, input }) => {
     if (input.from > input.to) throw new TRPCError8({ code: "BAD_REQUEST", message: "A data inicial deve ser anterior ou igual \xE0 final." });
@@ -8491,10 +8491,10 @@ init_storeClients();
 import { z as z8 } from "zod";
 import { TRPCError as TRPCError12 } from "@trpc/server";
 import { sql as sql14 } from "drizzle-orm";
-var rows2 = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
+var rows = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
 var text3 = (max) => z8.string().trim().max(max).optional().transform((v) => v ? v : null);
 async function loadClient(db, companyId, storeId, id2) {
-  const r = rows2(await db.execute(sql14`SELECT * FROM store_clients WHERE id = ${id2} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`));
+  const r = rows(await db.execute(sql14`SELECT * FROM store_clients WHERE id = ${id2} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`));
   if (!r[0]) throw new TRPCError12({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado nesta loja." });
   return r[0];
 }
@@ -8507,7 +8507,7 @@ var storeClientsRouter = router({
     await ensureStoreClientsSchema(db);
     const memberId = scopeMemberId(ctx);
     const own = memberId !== null ? sql14` AND p.promoterId = ${memberId}` : sql14``;
-    const r = rows2(await db.execute(sql14`
+    const r = rows(await db.execute(sql14`
         SELECT c.id, c.storeId, c.name, c.contactName, c.phone, c.notes, c.active,
           (SELECT COUNT(*) FROM store_photos p WHERE p.companyId = c.companyId AND p.storeClientId = c.id AND p.uploadStatus = 'uploaded'${own}) AS photoCount,
           (SELECT MAX(p.capturedAt) FROM store_photos p WHERE p.companyId = c.companyId AND p.storeClientId = c.id${own}) AS lastActivity
@@ -8521,7 +8521,7 @@ var storeClientsRouter = router({
     if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
-    const dup = rows2(await db.execute(sql14`SELECT id FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true AND LOWER(name) = ${input.name.toLowerCase()} LIMIT 1`));
+    const dup = rows(await db.execute(sql14`SELECT id FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true AND LOWER(name) = ${input.name.toLowerCase()} LIMIT 1`));
     if (dup[0]) throw new TRPCError12({ code: "CONFLICT", message: "Esta loja j\xE1 tem um cliente com esse nome." });
     const res = await db.execute(sql14`INSERT INTO store_clients (companyId, storeId, name, contactName, phone, notes) VALUES (${ctx.accountId}, ${input.storeId}, ${input.name}, ${input.contactName}, ${input.phone}, ${input.notes})`);
     const id2 = Number((Array.isArray(res) ? res[0] : res)?.insertId);
@@ -8579,7 +8579,7 @@ function configureThrottleDb(getter) {
   dbGetter = getter;
   ensured2 = null;
 }
-var rows3 = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
+var rows2 = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
 async function table() {
   const db = await dbGetter();
   if (!db) return null;
@@ -8605,7 +8605,7 @@ async function isThrottled(key) {
   try {
     const db = await table();
     if (!db) return false;
-    const found = rows3(await db.execute(sql16`SELECT blockedUntil FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)} LIMIT 1`));
+    const found = rows2(await db.execute(sql16`SELECT blockedUntil FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)} LIMIT 1`));
     return Number(found[0]?.blockedUntil ?? 0) > now;
   } catch (err) {
     console.warn("[auth-throttle] banco indispon\xEDvel, usando s\xF3 a mem\xF3ria", err?.message);
@@ -8622,7 +8622,7 @@ async function registerThrottleFailure(key) {
     const db = await table();
     if (!db) return;
     const hash = throttleKeyHash(key);
-    const found = rows3(await db.execute(sql16`SELECT failures, windowStartedAt, blockedUntil FROM auth_throttle WHERE keyHash = ${hash} LIMIT 1`));
+    const found = rows2(await db.execute(sql16`SELECT failures, windowStartedAt, blockedUntil FROM auth_throttle WHERE keyHash = ${hash} LIMIT 1`));
     const current = found[0] ? { failures: Number(found[0].failures), windowStartedAt: Number(found[0].windowStartedAt), blockedUntil: Number(found[0].blockedUntil) } : void 0;
     const next = nextEntryAfterFailure(current, now);
     await db.execute(sql16`INSERT INTO auth_throttle (keyHash, failures, windowStartedAt, blockedUntil)
@@ -9088,8 +9088,8 @@ async function listMemberAccounts(companyId) {
   const db = await getDb();
   if (!db) return [];
   const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt, employeeCode: promoterProfiles.employeeCode, workStartTime: promoterProfiles.workStartTime, workEndTime: promoterProfiles.workEndTime }).from(memberAccounts).leftJoin(promoterProfiles, and14(eq14(promoterProfiles.memberAccountId, memberAccounts.id), eq14(promoterProfiles.companyId, memberAccounts.companyId)));
-  const rows4 = companyId ? await query.where(eq14(memberAccounts.companyId, companyId)) : await query;
-  return rows4.map((row2) => ({ ...row2, role: normalizeMemberRole(String(row2.role)) }));
+  const rows3 = companyId ? await query.where(eq14(memberAccounts.companyId, companyId)) : await query;
+  return rows3.map((row2) => ({ ...row2, role: normalizeMemberRole(String(row2.role)) }));
 }
 async function updateCompanyUser(accountId, companyId, data) {
   const db = await getDb();

@@ -21,7 +21,18 @@ describe("menu lateral da empresa", () => {
   });
   it("respeita módulos contratados", () => {
     const r = buildCompanyGroups("company_admin", (k) => k === "teamManagement");
-    expect(labels(r)).toEqual([["Operação", ["Visão geral", "Produtos e validades"]], ["Equipe e ponto", ["Promotores e equipe"]]]);
+    expect(labels(r)).toEqual([["Operação", ["Visão geral"]], ["Equipe", ["Promotores e equipe"]]]);
+    const withProducts = buildCompanyGroups("company_admin", (k) => k === "teamManagement" || k === "products");
+    expect(labels(withProducts)[0]).toEqual(["Operação", ["Visão geral", "Produtos e validades"]]);
+  });
+  it("sem ponto: some itens de ponto e o grupo vira Equipe", () => {
+    const r = buildCompanyGroups("company_admin", (k) => k !== "timeTracking");
+    const flat = r.groups.flatMap((g) => g.items.map((i) => i.href));
+    expect(flat).not.toContain("/cartao-ponto");
+    expect(flat).not.toContain("/espelho-ponto");
+    expect(flat).not.toContain("/ponto-legal");
+    expect(flat).not.toContain("/ferias");
+    expect(r.groups.find((g) => g.id === "equipe")?.title).toBe("Equipe");
   });
   it("detecta item ativo", () => {
     expect(isItemActive("/#roteiros", "/", "#roteiros")).toBe(true);

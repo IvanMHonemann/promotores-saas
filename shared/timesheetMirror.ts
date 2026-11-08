@@ -34,6 +34,8 @@ export type LaborProfile = {
   jobTitle?: string | null;
   admissionDate?: string | null; // YYYY-MM-DD
   cpf?: string | null;
+  /** PIS/PASEP (opcional; usado no espelho/AFD quando cadastrado). */
+  pis?: string | null;
   /** Jornada diária contratada em minutos (somente se configurada). */
   dailyMinutes?: number | null;
   /** Horário contratual (pares entrada/saída HH:MM). */
@@ -206,6 +208,10 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     if (!hasMarks && isWorkday && !excused) {
       issues.push("Sem marcações em dia previsto — verificar falta, abono ou justificativa (não informados)");
     }
+    // Domingo sem marcação e fora da jornada: indica DSR (descanso semanal remunerado) para o espelho da empresa.
+    if (!hasMarks && weekdayOf(d) === 0 && !isWorkday && !holiday && !onVacation && !excuse) {
+      issues.push("DSR (descanso semanal remunerado)");
+    }
 
     const expected = (daily != null && isWorkday && !excused) ? daily : (daily != null && !workdays ? null : null);
     const w = Math.round(worked);
@@ -264,14 +270,35 @@ export function fmtMinutes(min: number | null | undefined, signed = false): stri
 }
 export const fmtDate = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 export const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+/** CPF mascarado (telas). Para PDF/Excel da empresa use fmtCpf. */
 export function maskCpf(cpf?: string | null): string {
   const d = String(cpf || "").replace(/\D/g, "");
   return d.length === 11 ? `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**` : "Não informado";
 }
+/** CPF completo formatado (espelho impresso / RH / processo). */
+export function fmtCpf(cpf?: string | null): string {
+  const d = String(cpf || "").replace(/\D/g, "");
+  return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : "Não informado";
+}
+/** PIS/PASEP formatado (11 dígitos) ou texto de ausência. */
+export function fmtPis(pis?: string | null): string {
+  const d = String(pis || "").replace(/\D/g, "");
+  return d.length >= 11 ? d.padStart(11, "0").slice(0, 11) : d.length ? d : "Não informado";
+}
+/**
+ * Horário da marcação no espelho.
+ * Símbolos (legenda no rodapé): * ajustada, + incluída, # ajuste antigo, A automática, ? sync pendente.
+ */
 export function fmtMark(m: DayRow["marks"][number], tz: string): string {
   const t = localParts(m.time, tz);
-  const tag = m.kind === "adjusted" ? " (ajustada)" : m.kind === "legacy_adjusted" ? " (ajuste antigo)" : m.kind === "automatic" ? " (automática)" : "";
-  return `${t.hm}${tag}${m.synced ? "" : " (pend. sinc.)"}`;
+  const included = m.kind === "adjusted" && !m.originalLabel;
+  let tag = "";
+  if (m.kind === "automatic") tag = "A";
+  else if (m.kind === "legacy_adjusted") tag = "#";
+  else if (included) tag = "+";
+  else if (m.kind === "adjusted") tag = "*";
+  const sync = m.synced ? "" : "?";
+  return `${t.hm}${tag}${sync}`;
 }
 
 /**

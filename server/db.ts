@@ -234,7 +234,7 @@ async function purgeExpiredTrash(database: NonNullable<Awaited<ReturnType<typeof
   const expiredWhere = accountId != null
     ? and(eq(trashItems.accountId, accountId), sql`${trashItems.expiresAt} <= NOW()`)
     : sql`${trashItems.expiresAt} <= NOW()`;
-  const expiredPhotos = await database.select().from(trashItems).where(and(eq(trashItems.itemType, "store_photo"), expiredWhere));
+  const expiredPhotos = await database.select().from(trashItems).where(and(inArray(trashItems.itemType, ["store_photo", "product"]), expiredWhere));
   if (expiredPhotos.length) {
     const { storageDelete } = await import("./storage");
     for (const item of expiredPhotos) await deletePhotoFiles(item.snapshot, storageDelete, item.accountId);
@@ -247,6 +247,7 @@ async function deletePhotoFiles(snapshot: string, storageDelete: (key: string) =
     const photo = JSON.parse(snapshot);
     if (photo?.fileKey) await guardedStorageDelete(storageDelete, photo.fileKey, accountId);
     if (photo?.thumbnailKey) await guardedStorageDelete(storageDelete, photo.thumbnailKey, accountId);
+    if (photo?.photoKey) await guardedStorageDelete(storageDelete, photo.photoKey, accountId); // foto da etiqueta (produtos)
   } catch (error) {
     console.warn("[trash] não foi possível remover o arquivo da foto", error);
   }
@@ -317,7 +318,10 @@ export async function restoreTrashItem(id: number, accountId: number, scopeMembe
     if (item.itemType === "product") {
       const existing = await tx.select({ id: inventoryProducts.id }).from(inventoryProducts).where(and(eq(inventoryProducts.id, item.originalId), eq(inventoryProducts.companyId, tenant))).limit(1);
       if (existing[0]) throw new Error("Já existe um produto com esse identificador. Não foi possível restaurar.");
-      await tx.insert(inventoryProducts).values({ ...restoreDateFields(snapshot), id: item.originalId, companyId: tenant } as any);
+      // A validade é DATE: o snapshot guarda "2030-01-15T00:00:00.000Z", que o MySQL estrito recusa. Volta para AAAA-MM-DD.
+      // (o driver do Drizzle lê DATE como texto e cria a Date em UTC, então os 10 primeiros caracteres são a data certa)
+      const expirationDate = String(snapshot.expirationDate ?? "").slice(0, 10);
+      await tx.insert(inventoryProducts).values({ ...restoreDateFields(snapshot), expirationDate, id: item.originalId, companyId: tenant } as any);
     } else if (item.itemType === "store_photo") {
       const existing = await tx.select({ id: storePhotos.id }).from(storePhotos).where(and(eq(storePhotos.id, item.originalId), eq(storePhotos.companyId, tenant))).limit(1);
       if (existing[0]) throw new Error("Esta foto já existe na galeria. Não foi possível restaurar.");
@@ -350,7 +354,7 @@ export async function permanentlyDeleteTrashItem(id: number, accountId: number, 
   if (!item) throw new Error("Item não encontrado na lixeira ou sem permissão.");
   const result = await db.delete(trashItems).where(and(eq(trashItems.id, id), eq(trashItems.accountId, tenant)));
   if (!result[0]?.affectedRows) throw new Error("Item não encontrado na lixeira ou sem permissão.");
-  if (item?.itemType === "store_photo") {
+  if (item?.itemType === "store_photo" || item?.itemType === "product") {
     const { storageDelete } = await import("./storage");
     await deletePhotoFiles(item.snapshot, storageDelete, tenant);
   }
@@ -870,7 +874,63 @@ export async function ensureSeedPlans() {
       }
     }
   }
+  await ensureVisitCheckInFeature();
+  await ensureProductsFeature();
 }
+
+/** Módulo "Produtos e validades" (0031): default ON em todos os planos que ainda não têm a linha. */
+export async function ensureProductsFeature() {
+  const database = await getDb();
+  if (!database) return;
+  try {
+    await database.execute(sql`
+      INSERT INTO subscription_plan_features (planId, featureKey, enabled)
+      SELECT p.id, 'products', 1 FROM subscription_plans p
+      WHERE NOT EXISTS (SELECT 1 FROM subscription_plan_features x WHERE x.planId = p.id AND x.featureKey = 'products')
+    `);
+  } catch (error) {
+    if (!isMissingEntitlementsTable(error)) throw error;
+  }
+}
+
+/** Garante o módulo visitCheckIn nos planos/overrides que já tinham fieldOperations (default ON, sem mudar clientes atuais). */
+export async function ensureVisitCheckInFeature() {
+  const database = await getDb();
+  if (!database) return;
+  try {
+    await database.execute(sql`
+      INSERT INTO subscription_plan_features (planId, featureKey, enabled)
+      SELECT planId, 'visitCheckIn', enabled FROM subscription_plan_features spf
+      WHERE featureKey = 'fieldOperations'
+        AND NOT EXISTS (
+          SELECT 1 FROM subscription_plan_features x
+          WHERE x.planId = spf.planId AND x.featureKey = 'visitCheckIn'
+        )
+    `);
+    await database.execute(sql`
+      INSERT INTO subscription_plan_features (planId, featureKey, enabled)
+      SELECT p.id, 'visitCheckIn', 0 FROM subscription_plans p
+      WHERE NOT EXISTS (
+        SELECT 1 FROM subscription_plan_features x
+        WHERE x.planId = p.id AND x.featureKey = 'visitCheckIn'
+      )
+    `);
+    await database.execute(sql`
+      INSERT INTO company_feature_overrides (companyId, featureKey, enabled, reason)
+      SELECT o.companyId, 'visitCheckIn', o.enabled, 'Backfill: check-in/out alinhado a lojas e roteiros'
+      FROM company_feature_overrides o
+      WHERE o.featureKey = 'fieldOperations'
+        AND NOT EXISTS (
+          SELECT 1 FROM company_feature_overrides x
+          WHERE x.companyId = o.companyId AND x.featureKey = 'visitCheckIn'
+        )
+    `);
+  } catch (error) {
+    if (!isMissingEntitlementsTable(error)) throw error;
+  }
+}
+
+
 
 
 /* Núcleo operacional de promotores — usa as tabelas novas e permanece separado do legado. */
@@ -1313,6 +1373,27 @@ export async function ensureInventoryProductsSchema(): Promise<void> {
     const names = new Set((cols as any[]).map((c) => String(c.COLUMN_NAME ?? c.column_name).toLowerCase()));
     if (!names.has("storeid")) await database.execute(`ALTER TABLE inventory_products ADD COLUMN storeId int NULL`);
     if (!names.has("createdbymemberid")) await database.execute(`ALTER TABLE inventory_products ADD COLUMN createdByMemberId int NULL`);
+    if (!names.has("storeclientid")) await database.execute(`ALTER TABLE inventory_products ADD COLUMN storeClientId int NULL`);
+    if (!names.has("lot")) await database.execute(`ALTER TABLE inventory_products ADD COLUMN lot varchar(64) NULL`);
+    if (!names.has("photokey")) await database.execute(`ALTER TABLE inventory_products ADD COLUMN photoKey varchar(512) NULL`);
+    await database.execute(`CREATE TABLE IF NOT EXISTS inventory_product_requests (
+      companyId int NOT NULL,
+      clientRequestId varchar(64) NOT NULL,
+      productId int NOT NULL,
+      merged boolean NOT NULL DEFAULT false,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (companyId, clientRequestId)
+    )`);
+    // Índices novos (0031): consulta uma vez e só cria o que falta (evita DDL a cada inicialização a frio).
+    const [idx]: any = await database.execute(`SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'inventory_products'`);
+    const indexNames = new Set((idx as any[]).map((r) => String(r.INDEX_NAME ?? r.index_name)));
+    for (const [name, ddl] of [
+      ["inventory_products_merge_idx", `CREATE INDEX inventory_products_merge_idx ON inventory_products (companyId, productCode, expirationDate)`],
+      ["inventory_products_client_idx", `CREATE INDEX inventory_products_client_idx ON inventory_products (companyId, storeClientId)`],
+    ] as const) {
+      if (indexNames.has(name)) continue;
+      try { await database.execute(ddl); } catch (error: any) { if (!/exist|duplicate/i.test(`${error?.message ?? ""} ${error?.cause?.message ?? ""}`)) console.warn("[inventory] índice", error); }
+    }
   })().catch((error) => {
     _inventoryReady = null;
     throw error;

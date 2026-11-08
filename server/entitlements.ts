@@ -26,7 +26,13 @@ export function getCompanyEntitlementBase(companyId: number): Promise<CompanyEnt
   return entitlementBaseCache.get(String(companyId), () => loadCompanyEntitlementBase(companyId));
 }
 
+let productsFeatureReady: Promise<void> | null = null;
 async function loadCompanyEntitlementBase(companyId: number): Promise<CompanyEntitlementBase> {
+  // 0031: garante (uma vez por instância) que todo plano tenha o módulo "products" — default ON para clientes atuais.
+  if (!productsFeatureReady) {
+    productsFeatureReady = (async () => { try { await db.ensureProductsFeature(); } catch (error) { productsFeatureReady = null; console.warn("[entitlements] ensureProductsFeature", error); } })();
+  }
+  await productsFeatureReady;
   const resolved = await db.resolveCompanyPlan(companyId);
   const plan = (resolved.plan as Record<string, unknown> | null) ?? null;
   const rawKeys = Array.isArray(plan?.featureKeys)

@@ -63,6 +63,7 @@ const laborSchema = z.object({
   jobTitle: z.string().trim().max(120).nullish(),
   admissionDate: dateStr.nullish(),
   cpf: z.string().trim().max(14).nullish().refine((v) => !v || isValidCpf(v), "CPF inválido: confira os números."),
+  pis: z.string().trim().max(20).nullish(),
   /** Horário contratual: pares entrada/saída, ex.: [["08:00","12:00"],["13:00","17:00"]]. */
   schedule: z.array(z.tuple([hm, hm])).max(4).nullish(),
   dailyMinutes: z.number().int().min(0).max(1440).nullish(),

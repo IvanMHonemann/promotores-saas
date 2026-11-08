@@ -34,6 +34,7 @@ const MyMirrorPage = lazy(() => import("./pages/promoter/MyMirrorPage"));
 const MyDataPage = lazy(() => import("./pages/promoter/MyDataPage"));
 const LgpdPage = lazy(() => import("./pages/admin/LgpdPage"));
 const PontoLegalPage = lazy(() => import("./pages/admin/PontoLegalPage"));
+const PlatformPontoLegalPage = lazy(() => import("./pages/platform/PlatformPontoLegalPage"));
 const TimesheetMirrorPage = lazy(() => import("./pages/admin/TimesheetMirrorPage"));
 const TimesheetArchivePage = lazy(() => import("./pages/admin/TimesheetArchivePage"));
 const CheckInOutPage = lazy(() => import("./pages/admin/CheckInOutPage"));
@@ -267,14 +268,14 @@ function Router() {
       <Route path="/redefinir-senha" component={ResetPasswordPage} />
       <Route path="/termos">{() => <LegalPage kind="termos" />}</Route>
       <Route path="/privacidade">{() => <LegalPage kind="privacidade" />}</Route>
-      <Route path="/produtos"><CommercialProtected><ProductsPage /></CommercialProtected></Route>
+      <Route path="/produtos"><CommercialProtected><FeatureProtected featureKey="products"><ProductsPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lojas/:storeId"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoreGalleryPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lojas"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoresPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lixeira"><CommercialProtected><TrashPage /></CommercialProtected></Route>
       <Route path="/ponto"><PromoterProtected><FeatureProtected featureKey="timeTracking"><PromoterClockPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/espelho-ponto"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetMirrorPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/arquivos-historicos"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetArchivePage /></FeatureProtected></CompanyAdminProtected></Route>
-      <Route path="/check-in-out"><CompanyAdminProtected><FeatureProtected featureKey="fieldOperations"><CheckInOutPage /></FeatureProtected></CompanyAdminProtected></Route>
+      <Route path="/check-in-out"><CompanyAdminProtected><FeatureProtected featureKey="visitCheckIn"><CheckInOutPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/cartao-ponto"><AdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetPage /></FeatureProtected></AdminProtected></Route>
       <Route path="/ferias"><AdminProtected><FeatureProtected featureKey="timeTracking"><VacationsPage /></FeatureProtected></AdminProtected></Route>
       <Route path="/meus-comprovantes"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyReceiptsPage /></FeatureProtected></PromoterProtected></Route>
@@ -288,6 +289,7 @@ function Router() {
       <Route path="/admin/auditoria"><PlatformProtected><PlatformAuditPage /></PlatformProtected></Route>
       <Route path="/plataforma/teste-check-in-out"><PlatformTestProtected><PlatformCheckInOutTestPage /></PlatformTestProtected></Route>
       <Route path="/plataforma/ponto"><PlatformProtected><PlatformDashboard section="time" /></PlatformProtected></Route>
+      <Route path="/plataforma/ponto-legal"><PlatformProtected><PlatformPontoLegalPage /></PlatformProtected></Route>
       <Route path="/plataforma/scanner"><PlatformProtected><PlatformDashboard section="code-scanner" /></PlatformProtected></Route>
       <Route path="/plataforma/ia"><PlatformProtected><PlatformDashboard section="ai-support" /></PlatformProtected></Route>
       <Route path="/admin/usuarios"><AdminProtected><FeatureProtected featureKey="teamManagement"><AdminUsersPage /></FeatureProtected></AdminProtected></Route>

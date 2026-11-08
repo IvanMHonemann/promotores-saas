@@ -18,6 +18,8 @@ const empty = { name: "", contactName: "", phone: "", notes: "" };
 type Props = {
   storeId: number;
   storeName: string;
+  /** Endereço cadastrado da loja, para o carimbo da foto. */
+  storeAddress?: string | null;
   visitId?: number | null;
   filter: ClientFilter;
   onFilter: (f: ClientFilter) => void;
@@ -27,7 +29,7 @@ type Props = {
 };
 
 /** Clientes da loja: cadastro e, dentro de cada cliente, o botão para tirar as fotos. */
-export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilter, onChanged, legacyPhotos }: Props) {
+export function StoreClientsPanel({ storeId, storeName, storeAddress, visitId, filter, onFilter, onChanged, legacyPhotos }: Props) {
   const utils = trpc.useUtils();
   const { run } = useBusy();
   const online = useOnline();
@@ -114,7 +116,7 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
           <p className="text-base font-bold text-white">Nenhum cliente cadastrado nesta loja</p>
           <p className="mt-1 text-sm text-slate-300">Você pode tirar fotos mesmo sem clientes cadastrados (serão associadas depois).</p>
           <div className="mt-4">
-            <PhotoCapture storeId={storeId} storeName={storeName} visitId={visitId} onCaptured={refresh} />
+            <PhotoCapture storeId={storeId} storeName={storeName} storeAddress={storeAddress} visitId={visitId} onCaptured={refresh} />
           </div>
         </div>
       )}
@@ -140,7 +142,7 @@ export function StoreClientsPanel({ storeId, storeName, visitId, filter, onFilte
             </div>
             {!c.pending && (
               <div className="mt-3">
-                <PhotoCapture storeId={storeId} storeName={storeName} storeClientId={c.id} clientName={c.name} visitId={visitId} onCaptured={refresh} />
+                <PhotoCapture storeId={storeId} storeName={storeName} storeAddress={storeAddress} storeClientId={c.id} clientName={c.name} visitId={visitId} onCaptured={refresh} />
               </div>
             )}
           </div>

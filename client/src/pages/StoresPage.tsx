@@ -53,6 +53,7 @@ export default function StoresPage() {
   const stores = { refetch: storesQuery.refetch, isError: storesQuery.isError && !cachedStores, error: storesQuery.error };
 
   const { run } = useBusy();
+  const utils = trpc.useUtils();
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({ name: "", city: "", state: "", address: "" });
   const isCompanyAdmin = user?.role === "company_admin";
@@ -72,7 +73,11 @@ export default function StoresPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const confirmArchive = async (store: any) => {
-    if (!(await confirmAction({ title: `Remover a loja "${store.name}"?`, description: "As fotos e o histórico continuam guardados.", confirmLabel: "Remover loja" }))) return;
+    // Produtos com validade nesta loja não somem: passam a aparecer como "loja removida". Avisa antes.
+    let productCount = 0;
+    try { productCount = (await utils.products.countByStore.fetch({ storeId: store.id })).count; } catch { /* módulo de produtos desligado */ }
+    const productNote = productCount > 0 ? ` ${productCount} produto(s) com validade continuam cadastrados e passam a aparecer como "loja removida" em Produtos e validades.` : "";
+    if (!(await confirmAction({ title: `Remover a loja "${store.name}"?`, description: `As fotos e o histórico continuam guardados.${productNote}`, confirmLabel: "Remover loja" }))) return;
     void run("Removendo loja...", () => archiveStore.mutateAsync({ id: store.id })).catch(() => {});
   };
   const closeForm = () => { setFormOpen(false); setEditingId(null); setForm({ name: "", city: "", state: "", address: "" }); };

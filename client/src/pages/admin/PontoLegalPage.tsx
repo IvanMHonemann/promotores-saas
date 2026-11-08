@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, Circle, Download, FileSignature, ShieldChe
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { currentMonthSP, downloadBase64, fmtDateTimeSP } from "@/lib/downloadBase64";
+import { isCompanyActionableWarning, simplifyExportWarning, simplifyIntegrityProblem } from "@/lib/pontoLegalCopy";
 
 function Item({ ok, title, hint }: { ok: boolean; title: string; hint: string }) {
   return (
@@ -16,7 +17,7 @@ function Item({ ok, title, hint }: { ok: boolean; title: string; hint: string })
   );
 }
 
-/** Ponto com valor de prova: situação, integridade, arquivos fiscais (AFD/AEJ) e aceites do espelho. */
+/** Tela da empresa: o que o ponto já faz e o que a própria empresa ainda precisa cadastrar. */
 export default function PontoLegalPage() {
   const status = trpc.pontoLegal.status.useQuery();
   const verify = trpc.pontoLegal.verifyIntegrity.useMutation();
@@ -36,32 +37,53 @@ export default function PontoLegalPage() {
     try {
       const r = await (kind === "afd" ? afd : aej).mutateAsync({ from, to });
       downloadBase64(r.base64, r.fileName, r.mimeType);
-      setWarnings(r.warnings || []);
-      toast.success(`${kind.toUpperCase()} gerado (${r.count} ${kind === "afd" ? "marcações" : "funcionários"}).`);
-    } catch (e: any) { toast.error(e?.message || "Falha ao gerar o arquivo."); }
+      setWarnings((r.warnings || []).filter(isCompanyActionableWarning).map(simplifyExportWarning));
+      toast.success(kind === "afd"
+        ? `Arquivo de batidas (AFD) pronto (${r.count} marcações).`
+        : `Arquivo de jornadas (AEJ) pronto (${r.count} funcionário(s)).`);
+    } catch (e: any) { toast.error(e?.message || "Não foi possível gerar o arquivo."); }
   };
 
   const v = verify.data;
   return (
-    <DashboardLayout title="Ponto: prova legal" description="Tudo o que deixa o cartão-ponto utilizável numa fiscalização ou processo trabalhista.">
+    <DashboardLayout
+      title="Ponto: prova legal"
+      description="Como as batidas ficam guardadas e o que a sua empresa precisa cadastrar para usar o ponto com segurança."
+    >
       <div className="space-y-4 text-white">
         <Card className="border-white/10 bg-slate-900/70">
-          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4 text-teal-300" />Como o sistema protege as marcações</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4 text-teal-300" />Como o sistema protege as batidas</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm text-slate-200">
             <p>
-              Cada batida recebe um <b>NSR</b> (número sequencial da empresa, sem pular) e um <b>hash SHA-256 encadeado</b> com a anterior —
-              como os elos de uma corrente. Correções aprovadas <b>nunca alteram nem apagam</b> a batida original: viram um registro
-              separado (quem aprovou, quando e por quê). O funcionário recebe comprovante de cada batida e confirma o espelho do mês.
+              Cada batida recebe um <b>número em sequência</b> e um <b>lacre de segurança</b> ligado à anterior —
+              qualquer alteração fica evidente. Correções <b>nunca apagam</b> a batida original: viram um registro à parte
+              (quem aprovou, quando e por quê). O funcionário recebe o comprovante de cada batida e confirma o espelho do mês.
             </p>
             {s && (
               <ul className="space-y-1.5">
-                <Item ok title="Marcações imutáveis, NSR e cadeia de hash" hint="ativo" />
-                <Item ok title="Comprovante por batida (PDF)" hint={s.emailEnabled ? "com envio por e-mail" : "e-mail desativado neste ambiente; o PDF fica disponível"} />
-                <Item ok title="Aceite eletrônico do espelho" hint="IP, aparelho, data e hash do documento" />
-                <Item ok={s.employerDocument} title="CNPJ/CPF do empregador" hint={s.employerDocument ? (s.employerName || "cadastrado") : "cadastre nos dados da empresa para sair no AFD/AEJ e nos comprovantes"} />
-                <Item ok={Boolean(s.inpiNumber)} title="Registro do programa no INPI" hint={s.inpiNumber ? `nº ${s.inpiNumber}` : "pendente (obrigatório para REP-P — art. 91 da Portaria 671)"} />
-                <Item ok={s.developerDocument} title="CNPJ/CPF do desenvolvedor" hint={s.developerDocument ? "configurado" : "pendente (variável GONDUP_DEVELOPER_DOCUMENT)"} />
-                <Item ok={s.signature} title="Assinatura ICP-Brasil (.p7s) do AFD/AEJ" hint="pendente: os arquivos saem sem assinatura até haver certificado digital" />
+                <Item ok title="Batidas com número e lacre de segurança" hint="ativo" />
+                <Item ok title="Comprovante de cada batida (PDF)" hint={s.emailEnabled ? "também pode ir por e-mail" : "disponível para baixar no app"} />
+                <Item ok title="Confirmação do espelho do mês" hint="fica gravado quando e de onde o funcionário confirmou" />
+                <Item
+                  ok={s.employerDocument}
+                  title="CNPJ ou CPF da empresa"
+                  hint={s.employerDocument ? (s.employerName || "cadastrado") : "ainda falta — cadastre em Espelho de ponto → Dados da empresa"}
+                />
+                <Item
+                  ok={Boolean(s.employerAddress)}
+                  title="Endereço / local de trabalho"
+                  hint={s.employerAddress ? "cadastrado" : "ainda falta — cadastre em Espelho de ponto → Dados da empresa"}
+                />
+                <Item
+                  ok={(s.workersMissingCpf ?? 0) === 0}
+                  title="CPF dos funcionários"
+                  hint={(s.workersMissingCpf ?? 0) === 0 ? "todos com CPF no cadastro" : `${s.workersMissingCpf} ainda sem CPF — complete no Espelho de ponto (perfil do funcionário)`}
+                />
+                <Item
+                  ok={(s.workersMissingSchedule ?? 0) === 0}
+                  title="Horário de trabalho dos funcionários"
+                  hint={(s.workersMissingSchedule ?? 0) === 0 ? "jornada cadastrada" : `${s.workersMissingSchedule} sem jornada — preencha no Espelho de ponto`}
+                />
               </ul>
             )}
           </CardContent>
@@ -83,7 +105,7 @@ export default function PontoLegalPage() {
         <Card className="border-white/10 bg-slate-900/70">
           <CardHeader><CardTitle className="text-base">Relógio x Hora Legal Brasileira</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <p className="text-slate-300">A Portaria 671 exige no máximo 30 segundos de diferença para a hora oficial (NTP.br, Observatório Nacional). O sistema confere todo dia, ao abrir esta tela (se a última conferência tiver mais de 6 horas) e quando você pedir. Cada conferência fica gravada na auditoria.</p>
+            <p className="text-slate-300">A lei do ponto eletrônico exige no máximo 30 segundos de diferença para a hora oficial (NTP.br, Observatório Nacional). O sistema confere todo dia, ao abrir esta tela (se a última conferência tiver mais de 6 horas) e quando você pedir. Cada conferência fica gravada na auditoria.</p>
             <Button variant="secondary" onClick={() => clockCheck.mutate()} disabled={clockCheck.isPending}>{clockCheck.isPending ? "Conferindo..." : "Conferir agora"}</Button>
             {(() => {
               const last = clock.data?.checks?.[0];
@@ -99,28 +121,43 @@ export default function PontoLegalPage() {
         </Card>
 
         <Card className="border-white/10 bg-slate-900/70">
-          <CardHeader><CardTitle className="text-base">Verificar integridade</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Conferir se os registros estão intactos</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <p className="text-slate-300">Recalcula todos os hashes e confere a sequência de NSR. Se alguém mexer direto no banco de dados, aparece aqui.</p>
-            <Button onClick={() => verify.mutate()} disabled={verify.isPending}>{verify.isPending ? "Verificando..." : "Verificar agora"}</Button>
+            <p className="text-slate-300">
+              Confere se nenhuma batida foi alterada ou apagada depois de gravada. Use se precisar mostrar que o ponto está íntegro.
+            </p>
+            <Button onClick={() => verify.mutate()} disabled={verify.isPending}>
+              {verify.isPending ? "Conferindo..." : "Conferir agora"}
+            </Button>
             {verify.error && <p className="text-rose-300">{verify.error.message}</p>}
             {v && (
               <div className={`rounded-lg border p-3 ${v.ok ? "border-emerald-300/40 bg-emerald-400/10" : "border-rose-300/40 bg-rose-400/10"}`}>
-                <p className="font-bold">{v.ok ? "Tudo íntegro." : `${v.totalProblems} problema(s) encontrado(s).`}</p>
-                <p className="text-xs text-slate-300">{v.originals} marcações originais (último NSR {v.lastNsr}) · {v.treatments} tratamentos (ajustes/inclusões) · verificado em {fmtDateTimeSP(v.checkedAt)}</p>
-                {v.sealedLegacy > 0 && <p className="mt-1 text-xs text-amber-200">{v.sealedLegacy} marcações anteriores a esta versão foram seladas em {fmtDateTimeSP(v.sealedAt)}: o selo prova que não mudaram depois dessa data, mas não antes.</p>}
-                {v.problems.length > 0 && <ul className="mt-2 list-disc pl-5 text-xs">{v.problems.map((p: any, i: number) => <li key={i}>{p.nsr ? `NSR ${p.nsr}: ` : ""}{p.message}</li>)}</ul>}
+                <p className="font-bold">{v.ok ? "Tudo certo: os registros estão intactos." : `Encontramos ${v.totalProblems} problema(s).`}</p>
+                <p className="text-xs text-slate-300">
+                  {v.originals} batida(s) · {v.treatments} correção(ões) · conferido em {fmtDateTimeSP(v.checkedAt)}
+                </p>
+                {v.sealedLegacy > 0 && (
+                  <p className="mt-1 text-xs text-amber-200">
+                    {v.sealedLegacy} batida(s) antigas receberam o lacre quando essa proteção entrou no sistema
+                    ({fmtDateTimeSP(v.sealedAt)}). O lacre prova que não mudaram depois dessa data.
+                  </p>
+                )}
+                {v.problems.length > 0 && (
+                  <ul className="mt-2 list-disc pl-5 text-xs">
+                    {v.problems.map((p: any, i: number) => <li key={i}>{simplifyIntegrityProblem(p)}</li>)}
+                  </ul>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
 
         <Card className="border-white/10 bg-slate-900/70">
-          <CardHeader><CardTitle className="text-base">Arquivos para fiscalização (AFD e AEJ)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Arquivos oficiais para fiscalização</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             <p className="text-slate-300">
-              <b>AFD</b>: todas as marcações originais, no leiaute oficial do Ministério do Trabalho. <b>AEJ</b>: jornadas tratadas
-              (com ajustes e inclusões). Entregue ao auditor-fiscal ou ao perito quando pedirem.
+              <b>AFD</b> — arquivo oficial de batidas para fiscalização (marcações originais).{" "}
+              <b>AEJ</b> — arquivo oficial de jornadas (com correções e inclusões). Entregue ao fiscal ou ao perito quando pedirem.
             </p>
             <div className="flex flex-wrap items-end gap-2">
               <label className="text-xs">De<br /><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1" /></label>
@@ -128,12 +165,12 @@ export default function PontoLegalPage() {
               <Button variant="secondary" disabled={afd.isPending} onClick={() => void exportFile("afd")}><Download className="mr-1 h-4 w-4" />Baixar AFD</Button>
               <Button variant="secondary" disabled={aej.isPending} onClick={() => void exportFile("aej")}><Download className="mr-1 h-4 w-4" />Baixar AEJ</Button>
             </div>
-            <p className="flex gap-2 rounded-lg border border-amber-300/30 bg-amber-400/10 p-2 text-xs text-amber-100">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              Os arquivos ainda saem sem a assinatura digital ICP-Brasil (.p7s) exigida pela Portaria 671. Até lá, servem como prova
-              complementar junto com o relatório de integridade.
-            </p>
-            {warnings.length > 0 && <ul className="list-disc pl-5 text-xs text-amber-200">{warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+            {warnings.length > 0 && (
+              <div className="rounded-lg border border-amber-300/30 bg-amber-400/10 p-2 text-xs text-amber-100">
+                <p className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" /> Antes de entregar, complete o cadastro:</p>
+                <ul className="list-disc pl-5">{warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -147,8 +184,8 @@ export default function PontoLegalPage() {
                 <span className="text-xs">
                   {!r.acceptance ? <span className="text-slate-400">Ainda não confirmou</span>
                     : <span className={r.acceptance.decision === "accepted" ? "text-emerald-300" : "text-rose-300"}>
-                        {r.acceptance.decision === "accepted" ? "Confirmou" : "Contestou"} em {fmtDateTimeSP(r.acceptance.acceptedAt)} · IP {r.acceptance.ipAddress || "—"}
-                        {r.acceptance.changedAfter ? " · espelho mudou depois (pedir nova confirmação)" : ""}
+                        {r.acceptance.decision === "accepted" ? "Confirmou" : "Contestou"} em {fmtDateTimeSP(r.acceptance.acceptedAt)}
+                        {r.acceptance.changedAfter ? " · o espelho mudou depois (peça nova confirmação)" : ""}
                         {r.acceptance.comment ? ` · “${r.acceptance.comment}”` : ""}
                       </span>}
                 </span>

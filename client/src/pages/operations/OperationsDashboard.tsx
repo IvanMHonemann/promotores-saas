@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { daysUntil, todayInZone } from "@shared/expiry";
 import { AlertTriangle, Bell, Check, CheckCircle2, Clock3, ClipboardList, Loader2, MapPin, Users, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -48,6 +49,8 @@ export default function OperationsDashboard() {
   const isSupervisor = user?.role === "supervisor";
   const access = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
   const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
+  const hasProducts = Boolean(access.data?.effective?.products);
+  const hasVisitCheckIn = Boolean(access.data?.effective?.visitCheckIn);
   const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
   const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
   const routes = trpc.operations.routes.list.useQuery(undefined, { enabled: hasFieldOperations });
@@ -56,7 +59,7 @@ export default function OperationsDashboard() {
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { enabled: hasFieldOperations });
   const storesWithStats = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
-  const alertsQuery = trpc.inventoryAlerts.useQuery({ daysAhead: 30 }, { enabled: hasFieldOperations, staleTime: 60000 });
+  const alertsQuery = trpc.inventoryAlerts.useQuery(undefined, { enabled: hasProducts, staleTime: 60000 });
   const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin && hasTimeTracking });
   const utils = trpc.useUtils();
@@ -148,7 +151,7 @@ export default function OperationsDashboard() {
       setApproving(false);
     }
   };
-  const visibleSection = hasFieldOperations ? section : "overview";
+  const visibleSection = !hasFieldOperations ? "overview" : section === "visits" && !hasVisitCheckIn ? "overview" : section;
   const title = visibleSection === "routes" ? (isCompanyAdmin ? "Lojas" : "Roteiros") : visibleSection === "visits" ? "Visitas" : isCompanyAdmin ? "Central da empresa" : isSupervisor ? "Painel do supervisor" : "Operação de campo";
   const description = visibleSection === "routes"
     ? isCompanyAdmin ? "Cadastre lojas e consulte as rotas distribuídas. A programação semanal fica no cadastro de cada promotor." : "Consulte as rotas distribuídas para a equipe."
@@ -162,8 +165,9 @@ export default function OperationsDashboard() {
     <DashboardLayout title={title} description={description} onRefresh={() => window.location.reload()}>
       {visibleSection === "overview" && (
         <Overview
+          hasProducts={hasProducts}
           isSupervisor={isSupervisor}
-          setupSteps={buildSetupSteps({ stores: (stores.data || []).length, promoters: (promoters.data || []).length, routes: (routes.data || []).length, activity: (presence.data || []).length > 0 || metrics.totalPhotos > 0 })}
+          setupSteps={buildSetupSteps({ stores: (stores.data || []).length, promoters: (promoters.data || []).length, routes: (routes.data || []).length, activity: metrics.totalPhotos > 0 || (hasTimeTracking && (presence.data || []).length > 0) || (hasVisitCheckIn && metrics.completed > 0), hasTimeTracking, hasVisitCheckIn })}
           setupReady={!stores.isLoading && !promoters.isLoading && !routes.isLoading && !storesWithStats.isLoading}
           accessLoading={access.isLoading}
           isPromoter={user?.role === "promoter"}
@@ -171,6 +175,7 @@ export default function OperationsDashboard() {
           metrics={metrics}
           visitsFailed={visits.isError}
           hasFieldOperations={hasFieldOperations}
+          hasVisitCheckIn={hasVisitCheckIn}
           hasTimeTracking={hasTimeTracking}
           presence={presence.data || []}
           presenceLoading={presence.isLoading}
@@ -212,30 +217,30 @@ export default function OperationsDashboard() {
   );
 }
 
-function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, accessLoading = false, isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
+function Overview({ hasProducts = false, isSupervisor = false, setupSteps = [], setupReady = false, accessLoading = false, isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasVisitCheckIn, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
   const activePromoters = presence.filter((entry: CompanyPresenceEntry) => entry.active).length;
   return (
     <div className="space-y-6">
-      {isPromoter && hasFieldOperations && <Card id="roteiro" className="border-teal-300/30 bg-teal-300/5"><CardHeader><CardTitle className="flex items-center gap-2 text-white"><ClipboardList className="text-teal-300" />Meu roteiro de hoje</CardTitle></CardHeader><CardContent className="space-y-2">{visitsFailed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar o roteiro de hoje.</p>}{!visitsFailed && !todayVisits.length && <p className="text-sm text-slate-300">Você não tem visitas programadas para hoje.</p>}{todayVisits.map(({ visit, store }: any, index: number) => <div key={visit.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-3"><div><p className="text-xs font-semibold text-teal-300">Parada {index + 1}</p><p className="font-bold text-white">{store.name}</p><p className="text-sm text-slate-300">{store.city}{store.address ? ` · ${store.address}` : ""}</p></div><Badge variant="outline">{visit.status === "in_progress" ? "Em andamento" : visit.status === "completed" ? "Concluída" : "Pendente"}</Badge></div>)}</CardContent></Card>}
+      {isPromoter && hasFieldOperations && <Card id="roteiro" className="border-teal-300/30 bg-teal-300/5"><CardHeader><CardTitle className="flex items-center gap-2 text-white"><ClipboardList className="text-teal-300" />Meu roteiro de hoje</CardTitle></CardHeader><CardContent className="space-y-2">{visitsFailed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar o roteiro de hoje.</p>}{!visitsFailed && !todayVisits.length && <p className="text-sm text-slate-300">Você não tem visitas programadas para hoje.</p>}{todayVisits.map(({ visit, store }: any, index: number) => <div key={visit.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-3"><div><p className="text-xs font-semibold text-teal-300">Parada {index + 1}</p><p className="font-bold text-white">{store.name}</p><p className="text-sm text-slate-300">{store.city}{store.address ? ` · ${store.address}` : ""}</p></div>{hasVisitCheckIn && <Badge variant="outline">{visit.status === "in_progress" ? "Em andamento" : visit.status === "completed" ? "Concluída" : "Pendente"}</Badge>}</div>)}</CardContent></Card>}
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7">
         <p className="text-xs font-bold uppercase tracking-[.18em] text-teal-300">Visão geral</p>
         <h2 className="mt-2 text-2xl font-black sm:text-4xl">Operação de campo</h2>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar.</p>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{hasTimeTracking ? "Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar." : "Organize roteiros e veja a execução das visitas em um só lugar."}</p>
       </div>
       {isCompanyAdmin && hasFieldOperations && setupReady && <SetupChecklist steps={setupSteps} />}
-      {isSupervisor && hasFieldOperations && <AttentionCard pendingVisits={metrics.pending} expiring={metrics.expiring} />}
+      {isSupervisor && hasFieldOperations && <AttentionCard pendingVisits={hasVisitCheckIn ? metrics.pending : 0} expiring={metrics.expiring} />}
 
       {accessLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
       {hasFieldOperations && <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
-        {hasTimeTracking && <Metric label="Em atendimento" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Com ponto aberto" href={isCompanyAdmin ? "/check-in-out" : undefined} />}
-        <Metric label="Visitas hoje" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Planejadas" href="#visitas" />
+        {hasTimeTracking && <Metric label="Em atendimento" value={activePromoters} icon={Users} tone="text-emerald-300" hint="Com ponto aberto" href={isCompanyAdmin && hasVisitCheckIn ? "/check-in-out" : undefined} />}
+        <Metric label="Visitas hoje" value={metrics.total} icon={ClipboardList} tone="text-teal-300" hint="Planejadas" href={hasVisitCheckIn ? "#visitas" : "#roteiros"} />
         <Metric label="Lojas" value={metrics.storeCount} icon={MapPin} tone="text-sky-300" hint="Cadastradas" href="/lojas" />
-        <Metric label="A vencer" value={metrics.expiring} icon={AlertTriangle} tone="text-amber-300" hint="Próx. 30 dias" href="/produtos" />
+        {hasProducts && <Metric label="Validades" value={metrics.expiring} icon={AlertTriangle} tone="text-amber-300" hint="Vencidos e a vencer" href="/produtos" />}
       </div>}
       {!accessLoading && !hasFieldOperations && <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100">Roteiros, lojas e visitas não estão liberados para esta empresa. Peça ao administrador da plataforma para liberar o módulo de operação de campo.</div>}
       {hasFieldOperations && visitsFailed && <p role="alert" className="rounded-xl border border-rose-300/25 bg-rose-300/10 p-3 text-sm text-rose-100">Não foi possível carregar os indicadores de visitas. Atualize o painel e tente novamente.</p>}
 
-      {hasFieldOperations && (
+      {hasProducts && (
         <section className="rounded-2xl border-2 border-amber-400/40 bg-amber-400/10 p-4">
           <h3 className="flex items-center gap-2 text-base font-bold text-amber-100">
             <AlertTriangle className="h-5 w-5 text-amber-300" /> Alertas de validade
@@ -244,12 +249,12 @@ function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, a
           {alertsLoading && <p className="mt-3 text-sm text-amber-100/70">Carregando produtos...</p>}
           {alertsError && <p className="mt-3 text-sm text-rose-200">Não foi possível carregar os alertas de validade.</p>}
           {!alertsLoading && !alertsError && metrics.expiring === 0 && (
-            <p className="mt-3 text-sm text-amber-100/70">Nenhum produto perto do vencimento nos próximos 30 dias.</p>
+            <p className="mt-3 text-sm text-amber-100/70">Nenhum produto vencido ou perto do vencimento.</p>
           )}
           <div className="mt-3 space-y-2">
             {(alerts || []).slice(0, 5).map((item: any) => {
-              const exp = item.expirationDate ? new Date(item.expirationDate) : null;
-              const days = exp ? Math.ceil((exp.getTime() - Date.now()) / 86400000) : null;
+              // Validade é data de calendário: compara com "hoje" no fuso de Brasília (sem erro de fuso/horário).
+              const days = item.expirationDate ? daysUntil(String(item.expirationDate).slice(0, 10), todayInZone()) : null;
               return (
                 <div key={item.id} className="flex items-center justify-between rounded-xl border border-amber-300/20 bg-slate-950/60 px-3 py-2.5">
                   <div>
@@ -257,7 +262,7 @@ function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, a
                     <p className="text-xs text-slate-400">{item.productCode || ""}</p>
                   </div>
                   <span className="rounded-lg bg-amber-400/20 px-2 py-1 text-xs font-bold text-amber-200">
-                    {days == null ? "—" : days < 0 ? "Vencido" : `${days}d`}
+                    {days == null ? "—" : days < 0 ? "Vencido" : days === 0 ? "Hoje" : `${days}d`}
                   </span>
                 </div>
               );
@@ -277,10 +282,10 @@ function Overview({ isSupervisor = false, setupSteps = [], setupReady = false, a
           <p className="font-bold text-white">Roteiros</p>
           <p className="mt-1 text-sm text-slate-300">Consultar roteiros programados.</p>
         </a>}
-        <a href="#visitas" className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 transition hover:border-teal-300/30">
+        {hasVisitCheckIn && <a href="#visitas" className="rounded-2xl border border-white/10 bg-slate-900/80 p-5 transition hover:border-teal-300/30">
           <p className="font-bold text-white">Visitas</p>
           <p className="mt-1 text-sm text-slate-300">Acompanhar status das visitas planejadas.</p>
-        </a>
+        </a>}
       </div>}
 
       {isCompanyAdmin && hasTimeTracking && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} approveMany={approveMany} reviewPending={reviewPending} />}

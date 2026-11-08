@@ -5,13 +5,14 @@ import { toast } from "sonner";
 import { enqueueVisit } from "@/lib/visitQueue";
 import { enqueuePhoto } from "@/lib/photoQueue";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { ADDRESS_TIMEOUT_MS, applyWatermark, resolveStampAddress, stampLines } from "@/lib/photoStamp";
 import {
   errorMessage,
   isRetryableError,
   markUploading,
   prepareCheckInPhoto,
   startGpsLookup,
-  waitFor,
   withTimeout,
   type GpsFix,
   type PreparedPhoto,
@@ -22,6 +23,8 @@ type Props = {
   visitId: number;
   storeId: number;
   storeName: string;
+  /** Endereço cadastrado da loja, usado no carimbo se o GPS vier incompleto. */
+  storeAddress?: string | null;
   onDone: () => void;
   onCancel: () => void;
   sandbox?: boolean;
@@ -31,13 +34,13 @@ type Shot = PreparedPhoto & { capturedAt: string; idempotencyKey: string };
 
 const VISIT_TIMEOUT_MS = 20_000;
 const PHOTO_TIMEOUT_MS = 28_000; // a função serverless da Vercel encerra em 30 s
-const GPS_WAIT_MS = 3_000; // antes esperava até 10 s a cada confirmação
 
 export function VisitCheckIn({
   action,
   visitId,
   storeId,
   storeName,
+  storeAddress,
   onDone,
   onCancel,
   sandbox = false,
@@ -52,10 +55,41 @@ export function VisitCheckIn({
   const gpsRef = useRef<Promise<GpsFix | null> | null>(null);
   const shotRef = useRef<Shot | null>(null);
   const { client } = trpc.useUtils();
+  const { user } = useAuth();
+  // Endereço real obrigatório no carimbo: a foto só é liberada depois de descobrir GPS + endereço.
+  const [loc, setLoc] = useState<{ gps: GpsFix | null; address: string } | null>(null);
+  const [locFailed, setLocFailed] = useState(false);
+  const locRef = useRef<{ gps: GpsFix | null; address: string } | null>(null);
+  const locate = () => {
+    setLocFailed(false);
+    const deadline = Date.now() + ADDRESS_TIMEOUT_MS;
+    const store = storeAddress?.trim() || null;
+    const finish = (gps: GpsFix | null, address: string) => {
+      locRef.current = { gps, address };
+      setLoc(locRef.current);
+    };
+    void (async () => {
+      let fix: GpsFix | null = null;
+      // Tenta achar o endereço completo pelo GPS; só usa o cadastrado se demorar demais ou sem internet.
+      while (Date.now() < deadline) {
+        gpsRef.current = startGpsLookup();
+        fix = (await gpsRef.current) ?? fix;
+        if (!navigator.onLine) break;
+        if (fix) {
+          const address = await resolveStampAddress(fix.lat, fix.lng);
+          if (address) return finish(fix, address);
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (store) return finish(fix, store);
+      if (!navigator.onLine) return finish(fix, "Sem conexão: endereço não disponível");
+      setLocFailed(true);
+    })();
+  };
 
   // O GPS começa a ser lido ao abrir a tela, enquanto o promotor tira a foto.
   useEffect(() => {
-    gpsRef.current = startGpsLookup();
+    locate();
     return () => {
       if (shotRef.current) URL.revokeObjectURL(shotRef.current.previewUrl);
     };
@@ -69,6 +103,10 @@ export function VisitCheckIn({
 
   const capture = () => {
     if (busy || processing) return;
+    if (!locRef.current) {
+      toast.error("Aguarde a localização e o endereço antes de tirar a foto.");
+      return;
+    }
     inputRef.current?.click();
   };
 
@@ -118,9 +156,7 @@ export function VisitCheckIn({
     markUploading(1);
     try {
       setStep("Obtendo localização...");
-      const position = gpsRef.current
-        ? await waitFor(gpsRef.current, GPS_WAIT_MS, null)
-        : null;
+      const position = locRef.current?.gps ?? null;
 
       const visitInput = {
         id: visitId,
@@ -128,6 +164,23 @@ export function VisitCheckIn({
         longitude: position?.lng,
         accuracy: position?.accuracy,
       };
+      // Carimbo (promotor, local, loja, data e hora) igual às demais fotos.
+      setStep("Aplicando carimbo...");
+      let imageBase64 = current.base64;
+      try {
+        const location = locRef.current?.address || storeAddress?.trim() || "Local não disponível";
+        imageBase64 = await applyWatermark(
+          `data:image/jpeg;base64,${current.base64}`,
+          stampLines({
+            promoter: user?.name || user?.email || "Promotor",
+            location,
+            storeName,
+            capturedAt: new Date(current.capturedAt),
+          })
+        );
+      } catch {
+        // Se o carimbo falhar, envia a foto mesmo assim para não travar a visita.
+      }
       const photoInput = {
         storeId,
         visitId,
@@ -138,7 +191,7 @@ export function VisitCheckIn({
         locationStatus: position
           ? ("success" as const)
           : ("unavailable" as const),
-        imageBase64: current.base64,
+        imageBase64,
         mimeType: "image/jpeg",
         idempotencyKey: current.idempotencyKey,
       };
@@ -200,7 +253,7 @@ export function VisitCheckIn({
             visitId,
             storeId,
             storeName,
-            photoBase64: current.base64,
+            photoBase64: imageBase64,
             mimeType: "image/jpeg",
             latitude: position?.lat,
             longitude: position?.lng,
@@ -241,7 +294,7 @@ export function VisitCheckIn({
           longitude: position?.lng,
           accuracy: position?.accuracy,
           locationStatus: photoInput.locationStatus,
-          imageBase64: current.base64,
+          imageBase64,
           mimeType: "image/jpeg",
           idempotencyKey: current.idempotencyKey,
         });
@@ -305,12 +358,21 @@ export function VisitCheckIn({
             <Loader2 className="h-4 w-4 animate-spin" /> Processando foto...
           </div>
         ) : !shot ? (
-          <Button
-            onClick={capture}
-            className={`mt-4 w-full gap-2 text-slate-950 ${accent}`}
-          >
-            <Camera className="h-5 w-5" /> Tirar foto da fachada
-          </Button>
+          <div className="mt-4 space-y-2">
+            <p className="text-center text-xs text-slate-300" role="status">
+              {loc ? `Local: ${loc.address}` : locFailed ? "Não foi possível obter o endereço. Ative a localização e tente de novo." : "Buscando localização e endereço..."}
+            </p>
+            {locFailed && !loc && (
+              <Button onClick={locate} variant="outline" className="w-full">Tentar localizar de novo</Button>
+            )}
+            <Button
+              onClick={capture}
+              disabled={!loc}
+              className={`w-full gap-2 text-slate-950 ${accent}`}
+            >
+              {loc ? <Camera className="h-5 w-5" /> : <Loader2 className="h-5 w-5 animate-spin" />} Tirar foto da fachada
+            </Button>
+          </div>
         ) : (
           <div className="mt-4">
             <img

@@ -6,7 +6,7 @@ import { isValidCpf, isValidCpfOrCnpj } from "@shared/brDocs";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { commercialFeatureProcedure, companyAdminFeatureProcedure, router } from "../_core/trpc";
+import { commercialFeatureProcedure, companyAdminFeatureProcedure, platformProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { companies, memberAccounts, promoterProfiles, timeEvents } from "../../drizzle/schema";
 import { auditFromCtx, requestMeta } from "../audit";
@@ -137,18 +137,42 @@ export async function dataReadiness(companyId: number) {
 }
 
 export const pontoLegalRouter = router({
-  /** Situação do sistema para a tela do administrador (o que já está pronto e o que depende do Ivan/advogado). */
+  /** Situação para a empresa cliente: só o que ela pode cadastrar (sem pendências do dono da plataforma). */
   status: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
-    const dev = developerInfo();
     const employer = await employerOf(ctx.accountId);
+    const database = await db.getDb();
+    let workersMissingCpf = 0;
+    let workersMissingSchedule = 0;
+    if (database) {
+      const members = await database.select({ id: memberAccounts.id, role: memberAccounts.role, active: memberAccounts.active })
+        .from(memberAccounts).where(eq(memberAccounts.companyId, ctx.accountId));
+      for (const m of members) {
+        if (!m.active || m.role === "company_admin") continue;
+        const labor = await readJson<LaborProfile>(`labor_profile:${m.id}`, ctx.accountId);
+        if (onlyDigits(labor?.cpf).length !== 11) workersMissingCpf += 1;
+        if (!Number(labor?.dailyMinutes || 0)) workersMissingSchedule += 1;
+      }
+    }
     return {
       employerDocument: Boolean(employer.document),
       employerName: employer.name,
-      inpiNumber: dev.inpiNumber,
-      developerDocument: Boolean(dev.document),
-      signature: false,
+      employerAddress: Boolean(employer.workplace),
+      workersMissingCpf,
+      workersMissingSchedule,
       emailEnabled: Boolean(process.env.RESEND_API_KEY || process.env.EMAIL_WEBHOOK_URL),
       readiness: await dataReadiness(ctx.accountId),
+    };
+  }),
+
+  /** Pendências do dono do GondUp (INPI, documento do desenvolvedor, certificado) — só platform_admin. */
+  platformStatus: platformProcedure.query(async () => {
+    const dev = developerInfo();
+    return {
+      inpiNumber: dev.inpiNumber,
+      developerDocument: Boolean(dev.document),
+      developerName: dev.name,
+      signature: false,
+      emailEnabled: Boolean(process.env.RESEND_API_KEY || process.env.EMAIL_WEBHOOK_URL),
     };
   }),
 
@@ -202,7 +226,10 @@ export const pontoLegalRouter = router({
       const acc = (await latestAcceptances(ctx.accountId, input.month, [ctx.memberAccountId])).get(ctx.memberAccountId) ?? null;
       return {
         month: input.month, from: m.from, to: m.to, timeZone: TZ, report: m.report, documentHash: m.documentHash,
-        employer: m.employer, worker: { name: m.member.name, cpf: m.labor?.cpf ?? null, jobTitle: m.labor?.jobTitle ?? null, admissionDate: m.labor?.admissionDate ?? null },
+        employer: m.employer,
+        member: { id: m.member.id, name: m.member.name, employeeCode: m.member.employeeCode ?? null },
+        labor: m.labor,
+        worker: { name: m.member.name, cpf: m.labor?.cpf ?? null, jobTitle: m.labor?.jobTitle ?? null, admissionDate: m.labor?.admissionDate ?? null },
         acceptance: acc ? { decision: acc.decision, acceptedAt: acc.acceptedAt, documentHash: acc.documentHash, comment: acc.comment, stillValid: acc.documentHash === m.documentHash } : null,
       };
     }),
@@ -277,7 +304,7 @@ export const pontoLegalRouter = router({
       sealedLegacy: legacy,
       sealedAt: state?.initializedAt ?? null,
       problems: [
-        ...(stateMismatch ? [{ id: 0, nsr: null, kind: "gap", message: `Último NSR registrado (${state.lastNsr}) difere do último encontrado (${result.lastNsr}): pode ter havido exclusão.` }] : []),
+        ...(stateMismatch ? [{ id: 0, nsr: null, kind: "gap", message: `A contagem de batidas não fecha (esperado até ${state.lastNsr}, encontrado ${result.lastNsr}): pode ter faltado alguma batida.` }] : []),
         ...result.problems,
       ].slice(0, 100),
       totalProblems: result.problems.length + (stateMismatch ? 1 : 0),
@@ -307,10 +334,8 @@ export const pontoLegalRouter = router({
         punches: rows.map((r) => ({ nsr: Number(r.nsr), markedAt: r.deviceTime || r.serverTime, recordedAt: r.serverTime, cpf: r.workerCpf, timeZone: r.timeZone || TZ, collector: r.collectorId || "02", offline: Boolean(r.offline), hash: r.recordHash! })),
       });
       const warnings = [
-        ...(!employer.document ? ["CNPJ/CPF da empresa não cadastrado (Espelho de ponto > Dados da empresa)."] : []),
-        ...(rows.some((r) => !r.workerCpf) ? [`${rows.filter((r) => !r.workerCpf).length} marcação(ões) sem CPF do funcionário (cadastre no perfil trabalhista; vale para as próximas).`] : []),
-        ...(!dev.inpiNumber ? ["Sem número de registro no INPI: campo preenchido com zeros."] : []),
-        "Arquivo sem assinatura digital (.p7s): depende do certificado ICP-Brasil do desenvolvedor.",
+        ...(!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto → Dados da empresa."] : []),
+        ...(rows.some((r) => !r.workerCpf) ? [`${rows.filter((r) => !r.workerCpf).length} batida(s) sem CPF do funcionário. Complete o cadastro no Espelho de ponto (vale para as próximas batidas).`] : []),
       ];
       void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "afd", description: `Gerou AFD ${input.from} a ${input.to} (${rows.length} marcações)`, newData: { from: input.from, to: input.to, count: rows.length } } as any);
       return { ...fileResponse(afd.content, afd.fileName), count: rows.length, warnings };
@@ -368,11 +393,10 @@ export const pontoLegalRouter = router({
       const aej = buildAej({ employer: { document: employer.document || "", name: employer.name }, inpiNumber: dev.inpiNumber, from: input.from, to: input.to, generatedAt: new Date(), timeZone: TZ,
         ptrp: { version: dev.version, developerDocument: dev.document, developerName: dev.name, developerEmail: dev.email }, workers });
       const warnings = [
-        ...(!employer.document ? ["CNPJ/CPF da empresa não cadastrado."] : []),
-        ...(missingCpf.length ? [`Sem CPF no perfil trabalhista: ${missingCpf.slice(0, 10).join(", ")}${missingCpf.length > 10 ? "…" : ""}.`] : []),
-        ...(workers.some((w) => !w.contract) ? ["Há funcionários sem jornada contratual configurada (registro 04 obrigatório na primeira entrada)."] : []),
-        ...(missingSchedule.length ? [`Sem horário contratual (entrada/saída previstas): ${missingSchedule.slice(0, 10).join(", ")}${missingSchedule.length > 10 ? "…" : ""}.`] : []),
-        "Arquivo sem assinatura digital (.p7s): depende do certificado ICP-Brasil.",
+        ...(!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto → Dados da empresa."] : []),
+        ...(missingCpf.length ? [`Sem CPF no cadastro: ${missingCpf.slice(0, 10).join(", ")}${missingCpf.length > 10 ? "…" : ""}. Complete no Espelho de ponto.`] : []),
+        ...(workers.some((w) => !w.contract) ? ["Há funcionário sem horário de trabalho cadastrado. Preencha a jornada no Espelho de ponto."] : []),
+        ...(missingSchedule.length ? [`Sem horário de entrada e saída cadastrado: ${missingSchedule.slice(0, 10).join(", ")}${missingSchedule.length > 10 ? "…" : ""}. Complete no Espelho de ponto.`] : []),
       ];
       void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "aej", description: `Gerou AEJ ${input.from} a ${input.to} (${workers.length} funcionário(s))`, newData: { from: input.from, to: input.to } } as any);
       return { ...fileResponse(aej.content, aej.fileName), count: workers.length, warnings };

@@ -92,8 +92,15 @@ export async function runMissingPunchAlerts() {
   const { memberAccounts } = await import("../drizzle/schema");
   const { sendEmail } = await import("./email");
   const missing = await findMissingPunches();
+  const { getCompanyEntitlementBase } = await import("./entitlements");
+  const companyPonto = new Map<number, boolean>();
   let notified = 0;
   for (const m of missing) {
+    if (!companyPonto.has(m.companyId)) {
+      const base = await getCompanyEntitlementBase(m.companyId);
+      companyPonto.set(m.companyId, Boolean(base.companyFeatures.timeTracking));
+    }
+    if (!companyPonto.get(m.companyId)) continue;
     const key = `missing_punch_notified:${m.memberId}:${m.day}`;
     if (await dbm.getSetting(key, m.companyId, "")) continue;
     const when = new Date(m.lastTime).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });

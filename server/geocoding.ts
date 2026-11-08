@@ -1,4 +1,12 @@
-import { formatBrAddress } from "@shared/address";
+import {
+  formatBrAddress,
+  formatCep,
+  mergeAddressParts,
+  streetFromAddress,
+  bairroFromAddress,
+  type NominatimAddress,
+} from "@shared/address";
+
 export type ReverseGeocodeResult = {
   address: string | null;
   configured: boolean;
@@ -21,6 +29,8 @@ const addressCache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<string | null>>();
 let requestQueue: Promise<void> = Promise.resolve();
 let lastRequestStartedAt = 0;
+
+const NOMINATIM_UA = "GondUp/1.0 (https://gondup.com.br; contato@gondup.com.br)";
 
 function coordinateKey(latitude: number, longitude: number) {
   return `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
@@ -113,37 +123,199 @@ const BR_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 let lastNominatimAt = 0;
 let nominatimQueue: Promise<void> = Promise.resolve();
 
+function needsEnrichment(parts: NominatimAddress): boolean {
+  return !streetFromAddress(parts) || !bairroFromAddress(parts);
+}
+
+async function nominatimParts(
+  latitude: number,
+  longitude: number,
+  fetchImpl: typeof fetch,
+): Promise<NominatimAddress | null> {
+  const run = nominatimQueue.then(async () => {
+    const wait = 1100 - (Date.now() - lastNominatimAt);
+    if (wait > 0) await delay(wait);
+    lastNominatimAt = Date.now();
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR&email=contato@gondup.com.br`;
+    const res = await fetchImpl(url, {
+      headers: { accept: "application/json", "user-agent": NOMINATIM_UA },
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!res.ok) {
+      console.warn(`[geocoding] Nominatim HTTP ${res.status}`);
+      return null;
+    }
+    const data = await res.json() as { address?: NominatimAddress; display_name?: string };
+    return data.address ? { ...data.address } : null;
+  });
+  nominatimQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+/** Rua nomeada mais próxima (Photon/Komoot). Sem chave; usado quando o Nominatim devolve via sem nome. */
+async function photonParts(
+  latitude: number,
+  longitude: number,
+  fetchImpl: typeof fetch,
+): Promise<NominatimAddress | null> {
+  try {
+    const url = `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}&lang=en`;
+    const res = await fetchImpl(url, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) {
+      console.warn(`[geocoding] Photon HTTP ${res.status}`);
+      return null;
+    }
+    const data = await res.json() as {
+      features?: Array<{ properties?: Record<string, string | undefined> }>;
+    };
+    const p = data.features?.[0]?.properties;
+    if (!p) return null;
+    const road = p.street || (p.type === "street" ? p.name : undefined) || undefined;
+    if (!road && !p.city && !p.postcode) return null;
+    const out: NominatimAddress = {
+      road,
+      house_number: p.housenumber,
+      suburb: p.district && p.district !== p.city ? p.district : undefined,
+      city: p.city,
+      state: p.state,
+      postcode: p.postcode,
+      approximateStreet: !!road, // Photon = rua próxima, não necessariamente o ponto exato
+    };
+    if (p.countrycode === "BR" && p.state) {
+      // state já em texto; ISO opcional
+    }
+    return out;
+  } catch (error) {
+    console.warn("[geocoding] Photon falhou", error instanceof Error ? error.name : "erro");
+    return null;
+  }
+}
+
+async function viaCepParts(cep: string, fetchImpl: typeof fetch): Promise<NominatimAddress | null> {
+  const digits = cep.replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  try {
+    const res = await fetchImpl(`https://viacep.com.br/ws/${digits}/json/`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      erro?: boolean;
+      logradouro?: string;
+      bairro?: string;
+      localidade?: string;
+      uf?: string;
+      cep?: string;
+    };
+    if (data.erro || (!data.logradouro && !data.bairro && !data.localidade)) return null;
+    return {
+      road: data.logradouro || undefined,
+      suburb: data.bairro || undefined,
+      city: data.localidade || undefined,
+      state: data.uf || undefined,
+      postcode: data.cep || formatCep(digits),
+      approximateStreet: false,
+    };
+  } catch (error) {
+    console.warn("[geocoding] ViaCEP falhou", error instanceof Error ? error.name : "erro");
+    return null;
+  }
+}
+
+async function brasilApiParts(cep: string, fetchImpl: typeof fetch): Promise<NominatimAddress | null> {
+  const digits = cep.replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  try {
+    const res = await fetchImpl(`https://brasilapi.com.br/api/cep/v2/${digits}`, {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      street?: string;
+      neighborhood?: string;
+      city?: string;
+      state?: string;
+      cep?: string;
+    };
+    if (!data.street && !data.neighborhood && !data.city) return null;
+    return {
+      road: data.street || undefined,
+      suburb: data.neighborhood || undefined,
+      city: data.city || undefined,
+      state: data.state || undefined,
+      postcode: formatCep(data.cep || digits),
+      approximateStreet: false,
+    };
+  } catch (error) {
+    console.warn("[geocoding] BrasilAPI falhou", error instanceof Error ? error.name : "erro");
+    return null;
+  }
+}
+
 /**
  * Endereço brasileiro completo (rua, nº, bairro, cidade-UF, CEP) para carimbo de foto e ponto.
- * Feito no servidor: User-Agent identificado (exigência do Nominatim), cache de 7 dias por ~11 m
- * e no máx. 1 consulta/s. Se o Nominatim falhar, tenta o Geoapify (quando configurado).
+ * Cadeia: Nominatim → Photon (rua próxima) → ViaCEP/BrasilAPI (CEP) → Geoapify.
+ * Cache de 7 dias por ~11 m; Nominatim no máx. 1 consulta/s com User-Agent identificado.
  */
-export async function reverseGeocodeBr(latitude: number, longitude: number, fetchImpl: typeof fetch = fetch): Promise<string | null> {
-  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) return null;
+export async function reverseGeocodeBr(
+  latitude: number,
+  longitude: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  if (!Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) {
+    return null;
+  }
   const key = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
   const hit = brCache.get(key);
   if (hit && hit.expiresAt > Date.now() && hit.address) return hit.address;
-  let address: string | null = null;
+
+  let parts: NominatimAddress = {};
   try {
-    const run = nominatimQueue.then(async () => {
-      const wait = 1100 - (Date.now() - lastNominatimAt);
-      if (wait > 0) await delay(wait);
-      lastNominatimAt = Date.now();
-      const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR`;
-      const res = await fetchImpl(url, { headers: { accept: "application/json", "user-agent": "GondUp/1.0 (https://promotores-saas.vercel.app)" }, signal: AbortSignal.timeout(6_000) });
-      if (!res.ok) { console.warn(`[geocoding] Nominatim HTTP ${res.status}`); return null; }
-      const data = await res.json() as { address?: Record<string, string>; display_name?: string };
-      return formatBrAddress(data.address as any, data.display_name);
-    });
-    nominatimQueue = run.then(() => undefined, () => undefined);
-    address = await run;
+    const nom = await nominatimParts(latitude, longitude, fetchImpl);
+    if (nom) parts = nom;
   } catch (error) {
     console.warn("[geocoding] Nominatim falhou", error instanceof Error ? error.name : "erro");
   }
-  if (!address) address = (await reverseGeocodeAddress(latitude, longitude).catch(() => ({ address: null }))).address;
+
+  if (needsEnrichment(parts)) {
+    const photon = await photonParts(latitude, longitude, fetchImpl);
+    if (photon) parts = mergeAddressParts(parts, photon);
+  }
+
+  const cep = formatCep(parts.postcode);
+  if (cep && needsEnrichment(parts)) {
+    const via = await viaCepParts(cep, fetchImpl);
+    if (via) parts = mergeAddressParts(parts, via);
+  }
+  if (cep && needsEnrichment(parts)) {
+    const br = await brasilApiParts(cep, fetchImpl);
+    if (br) parts = mergeAddressParts(parts, br);
+  }
+
+  let address = formatBrAddress(parts);
+  if (!address || !streetFromAddress(parts)) {
+    // Último recurso: Geoapify (string formatada pronta)
+    const geo = await reverseGeocodeAddress(latitude, longitude).catch(() => ({ address: null as string | null }));
+    if (geo.address) address = geo.address;
+  }
+
   if (address) {
-    if (brCache.size >= MAX_CACHE_ENTRIES) { const k = brCache.keys().next().value; if (k) brCache.delete(k); }
+    if (brCache.size >= MAX_CACHE_ENTRIES) {
+      const k = brCache.keys().next().value;
+      if (k) brCache.delete(k);
+    }
     brCache.set(key, { address, expiresAt: Date.now() + BR_TTL_MS });
   }
   return address;
+}
+
+/** Só para testes: limpa o cache BR entre casos. */
+export function __clearBrGeocodeCacheForTests() {
+  brCache.clear();
+  lastNominatimAt = 0;
 }

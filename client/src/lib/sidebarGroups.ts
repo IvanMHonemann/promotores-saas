@@ -5,15 +5,16 @@ export type NavGroup = { id: string; title: string; items: GroupItem[] };
 export function buildCompanyGroups(role: string | undefined, hasFeature: (key: string) => boolean): { groups: NavGroup[]; account: NavGroup } {
   const admin = role === "company_admin";
   const field = hasFeature("fieldOperations");
+  const checkIn = hasFeature("visitCheckIn");
   const time = hasFeature("timeTracking");
   const groups: NavGroup[] = [
     { id: "operacao", title: "Operação", items: [
       { href: "/#inicio", label: "Visão geral", icon: "dashboard" },
       ...(field ? [{ href: "/lojas", label: "Lojas", icon: "store" }, { href: "/#roteiros", label: "Roteiros", icon: "calendar" }] : []),
-      ...(field && admin && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: "camera" }] : []),
-      ...(role ? [{ href: "/produtos", label: "Produtos e validades", icon: "package" }] : []),
+      ...(field && checkIn && admin && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: "camera" }] : []),
+      ...(role && hasFeature("products") ? [{ href: "/produtos", label: "Produtos e validades", icon: "package" }] : []),
     ] },
-    { id: "equipe", title: "Equipe e ponto", items: [
+    { id: "equipe", title: time ? "Equipe e ponto" : "Equipe", items: [
       ...(admin && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: "users" }] : []),
       ...(time ? [{ href: "/cartao-ponto", label: "Cartão-ponto", icon: "clock" }] : []),
       ...(time && admin ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: "file" }] : []),

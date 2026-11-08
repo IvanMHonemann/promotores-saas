@@ -1,11 +1,22 @@
 /** Saídas do Espelho de Ponto (PDF, Excel, HTML de impressão). Todas usam mirrorRows/totalsLines: mesmos valores da tela. */
-import { MIRROR_HEADERS, fmtDate, maskCpf, mirrorRows, totalsLines, localParts, type MirrorReport, type LaborProfile } from "@shared/timesheetMirror";
+import { MIRROR_HEADERS, fmtDate, fmtCpf, fmtPis, mirrorRows, totalsLines, localParts, type MirrorReport, type LaborProfile } from "@shared/timesheetMirror";
 import { buildXlsx, type Cell } from "./xlsx";
 
+export type MirrorAcceptance = {
+  decision: "accepted" | "contested";
+  acceptedAt: string;
+  documentHash: string;
+  comment?: string | null;
+  stillValid?: boolean;
+  ipAddress?: string | null;
+};
 export type MirrorResult = {
   member: { id: number; name: string; role: string; employeeCode: string | null };
   labor: LaborProfile | null;
   report: MirrorReport;
+  /** Hash SHA-256 do conteúdo do espelho (aceite eletrônico / prova). */
+  documentHash?: string | null;
+  acceptance?: MirrorAcceptance | null;
 };
 export type MirrorData = {
   company: { name: string; legal: { legalName: string; document: string; establishment: string; address: string } | null };
@@ -29,21 +40,43 @@ export function companyLines(data: MirrorData): Array<[string, string]> {
     ["Endereço", l?.address || NOT_INFORMED],
   ];
 }
-export function memberLines(r: MirrorResult): Array<[string, string]> {
+export function memberLines(r: MirrorResult, opts?: { maskCpf?: boolean }): Array<[string, string]> {
   const lab = r.labor;
+  const cpf = opts?.maskCpf
+    ? (lab?.cpf ? (() => { const d = String(lab.cpf).replace(/\D/g, ""); return d.length === 11 ? `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**` : NOT_INFORMED; })() : NOT_INFORMED)
+    : fmtCpf(lab?.cpf);
+  const jornada = lab?.dailyMinutes
+    ? `${Math.floor(lab.dailyMinutes / 60)}h${String(lab.dailyMinutes % 60).padStart(2, "0")} por dia`
+    : "Não configurada";
+  const intervalo = lab?.intervalMinutes != null ? ` (intervalo ${lab.intervalMinutes} min)` : "";
   return [
     ["Funcionário", r.member.name],
-    ["CPF", maskCpf(lab?.cpf)],
+    ["CPF", cpf],
+    ["PIS/PASEP", fmtPis(lab?.pis)],
     ["Matrícula", r.member.employeeCode || NOT_INFORMED],
     ["Cargo/função", lab?.jobTitle || roleLabel(r.member.role)],
     ["Admissão", lab?.admissionDate ? fmtDate(lab.admissionDate) : NOT_INFORMED],
-    ["Jornada contratada", lab?.dailyMinutes ? `${Math.floor(lab.dailyMinutes / 60)}h${String(lab.dailyMinutes % 60).padStart(2, "0")} por dia` : "Não configurada"],
+    ["Jornada contratada", `${jornada}${intervalo}`],
     ["Horário contratual", lab?.schedule?.length ? lab.schedule.map(([a, b]) => `${a}–${b}`).join(", ") : NOT_INFORMED],
   ];
 }
+/** Campos obrigatórios para uso do espelho em RH/processo que ainda estão em branco. */
+export function missingLegalFields(data: MirrorData, r: MirrorResult): string[] {
+  const miss: string[] = [];
+  const l = data.company.legal;
+  if (!l?.legalName && !data.company.name) miss.push("razão social");
+  if (!l?.document) miss.push("CNPJ/CPF do empregador");
+  if (!l?.address) miss.push("endereço do estabelecimento");
+  if (!r.labor?.cpf) miss.push("CPF do funcionário");
+  if (!r.labor?.admissionDate) miss.push("data de admissão");
+  if (!r.labor?.jobTitle) miss.push("cargo/função");
+  if (!r.labor?.dailyMinutes) miss.push("jornada contratada");
+  if (!r.member.employeeCode) miss.push("matrícula");
+  return miss;
+}
 export const periodLabel = (r: MirrorReport) => `${fmtDate(r.from)} a ${fmtDate(r.to)}`;
-export const LEGEND = "Legenda: horários em Brasília. “(ajustada)” = marcação corrigida após solicitação aprovada (valor original e justificativa nas ocorrências); “(automática)” = saída gerada pelo sistema; “(pend. sinc.)” = marcação ainda não sincronizada. “—” = não aplicável/não configurado.";
-export const DISCLAIMER = "Documento de conferência gerado pelo sistema a partir das marcações registradas. Não substitui o comprovante/registro oficial de ponto nem constitui, por si só, atestado de conformidade com a Portaria MTP 671/2021.";
+export const LEGEND = "Legenda (horário de Brasília, America/Sao_Paulo): * = marcação ajustada por correção aprovada (original e justificativa em Ocorrências); + = batida incluída manualmente; # = ajuste antigo sem original estruturado; A = saída automática do sistema; ? = sincronização pendente. — = não aplicável/não configurado. DSR = descanso semanal remunerado.";
+export const DISCLAIMER = "Documento gerado pelo GondUp a partir das batidas registradas. A batida original é preservada; correções viram registros à parte. Serve para conferência e arquivo da empresa.";
 
 const safe = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "arquivo";
 export const fileBase = (data: MirrorData, r?: MirrorResult) =>
@@ -82,19 +115,32 @@ export async function buildMirrorXlsx(data: MirrorData, consolidated = false): P
 
 /* ---------------- HTML (impressão A4) ---------------- */
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+function acceptanceHtml(r: MirrorResult): string {
+  if (!r.acceptance) return r.documentHash ? `<p class="meta"><b>Código do documento:</b> <code>${esc(r.documentHash)}</code></p>` : "";
+  const a = r.acceptance;
+  const when = (() => { try { const p = localParts(a.acceptedAt, "America/Sao_Paulo"); return `${fmtDate(p.date)} ${p.hm}`; } catch { return a.acceptedAt; } })();
+  const dec = a.decision === "accepted" ? "confirmado eletronicamente pelo funcionário" : "contestado eletronicamente pelo funcionário";
+  return `<div class="accept"><p><b>Aceite eletrônico:</b> ${esc(dec)} em ${esc(when)} (Brasília).` +
+    (a.stillValid === false ? " <b>Atenção:</b> houve mudança depois deste aceite." : "") +
+    (a.comment ? ` Comentário: ${esc(a.comment)}.` : "") +
+    `</p><p class="hash">Código do documento: <code>${esc(a.documentHash)}</code></p></div>`;
+}
 function htmlFor(data: MirrorData, r: MirrorResult) {
+  const miss = missingLegalFields(data, r);
+  const warn = miss.length ? `<p class="warn"><b>Dados incompletos para uso em RH/processo:</b> ${esc(miss.join(", "))}.</p>` : "";
   const kv = (arr: Array<[string, string]>) => `<table class="kv">${arr.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>`;
   const body = mirrorRows(r.report).map((row) => `<tr>${row.map((c, i) => `<td class="${i === 12 ? "obs" : ""}">${esc(c)}</td>`).join("")}</tr>`).join("");
-  return `<section class="page"><h1>Espelho de Ponto</h1>
+  return `<section class="page"><h1>Espelho de Ponto</h1>${warn}
 <div class="grid"><div><h2>Empresa</h2>${kv(companyLines(data))}</div><div><h2>Funcionário</h2>${kv(memberLines(r))}</div></div>
-<p class="meta"><b>Período:</b> ${periodLabel(r.report)} &nbsp;·&nbsp; <b>Emitido em:</b> ${stamp(data)}</p>
+<p class="meta"><b>Período:</b> ${periodLabel(r.report)} &nbsp;·&nbsp; <b>Emitido em:</b> ${stamp(data)} (horário de Brasília) &nbsp;·&nbsp; <b>Fuso:</b> ${esc(data.timeZone)}</p>
+${acceptanceHtml(r)}
 <table class="main"><thead><tr>${MIRROR_HEADERS.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>
 <h2>Totais do período</h2><table class="kv totals">${totalsLines(r.report.totals).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>
 <div class="notes">${r.report.notes.map((n) => `<p>• ${esc(n)}</p>`).join("")}<p>${esc(LEGEND)}</p><p><i>${esc(DISCLAIMER)}</i></p></div>
-<div class="sign"><div>______________________________<br>Assinatura do funcionário</div><div>______________________________<br>Responsável pela empresa</div></div></section>`;
+<div class="sign"><div>______________________________<br>Assinatura do funcionário<br>Data: ____/____/________</div><div>______________________________<br>Responsável pela empresa<br>Data: ____/____/________</div></div></section>`;
 }
 export function buildMirrorHtml(data: MirrorData, autoPrint = true): string {
-  const css = `*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#111;margin:0}.page{page-break-after:always;padding:0}.page:last-child{page-break-after:auto}h1{font-size:18px;margin:0 0 8px}h2{font-size:12px;margin:10px 0 4px;color:#0f3d3a}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{border-collapse:collapse;width:100%}.kv th{text-align:left;width:34%;padding:2px 6px 2px 0;color:#444;font-weight:600}.kv td{padding:2px 0}.main th,.main td{border:1px solid #999;padding:3px 4px;vertical-align:top;font-size:9.5px}.main th{background:#e2e8f0}.main thead{display:table-header-group}.main tr,.totals tr{break-inside:avoid}.main td.obs{width:26%}.meta{margin:8px 0}.totals{width:60%}.totals th,.totals td{border-bottom:1px solid #ddd}.notes{margin-top:8px;font-size:9.5px;color:#333}.notes p{margin:2px 0}.sign{display:flex;justify-content:space-around;margin-top:36px;font-size:10px;text-align:center;break-inside:avoid}@media print{@page{size:A4 landscape;margin:10mm}}`;
+  const css = `*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#111;margin:0}.page{page-break-after:always;padding:0}.page:last-child{page-break-after:auto}h1{font-size:18px;margin:0 0 8px}h2{font-size:12px;margin:10px 0 4px;color:#0f3d3a}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{border-collapse:collapse;width:100%}.kv th{text-align:left;width:34%;padding:2px 6px 2px 0;color:#444;font-weight:600}.kv td{padding:2px 0}.main th,.main td{border:1px solid #999;padding:3px 4px;vertical-align:top;font-size:9.5px}.main th{background:#e2e8f0}.main thead{display:table-header-group}.main tr,.totals tr{break-inside:avoid}.main td.obs{width:26%}.meta{margin:8px 0}.totals{width:60%}.totals th,.totals td{border-bottom:1px solid #ddd}.notes{margin-top:8px;font-size:9.5px;color:#333}.notes p{margin:2px 0}.sign{display:flex;justify-content:space-around;margin-top:36px;font-size:10px;text-align:center;break-inside:avoid}.warn{background:#fff3cd;border:1px solid #f0c36d;padding:6px 8px;margin:0 0 8px;font-size:10px}.accept{background:#e8f5f3;border:1px solid #9ad5cb;padding:6px 8px;margin:0 0 8px;font-size:10px}.accept .hash,code{font-family:ui-monospace,monospace;font-size:9px;word-break:break-all}@media print{@page{size:A4 landscape;margin:10mm}}`;
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Espelho de ponto</title><style>${css}</style></head><body>${data.results.map((r) => htmlFor(data, r)).join("")}${autoPrint ? `<script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script>` : ""}</body></html>`;
 }
 
@@ -126,39 +172,52 @@ export function pdfSafe(text: string): string {
 
 const PDF_HEADERS = ["Data", "Dia", "Entrada", "Iníc. int.", "Ret. int.", "Saída", "Trab.", "Interv.", "Prev.", "Dif.", "Extras", "Ad. not.", "Ocorrências"];
 
-async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolean) {
+type PageMeta = { memberName: string; companyName: string; stamp: string; hash?: string | null };
+
+async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolean, pageMeta: PageMeta[]) {
   const W = 297, H = 210, M = 10;
   if (!first) doc.addPage("a4", "landscape");
 
-  // Larguras: mais espaço para Ocorrências, cabeçalhos abreviados cabem em 1 linha
   const widths = [19, 8, 18, 20, 20, 18, 15, 13, 13, 13, 13, 15];
   const obsW = W - 2 * M - widths.reduce((a, b) => a + b, 0);
   const cols = [...widths, obsW];
 
   let y = M;
   let inTable = false;
+  const hashShort = (r.documentHash || r.acceptance?.documentHash || "").slice(0, 12);
 
-  const footer = () => {
-    doc.setFontSize(7).setTextColor(100);
-    doc.text(pdfSafe(`${data.company.name} · Espelho de ponto · ${r.member.name} · emitido em ${stamp(data)} · página ${doc.getNumberOfPages()}`), M, H - 5);
-    doc.setTextColor(0);
+  const registerPage = () => {
+    pageMeta[doc.getNumberOfPages() - 1] = {
+      memberName: r.member.name,
+      companyName: data.company.name || data.company.legal?.legalName || "Empresa",
+      stamp: stamp(data),
+      hash: hashShort || null,
+    };
   };
+  registerPage();
 
-  // Quebra de página SEM redesenhar o cabeçalho da tabela (para totais e notas)
   const ensurePlain = (h: number) => {
-    if (y + h > H - 12) {
-      footer();
+    if (y + h > H - 14) {
       doc.addPage("a4", "landscape");
+      registerPage();
       y = M;
+      // Mini-cabeçalho nas páginas de continuação (totais/notas)
+      doc.setFontSize(8).setFont("helvetica", "bold").setTextColor(60);
+      doc.text(pdfSafe(`Espelho de ponto (cont.) — ${r.member.name} — ${periodLabel(r.report)}`), M, y + 3);
+      doc.setTextColor(0);
+      y += 7;
     }
   };
 
-  // Quebra de página COM redesenho do cabeçalho (só enquanto estamos na tabela)
   const ensureTable = (h: number) => {
-    if (y + h > H - 12) {
-      footer();
+    if (y + h > H - 14) {
       doc.addPage("a4", "landscape");
+      registerPage();
       y = M;
+      doc.setFontSize(8).setFont("helvetica", "bold").setTextColor(60);
+      doc.text(pdfSafe(`Espelho de ponto (cont.) — ${r.member.name} — ${periodLabel(r.report)}`), M, y + 3);
+      doc.setTextColor(0);
+      y += 7;
       if (inTable) drawHead();
     }
   };
@@ -166,10 +225,10 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   const drawHead = () => {
     doc.setFontSize(7.5).setFont("helvetica", "bold").setFillColor(226, 232, 240);
     const headerLines = PDF_HEADERS.map((h, i) => doc.splitTextToSize(pdfSafe(h), cols[i] - 2) as string[]);
-    const headerH = Math.max(...headerLines.map(l => l.length), 1) * 3.2 + 2;
+    const headerH = Math.max(...headerLines.map((l: string[]) => l.length), 1) * 3.2 + 2;
     let x = M;
     doc.rect(M, y, W - 2 * M, headerH, "F");
-    headerLines.forEach((lines, i) => {
+    headerLines.forEach((lines: string[], i: number) => {
       doc.text(lines, x + 1, y + 3.2);
       x += cols[i];
     });
@@ -180,37 +239,68 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   // Cabeçalho do documento
   doc.setFontSize(16).setFont("helvetica", "bold").text("Espelho de Ponto", M, y + 5);
   y += 10;
-  doc.setFontSize(8.5).setFont("helvetica", "normal");
 
+  const miss = missingLegalFields(data, r);
+  if (miss.length) {
+    doc.setFontSize(8).setFont("helvetica", "bold").setTextColor(140, 80, 0);
+    const warnLines = doc.splitTextToSize(pdfSafe(`Atenção — dados incompletos para uso em RH/processo: ${miss.join(", ")}.`), W - 2 * M) as string[];
+    for (const line of warnLines) { doc.text(line, M, y); y += 3.8; }
+    doc.setTextColor(0);
+    y += 1;
+  }
+
+  doc.setFontSize(8.5).setFont("helvetica", "normal");
   const left = companyLines(data), right = memberLines(r);
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
     if (left[i]) {
       doc.setFont("helvetica", "bold").text(`${left[i][0]}:`, M, y);
-      doc.setFont("helvetica", "normal").text(pdfSafe(left[i][1]), M + 28, y, { maxWidth: 100 });
+      doc.setFont("helvetica", "normal").text(pdfSafe(left[i][1]), M + 30, y, { maxWidth: 100 });
     }
     if (right[i]) {
       doc.setFont("helvetica", "bold").text(`${right[i][0]}:`, 150, y);
-      doc.setFont("helvetica", "normal").text(pdfSafe(right[i][1]), 150 + 32, y, { maxWidth: 105 });
+      doc.setFont("helvetica", "normal").text(pdfSafe(right[i][1]), 150 + 34, y, { maxWidth: 100 });
     }
-    y += 4.6;
+    y += 4.5;
   }
-  doc.setFont("helvetica", "bold").text(pdfSafe(`Período: ${periodLabel(r.report)}    Emitido em: ${stamp(data)}`), M, y + 1);
-  y += 6;
+  doc.setFont("helvetica", "bold").text(
+    pdfSafe(`Período: ${periodLabel(r.report)}    Emitido em: ${stamp(data)} (Brasília)    Fuso: ${data.timeZone}`),
+    M, y + 1,
+  );
+  y += 5;
 
-  // Tabela
+  if (r.acceptance) {
+    const a = r.acceptance;
+    let when = a.acceptedAt;
+    try { const p = localParts(a.acceptedAt, data.timeZone); when = `${fmtDate(p.date)} ${p.hm}`; } catch { /* keep */ }
+    const dec = a.decision === "accepted" ? "confirmado eletronicamente pelo funcionario" : "contestado eletronicamente pelo funcionario";
+    doc.setFontSize(8).setFont("helvetica", "normal").setTextColor(20, 90, 80);
+    const accLines = doc.splitTextToSize(
+      pdfSafe(`Confirmação no app: ${dec} em ${when} (Brasília).${a.stillValid === false ? " ATENÇÃO: o espelho mudou depois desta confirmação." : ""}${a.comment ? ` Comentário: ${a.comment}.` : ""} Código: ${a.documentHash}`),
+      W - 2 * M,
+    ) as string[];
+    for (const line of accLines) { doc.text(line, M, y); y += 3.6; }
+    doc.setTextColor(0);
+    y += 1;
+  } else if (r.documentHash) {
+    doc.setFontSize(7.5).setFont("helvetica", "normal").setTextColor(80);
+    doc.text(pdfSafe(`Código do documento: ${r.documentHash}`), M, y);
+    doc.setTextColor(0);
+    y += 4;
+  }
+
+  y += 1;
   inTable = true;
   drawHead();
   doc.setFontSize(7.5);
 
   for (const row of mirrorRows(r.report)) {
     const lines = row.map((c, i) => doc.splitTextToSize(pdfSafe(c || "—"), cols[i] - 2) as string[]);
-    const h = Math.max(...lines.map((l) => l.length), 1) * 3.3 + 2;
+    const h = Math.max(...lines.map((l: string[]) => l.length), 1) * 3.3 + 2;
     ensureTable(h);
     let x = M;
     doc.setDrawColor(190);
-    lines.forEach((l, i) => {
+    lines.forEach((l: string[], i: number) => {
       doc.rect(x, y, cols[i], h);
-      // Desenha o texto e garante que não ultrapasse a altura da célula
       doc.text(l, x + 1, y + 3.4);
       x += cols[i];
     });
@@ -218,7 +308,6 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
   }
   inTable = false;
 
-  // Totais (sem redesenhar cabeçalho da tabela)
   const totals = totalsLines(r.report.totals);
   ensurePlain(12 + totals.length * 4.2);
   y += 6;
@@ -232,7 +321,6 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
     y += 4.2;
   }
 
-  // Notas e legenda
   y += 3;
   doc.setFont("helvetica", "normal").setFontSize(7.5);
   const notes = [...r.report.notes.map((n) => `• ${n}`), LEGEND, DISCLAIMER]
@@ -243,20 +331,41 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolea
     y += 3.5;
   }
 
-  // Assinaturas
-  ensurePlain(20);
-  y += 12;
-  doc.setFontSize(8).text("______________________________", 40, y);
+  // Assinaturas: tenta caber na página atual; só quebra se faltar espaço de verdade.
+  const signH = r.acceptance?.decision === "accepted" ? 20 : 16;
+  ensurePlain(signH);
+  y += 6;
+  doc.setFontSize(8).setFont("helvetica", "normal");
+  doc.text("______________________________", 40, y);
   doc.text("______________________________", 190, y);
-  doc.text("Assinatura do funcionário", 50, y + 4);
-  doc.text("Responsável pela empresa", 200, y + 4);
-  footer();
+  doc.text("Assinatura do funcionario", 48, y + 4);
+  doc.text("Responsavel pela empresa", 198, y + 4);
+  doc.text("Data: ____/____/________", 48, y + 9);
+  doc.text("Data: ____/____/________", 198, y + 9);
+  if (r.acceptance?.decision === "accepted") {
+    doc.setFontSize(7).setTextColor(20, 90, 80);
+    doc.text(pdfSafe("(Aceite eletronico registrado no sistema — ver cabecalho do documento.)"), 40, y + 14);
+    doc.setTextColor(0);
+  }
 }
 
 export async function buildMirrorPdf(data: MirrorData): Promise<Blob> {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  for (let i = 0; i < data.results.length; i++) await pdfFor(data, data.results[i], doc, i === 0);
+  const pageMeta: PageMeta[] = [];
+  for (let i = 0; i < data.results.length; i++) await pdfFor(data, data.results[i], doc, i === 0, pageMeta);
+  const total = doc.getNumberOfPages();
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i);
+    const meta = pageMeta[i - 1] || { memberName: "", companyName: data.company.name, stamp: stamp(data), hash: null };
+    doc.setFontSize(7).setFont("helvetica", "normal").setTextColor(100);
+    const hashBit = meta.hash ? ` · cód. ${meta.hash}…` : "";
+    doc.text(
+      pdfSafe(`${meta.companyName} · Espelho de ponto · ${meta.memberName} · emitido em ${meta.stamp} (Brasília)${hashBit} · página ${i} de ${total}`),
+      10, 210 - 5,
+    );
+    doc.setTextColor(0);
+  }
   return doc.output("blob");
 }
 

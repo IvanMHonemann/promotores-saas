@@ -16,6 +16,9 @@ export function PwaStatusBar() {
     installStep,
     isIosInstallable,
     isStandalone,
+    showOpenFallback,
+    openApp,
+    dismissOpenFallback,
   } = useInstallPrompt();
   const [showIosGuide, setShowIosGuide] = useState(false);
   const [showAndroidGuide, setShowAndroidGuide] = useState(false);
@@ -75,30 +78,55 @@ export function PwaStatusBar() {
         </div>
       )}
 
-      {/* Overlay de instalação com barra real de progresso */}
+      {/* Overlay de download/instalação — estado compartilhado (sidebar e botão flutuante) */}
       {isInstalling && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-4 print:hidden">
+        <div data-testid="pwa-install-progress" className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-4 print:hidden">
           <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 text-white shadow-2xl">
             <div className="mb-4 flex items-center gap-3">
-              <Loader2 className="h-6 w-6 animate-spin text-red-500" />
+              <Loader2 className="h-6 w-6 animate-spin text-teal-400" />
               <div>
-                <p className="text-base font-bold">Instalando GondUp</p>
+                <p className="text-base font-bold">Baixando aplicativo…</p>
                 <p className="text-xs text-slate-400">{installStep || "Processando…"}</p>
               </div>
             </div>
             <div className="mb-2 h-3 overflow-hidden rounded-full bg-slate-800">
               <div
-                className="h-full rounded-full bg-red-600 transition-all duration-300 ease-out"
+                className="h-full rounded-full bg-teal-400 transition-all duration-300 ease-out"
                 style={{ width: `${Math.max(4, installProgress)}%` }}
               />
             </div>
             <p className="text-right text-sm font-semibold text-slate-200">{installProgress}%</p>
             <ol className="mt-4 space-y-1.5 text-xs text-slate-400">
-              <li className={installProgress >= 8 ? "text-emerald-400" : ""}>1. Preparar instalação</li>
+              <li className={installProgress >= 8 ? "text-emerald-400" : ""}>1. Preparar download</li>
               <li className={installProgress >= 40 ? "text-emerald-400" : ""}>2. Confirmar no sistema</li>
-              <li className={installProgress >= 72 ? "text-emerald-400" : ""}>3. Instalar aplicativo</li>
-              <li className={installProgress >= 100 ? "text-emerald-400" : ""}>4. Abrir fora do navegador</li>
+              <li className={installProgress >= 55 ? "text-emerald-400" : ""}>3. Baixar aplicativo</li>
+              <li className={installProgress >= 100 ? "text-emerald-400" : ""}>4. Abrir automaticamente</li>
             </ol>
+          </div>
+        </div>
+      )}
+
+      {showOpenFallback && !isInstalling && (
+        <div data-testid="pwa-open-fallback" className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center print:hidden">
+          <div className="w-full max-w-sm rounded-2xl border border-teal-300/30 bg-slate-900 p-5 text-white shadow-2xl">
+            <p className="text-base font-bold">Aplicativo pronto</p>
+            <p className="mt-1 text-sm text-slate-300">
+              {installStep || "O GondUp foi instalado. Toque para abrir fora do navegador."}
+            </p>
+            <Button
+              data-testid="pwa-open-app"
+              className="mt-4 w-full bg-teal-400 text-slate-950 hover:bg-teal-300"
+              onClick={() => openApp()}
+            >
+              Abrir aplicativo
+            </Button>
+            <button
+              type="button"
+              className="mt-2 w-full rounded-lg py-2 text-sm text-slate-400 hover:bg-white/5"
+              onClick={() => dismissOpenFallback()}
+            >
+              Agora não
+            </button>
           </div>
         </div>
       )}

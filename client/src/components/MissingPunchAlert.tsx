@@ -50,7 +50,7 @@ export default function MissingPunchAlert() {
         <div className="min-w-0 flex-1 text-sm">
           <p className="font-bold">Falta uma batida no seu cartão ponto</p>
           <p>Última marcação: {mine.data.lastLabel} em {fmt(mine.data.lastTime)}. Falta registrar: {mine.data.missing}.</p>
-          <a href="/ponto#correcoes" className="mt-1 inline-block font-semibold underline">Solicitar correção</a>
+          <a href={`/ponto?date=${mine.data.day}#correcoes`} className="mt-1 inline-block font-semibold underline">Solicitar correção</a>
         </div>
         <button
           type="button"

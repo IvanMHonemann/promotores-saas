@@ -8240,20 +8240,16 @@ var timeTrackingRouter = router({
     if (!found) return null;
     const database2 = await getDb();
     if (!database2) return found;
-    const pending = await database2.select({
-      id: timeCorrectionRequests.id,
-      status: timeCorrectionRequests.status,
-      requestedTime: timeCorrectionRequests.requestedTime
-    }).from(timeCorrectionRequests).where(and8(
+    const dayStart = /* @__PURE__ */ new Date(`${found.day}T00:00:00-03:00`);
+    const dayEnd = /* @__PURE__ */ new Date(`${found.day}T23:59:59.999-03:00`);
+    const covering = await database2.select({ id: timeCorrectionRequests.id }).from(timeCorrectionRequests).where(and8(
       eq8(timeCorrectionRequests.companyId, ctx.accountId),
       eq8(timeCorrectionRequests.memberAccountId, ctx.memberAccountId),
-      sql9`${timeCorrectionRequests.status} IN ('pending', 'approved')`
-    )).orderBy(desc2(timeCorrectionRequests.createdAt)).limit(20);
-    const covered = pending.some((row2) => {
-      const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(row2.requestedTime));
-      return day === found.day;
-    });
-    return covered ? null : found;
+      sql9`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+      gte5(timeCorrectionRequests.requestedTime, dayStart),
+      lte2(timeCorrectionRequests.requestedTime, dayEnd)
+    )).limit(1);
+    return covering.length ? null : found;
   }),
   companyMissingPunches: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
     const found = await findMissingPunches({ companyId: ctx.accountId });
@@ -8261,18 +8257,23 @@ var timeTrackingRouter = router({
     const database2 = await getDb();
     if (!database2) return found;
     const memberIds = [...new Set(found.map((m) => m.memberId))];
+    const dayStarts = [...new Set(found.map((m) => m.day))].map((d) => /* @__PURE__ */ new Date(`${d}T00:00:00-03:00`));
+    const dayEnds = [...new Set(found.map((m) => m.day))].map((d) => /* @__PURE__ */ new Date(`${d}T23:59:59.999-03:00`));
+    const rangeStart = new Date(Math.min(...dayStarts.map((d) => d.getTime())));
+    const rangeEnd = new Date(Math.max(...dayEnds.map((d) => d.getTime())));
     const rows4 = await database2.select({
       memberAccountId: timeCorrectionRequests.memberAccountId,
       requestedTime: timeCorrectionRequests.requestedTime
     }).from(timeCorrectionRequests).where(and8(
       eq8(timeCorrectionRequests.companyId, ctx.accountId),
       inArray8(timeCorrectionRequests.memberAccountId, memberIds),
-      sql9`${timeCorrectionRequests.status} IN ('pending', 'approved')`
-    )).orderBy(desc2(timeCorrectionRequests.createdAt)).limit(500);
+      sql9`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+      gte5(timeCorrectionRequests.requestedTime, rangeStart),
+      lte2(timeCorrectionRequests.requestedTime, rangeEnd)
+    ));
     const covered = /* @__PURE__ */ new Set();
     for (const row2 of rows4) {
-      const day = excuseDay(row2.requestedTime);
-      covered.add(`${row2.memberAccountId}:${day}`);
+      covered.add(`${row2.memberAccountId}:${excuseDay(row2.requestedTime)}`);
     }
     return found.filter((m) => !covered.has(`${m.memberId}:${m.day}`));
   }),

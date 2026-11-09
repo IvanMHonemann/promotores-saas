@@ -384,25 +384,21 @@ export const timeTrackingRouter = router({
     if (!found) return null;
     const database = await db.getDb();
     if (!database) return found;
-    // Some se houver pedido pendente ou aprovado para o mesmo dia.
-    // Volta a aparecer só se o pedido for recusado (ou não existir).
-    const pending = await database.select({
-      id: timeCorrectionRequests.id,
-      status: timeCorrectionRequests.status,
-      requestedTime: timeCorrectionRequests.requestedTime,
-    }).from(timeCorrectionRequests)
+    // Some se houver pedido pendente ou aprovado cobrindo o MESMO dia do alerta (fuso SP).
+    // Consulta pelo intervalo do dia — evita o bug do limit(20) que deixava o aviso voltar
+    // quando havia muitas correções recentes de outros dias.
+    const dayStart = new Date(`${found.day}T00:00:00-03:00`);
+    const dayEnd = new Date(`${found.day}T23:59:59.999-03:00`);
+    const covering = await database.select({ id: timeCorrectionRequests.id }).from(timeCorrectionRequests)
       .where(and(
         eq(timeCorrectionRequests.companyId, ctx.accountId),
         eq(timeCorrectionRequests.memberAccountId, ctx.memberAccountId),
         sql`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+        gte(timeCorrectionRequests.requestedTime, dayStart),
+        lte(timeCorrectionRequests.requestedTime, dayEnd),
       ))
-      .orderBy(desc(timeCorrectionRequests.createdAt))
-      .limit(20);
-    const covered = pending.some((row) => {
-      const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(row.requestedTime));
-      return day === found.day;
-    });
-    return covered ? null : found;
+      .limit(1);
+    return covering.length ? null : found;
   }),
 
   companyMissingPunches: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
@@ -411,6 +407,11 @@ export const timeTrackingRouter = router({
     const database = await db.getDb();
     if (!database) return found;
     const memberIds = [...new Set(found.map((m) => m.memberId))];
+    // Dias dos alertas (SP). Busca pedidos só nesses dias — sem limit artificial.
+    const dayStarts = [...new Set(found.map((m) => m.day))].map((d) => new Date(`${d}T00:00:00-03:00`));
+    const dayEnds = [...new Set(found.map((m) => m.day))].map((d) => new Date(`${d}T23:59:59.999-03:00`));
+    const rangeStart = new Date(Math.min(...dayStarts.map((d) => d.getTime())));
+    const rangeEnd = new Date(Math.max(...dayEnds.map((d) => d.getTime())));
     const rows = await database.select({
       memberAccountId: timeCorrectionRequests.memberAccountId,
       requestedTime: timeCorrectionRequests.requestedTime,
@@ -419,13 +420,12 @@ export const timeTrackingRouter = router({
         eq(timeCorrectionRequests.companyId, ctx.accountId),
         inArray(timeCorrectionRequests.memberAccountId, memberIds),
         sql`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
-      ))
-      .orderBy(desc(timeCorrectionRequests.createdAt))
-      .limit(500);
+        gte(timeCorrectionRequests.requestedTime, rangeStart),
+        lte(timeCorrectionRequests.requestedTime, rangeEnd),
+      ));
     const covered = new Set<string>();
     for (const row of rows) {
-      const day = excuseDay(row.requestedTime);
-      covered.add(`${row.memberAccountId}:${day}`);
+      covered.add(`${row.memberAccountId}:${excuseDay(row.requestedTime)}`);
     }
     // Esconde o alerta se houver pedido pendente ou aprovado cobrindo o mesmo dia.
     // Volta a aparecer só se o pedido for recusado (ou não existir).

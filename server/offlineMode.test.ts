@@ -130,7 +130,7 @@ describe("relógio do aparelho (detecção de alteração)", () => {
     expect(r.alert).toBe("offline");
   });
   it("espelho mostra o símbolo de registrada offline", () => {
-    expect(fmtMark({ type: "clock_in", label: "Entrada", time: "2026-11-05T11:00:00Z", receivedAt: "2026-11-05T15:00:00Z", synced: true, kind: "original", offline: true }, "America/Sao_Paulo")).toBe("08:00o");
+    expect(fmtMark({ type: "clock_in", label: "Entrada", time: "2026-11-05T11:00:00Z", receivedAt: "2026-11-05T15:00:00Z", synced: true, kind: "original", offline: true }, "America/Sao_Paulo")).toBe("08:00(off)");
   });
 });
 

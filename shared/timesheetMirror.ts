@@ -312,7 +312,7 @@ export function fmtMark(m: DayRow["marks"][number], tz: string): string {
   else if (included) tag = "+";
   else if (m.kind === "adjusted") tag = "*";
   const sync = m.synced ? "" : "?";
-  const off = m.offline ? "o" : "";
+  const off = m.offline ? "(off)" : "";
   return `${t.hm}${tag}${off}${sync}`;
 }
 

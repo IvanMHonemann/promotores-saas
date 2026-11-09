@@ -125,7 +125,7 @@ describe("PDF do espelho de ponto", () => {
     expect(documentLegend(r.report)).toBe("");
     const mark = r.report.days.flatMap((d) => d.marks)[0];
     Object.assign(mark, { kind: "adjusted", originalLabel: "Entrada", originalTime: mark.time, offline: true, synced: false });
-    expect(documentLegend(r.report)).toBe("Legenda: * ajustada; o offline; ? pendente.");
+    expect(documentLegend(r.report)).toBe("Legenda: * ajustada; (off) registrada sem internet; ? pendente.");
     mark.originalLabel = undefined;
     expect(documentLegend(r.report)).toContain("+ incluída manualmente");
     mark.kind = "legacy_adjusted";

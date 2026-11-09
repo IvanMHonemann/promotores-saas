@@ -1144,6 +1144,31 @@ var init_expiry = __esm({
   }
 });
 
+// shared/routeSchedule.ts
+function duplicateOccurrenceIds(routes2, startedRouteIds2 = []) {
+  const started = new Set(startedRouteIds2);
+  const groups = /* @__PURE__ */ new Map();
+  for (const route of routes2) {
+    if (!route.weeklyScheduleId) continue;
+    const day = route.date instanceof Date ? route.date.toISOString().slice(0, 10) : String(route.date ?? "").slice(0, 10);
+    const key = `${route.weeklyScheduleId}|${day}`;
+    groups.set(key, [...groups.get(key) || [], route]);
+  }
+  const hidden = /* @__PURE__ */ new Set();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort((a, b) => a.id - b.id);
+    const keep = sorted.find((r) => started.has(r.id)) ?? sorted[0];
+    for (const r of sorted) if (r.id !== keep.id && !started.has(r.id)) hidden.add(r.id);
+  }
+  return hidden;
+}
+var init_routeSchedule = __esm({
+  "shared/routeSchedule.ts"() {
+    "use strict";
+  }
+});
+
 // shared/entitlements.ts
 function resolveEntitlements(input) {
   const plan = new Set(input.planFeatures);
@@ -2197,7 +2222,33 @@ async function listOperationalRoutes(companyId, options = {}) {
   const conditions = [eq2(routes.companyId, requireAccountId(companyId))];
   if (options.date) conditions.push(eq2(routes.date, options.date));
   if (options.promoterId) conditions.push(eq2(routes.promoterId, options.promoterId));
-  return database2.select().from(routes).where(and2(...conditions)).orderBy(desc(routes.date), desc(routes.id));
+  const rows4 = await database2.select().from(routes).where(and2(...conditions)).orderBy(desc(routes.date), desc(routes.id));
+  const candidates = duplicateOccurrenceIds(rows4);
+  if (!candidates.size) return rows4;
+  const started = await startedRouteIds(database2, requireAccountId(companyId), rows4.map((r) => r.id));
+  const hidden = duplicateOccurrenceIds(rows4, started);
+  return rows4.filter((r) => !hidden.has(r.id));
+}
+async function startedRouteIds(database2, companyId, routeIds) {
+  if (!routeIds.length) return [];
+  const rows4 = await database2.select({ routeId: visits.routeId }).from(visits).where(and2(
+    eq2(visits.companyId, companyId),
+    inArray(visits.routeId, routeIds),
+    sql2`${visits.status} NOT IN ('pending', 'cancelled')`
+  ));
+  return rows4.map((r) => Number(r.routeId));
+}
+async function ensureWeeklyOccurrenceUniqueIndex(database2) {
+  if (weeklyOccurrenceIndexChecked) return;
+  weeklyOccurrenceIndexChecked = true;
+  try {
+    const found = await database2.execute(sql2`SELECT COUNT(*) AS n FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'routes' AND index_name = 'routes_weekly_occurrence_unique'`);
+    const rows4 = Array.isArray(found?.[0]) ? found[0] : found?.rows ?? [];
+    if (Number(rows4?.[0]?.n ?? 0) > 0) return;
+    await database2.execute(sql2`CREATE UNIQUE INDEX routes_weekly_occurrence_unique ON routes (weeklyScheduleId, date)`);
+  } catch (e) {
+    console.warn("[routes] unique index weekly occurrence", e?.code || e?.message);
+  }
 }
 async function listWeeklyRouteSchedules(companyId) {
   const database2 = await getDb();
@@ -2369,14 +2420,17 @@ async function materializeWeeklyRoutes(companyId, promoterId, dateString) {
     eq2(weeklyRouteSchedules.weekday, weekday),
     eq2(weeklyRouteSchedules.active, true)
   ));
+  if (schedules.length) await ensureWeeklyOccurrenceUniqueIndex(database2);
   for (const schedule of schedules) {
     try {
       await database2.transaction(async (tx) => {
+        const [locked] = await tx.select({ id: weeklyRouteSchedules.id }).from(weeklyRouteSchedules).where(and2(eq2(weeklyRouteSchedules.id, schedule.id), eq2(weeklyRouteSchedules.companyId, company))).for("update");
+        if (!locked) return;
         const existing = await tx.select({ id: routes.id }).from(routes).where(and2(
           eq2(routes.companyId, company),
           eq2(routes.promoterId, promoterId),
           eq2(routes.date, dateString)
-        )).limit(1);
+        )).limit(1).for("update");
         if (existing.length) return;
         const storeIds = Array.isArray(schedule.storeIds) ? schedule.storeIds : [];
         if (!storeIds.length) return;
@@ -2399,7 +2453,8 @@ async function materializeWeeklyRoutes(companyId, promoterId, dateString) {
         await tx.insert(visits).values(stores2.map((store) => ({ companyId: company, routeId, storeId: store.id, promoterId, status: "pending" })));
       });
     } catch (error) {
-      if (error?.code !== "ER_DUP_ENTRY") throw error;
+      const raced = error?.code === "ER_DUP_ENTRY" || error?.code === "ER_LOCK_DEADLOCK" || error?.errno === 9007 || /write conflict/i.test(String(error?.message || ""));
+      if (!raced) throw error;
     }
   }
   return listOperationalRoutes(company, { date: dateString, promoterId });
@@ -2484,8 +2539,11 @@ async function listOperationalVisits(companyId, options = {}) {
   if (options.promoterId) conditions.push(eq2(visits.promoterId, options.promoterId));
   if (options.routeId) conditions.push(eq2(visits.routeId, options.routeId));
   if (options.date) conditions.push(eq2(routes.date, options.date));
-  const rows4 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, and2(eq2(visits.storeId, stores.id), eq2(stores.companyId, visits.companyId))).innerJoin(routes, and2(eq2(visits.routeId, routes.id), eq2(routes.companyId, visits.companyId))).where(and2(...conditions)).orderBy(visits.plannedStart, visits.id);
-  return rows4;
+  const rows4 = await database2.select({ visit: visits, store: stores, occurrence: { id: routes.id, weeklyScheduleId: routes.weeklyScheduleId, date: routes.date } }).from(visits).innerJoin(stores, and2(eq2(visits.storeId, stores.id), eq2(stores.companyId, visits.companyId))).innerJoin(routes, and2(eq2(visits.routeId, routes.id), eq2(routes.companyId, visits.companyId))).where(and2(...conditions)).orderBy(visits.plannedStart, visits.id);
+  const occurrences = [...new Map(rows4.map((r) => [r.occurrence.id, r.occurrence])).values()];
+  const started = rows4.filter((r) => r.visit.status !== "pending" && r.visit.status !== "cancelled").map((r) => r.occurrence.id);
+  const hidden = options.id ? /* @__PURE__ */ new Set() : duplicateOccurrenceIds(occurrences, started);
+  return rows4.filter((r) => !hidden.has(r.occurrence.id)).map(({ visit, store }) => ({ visit, store }));
 }
 async function updateOperationalVisit(companyId, id2, data) {
   const database2 = await getDb();
@@ -2674,7 +2732,7 @@ async function getExpiringInventoryProducts(companyId, daysAhead = 30) {
     sql2`${inventoryProducts.expirationDate} >= ${todayInZone()} AND ${inventoryProducts.expirationDate} <= ${addDays(todayInZone(), days)}`
   )).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
 }
-var _db, _dbUrl, _pool, ownerScopeReady, ownerScopePromise, _trashTableReady, WeeklyRouteConflictError, RouteValidationError, _inventoryReady;
+var _db, _dbUrl, _pool, ownerScopeReady, ownerScopePromise, _trashTableReady, weeklyOccurrenceIndexChecked, WeeklyRouteConflictError, RouteValidationError, _inventoryReady;
 var init_db = __esm({
   "server/db.ts"() {
     "use strict";
@@ -2683,6 +2741,7 @@ var init_db = __esm({
     init_schema();
     init_storeAccess();
     init_expiry();
+    init_routeSchedule();
     init_entitlements();
     init_schema();
     _db = null;
@@ -2691,6 +2750,7 @@ var init_db = __esm({
     ownerScopeReady = false;
     ownerScopePromise = null;
     _trashTableReady = null;
+    weeklyOccurrenceIndexChecked = false;
     WeeklyRouteConflictError = class extends Error {
     };
     RouteValidationError = class extends Error {

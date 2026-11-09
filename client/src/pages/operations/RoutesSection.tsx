@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { confirmAction } from "@/components/ConfirmDialog";
-import { WEEKDAY_ORDER, buildRouteShareText, capitalize, defaultRouteName, filterAndSortSchedules, findScheduleConflict, moveItem, weekdayLabel } from "@shared/routeSchedule";
+import { WEEKDAY_ORDER, buildRouteShareText, capitalize, defaultRouteName, duplicateOccurrenceIds, filterAndSortSchedules, findScheduleConflict, moveItem, weekdayLabel } from "@shared/routeSchedule";
 
 const selectCls = "h-11 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-base text-white sm:h-10 sm:text-sm";
 
@@ -92,6 +92,13 @@ export default function RoutesSection({ isCompanyAdmin, isPromoter, stores = [],
     save.mutate({ id: form.id, promoterId, weekday, name: form.name.trim() || defaultRouteName(weekday), storeIds: form.storeIds });
   };
 
+  // Abre o mesmo formulário de edição do roteiro semanal (salva no mesmo roteiro, sem criar outro).
+  const editSchedule = (s: Schedule) => {
+    setForm({ id: s.id, promoterId: String(s.promoterId), weekday: String(s.weekday), name: s.name, storeIds: [...(s.storeIds || [])] });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const scheduleOfRoute = (route: any) => route?.weeklyScheduleId ? schedules.find((s) => s.id === route.weeklyScheduleId) : undefined;
+
   const share = (s: Schedule) => shareText(s.name, buildRouteShareText({ name: s.name, weekday: s.weekday, promoterName: isPromoter ? null : promoterName(s.promoterId), storeNames: (s.storeIds || []).map(storeName) }));
   const askDelete = async (s: Schedule) => {
     if (await confirmAction({ title: "Excluir este roteiro?", description: `${promoterName(s.promoterId)} deixa de ter visitas automáticas na ${weekdayLabel(s.weekday)}. Visitas já feitas continuam no histórico.`, confirmLabel: "Excluir roteiro" })) remove.mutate({ id: s.id });
@@ -100,7 +107,9 @@ export default function RoutesSection({ isCompanyAdmin, isPromoter, stores = [],
   // Roteiros de um dia específico (o que cada promotor tem na agenda).
   const daily = trpc.operations.routes.list.useQuery({ date: day });
   const dailyVisits = trpc.operations.visits.list.useQuery({ date: day }, { enabled: daily.isSuccess });
-  const dailyRoutes = (daily.data || []).filter((r: any) => filter === "all" || r.promoterId === filter);
+  const dailyHidden = useMemo(() => duplicateOccurrenceIds((daily.data || []) as any[], (dailyVisits.data || []).filter((row: any) => !["pending", "cancelled"].includes(row.visit.status)).map((row: any) => row.visit.routeId)), [daily.data, dailyVisits.data]);
+  // Um card por roteiro: nunca mostra a mesma ocorrência do roteiro semanal duas vezes.
+  const dailyRoutes = (daily.data || []).filter((r: any) => !dailyHidden.has(r.id) && (filter === "all" || r.promoterId === filter));
   const storesOfRoute = (routeId: number) => (dailyVisits.data || []).filter((row: any) => row.visit.routeId === routeId).map((row: any) => row.store?.name || "Loja");
   const dailyLabel = day === today ? "hoje" : new Date(`${day}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
 
@@ -183,7 +192,7 @@ export default function RoutesSection({ isCompanyAdmin, isPromoter, stores = [],
                     <p className="mt-2 break-words text-sm text-slate-300">{(s.storeIds || []).map((id, i) => `${i + 1}. ${storeName(id)}`).join("  ·  ") || "Sem lojas"}</p>
                   </div>
                   <ActionsMenu label={s.name}
-                    onEdit={isCompanyAdmin ? () => { setForm({ id: s.id, promoterId: String(s.promoterId), weekday: String(s.weekday), name: s.name, storeIds: [...(s.storeIds || [])] }); window.scrollTo({ top: 0, behavior: "smooth" }); } : undefined}
+                    onEdit={isCompanyAdmin ? () => editSchedule(s) : undefined}
                     onShare={() => void share(s)}
                     onDelete={isCompanyAdmin ? () => void askDelete(s) : undefined} />
                 </div>
@@ -207,6 +216,7 @@ export default function RoutesSection({ isCompanyAdmin, isPromoter, stores = [],
           {daily.isSuccess && !dailyRoutes.length && <p className="text-sm text-slate-300">Nenhuma visita programada nesse dia.</p>}
           {dailyRoutes.map((route: any) => {
             const names = storesOfRoute(route.id);
+            const schedule = scheduleOfRoute(route);
             return (
               <div key={route.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
                 <div className="flex items-start gap-2">
@@ -216,6 +226,7 @@ export default function RoutesSection({ isCompanyAdmin, isPromoter, stores = [],
                     {names.length > 0 && <p className="mt-1 break-words text-sm text-slate-400">{names.map((n: string, i: number) => `${i + 1}. ${n}`).join("  ·  ")}</p>}
                   </div>
                   <ActionsMenu label={route.name}
+                    onEdit={isCompanyAdmin && schedule ? () => editSchedule(schedule) : undefined}
                     onShare={() => void shareText(route.name, buildRouteShareText({ name: route.name, promoterName: isPromoter ? null : promoterName(route.promoterId), storeNames: names }))}
                     onDelete={isCompanyAdmin && !route.weeklyScheduleId ? async () => { if (await confirmAction({ title: "Excluir este roteiro do dia?", description: "O promotor deixa de ver estas visitas na agenda.", confirmLabel: "Excluir" })) removeDaily.mutate({ id: route.id }); } : undefined} />
                 </div>

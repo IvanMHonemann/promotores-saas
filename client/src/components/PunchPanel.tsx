@@ -3,7 +3,6 @@ import { Link } from "wouter";
 import { CalendarDays, CheckCircle2, FileCheck2, Coffee, Loader2, LogIn, LogOut, MapPin, Play, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { JORNADA_ENCERRADA_MESSAGE } from "@shared/punchTime";
 import { useBusy } from "@/components/BusyOverlay";
 import { getCurrentPosition } from "@/pages/promoter/geolocation";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
@@ -134,14 +133,8 @@ export function PunchPanel() {
 
   const punch = async (action: Action) => {
     if (busy) return;
-    if (action.type === "clock_in" && closed) {
-      // Dia encerrado: nova entrada só no próximo dia (o servidor também recusa).
-      const message = JORNADA_ENCERRADA_MESSAGE;
-      setError(message);
-      toast.error(message);
-      return;
-    }
-    if (action.type === "clock_out" && !window.confirm("Encerrar a jornada de hoje? Depois da saída não é possível bater novas marcações no dia.")) return;
+    if (action.type === "clock_out" && !window.confirm("Encerrar a jornada agora? Se precisar voltar ao trabalho hoje, você poderá bater uma nova entrada (ela fica sinalizada para o seu gestor).")) return;
+    if (action.type === "clock_in" && closed && !window.confirm("Você já encerrou uma jornada hoje. Deseja iniciar uma NOVA jornada? A entrada será registrada normalmente e marcada para conferência do gestor.")) return;
     setBusy(true);
     setError("");
     let savedOffline = false;
@@ -267,7 +260,9 @@ export function PunchPanel() {
             <div>
               <p className="text-base font-bold text-white">Bom descanso! Jornada encerrada às {hhmm(eventTime(last))}.</p>
               <p className="text-sm text-slate-200">Total trabalhado hoje: <strong className="text-white">{formatDuration(workedMs)}</strong></p>
-              <p className="mt-1 text-xs text-slate-300">Nova entrada só no próximo dia. Trabalhou depois da saída? Peça uma inclusão no <Link href="/ponto" className="font-bold text-teal-300 underline">Cartão ponto</Link>.</p>
+              <button type="button" onClick={() => void punch(ACTIONS.clock_in)} disabled={busy} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-emerald-300/50 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60">
+                <LogIn className="h-3.5 w-3.5" /> Voltei a trabalhar: bater nova entrada
+              </button>
             </div>
           </div>
         ) : (

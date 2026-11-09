@@ -12,7 +12,7 @@
 - **Verificação de integridade** em `/ponto-legal`.
 - **Retenção**: marcações, correções e aceites não são apagados por rotina; auditoria do ponto nunca é apagada por padrão
   (`AUDIT_RETENTION_TIME_DAYS`, se definido, mínimo 7 anos). A limpeza de fotos (60 dias) só toca `store_photos`.
-- **Jornada encerrada** (decisão do Ivan, 09/11/2026): depois da saída, nova entrada só no dia seguinte (cliente e servidor recusam). Trabalho extra no dia entra por pedido de inclusão ou ajuste do administrador. Exceção: batida offline já feita no aparelho é aceita e sinalizada (`[NOVA-JORNADA-MESMO-DIA]`). Atenção: a Portaria 671, art. 74 I, veda restrições de horário à marcação — validar com o advogado.
+- **Nova jornada no mesmo dia** (decisão final do Ivan, 09/11/2026, conforme o jurídico): sem restrição de horário à marcação (Portaria 671, art. 74 I). Entrada após a saída do dia é aceita — online e offline —, com confirmação no aparelho ("Voltei a trabalhar: bater nova entrada"), e fica sinalizada (`[NOVA-JORNADA-MESMO-DIA]`) para o administrador conferir. O bloqueio "jornada já encerrada" (#90) foi revertido.
 
 ## Migração
 - `drizzle/0026_ponto_prova_legal.sql`; também aplicado automaticamente por `ensurePunchLedger()` no primeiro uso.

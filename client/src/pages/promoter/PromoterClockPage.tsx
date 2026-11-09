@@ -86,7 +86,7 @@ export default function PromoterClockPage() {
   }, [events, typesPresent]);
 
   const correction = trpc.timeTracking.requestCorrection.useMutation({
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       toast.success("Pedido enviado ao administrador");
       setSelectedEventId("");
       setCorrectTime("");
@@ -96,6 +96,15 @@ export default function PromoterClockPage() {
       setPhotoPreview(null);
       setJustificationType("normal");
       setDetailReason("esquecimento");
+      // Esconde na hora se o pedido cobre o dia do alerta (optimistic); o invalidate confirma no servidor.
+      const v = variables as { date?: string; requestedTime?: string };
+      let submittedDay = selectedDate;
+      if (typeof v.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.date)) submittedDay = v.date;
+      else if (v.requestedTime) submittedDay = new Date(v.requestedTime).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      if (missingPunch.data?.day && submittedDay === missingPunch.data.day) {
+        setHideMissingAlert(true);
+        utils.timeTracking.myMissingPunch.setData(undefined, null);
+      }
       void utils.timeTracking.myCorrections.invalidate();
       void utils.timeTracking.myHistory.invalidate();
       void utils.timeTracking.myMissingPunch.invalidate();
@@ -229,6 +238,15 @@ export default function PromoterClockPage() {
   }, []);
 
   const dayExcuse = useMemo(() => corrections.data?.map((row) => row.request).find((request) => looksLikeFullDayExcuse(request) && request.status !== "rejected" && new Date(request.requestedTime).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === selectedDate), [corrections.data, selectedDate]);
+  /** Pedido pendente/aprovado cobrindo o dia do alerta de batida faltante → some o aviso mesmo antes do refetch. */
+  const alertDayCovered = useMemo(() => {
+    const day = missingPunch.data?.day;
+    if (!day) return false;
+    return (corrections.data || []).some(({ request }) =>
+      (request.status === "pending" || request.status === "approved")
+      && new Date(request.requestedTime).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === day
+    );
+  }, [corrections.data, missingPunch.data?.day]);
   const needsObservation = justificationRequiresText(detailReason === "other" ? "other" : justificationType);
   const canSubmitAdd = !sending && !correction.isPending && !dayExcuse && (isFullDay || (missingList.some((t) => missingTimes[t]) && (!needsObservation || justification.trim().length >= 5)));
 
@@ -268,14 +286,18 @@ export default function PromoterClockPage() {
                   </p>
                 </div>
               )}
-              {missingPunch.data && !hideMissingAlert && (
+              {missingPunch.data && !hideMissingAlert && !alertDayCovered && (
                 <div className="relative mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 pr-14">
                   <p className="font-bold text-amber-100">Batida faltante detectada</p>
                   <p className="mt-1 text-sm text-amber-200">
                     Última marcação: {missingPunch.data.lastLabel} em {new Date(missingPunch.data.lastTime).toLocaleString("pt-BR")}.
                     Falta registrar: {missingPunch.data.missing}.
                   </p>
-                  <a href="#correcoes" className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Corrigir agora</a>
+                  <button type="button" onClick={() => {
+                    const day = missingPunch.data?.day;
+                    if (day) setSelectedDate(day);
+                    document.getElementById("correcoes")?.scrollIntoView({ behavior: "smooth" });
+                  }} className="mt-2 inline-block text-sm font-semibold text-amber-300 underline">Corrigir agora</button>
                   <button type="button" onClick={() => setHideMissingAlert(true)} aria-label="Fechar alerta" className="absolute right-2 top-2 grid h-9 w-9 place-items-center rounded-lg border border-amber-200/40 bg-amber-400/20 text-amber-50 transition hover:bg-amber-400/40">
                     <X className="h-5 w-5" />
                   </button>

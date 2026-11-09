@@ -5,7 +5,12 @@ export const ACT_AS_KEY = "promotores-saas-act-as";
 export function readActAs(): { id: number; name: string } | null {
   try { const v = JSON.parse(localStorage.getItem(ACT_AS_KEY) || "null"); return v?.id ? v : null; } catch { return null; }
 }
-export function enterCompany(id: number, name: string) {
+export function enterCompany(id: number, name: string, beforeEnter?: () => Promise<unknown>) {
+  if (beforeEnter) {
+    // Registra a entrada na auditoria antes de trocar de empresa; se falhar, entra mesmo assim.
+    void beforeEnter().catch(() => undefined).finally(() => enterCompany(id, name));
+    return;
+  }
   try { localStorage.setItem(ACT_AS_KEY, JSON.stringify({ id, name })); localStorage.removeItem("promotores-saas-auth-user"); } catch { /* ignora */ }
   window.location.href = "/";
 }

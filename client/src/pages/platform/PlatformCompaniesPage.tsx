@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Ban, Building2, CalendarCheck, CheckCircle2, LogIn, Loader2, Pencil, RotateCcw, Trash2, Wallet } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { enterCompany } from "@/components/ActingAsBanner";
@@ -46,12 +46,12 @@ export default function PlatformCompaniesPage() {
         <div className="flex flex-wrap items-center gap-3"><Input aria-label="Buscar empresa" placeholder="Buscar por nome" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs border-white/15 bg-slate-950/60 text-white" /><label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />Mostrar excluídas</label></div>
         {list.isLoading && <p className="flex items-center gap-2 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" />Carregando...</p>}
         {list.isError && <p role="alert" className="text-sm text-rose-200">{list.error.message}</p>}
-        <div className="space-y-2">{rows.map((c) => { const st = stateOf(c); return <button key={c.id} onClick={() => setSelectedId(c.id)} className={`w-full rounded-xl border p-3 text-left transition ${selectedId === c.id ? "border-teal-300/60 bg-teal-300/10" : "border-white/10 bg-slate-950/40 hover:border-white/25"}`}>
+        <div className="space-y-2">{rows.map((c) => { const st = stateOf(c); return <button key={c.id} onClick={() => { setSelectedId(c.id); if (window.innerWidth < 1280) window.setTimeout(() => document.getElementById("empresa-selecionada")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }} className={`w-full rounded-xl border p-3 text-left transition ${selectedId === c.id ? "border-teal-300/60 bg-teal-300/10" : "border-white/10 bg-slate-950/40 hover:border-white/25"}`}>
           <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{c.name}</p><Badge className={st.tone}>{st.label}</Badge></div>
           <p className="mt-1 text-xs text-slate-400">{c.planName ?? "Sem plano"} · válido até {day(c.expiresAt)} · último pagamento {day(c.lastPayment)} · {c.activeUsers}/{c.users} usuários</p>
         </button>; })}</div>
       </CardContent></Card>
-      {selected ? <CompanyPanel key={selected.id} company={selected} onChanged={refresh} /> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir.</CardContent></Card>}
+      {selected ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CompanyPanel key={selected.id} company={selected} onChanged={refresh} /></div> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir.</CardContent></Card>}
     </div>
   </DashboardLayout>;
 }
@@ -69,6 +69,7 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
   const delPay = trpc.platformCompanies.deletePayment.useMutation({ onSuccess: ok("Pagamento excluído."), onError: fail });
   const block = trpc.platformCompanies.setBlocked.useMutation({ onSuccess: ok("Situação atualizada."), onError: fail });
   const archive = trpc.platformCompanies.archive.useMutation({ onSuccess: ok("Empresa atualizada."), onError: fail });
+  const enterAs = trpc.platformCompanies.enterAs.useMutation();
   const purge = trpc.platformCompanies.purge.useMutation({ onSuccess: () => { toast.success("Empresa excluída definitivamente."); onChanged(); }, onError: fail });
 
   const [name, setName] = useState(c.name);
@@ -88,7 +89,7 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
       <p className="text-slate-300">Responsável: {c.adminName ?? "—"} ({c.adminEmail ?? "sem e-mail"}) · criada em {day(c.createdAt)}</p>
       {c.blockedReason && !c.active && <p className="rounded-lg bg-rose-500/10 p-2 text-rose-100">Motivo do bloqueio: {c.blockedReason}</p>}
       <div className="flex flex-wrap items-end gap-2"><div className="min-w-[220px] flex-1"><Label>Nome da empresa</Label><Input value={name} onChange={(e) => setName(e.target.value)} className={inp} /></div><Button disabled={rename.isPending || name.trim() === c.name || name.trim().length < 2} onClick={() => rename.mutate({ companyId: c.id, name })} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar nome</Button></div>
-      <Button onClick={() => enterCompany(c.id, c.name)} disabled={Boolean(c.archivedAt)} variant="outline" className="border-fuchsia-300/40 text-fuchsia-200"><LogIn className="mr-2 h-4 w-4" />Acessar como esta empresa (editar tudo)</Button>
+      <Button onClick={() => enterCompany(c.id, c.name, () => enterAs.mutateAsync({ companyId: c.id }))} disabled={Boolean(c.archivedAt)} variant="outline" className="h-auto min-h-10 whitespace-normal border-fuchsia-300/40 text-left text-fuchsia-200"><LogIn className="mr-2 h-4 w-4" />Acessar como esta empresa (editar tudo)</Button>
     </CardContent></Card>
 
     <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarCheck className="h-4 w-4 text-teal-300" />Plano e validade</CardTitle></CardHeader><CardContent className="space-y-3">
@@ -118,7 +119,7 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
         <div><Label>Plano válido até</Label><Input type="date" value={pay_.periodTo} onChange={(e) => setPay({ ...pay_, periodTo: e.target.value })} className={inp} /></div>
         <div><Label>Forma</Label><select value={pay_.billingType} onChange={(e) => setPay({ ...pay_, billingType: e.target.value as any })} className={sel}><option value="PIX">Pix</option><option value="BOLETO">Boleto</option><option value="CREDIT_CARD">Cartão</option><option value="UNDEFINED">Outra</option></select></div>
       </div>
-      <Button disabled={pay.isPending || !c.planId || !/^\d+(\.\d{1,2})?$/.test(pay_.amount) || !pay_.periodTo} onClick={() => pay.mutate({ companyId: c.id, amount: pay_.amount, paymentDate: pay_.paymentDate, periodFrom: pay_.periodFrom, periodTo: pay_.periodTo, billingType: pay_.billingType, planId: Number(planId) || c.planId })} className="bg-emerald-500 text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4" />Registrar pagamento e liberar até a data</Button>
+      <Button disabled={pay.isPending || !c.planId || !/^\d+(\.\d{1,2})?$/.test(pay_.amount) || !pay_.periodTo} onClick={() => pay.mutate({ companyId: c.id, amount: pay_.amount, paymentDate: pay_.paymentDate, periodFrom: pay_.periodFrom, periodTo: pay_.periodTo, billingType: pay_.billingType, planId: Number(planId) || c.planId })} className="h-auto min-h-10 whitespace-normal bg-emerald-500 text-left text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4 shrink-0" />Registrar pagamento e liberar até a data</Button>
       {!c.planId && <p className="text-xs text-amber-200">Defina o plano da empresa acima antes de registrar o pagamento.</p>}
       <div className="space-y-1 border-t border-white/10 pt-3 text-sm">{(payments.data || []).map((p: any) => <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2"><span>{money(p.amount)} · pago em {day(p.paymentDate)} · {p.status}</span><Button size="sm" variant="ghost" className="text-rose-200" onClick={() => { void confirmAction({ title: "Excluir este registro de pagamento?", confirmLabel: "Confirmar" }).then((ok) => ok && delPay.mutate({ companyId: c.id, paymentId: p.id })); }}><Trash2 className="h-4 w-4" /></Button></div>)}{!payments.data?.length && <p className="text-slate-400">Nenhum pagamento registrado.</p>}</div>
     </CardContent></Card>
@@ -147,7 +148,7 @@ function CompanyFeaturesCard({ companyId }: { companyId: number }) {
     onError: (e) => toast.error(e.message),
   });
   const [selected, setSelected] = useState<EntitlementKey[]>([]);
-  useMemo(() => {
+  useEffect(() => {
     if (features.data?.companyFeatures) {
       setSelected(ENTITLEMENT_CATALOG.filter((f) => features.data.companyFeatures[f.key]).map((f) => f.key));
     }

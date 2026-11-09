@@ -14,9 +14,12 @@ const SECTION_PATH: Record<Section, string> = { overview: "/", companies: "/admi
 
 export default function PlatformDashboard({ section = "overview" }: { section?: Section }) {
   const [gpsStatus, setGpsStatus] = useState<"checking" | "granted" | "denied" | "unavailable">("checking");
-  const companies = trpc.platform.companies.list.useQuery();
-  const total = companies.data?.length ?? 0;
-  const active = companies.data?.filter((company) => company.active).length ?? 0;
+  const companies = trpc.platformCompanies.overview.useQuery(undefined, { enabled: section === "overview", staleTime: 30000 });
+  const live = (companies.data || []).filter((company) => !company.archivedAt);
+  const total = live.length;
+  const active = live.filter((company) => company.active).length;
+  const attention = live.filter((company) => !company.active || ["overdue", "pending", "suspended", "expired"].includes(company.subscriptionStatus ?? "") || (company.expiresAt && new Date(company.expiresAt).getTime() < Date.now())).length;
+  const activeUsers = live.reduce((sum, company) => sum + Number(company.activeUsers || 0), 0);
   const selectSection = (value: Section) => { window.location.href = SECTION_PATH[value]; };
   const title = section === "time" ? "Ponto eletrônico" : section === "companies" ? "Empresas" : section === "ai-support" ? "Suporte com IA" : section === "code-scanner" ? "Erros ao vivo" : "Visão geral";
 
@@ -44,7 +47,7 @@ export default function PlatformDashboard({ section = "overview" }: { section?: 
   return <DashboardLayout title={title} description="Acompanhe a operação da sua plataforma em um só lugar." onRefresh={() => void companies.refetch()} refreshing={companies.isFetching}>
     {section === "ai-support" ? <PersistentAIChat /> : null}
     {section === "code-scanner" ? <CodeScannerView /> : null}
-    {section === "time" ? <TimeTrackingDemo /> : section === "overview" ? <Overview total={total} active={active} onNavigate={selectSection} gpsStatus={gpsStatus} requestGps={requestGps} /> : null}
+    {section === "time" ? <TimeTrackingDemo /> : section === "overview" ? <Overview total={total} active={active} attention={attention} activeUsers={activeUsers} onNavigate={selectSection} gpsStatus={gpsStatus} requestGps={requestGps} /> : null}
   </DashboardLayout>;
 }
 
@@ -227,8 +230,8 @@ function PersistentAIChat() {
   </section>;
 }
 
-function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total: number; active: number; onNavigate: (section: Section) => void; gpsStatus: "checking" | "granted" | "denied" | "unavailable"; requestGps: () => void }) {
-  const stats = [{ label: "Empresas cadastradas", value: total, detail: "Ambientes na plataforma", icon: Building2, color: "text-sky-300", bg: "bg-sky-300/10" }, { label: "Empresas ativas", value: active, detail: "Operação em andamento", icon: Activity, color: "text-teal-300", bg: "bg-teal-300/10" }, { label: "Módulos ativos", value: "4", detail: "Recursos disponíveis", icon: CheckCircle2, color: "text-violet-300", bg: "bg-violet-300/10" }];
+function Overview({ total, active, attention, activeUsers, onNavigate, gpsStatus, requestGps }: { total: number; active: number; attention: number; activeUsers: number; onNavigate: (section: Section) => void; gpsStatus: "checking" | "granted" | "denied" | "unavailable"; requestGps: () => void }) {
+  const stats = [{ label: "Empresas cadastradas", value: total, detail: "Ambientes na plataforma", icon: Building2, color: "text-sky-300", bg: "bg-sky-300/10" }, { label: "Empresas ativas", value: active, detail: "Operação em andamento", icon: Activity, color: "text-teal-300", bg: "bg-teal-300/10" }, { label: "Precisam de atenção", value: attention, detail: "Vencidas, em atraso ou bloqueadas", icon: ShieldAlert, color: attention ? "text-amber-300" : "text-violet-300", bg: attention ? "bg-amber-300/10" : "bg-violet-300/10" }, { label: "Usuários ativos", value: activeUsers, detail: "Em todas as empresas", icon: UsersRound, color: "text-violet-300", bg: "bg-violet-300/10" }];
   return (
     <div className="space-y-6">
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7">
@@ -241,7 +244,7 @@ function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total:
           <div className="flex items-center gap-2 text-sm text-slate-300"><span className="h-2.5 w-2.5 rounded-full bg-teal-300" /> Dados atualizados agora</div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl lg:grid-cols-4 border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
         {stats.map(({ label, value, detail, icon: Icon, color, bg }, index) => (
           <Card key={label} className={`rounded-none border-0 bg-[#0b1021] shadow-none ${stats.length % 2 === 1 && index === stats.length - 1 ? "col-span-2" : ""}`}>
             <CardContent className="flex min-h-[142px] items-start justify-between gap-3 p-4 sm:min-h-[160px] sm:p-6">
@@ -261,7 +264,8 @@ function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total:
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <QuickAction icon={ShieldAlert} title="Erros ao vivo" text="Verifique bugs, rotas e sensores em tempo real." onClick={() => onNavigate("code-scanner")} />
-          <QuickAction icon={Building2} title="Empresas" text="Consulte os ambientes cadastrados." onClick={() => onNavigate("companies")} />
+          <QuickAction icon={Building2} title="Empresas" text="Plano, validade, pagamentos e acesso de cada empresa." onClick={() => onNavigate("companies")} />
+          <QuickAction icon={UsersRound} title="Usuários" text="Todos os usuários de todas as empresas." onClick={() => { window.location.href = "/admin/usuarios"; }} />
           <QuickAction icon={ClipboardCheck} title="Testar ponto eletrônico" text="Simule uma jornada completa." highlight onClick={() => onNavigate("time")} />
           <QuickAction icon={Sparkles} title="Suporte com IA" text="Converse com a inteligência artificial da plataforma." onClick={() => onNavigate("ai-support")} />
         </div>

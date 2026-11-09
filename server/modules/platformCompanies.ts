@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { platformProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { auditFromCtx } from "../audit";
@@ -12,6 +13,13 @@ const log = (ctx: any, companyId: number, action: string, description: string, d
 
 export const platformCompaniesRouter = router({
   overview: platformProcedure.query(() => pc.listCompaniesOverview()),
+  /** Registra na auditoria (da plataforma e da própria empresa) que o administrador geral entrou como esta empresa. */
+  enterAs: platformProcedure.input(z.object({ companyId: id })).mutation(async ({ ctx, input }) => {
+    const company = await db.getCompanyById(input.companyId);
+    if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+    void auditFromCtx(ctx, { action: "security", module: "platform", entityType: "company", entityId: company.id, entityLabel: company.name, description: `Administrador da plataforma acessou a empresa ${company.name}`, companyId: company.id } as any);
+    return { success: true as const };
+  }),
   rename: platformProcedure.input(z.object({ companyId: id, name: z.string().trim().min(2).max(255) })).mutation(async ({ ctx, input }) => {
     await db.updateCompany(input.companyId, { name: input.name });
     log(ctx, input.companyId, "update", `Renomeou empresa #${input.companyId} para ${input.name}`);

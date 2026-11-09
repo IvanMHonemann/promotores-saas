@@ -43,6 +43,7 @@ const ProductsPage = lazy(() => import("./pages/ProductsPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
 const PlatformCompaniesPage = lazy(() => import("./pages/platform/PlatformCompaniesPage"));
 const PlatformAuditPage = lazy(() => import("./pages/platform/PlatformAuditPage"));
+const PlatformUsersPage = lazy(() => import("./pages/platform/PlatformUsersPage"));
 const PlatformCheckInOutTestPage = lazy(() => import("./pages/platform/PlatformCheckInOutTestPage"));
 const PaymentRequiredPage = lazy(() => import("./pages/PaymentRequiredPage"));
 import { useAuth } from "./_core/hooks/useAuth";
@@ -96,6 +97,14 @@ function PlatformTestProtected({ children }: { children: React.ReactNode }) {
   if (loading) return <LoadingScreen />;
   if (!user || user.role !== "platform_admin") return <RedirectHome />;
   return <>{children}</>;
+}
+
+/** Administrador geral vê os usuários de todas as empresas; a empresa vê a própria equipe. */
+function UsersRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (user?.role === "platform_admin") return <PlatformUsersPage />;
+  return <AdminProtected><FeatureProtected featureKey="teamManagement"><AdminUsersPage /></FeatureProtected></AdminProtected>;
 }
 
 function AdminProtected({ children }: { children: React.ReactNode }) {
@@ -292,7 +301,7 @@ function Router() {
       <Route path="/plataforma/ponto-legal"><PlatformProtected><PlatformPontoLegalPage /></PlatformProtected></Route>
       <Route path="/plataforma/scanner"><PlatformProtected><PlatformDashboard section="code-scanner" /></PlatformProtected></Route>
       <Route path="/plataforma/ia"><PlatformProtected><PlatformDashboard section="ai-support" /></PlatformProtected></Route>
-      <Route path="/admin/usuarios"><AdminProtected><FeatureProtected featureKey="teamManagement"><AdminUsersPage /></FeatureProtected></AdminProtected></Route>
+      <Route path="/admin/usuarios"><UsersRoute /></Route>
       <Route path="/meus-modulos"><CompanyAdminProtected><CompanyModulesPage /></CompanyAdminProtected></Route>
       <Route path="/minha-conta"><AdminProtected><MyAccountPage /></AdminProtected></Route>
       <Route path="/auditoria"><CompanyAdminProtected><FeatureProtected featureKey="reports"><AuditPage /></FeatureProtected></CompanyAdminProtected></Route>

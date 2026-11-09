@@ -540,7 +540,7 @@ export const appRouter = router({
         })();
         return created;
       }),
-    setActive: platformProcedure.input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ input }) => { await memberAuth.setMemberActive(input.id, input.active); return { success: true } as const; }),
+    setActive: platformProcedure.input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => { await memberAuth.setMemberActive(input.id, input.active); void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Administrador geral ${input.active ? "liberou" : "bloqueou"} o usuário #${input.id}` }); return { success: true } as const; }),
     resetPassword: platformProcedure.input(z.object({ id: z.number().int().positive(), newPassword: z.string().min(8) })).mutation(async ({ input }) => { await memberAuth.resetMemberPassword(input.id, input.newPassword); return { success: true } as const; }),
   }),
 

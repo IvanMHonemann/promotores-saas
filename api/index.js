@@ -4475,6 +4475,9 @@ function asDateStr(value) {
   }
   return String(value).slice(0, 10);
 }
+function dbDate(value) {
+  return value;
+}
 async function ensureVacationSchedulesTable() {
   if (tableReady) return tableReady;
   tableReady = (async () => {
@@ -4521,7 +4524,7 @@ async function assertNoOverlap(tx, companyId, memberAccountId, startDate, endDat
     eq5(vacationSchedules.companyId, companyId),
     eq5(vacationSchedules.memberAccountId, memberAccountId),
     eq5(vacationSchedules.status, "scheduled"),
-    and5(lte(vacationSchedules.startDate, endDate), gte2(vacationSchedules.endDate, startDate))
+    and5(lte(vacationSchedules.startDate, dbDate(endDate)), gte2(vacationSchedules.endDate, dbDate(startDate)))
   ];
   if (excludeId) conditions.push(ne(vacationSchedules.id, excludeId));
   const existing = await tx.select({ id: vacationSchedules.id }).from(vacationSchedules).where(and5(...conditions)).limit(1);
@@ -4537,7 +4540,7 @@ async function teamOverlapWarning(database2, companyId, memberAccountId, startDa
     eq5(vacationSchedules.companyId, companyId),
     eq5(vacationSchedules.status, "scheduled"),
     inArray4(vacationSchedules.memberAccountId, ids),
-    and5(lte(vacationSchedules.startDate, endDate), gte2(vacationSchedules.endDate, startDate))
+    and5(lte(vacationSchedules.startDate, dbDate(endDate)), gte2(vacationSchedules.endDate, dbDate(startDate)))
   ));
   if (!overlaps.length) return null;
   const names = teammates.filter((t2) => overlaps.some((o) => o.memberAccountId === t2.id)).map((t2) => t2.userName);
@@ -4575,8 +4578,8 @@ var init_vacations = __esm({
         const conds = [eq5(vacationSchedules.companyId, ctx.accountId)];
         if (input?.memberAccountId) conds.push(eq5(vacationSchedules.memberAccountId, input.memberAccountId));
         if (input?.status && input.status !== "all") conds.push(eq5(vacationSchedules.status, input.status));
-        if (input?.from) conds.push(gte2(vacationSchedules.endDate, input.from));
-        if (input?.to) conds.push(lte(vacationSchedules.startDate, input.to));
+        if (input?.from) conds.push(gte2(vacationSchedules.endDate, dbDate(input.from)));
+        if (input?.to) conds.push(lte(vacationSchedules.startDate, dbDate(input.to)));
         const rows4 = await database2.select({
           id: vacationSchedules.id,
           memberAccountId: vacationSchedules.memberAccountId,
@@ -4595,7 +4598,7 @@ var init_vacations = __esm({
         return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
       }),
       mine: protectedProcedure.query(async ({ ctx }) => {
-        if (!ctx.memberAccountId) throw new TRPCError5({ code: "FORBIDDEN" });
+        if (!ctx.memberAccountId || !ctx.accountId) throw new TRPCError5({ code: "FORBIDDEN" });
         await ensureVacationSchedulesTable();
         const database2 = await requireDb();
         const rows4 = await database2.select().from(vacationSchedules).where(and5(eq5(vacationSchedules.companyId, ctx.accountId), eq5(vacationSchedules.memberAccountId, ctx.memberAccountId))).orderBy(vacationSchedules.startDate);
@@ -4621,8 +4624,8 @@ var init_vacations = __esm({
           await tx.insert(vacationSchedules).values({
             companyId: ctx.accountId,
             memberAccountId: input.memberAccountId,
-            startDate: input.startDate,
-            endDate: input.endDate,
+            startDate: dbDate(input.startDate),
+            endDate: dbDate(input.endDate),
             days,
             notes: input.notes || null,
             createdByMemberAccountId: ctx.memberAccountId
@@ -4648,8 +4651,8 @@ var init_vacations = __esm({
           await assertNoOverlap(tx, ctx.accountId, row2.memberAccountId, input.startDate, input.endDate, input.id);
           warning = await teamOverlapWarning(tx, ctx.accountId, row2.memberAccountId, input.startDate, input.endDate);
           await tx.update(vacationSchedules).set({
-            startDate: input.startDate,
-            endDate: input.endDate,
+            startDate: dbDate(input.startDate),
+            endDate: dbDate(input.endDate),
             days,
             notes: input.notes ?? row2.notes,
             updatedByMemberAccountId: ctx.memberAccountId
@@ -4678,7 +4681,7 @@ var init_vacations = __esm({
         await ensureVacationSchedulesTable();
         const database2 = await requireDb();
         const from = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-01` : `${input.year}-01-01`;
-        const last = new Date(input.year, input.month, 0).getDate();
+        const last = new Date(input.year, input.month ?? 12, 0).getDate();
         const to = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-${String(last).padStart(2, "0")}` : `${input.year}-12-31`;
         const rows4 = await database2.select({
           id: vacationSchedules.id,
@@ -4693,8 +4696,8 @@ var init_vacations = __esm({
         }).from(vacationSchedules).innerJoin(memberAccounts2, eq5(memberAccounts2.id, vacationSchedules.memberAccountId)).where(and5(
           eq5(vacationSchedules.companyId, ctx.accountId),
           eq5(vacationSchedules.status, "scheduled"),
-          lte(vacationSchedules.startDate, to),
-          gte2(vacationSchedules.endDate, from)
+          lte(vacationSchedules.startDate, dbDate(to)),
+          gte2(vacationSchedules.endDate, dbDate(from))
         ));
         return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
       })
@@ -11879,7 +11882,8 @@ function initServerSentry(env2 = process.env) {
       dsn,
       environment: env2.SENTRY_ENVIRONMENT || env2.NODE_ENV || "production",
       tracesSampleRate: Number(env2.SENTRY_TRACES_SAMPLE_RATE || 0.05),
-      sendDefaultPii: false,
+      // No SDK v11 o antigo "sendDefaultPii: false" foi substituído por dataCollection.
+      dataCollection: { userInfo: false, cookies: false },
       beforeSend(event) {
         if (event.request) {
           if (event.request.headers) {

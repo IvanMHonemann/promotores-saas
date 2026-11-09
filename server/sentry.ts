@@ -40,7 +40,8 @@ export function initServerSentry(env: NodeJS.ProcessEnv = process.env): boolean 
       dsn,
       environment: env.SENTRY_ENVIRONMENT || env.NODE_ENV || "production",
       tracesSampleRate: Number(env.SENTRY_TRACES_SAMPLE_RATE || 0.05),
-      sendDefaultPii: false,
+      // No SDK v11 o antigo "sendDefaultPii: false" foi substituído por dataCollection.
+      dataCollection: { userInfo: false, cookies: false },
       beforeSend(event) {
         if (event.request) {
           if (event.request.headers) {

@@ -121,7 +121,7 @@ export default function TimesheetPage() {
           <CardContent>
             {(() => {
               const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Início do intervalo", break_end: "Fim do intervalo", clock_out: "Saída" };
-              const dayKey = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+              const dayKey = (iso: string | Date) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
               const groups = new Map<string, any[]>();
               for (const item of corrections.data || []) {
                 const key = `${item.request.memberAccountId}:${dayKey(item.request.requestedTime)}`;

@@ -30,6 +30,7 @@ import { scopeMemberId, assertStoreAccess, setPromoterStoreAssignments, getPromo
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 import { runPersistentGemini } from "./aiGithubService";
+import { AI_IMAGE_TYPES, AI_MAX_ATTACHMENTS, AI_MAX_TEXT_CHARS, AI_MAX_TOTAL_CHARS, aiAttachmentsSize } from "../shared/aiAttachments";
 import { todayInZone } from "../shared/expiry";
 import { findSubmission, listVisitOfflineMarks, offlineVisitFields, recordSubmission, resolveOfflineTime } from "./modules/offlineSync";
 
@@ -348,8 +349,22 @@ export const appRouter = router({
         .input(z.object({
           prompt: z.string().trim().min(1).max(12000),
           history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(12000) })).max(30).optional(),
+          attachments: z.array(z.object({
+            name: z.string().trim().min(1).max(200),
+            mimeType: z.string().max(100),
+            kind: z.enum(["image", "pdf", "text"]),
+            data: z.string().min(1).max(AI_MAX_TOTAL_CHARS),
+          })).max(AI_MAX_ATTACHMENTS).optional(),
         }))
-        .mutation(async ({ input }) => runPersistentGemini(input.prompt, input.history ?? [])),
+        .mutation(async ({ input }) => {
+          const attachments = input.attachments ?? [];
+          if (aiAttachmentsSize(attachments) > AI_MAX_TOTAL_CHARS) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Os anexos passaram do limite de envio (cerca de 4 MB no total). Envie menos arquivos ou arquivos menores." });
+          for (const file of attachments) {
+            if (file.kind === "image" && !AI_IMAGE_TYPES.includes(file.mimeType)) throw new TRPCError({ code: "BAD_REQUEST", message: `Formato de imagem não aceito: ${file.name}.` });
+            if (file.kind === "text" && file.data.length > AI_MAX_TEXT_CHARS) throw new TRPCError({ code: "BAD_REQUEST", message: `O arquivo ${file.name} é grande demais.` });
+          }
+          return runPersistentGemini(input.prompt, input.history ?? [], attachments);
+        }),
     }),
     plans: router({
       list: platformProcedure.query(() => db.listSubscriptionPlans()),
@@ -540,7 +555,7 @@ export const appRouter = router({
         })();
         return created;
       }),
-    setActive: platformProcedure.input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ input }) => { await memberAuth.setMemberActive(input.id, input.active); return { success: true } as const; }),
+    setActive: platformProcedure.input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => { await memberAuth.setMemberActive(input.id, input.active); void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Administrador geral ${input.active ? "liberou" : "bloqueou"} o usuário #${input.id}` }); return { success: true } as const; }),
     resetPassword: platformProcedure.input(z.object({ id: z.number().int().positive(), newPassword: z.string().min(8) })).mutation(async ({ input }) => { await memberAuth.resetMemberPassword(input.id, input.newPassword); return { success: true } as const; }),
   }),
 

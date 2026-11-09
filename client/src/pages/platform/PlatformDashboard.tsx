@@ -7,16 +7,20 @@ import { Button } from "@/components/ui/button";
 import DashboardLayout from "@/components/DashboardLayout";
 import { toast } from "sonner";
 import TimeTrackingDemo from "./TimeTrackingDemo";
-import { AIChatBox, type Message } from "@/components/AIChatBox";
+import { AIChatBox, type Message, type PendingAttachment } from "@/components/AIChatBox";
+import { confirmAction } from "@/components/ConfirmDialog";
 
 export type Section = "overview" | "companies" | "time" | "ai-support" | "code-scanner";
 const SECTION_PATH: Record<Section, string> = { overview: "/", companies: "/admin/empresas", time: "/plataforma/ponto", "ai-support": "/plataforma/ia", "code-scanner": "/plataforma/scanner" };
 
 export default function PlatformDashboard({ section = "overview" }: { section?: Section }) {
   const [gpsStatus, setGpsStatus] = useState<"checking" | "granted" | "denied" | "unavailable">("checking");
-  const companies = trpc.platform.companies.list.useQuery();
-  const total = companies.data?.length ?? 0;
-  const active = companies.data?.filter((company) => company.active).length ?? 0;
+  const companies = trpc.platformCompanies.overview.useQuery(undefined, { enabled: section === "overview", staleTime: 30000 });
+  const live = (companies.data || []).filter((company) => !company.archivedAt);
+  const total = live.length;
+  const active = live.filter((company) => company.active).length;
+  const attention = live.filter((company) => !company.active || ["overdue", "pending", "suspended", "expired"].includes(company.subscriptionStatus ?? "") || (company.expiresAt && new Date(company.expiresAt).getTime() < Date.now())).length;
+  const activeUsers = live.reduce((sum, company) => sum + Number(company.activeUsers || 0), 0);
   const selectSection = (value: Section) => { window.location.href = SECTION_PATH[value]; };
   const title = section === "time" ? "Ponto eletrônico" : section === "companies" ? "Empresas" : section === "ai-support" ? "Suporte com IA" : section === "code-scanner" ? "Erros ao vivo" : "Visão geral";
 
@@ -44,7 +48,7 @@ export default function PlatformDashboard({ section = "overview" }: { section?: 
   return <DashboardLayout title={title} description="Acompanhe a operação da sua plataforma em um só lugar." onRefresh={() => void companies.refetch()} refreshing={companies.isFetching}>
     {section === "ai-support" ? <PersistentAIChat /> : null}
     {section === "code-scanner" ? <CodeScannerView /> : null}
-    {section === "time" ? <TimeTrackingDemo /> : section === "overview" ? <Overview total={total} active={active} onNavigate={selectSection} gpsStatus={gpsStatus} requestGps={requestGps} /> : null}
+    {section === "time" ? <TimeTrackingDemo /> : section === "overview" ? <Overview total={total} active={active} attention={attention} activeUsers={activeUsers} onNavigate={selectSection} gpsStatus={gpsStatus} requestGps={requestGps} /> : null}
   </DashboardLayout>;
 }
 
@@ -193,42 +197,48 @@ function PersistentAIChat() {
   }, [messages]);
   const chat = trpc.platform.aiSupport.chat.useMutation({
     onSuccess: (result) => setMessages((current) => [...current, { role: "assistant", content: result.reply }]),
-    onError: (error) => setMessages((current) => [...current, { role: "assistant", content: `Não foi possível aplicar o pedido: ${error.message}` }]),
+    onError: (error) => setMessages((current) => [...current, { role: "assistant", content: `Não consegui responder: ${error.message}` }]),
   });
-  const send = (prompt: string) => {
-    const nextMessages = [...messages, { role: "user" as const, content: prompt }];
+  const send = (prompt: string, attachments: PendingAttachment[] = []) => {
+    const userMessage: Message = { role: "user", content: prompt, ...(attachments.length ? { attachments: attachments.map(({ name, kind }) => ({ name, kind })) } : {}) };
+    const nextMessages = [...messages, userMessage];
     setMessages(nextMessages);
     chat.mutate({
       prompt,
-      history: nextMessages.filter((message): message is { role: "user" | "assistant"; content: string } => message.role !== "system").slice(-30),
+      // O histórico leva só o texto (e o nome dos anexos antigos), para não reenviar arquivos a cada mensagem.
+      history: nextMessages.slice(0, -1).filter((message) => message.role !== "system").slice(-29).map((message) => ({
+        role: message.role as "user" | "assistant",
+        content: (message.attachments?.length ? `${message.content}\n[anexos: ${message.attachments.map((a) => a.name).join(", ")}]` : message.content).slice(0, 12000),
+      })),
+      attachments: attachments.map(({ name, mimeType, kind, data }) => ({ name, mimeType, kind, data })),
     });
   };
   const runAction = (prompt: string) => send(prompt);
   const health = [
-    { label: "Chat Gemini", value: chat.isPending ? "Analisando" : "Pronto", tone: chat.isPending ? "text-amber-300" : "text-emerald-300", icon: Sparkles },
-    { label: "Sessão", value: "Ativa", tone: "text-emerald-300", icon: CheckCircle },
-    { label: "Código", value: "Aguardando varredura", tone: "text-slate-300", icon: Terminal },
-    { label: "Deploy", value: "Via GitHub + Vercel", tone: "text-teal-300", icon: Activity },
+    { label: "IA (Gemini)", value: chat.isPending ? "Analisando..." : "Pronta", tone: chat.isPending ? "text-amber-300" : "text-emerald-300", icon: Sparkles },
+    { label: "Anexos", value: "Fotos, PDF e textos", tone: "text-teal-300", icon: Terminal },
+    { label: "Alterações", value: "Viram Pull Request", tone: "text-teal-300", icon: Activity },
+    { label: "Publicação", value: "Só após o seu merge", tone: "text-slate-300", icon: CheckCircle },
   ];
   return <section className="mb-6 space-y-4">
     <div className="rounded-3xl border border-teal-300/20 bg-slate-900/80 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · suporte inteligente</p><h2 className="mt-1 text-xl font-bold">Converse, investigue e continue tarefas</h2><p className="mt-1 text-sm text-slate-300">O histórico fica salvo neste dispositivo. A IA pode sugerir alterações, que só entram no site depois de revisadas e aprovadas.</p></div>
-        <Badge className="border border-emerald-300/30 bg-emerald-300/10 text-emerald-200"><span className="mr-1.5 h-2 w-2 rounded-full bg-emerald-300" />Monitor ativo</Badge>
+        <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-teal-300">Gemini · suporte inteligente</p><h2 className="mt-1 text-xl font-bold">Converse, investigue e continue tarefas</h2><p className="mt-1 text-sm text-slate-300">Mande prints de tela, fotos, PDFs ou arquivos de código pelo clipe 📎 (até 5 por mensagem). O histórico fica salvo neste aparelho. As alterações viram um Pull Request e só entram no site depois do seu OK.</p></div>
+        {messages.length > 0 && <Button size="sm" variant="outline" disabled={chat.isPending} onClick={() => { void confirmAction({ title: "Apagar o histórico desta conversa neste aparelho?", confirmLabel: "Apagar" }).then((ok) => ok && setMessages([])); }} className="border-white/15 text-slate-200">Nova conversa</Button>}
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">{health.map(({ label, value, tone, icon: Icon }) => <div key={label} className="rounded-xl border border-white/10 bg-slate-950/40 p-3"><div className="flex items-center gap-2 text-xs text-slate-400"><Icon className={`h-3.5 w-3.5 ${tone}`} />{label}</div><p className={`mt-1 text-sm font-semibold ${tone}`}>{value}</p></div>)}</div>
     </div>
     <div className="grid gap-2 sm:grid-cols-3">
-      <Button variant="outline" disabled={chat.isPending} onClick={() => runAction("Faça uma varredura do código atual e procure erros, bugs, rotas quebradas e funções que não estejam funcionando. Liste os achados por prioridade e não altere nada ainda.")} className="h-auto justify-start gap-2 border-white/10 bg-slate-900/70 px-3 py-3 text-left text-slate-200 hover:bg-white/[.06] hover:text-white"><Search className="h-4 w-4 text-teal-300" /><span><b className="block text-sm">Procurar erros</b><small className="text-xs text-slate-400">Analisar código atual</small></span></Button>
+      <Button variant="outline" disabled={chat.isPending} onClick={() => runAction("Analise o código atual e procure erros, bugs, rotas quebradas e funções que não estejam funcionando. Liste os achados por prioridade e não altere nada ainda.")} className="h-auto justify-start gap-2 border-white/10 bg-slate-900/70 px-3 py-3 text-left text-slate-200 hover:bg-white/[.06] hover:text-white"><Search className="h-4 w-4 text-teal-300" /><span><b className="block text-sm">Procurar erros</b><small className="text-xs text-slate-400">Analisar código atual</small></span></Button>
       <Button variant="outline" disabled={chat.isPending} onClick={() => runAction("Escaneie os arquivos principais do site, verifique problemas de segurança, bugs e integrações. Retorne um diagnóstico objetivo com sinalizadores OK, atenção ou crítico.")} className="h-auto justify-start gap-2 border-white/10 bg-slate-900/70 px-3 py-3 text-left text-slate-200 hover:bg-white/[.06] hover:text-white"><ShieldAlert className="h-4 w-4 text-amber-300" /><span><b className="block text-sm">Scanear código</b><small className="text-xs text-slate-400">Executar diagnóstico</small></span></Button>
       <Button variant="outline" disabled={chat.isPending || !messages.length} onClick={() => runAction("Continue a tarefa anterior exatamente de onde paramos. Revise o histórico e confirme o próximo passo necessário.")} className="h-auto justify-start gap-2 border-white/10 bg-slate-900/70 px-3 py-3 text-left text-slate-200 hover:bg-white/[.06] hover:text-white"><RefreshCw className="h-4 w-4 text-violet-300" /><span><b className="block text-sm">Continuar tarefa</b><small className="text-xs text-slate-400">Usar histórico salvo</small></span></Button>
     </div>
-    <AIChatBox messages={messages} onSendMessage={send} isLoading={chat.isPending} height="380px" emptyStateMessage="Escreva uma pergunta ou peça uma alteração no site" placeholder="Digite sua pergunta ou pedido..." suggestedPrompts={["O que você consegue fazer?", "Procure erros no código atual.", "Continue a tarefa anterior."]} />
+    <AIChatBox allowAttachments messages={messages} onSendMessage={send} isLoading={chat.isPending} height="380px" emptyStateMessage="Escreva uma pergunta ou peça uma alteração no site" placeholder="Digite seu pedido ou cole um print..." suggestedPrompts={["O que você consegue fazer?", "Procure erros no código atual.", "Continue a tarefa anterior."]} />
   </section>;
 }
 
-function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total: number; active: number; onNavigate: (section: Section) => void; gpsStatus: "checking" | "granted" | "denied" | "unavailable"; requestGps: () => void }) {
-  const stats = [{ label: "Empresas cadastradas", value: total, detail: "Ambientes na plataforma", icon: Building2, color: "text-sky-300", bg: "bg-sky-300/10" }, { label: "Empresas ativas", value: active, detail: "Operação em andamento", icon: Activity, color: "text-teal-300", bg: "bg-teal-300/10" }, { label: "Módulos ativos", value: "4", detail: "Recursos disponíveis", icon: CheckCircle2, color: "text-violet-300", bg: "bg-violet-300/10" }];
+function Overview({ total, active, attention, activeUsers, onNavigate, gpsStatus, requestGps }: { total: number; active: number; attention: number; activeUsers: number; onNavigate: (section: Section) => void; gpsStatus: "checking" | "granted" | "denied" | "unavailable"; requestGps: () => void }) {
+  const stats = [{ label: "Empresas cadastradas", value: total, detail: "Ambientes na plataforma", icon: Building2, color: "text-sky-300", bg: "bg-sky-300/10" }, { label: "Empresas ativas", value: active, detail: "Operação em andamento", icon: Activity, color: "text-teal-300", bg: "bg-teal-300/10" }, { label: "Precisam de atenção", value: attention, detail: "Vencidas, em atraso ou bloqueadas", icon: ShieldAlert, color: attention ? "text-amber-300" : "text-violet-300", bg: attention ? "bg-amber-300/10" : "bg-violet-300/10" }, { label: "Usuários ativos", value: activeUsers, detail: "Em todas as empresas", icon: UsersRound, color: "text-violet-300", bg: "bg-violet-300/10" }];
   return (
     <div className="space-y-6">
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7">
@@ -241,7 +251,7 @@ function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total:
           <div className="flex items-center gap-2 text-sm text-slate-300"><span className="h-2.5 w-2.5 rounded-full bg-teal-300" /> Dados atualizados agora</div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-3xl lg:grid-cols-4 border border-white/10 bg-white/10 shadow-xl shadow-slate-950/20">
         {stats.map(({ label, value, detail, icon: Icon, color, bg }, index) => (
           <Card key={label} className={`rounded-none border-0 bg-[#0b1021] shadow-none ${stats.length % 2 === 1 && index === stats.length - 1 ? "col-span-2" : ""}`}>
             <CardContent className="flex min-h-[142px] items-start justify-between gap-3 p-4 sm:min-h-[160px] sm:p-6">
@@ -261,7 +271,8 @@ function Overview({ total, active, onNavigate, gpsStatus, requestGps }: { total:
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <QuickAction icon={ShieldAlert} title="Erros ao vivo" text="Verifique bugs, rotas e sensores em tempo real." onClick={() => onNavigate("code-scanner")} />
-          <QuickAction icon={Building2} title="Empresas" text="Consulte os ambientes cadastrados." onClick={() => onNavigate("companies")} />
+          <QuickAction icon={Building2} title="Empresas" text="Plano, validade, pagamentos e acesso de cada empresa." onClick={() => onNavigate("companies")} />
+          <QuickAction icon={UsersRound} title="Usuários" text="Todos os usuários de todas as empresas." onClick={() => { window.location.href = "/admin/usuarios"; }} />
           <QuickAction icon={ClipboardCheck} title="Testar ponto eletrônico" text="Simule uma jornada completa." highlight onClick={() => onNavigate("time")} />
           <QuickAction icon={Sparkles} title="Suporte com IA" text="Converse com a inteligência artificial da plataforma." onClick={() => onNavigate("ai-support")} />
         </div>

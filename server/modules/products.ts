@@ -129,14 +129,14 @@ async function loadManageable(ctx: Ctx, id: number): Promise<ProductRow> {
 async function validatePlace(ctx: Ctx, storeId: number | null | undefined, storeClientId: number | null | undefined) {
   const database = await ready();
   if (!storeId) {
-    if (storeClientId) throw new TRPCError({ code: "BAD_REQUEST", message: "Escolha a loja antes da indústria." });
+    if (storeClientId) throw new TRPCError({ code: "BAD_REQUEST", message: "Escolha a loja antes da marca/cliente." });
     return { storeId: null, storeClientId: null };
   }
   const store = await assertStoreAccess(database, ctx as any, storeId);
   if (!store.active) throw new TRPCError({ code: "BAD_REQUEST", message: "Essa loja foi removida. Escolha outra loja." });
   if (storeClientId) {
     const c = rowsOf(await database.execute(sql`SELECT id FROM store_clients WHERE id = ${storeClientId} AND companyId = ${ctx.accountId} AND storeId = ${storeId} AND active = true LIMIT 1`))[0];
-    if (!c) throw new TRPCError({ code: "BAD_REQUEST", message: "Indústria não encontrada nesta loja." });
+    if (!c) throw new TRPCError({ code: "BAD_REQUEST", message: "Marca/cliente não encontrada nesta loja." });
   }
   return { storeId, storeClientId: storeClientId ?? null };
 }

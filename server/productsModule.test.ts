@@ -76,8 +76,8 @@ describe("regras puras de produtos e validades", () => {
     expect(csv).toContain(`"'@Nestlé"`);
     expect(csv).toContain(`"01/11/2026";"Vencido";"2,50"`);
   });
-  it("agrupa por indústria com 'Sem indústria' por último", () => {
-    expect(groupByIndustry([{ clientName: null }, { clientName: "Ypê" }, { clientName: "Aurora" }]).map((g) => g.name)).toEqual(["Aurora", "Ypê", "Sem indústria"]);
+  it("agrupa por marca/cliente com 'Sem marca/cliente' por último", () => {
+    expect(groupByIndustry([{ clientName: null }, { clientName: "Ypê" }, { clientName: "Aurora" }]).map((g) => g.name)).toEqual(["Aurora", "Ypê", "Sem marca/cliente"]);
   });
 });
 

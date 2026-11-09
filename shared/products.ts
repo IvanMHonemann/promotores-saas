@@ -73,10 +73,10 @@ export function storeLabel(row: { storeId?: number | null; storeName?: string | 
 const cell = (v: unknown) => `"${neutralizeCsvFormula(v as any).replace(/"/g, '""')}"`;
 /** CSV em ; (Excel pt-BR), com BOM e neutralização de fórmulas (=, +, -, @) em texto digitado. */
 export function productsCsv(rows: ProductCsvRow[], today: string, alertDays: number): string {
-  const header = ["Indústria", "Loja", "Código", "Descrição", "Lote", "Quantidade", "Validade", "Situação", "Preço (R$)", "Cadastrado por"];
+  const header = ["Marca/Cliente", "Loja", "Código", "Descrição", "Lote", "Quantidade", "Validade", "Situação", "Preço (R$)", "Cadastrado por"];
   const lines = rows.map((p) => {
     const iso = String(p.expirationDate).slice(0, 10);
-    return [p.clientName || "Sem indústria", storeLabel(p), p.productCode, p.description, p.lot || "", String(p.quantity), formatDateBR(iso), situationLabel(iso, today, alertDays), Number(p.price).toFixed(2).replace(".", ","), p.createdByName || ""];
+    return [p.clientName || "Sem marca/cliente", storeLabel(p), p.productCode, p.description, p.lot || "", String(p.quantity), formatDateBR(iso), situationLabel(iso, today, alertDays), Number(p.price).toFixed(2).replace(".", ","), p.createdByName || ""];
   });
   return "\uFEFF" + [header, ...lines].map((r) => r.map(cell).join(";")).join("\r\n");
 }
@@ -84,6 +84,6 @@ export function productsCsv(rows: ProductCsvRow[], today: string, alertDays: num
 /** Agrupa por indústria (ordem alfabética, "Sem indústria" por último). */
 export function groupByIndustry<T extends { clientName?: string | null }>(rows: T[]): Array<{ name: string; items: T[] }> {
   const map = new Map<string, T[]>();
-  for (const r of rows) { const k = r.clientName?.trim() || "Sem indústria"; map.set(k, [...(map.get(k) ?? []), r]); }
-  return [...map.entries()].sort(([a], [b]) => a === "Sem indústria" ? 1 : b === "Sem indústria" ? -1 : a.localeCompare(b, "pt-BR")).map(([name, items]) => ({ name, items }));
+  for (const r of rows) { const k = r.clientName?.trim() || "Sem marca/cliente"; map.set(k, [...(map.get(k) ?? []), r]); }
+  return [...map.entries()].sort(([a], [b]) => a === "Sem marca/cliente" ? 1 : b === "Sem marca/cliente" ? -1 : a.localeCompare(b, "pt-BR")).map(([name, items]) => ({ name, items }));
 }

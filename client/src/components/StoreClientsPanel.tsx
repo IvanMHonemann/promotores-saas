@@ -98,7 +98,7 @@ export function StoreClientsPanel({ storeId, storeName, storeAddress, visitId, f
             <p className="font-bold text-white">{form.id ? "Editar cliente" : "Novo cliente"}</p>
             <button type="button" onClick={close} aria-label="Fechar" className="rounded-full p-1.5 text-slate-200 hover:bg-white/10"><X className="h-5 w-5" /></button>
           </div>
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome do cliente (marca / indústria)" className={field} />
+          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome da marca/cliente" className={field} />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} placeholder="Contato (opcional)" className={field} />
             <Input value={form.phone} inputMode="tel" onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Telefone (opcional)" className={field} />

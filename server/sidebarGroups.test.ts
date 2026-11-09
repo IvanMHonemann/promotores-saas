@@ -9,7 +9,7 @@ describe("menu lateral da empresa", () => {
     const r = buildCompanyGroups("company_admin", all);
     expect(labels(r)).toEqual([
       ["Operação", ["Visão geral", "Lojas", "Roteiros", "Check-in / Check-out", "Produtos e validades"]],
-      ["Equipe e ponto", ["Promotores e equipe", "Cartão-ponto", "Espelho de ponto", "Férias"]],
+      ["Equipe e ponto", ["Promotores e equipe", "Cartão-ponto", "Banco de horas", "Espelho de ponto", "Férias"]],
       ["Relatórios", ["Auditoria", "Ponto: prova legal", "Arquivos históricos"]],
     ]);
     expect(r.account.items.map((i) => i.label)).toEqual(["LGPD e privacidade", "Meus módulos", "Lixeira"]);

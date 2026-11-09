@@ -89,6 +89,9 @@ export default function MyAccountPage() {
                 <p className="text-sm text-slate-600">
                   Cálculo baseado nas marcações de ponto registradas neste mês. Jornada padrão considerada: 8 horas por dia com marcação.
                 </p>
+                {user?.role === "company_admin" && (
+                  <a href="/banco-de-horas" className="text-sm font-bold text-teal-700 underline">Ver o banco de horas dos funcionários</a>
+                )}
               </CardHeader>
               <CardContent>
                 <div className="grid gap-3 sm:grid-cols-3">

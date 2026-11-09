@@ -38,6 +38,7 @@ const LgpdPage = lazy(() => import("./pages/admin/LgpdPage"));
 const PontoLegalPage = lazy(() => import("./pages/admin/PontoLegalPage"));
 const PlatformPontoLegalPage = lazy(() => import("./pages/platform/PlatformPontoLegalPage"));
 const TimesheetMirrorPage = lazy(() => import("./pages/admin/TimesheetMirrorPage"));
+const TeamTimeBankPage = lazy(() => import("./pages/admin/TeamTimeBankPage"));
 const TimesheetArchivePage = lazy(() => import("./pages/admin/TimesheetArchivePage"));
 const CheckInOutPage = lazy(() => import("./pages/admin/CheckInOutPage"));
 const ProductsPage = lazy(() => import("./pages/ProductsPage"));
@@ -284,6 +285,8 @@ function Router() {
       <Route path="/lixeira"><CommercialProtected><TrashPage /></CommercialProtected></Route>
       <Route path="/ponto"><PromoterProtected><FeatureProtected featureKey="timeTracking"><PromoterClockPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/espelho-ponto"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetMirrorPage /></FeatureProtected></CompanyAdminProtected></Route>
+      <Route path="/banco-de-horas/:memberId"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TeamTimeBankPage /></FeatureProtected></CompanyAdminProtected></Route>
+      <Route path="/banco-de-horas"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TeamTimeBankPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/arquivos-historicos"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetArchivePage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/check-in-out"><CompanyAdminProtected><FeatureProtected featureKey="visitCheckIn"><CheckInOutPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/cartao-ponto"><AdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetPage /></FeatureProtected></AdminProtected></Route>

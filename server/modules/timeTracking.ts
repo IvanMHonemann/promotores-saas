@@ -15,6 +15,7 @@ import { ensureCorrectionExtras, loadApprovedDayExcuses, saveCorrectionAttachmen
 import { storageGetSignedUrl } from "../storage";
 import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared/punchTime";
 import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
+import { buildMemberReports, closedPeriodBalance } from "./timeBank";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
 import { defaultCorrectionJustification, justificationRequiresText } from "../../shared/correctionGroups";
 import { punchOrderError } from "@shared/punchOrder";
@@ -483,62 +484,22 @@ export const timeTrackingRouter = router({
       const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
       const to = `${today.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
 
-      const rows = await loadMirrorEventRows(companyId, [memberId], from, to);
-
-      const events: MirrorEvent[] = rows.map((row) => ({
-        id: row.id,
-        type: row.eventType,
-        time: (row.deviceTime || row.serverTime).toISOString(),
-        receivedAt: row.serverTime.toISOString(),
-        synced: row.synced,
-        notes: row.notes,
-        timeAlert: readTimeAlert(row.notes),
-        offline: Boolean((row as any).offline),
-        clockAlert: readClockAlert(row.notes),
-        disregarded: row.disregard ? { reason: row.disregard.reason, by: row.disregard.decidedByName, at: row.disregard.createdAt } : null,
-      }));
-
-      let labor: LaborProfile | null = null;
-      try {
-        const raw = await db.getSetting(`labor_profile:${memberId}`, companyId, "");
-        if (raw) labor = JSON.parse(raw) as LaborProfile;
-      } catch { labor = null; }
-
-      const excusesByMember = await loadApprovedDayExcuses(companyId, [memberId], from, to);
-      const vacationsByMember = await loadMemberVacations(companyId, [memberId], from, to);
-      const options = await loadMirrorOptions(companyId);
-      const report = buildMirror({ events, from, to, timeZone, labor, excuses: excusesByMember.get(memberId) || [], vacations: vacationsByMember.get(memberId) || [], options });
-      const configured = Boolean(labor?.dailyMinutes && labor.dailyMinutes > 0 && labor.workdays?.length);
-      const openToday = report.days.find((day) => day.date === today && day.issues.some((issue) => issue.startsWith("Jornada incompleta")));
-
-      // Saldo do mês só com dias fechados: jornada aberta de hoje não gera extra nem débito.
-      let workedMinutes = report.totals.workedMinutes;
-      let expectedMinutes = report.totals.expectedMinutes ?? 0;
-      let overtimeMinutes = report.totals.overtimeMinutes ?? 0;
-      let deficitMinutes = report.totals.deficitMinutes ?? 0;
-      let balanceMinutes = report.totals.balanceMinutes ?? 0;
-      if (openToday) {
-        const todayWorked = openToday.workedMinutes;
-        const todayExpected = openToday.expectedMinutes ?? 0;
-        const todayDiff = openToday.diffMinutes ?? 0;
-        workedMinutes = Math.max(0, workedMinutes - todayWorked);
-        expectedMinutes = Math.max(0, expectedMinutes - todayExpected);
-        if (todayDiff > 0) overtimeMinutes = Math.max(0, overtimeMinutes - todayDiff);
-        if (todayDiff < 0) deficitMinutes = Math.max(0, deficitMinutes + todayDiff);
-        balanceMinutes -= todayDiff;
-      }
+      // Mesma regra do Espelho e do banco de horas da equipe (server/modules/timeBank.ts + shared/timeBank.ts).
+      const reports = await buildMemberReports(companyId, [memberId], from, to, timeZone);
+      const mr = reports.get(memberId)!;
+      const bal = closedPeriodBalance(mr.report, mr.labor, today);
 
       const periodLabel = new Date(`${from}T12:00:00Z`).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone });
       return {
         periodLabel: periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1),
-        daysTracked: report.totals.daysWithMarks,
-        workedMinutes,
-        expectedMinutes: configured ? expectedMinutes : 0,
-        balanceMinutes: configured ? balanceMinutes : 0,
-        overtimeMinutes: configured ? overtimeMinutes : 0,
-        deficitMinutes: configured ? deficitMinutes : 0,
-        openShift: Boolean(openToday),
-        configured,
+        daysTracked: bal.daysTracked,
+        workedMinutes: bal.workedMinutes,
+        expectedMinutes: bal.expectedMinutes,
+        balanceMinutes: bal.balanceMinutes,
+        overtimeMinutes: bal.overtimeMinutes,
+        deficitMinutes: bal.deficitMinutes,
+        openShift: bal.openShift,
+        configured: bal.configured,
       };
     }),
 

@@ -17,6 +17,7 @@ export function buildCompanyGroups(role: string | undefined, hasFeature: (key: s
     { id: "equipe", title: time ? "Equipe e ponto" : "Equipe", items: [
       ...(admin && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: "users" }] : []),
       ...(time ? [{ href: "/cartao-ponto", label: "Cartão-ponto", icon: "clock" }] : []),
+      ...(time && admin ? [{ href: "/banco-de-horas", label: "Banco de horas", icon: "clock" }] : []),
       ...(time && admin ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: "file" }] : []),
       ...(time ? [{ href: "/ferias", label: "Férias", icon: "palm" }] : []),
     ] },

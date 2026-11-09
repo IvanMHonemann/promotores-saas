@@ -54,7 +54,7 @@ function InstallButton() {
       className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 px-4 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-teal-500/20 transition hover:from-teal-300 hover:to-emerald-300 disabled:opacity-60"
     >
       <Download className="h-4 w-4" />
-      {isInstalling ? "Instalando..." : "Baixar aplicativo"}
+      {isInstalling ? "Baixando..." : "Baixar aplicativo"}
     </button>
   );
 }

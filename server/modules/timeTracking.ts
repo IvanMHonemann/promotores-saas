@@ -13,7 +13,7 @@ import { findMissingPunches } from "../missingPunch";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
 import { ensureCorrectionExtras, loadApprovedDayExcuses, saveCorrectionAttachment } from "./correctionExtras";
 import { storageGetSignedUrl } from "../storage";
-import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared/punchTime";
+import { JORNADA_ENCERRADA_MESSAGE, readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared/punchTime";
 import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
 import { defaultCorrectionJustification, justificationRequiresText } from "../../shared/correctionGroups";
@@ -37,6 +37,8 @@ function localDay(date: Date, timeZone: string) {
     return date.toISOString().slice(0, 10);
   }
 }
+
+export { JORNADA_ENCERRADA_MESSAGE };
 
 function isValidTransition(last: TimeEventType | undefined, next: TimeEventType) {
   if (!last) return next === "clock_in";
@@ -257,9 +259,11 @@ export const timeTrackingRouter = router({
       const lastToday = todayEvents[0]?.eventType as TimeEventType | undefined;
       const isOfflinePunch = punchTime.alert === "offline";
       const clockNote = isOfflinePunch && input.deviceTime ? clockAlertNote(new Date(input.deviceTime), assessDeviceClock(new Date(input.deviceTime), input.clock, new Date())) : null;
-      // Portaria 671, art. 74 I: o sistema não pode restringir horários de marcação. Uma nova entrada depois da
-      // saída no mesmo dia é aceita e fica sinalizada para o administrador conferir (ex.: dupla pegada, retorno).
+      // Decisão do Ivan (09/11/2026): depois da saída, o dia fica encerrado — nova entrada só no próximo dia.
+      // Trabalho extra no mesmo dia entra por pedido de inclusão (correção) ou ajuste do administrador.
+      // Exceção: batida offline já feita no aparelho é aceita e sinalizada (recusar faria a batida sumir).
       const newShiftSameDay = input.eventType === "clock_in" && lastToday === "clock_out";
+      if (newShiftSameDay && !isOfflinePunch) throw new TRPCError({ code: "BAD_REQUEST", message: JORNADA_ENCERRADA_MESSAGE });
       const sequenceOk = !(input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) && isValidTransition(lastToday, input.eventType);
       // Marcação offline já aconteceu no aparelho: recusar faria a batida sumir (Portaria 671 proíbe restringir marcações).
       // Ela é aceita e sinalizada para o gestor conferir.

@@ -60,3 +60,6 @@ export function readTimeAlert(notes?: string | null): { kind: "server_time_used"
   }
   return null;
 }
+
+/** Decisão do Ivan (09/11/2026): depois da saída do dia não há nova entrada até o dia seguinte. */
+export const JORNADA_ENCERRADA_MESSAGE = "A jornada de hoje já foi encerrada. Uma nova entrada só é liberada no próximo dia. Se trabalhou depois da saída, peça uma inclusão de marcação no Cartão ponto.";

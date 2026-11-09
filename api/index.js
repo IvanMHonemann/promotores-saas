@@ -1365,6 +1365,7 @@ var init_storage = __esm({
 var db_exports = {};
 __export(db_exports, {
   RouteValidationError: () => RouteValidationError,
+  WeeklyRouteConflictError: () => WeeklyRouteConflictError,
   archiveOperationalStore: () => archiveOperationalStore,
   autoCloseStaleVisits: () => autoCloseStaleVisits,
   cleanupExpiredData: () => cleanupExpiredData,
@@ -1379,6 +1380,7 @@ __export(db_exports, {
   deleteInventoryProduct: () => deleteInventoryProduct,
   deleteInventoryProducts: () => deleteInventoryProducts,
   deleteOperationalRoute: () => deleteOperationalRoute,
+  deleteWeeklyRouteSchedule: () => deleteWeeklyRouteSchedule,
   ensureInventoryProductsSchema: () => ensureInventoryProductsSchema,
   ensureOwnerScopeColumns: () => ensureOwnerScopeColumns,
   ensureProductsFeature: () => ensureProductsFeature,
@@ -2222,6 +2224,23 @@ async function ensureWeeklyRouteSchedulesTable(database2) {
     console.warn("[routes] ensure weekly table", e);
   }
 }
+async function dropPendingOccurrences(tx, companyId, scheduleId, fromDate, onlyDate = true) {
+  const rows4 = await tx.select({ id: routes.id }).from(routes).where(and2(
+    eq2(routes.companyId, companyId),
+    eq2(routes.weeklyScheduleId, scheduleId),
+    onlyDate ? eq2(routes.date, fromDate) : sql2`${routes.date} >= ${fromDate}`
+  ));
+  for (const route of rows4) {
+    const started = await tx.select({ id: visits.id }).from(visits).where(and2(
+      eq2(visits.routeId, route.id),
+      eq2(visits.companyId, companyId),
+      sql2`${visits.status} NOT IN ('pending', 'cancelled')`
+    )).limit(1);
+    if (started[0]) continue;
+    await tx.delete(visits).where(and2(eq2(visits.routeId, route.id), eq2(visits.companyId, companyId)));
+    await tx.delete(routes).where(and2(eq2(routes.id, route.id), eq2(routes.companyId, companyId)));
+  }
+}
 async function saveWeeklyRouteSchedule(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
@@ -2229,28 +2248,46 @@ async function saveWeeklyRouteSchedule(input) {
   const companyId = requireAccountId(input.companyId);
   const storeIds = [...new Set(input.storeIds)].filter((id2) => Number.isInteger(id2) && id2 > 0);
   if (!storeIds.length) throw new Error("Selecione ao menos uma loja.");
+  const today = todayInZone();
+  const values = { promoterId: input.promoterId, weekday: input.weekday, name: input.name.trim(), storeIds };
   return database2.transaction(async (tx) => {
     const stores2 = await tx.select({ id: stores.id }).from(stores).where(and2(inArray(stores.id, storeIds), eq2(stores.companyId, companyId), eq2(stores.active, true)));
     if (stores2.length !== storeIds.length) throw new Error("Uma ou mais lojas n\xE3o pertencem a esta empresa.");
-    await tx.insert(weeklyRouteSchedules).values({ ...input, companyId, storeIds, active: true }).onDuplicateKeyUpdate({ set: { name: input.name, storeIds, active: true } });
-    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-    const weekday = (/* @__PURE__ */ new Date(`${today}T00:00:00Z`)).getUTCDay();
-    if (weekday === input.weekday) {
-      const existing = await tx.select({ id: routes.id }).from(routes).where(and2(
-        eq2(routes.companyId, companyId),
-        eq2(routes.promoterId, input.promoterId),
-        eq2(routes.date, today)
-      ));
-      for (const route of existing) {
-        await tx.delete(visits).where(eq2(visits.routeId, route.id));
-        await tx.delete(routes).where(eq2(routes.id, route.id));
-      }
+    let scheduleId;
+    if (input.id) {
+      const [current] = await tx.select().from(weeklyRouteSchedules).where(and2(eq2(weeklyRouteSchedules.id, input.id), eq2(weeklyRouteSchedules.companyId, companyId))).limit(1);
+      if (!current) throw new WeeklyRouteConflictError("Roteiro n\xE3o encontrado nesta empresa.");
+      const [taken] = await tx.select({ id: weeklyRouteSchedules.id }).from(weeklyRouteSchedules).where(and2(
+        eq2(weeklyRouteSchedules.companyId, companyId),
+        eq2(weeklyRouteSchedules.promoterId, input.promoterId),
+        eq2(weeklyRouteSchedules.weekday, input.weekday)
+      )).limit(1);
+      if (taken && taken.id !== input.id) throw new WeeklyRouteConflictError("Esse promotor j\xE1 tem um roteiro nesse dia. Edite o roteiro que j\xE1 existe.");
+      await tx.update(weeklyRouteSchedules).set({ ...values, active: true }).where(and2(eq2(weeklyRouteSchedules.id, input.id), eq2(weeklyRouteSchedules.companyId, companyId)));
+      scheduleId = input.id;
+    } else {
+      await tx.insert(weeklyRouteSchedules).values({ ...values, companyId, active: true }).onDuplicateKeyUpdate({ set: { name: values.name, storeIds, active: true } });
+      const [row2] = await tx.select({ id: weeklyRouteSchedules.id }).from(weeklyRouteSchedules).where(and2(
+        eq2(weeklyRouteSchedules.companyId, companyId),
+        eq2(weeklyRouteSchedules.promoterId, input.promoterId),
+        eq2(weeklyRouteSchedules.weekday, input.weekday)
+      )).limit(1);
+      scheduleId = row2.id;
     }
-    return (await tx.select().from(weeklyRouteSchedules).where(and2(
-      eq2(weeklyRouteSchedules.companyId, companyId),
-      eq2(weeklyRouteSchedules.promoterId, input.promoterId),
-      eq2(weeklyRouteSchedules.weekday, input.weekday)
-    )).limit(1))[0];
+    await dropPendingOccurrences(tx, companyId, scheduleId, today);
+    return (await tx.select().from(weeklyRouteSchedules).where(eq2(weeklyRouteSchedules.id, scheduleId)).limit(1))[0];
+  });
+}
+async function deleteWeeklyRouteSchedule(companyId, id2) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  const cid = requireAccountId(companyId);
+  return database2.transaction(async (tx) => {
+    const [current] = await tx.select({ id: weeklyRouteSchedules.id }).from(weeklyRouteSchedules).where(and2(eq2(weeklyRouteSchedules.id, id2), eq2(weeklyRouteSchedules.companyId, cid))).limit(1);
+    if (!current) return { success: false };
+    await dropPendingOccurrences(tx, cid, id2, todayInZone(), false);
+    await tx.delete(weeklyRouteSchedules).where(and2(eq2(weeklyRouteSchedules.id, id2), eq2(weeklyRouteSchedules.companyId, cid)));
+    return { success: true };
   });
 }
 async function updatePromoterManagement(input) {
@@ -2349,6 +2386,7 @@ async function materializeWeeklyRoutes(companyId, promoterId, dateString) {
           eq2(stores.active, true)
         ));
         if (!stores2.length) return;
+        stores2.sort((a, b) => storeIds.indexOf(a.id) - storeIds.indexOf(b.id));
         const inserted = await tx.insert(routes).values({
           companyId: company,
           name: schedule.name,
@@ -2433,7 +2471,7 @@ async function createOperationalRouteWithVisits(input) {
     if (stores2.length !== uniqueStoreIds.length) throw new Error("Uma ou mais lojas n\xE3o pertencem a esta empresa.");
     const result = await tx.insert(routes).values(input.route);
     const routeId = Number(result[0]?.insertId);
-    await tx.insert(visits).values(stores2.map((store) => ({ companyId, routeId, storeId: store.id, promoterId: input.route.promoterId, status: "pending" })));
+    await tx.insert(visits).values(uniqueStoreIds.map((storeId) => ({ companyId, routeId, storeId, promoterId: input.route.promoterId, status: "pending" })));
     const rows4 = await tx.select().from(routes).where(eq2(routes.id, routeId)).limit(1);
     return rows4[0];
   });
@@ -2636,7 +2674,7 @@ async function getExpiringInventoryProducts(companyId, daysAhead = 30) {
     sql2`${inventoryProducts.expirationDate} >= ${todayInZone()} AND ${inventoryProducts.expirationDate} <= ${addDays(todayInZone(), days)}`
   )).orderBy(inventoryProducts.expirationDate, inventoryProducts.description);
 }
-var _db, _dbUrl, _pool, ownerScopeReady, ownerScopePromise, _trashTableReady, RouteValidationError, _inventoryReady;
+var _db, _dbUrl, _pool, ownerScopeReady, ownerScopePromise, _trashTableReady, WeeklyRouteConflictError, RouteValidationError, _inventoryReady;
 var init_db = __esm({
   "server/db.ts"() {
     "use strict";
@@ -2653,6 +2691,8 @@ var init_db = __esm({
     ownerScopeReady = false;
     ownerScopePromise = null;
     _trashTableReady = null;
+    WeeklyRouteConflictError = class extends Error {
+    };
     RouteValidationError = class extends Error {
     };
     _inventoryReady = null;
@@ -11126,7 +11166,7 @@ var appRouter = router({
     }),
     routes: router({
       list: commercialFeatureProcedure("fieldOperations").input(z13.object({ date: z13.string().optional(), promoterId: z13.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
-        const date3 = input?.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+        const date3 = input?.date || todayInZone();
         const ownerId = scopeMemberId(ctx);
         if (ownerId !== null) {
           await materializeWeeklyRoutes(ctx.accountId, ownerId, date3);
@@ -11140,12 +11180,31 @@ var appRouter = router({
         const filterDate = ownerId === null && !input?.date ? void 0 : input?.date || date3;
         return listOperationalRoutes(ctx.accountId, { date: filterDate, promoterId: ownerId ?? input?.promoterId });
       }),
-      weekly: commercialFeatureProcedure("fieldOperations").query(({ ctx }) => listWeeklyRouteSchedules(ctx.accountId)),
-      saveWeekly: companyAdminProcedure.input(z13.object({ name: z13.string().min(2).max(255), weekday: z13.number().int().min(0).max(6), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1) })).mutation(async ({ ctx, input }) => {
+      // Promotor vê só os próprios roteiros semanais; administrador e supervisor veem todos.
+      weekly: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
+        const ownerId = scopeMemberId(ctx);
+        const rows4 = await listWeeklyRouteSchedules(ctx.accountId);
+        return ownerId === null ? rows4 : rows4.filter((row2) => row2.promoterId === ownerId);
+      }),
+      saveWeekly: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive().optional(), name: z13.string().trim().min(2).max(255), weekday: z13.number().int().min(0).max(6), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
         const members = await listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
         if (!promoter) throw new TRPCError17({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
-        return saveWeeklyRouteSchedule({ ...input, companyId: ctx.accountId });
+        try {
+          const saved = await saveWeeklyRouteSchedule({ ...input, companyId: ctx.accountId });
+          void auditFromCtx(ctx, { action: input.id ? "update" : "create", module: "routes", entityType: "weekly_route", entityId: saved?.id, entityLabel: input.name, description: `Roteiro semanal salvo: ${input.name} (${promoter.userName})`, newData: input });
+          return saved;
+        } catch (error) {
+          if (error instanceof WeeklyRouteConflictError) throw new TRPCError17({ code: "CONFLICT", message: error.message });
+          if (error?.message?.includes("n\xE3o pertencem") || error?.message?.includes("ao menos uma loja")) throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
+          throw error;
+        }
+      }),
+      deleteWeekly: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        const result = await deleteWeeklyRouteSchedule(ctx.accountId, input.id);
+        if (!result.success) throw new TRPCError17({ code: "NOT_FOUND", message: "Roteiro n\xE3o encontrado." });
+        void auditFromCtx(ctx, { action: "delete", module: "routes", entityType: "weekly_route", entityId: input.id, description: `Roteiro semanal exclu\xEDdo: #${input.id}` });
+        return result;
       }),
       create: commercialFeatureProcedure("fieldOperations").input(z13.object({ name: z13.string().min(2), date: z13.string().min(8), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1), teamId: z13.number().int().positive().optional(), notes: z13.string().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError17({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });

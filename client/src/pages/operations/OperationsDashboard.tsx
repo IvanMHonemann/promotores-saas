@@ -3,17 +3,15 @@ import { daysUntil, todayInZone } from "@shared/expiry";
 import { AlertTriangle, Bell, Check, CheckCircle2, Clock3, ClipboardList, Loader2, MapPin, Users, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { useOfflineQuery } from "@/lib/useOfflineQuery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
-import { confirmAction } from "@/components/ConfirmDialog";
+import RoutesSection from "./RoutesSection";
 import SetupChecklist, { AttentionCard, buildSetupSteps } from "@/components/SetupChecklist";
 
 type Section = "overview" | "routes" | "visits";
@@ -40,7 +38,7 @@ const eventLabels: Record<string, string> = {
 const sectionFromHash = (): Section => window.location.hash === "#roteiros" ? "routes" : window.location.hash === "#visitas" ? "visits" : "overview";
 
 export default function OperationsDashboard() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInZone();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const [section, setSection] = useState<Section>(() => typeof window === "undefined" ? "overview" : sectionFromHash());
   const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
@@ -54,8 +52,6 @@ export default function OperationsDashboard() {
   const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
   const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
   const routes = trpc.operations.routes.list.useQuery(undefined, { enabled: hasFieldOperations });
-  const weeklyQuery = trpc.operations.routes.weekly.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
-  const weekly = useOfflineQuery(weeklyQuery, "routes-weekly");
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { enabled: hasFieldOperations });
   const storesWithStats = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
@@ -63,26 +59,6 @@ export default function OperationsDashboard() {
   const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin && hasTimeTracking });
   const utils = trpc.useUtils();
-  const [editingRoute, setEditingRoute] = useState<any>(null);
-  const updateRoute = trpc.operations.routes.update.useMutation({
-    onSuccess: () => { toast.success("Roteiro atualizado."); setEditingRoute(null); void utils.operations.routes.list.invalidate(); },
-    onError: (e) => toast.error(e.message || "Não foi possível atualizar."),
-  });
-  const deleteRoute = trpc.operations.routes.delete.useMutation({
-    onSuccess: () => { toast.success("Roteiro excluído."); void utils.operations.routes.list.invalidate(); },
-    onError: (e) => toast.error(e.message || "Não foi possível excluir."),
-  });
-  const saveWeekly = trpc.operations.routes.saveWeekly.useMutation({
-    onSuccess: async () => {
-      toast.success("Roteiro semanal salvo.");
-      await utils.operations.routes.weekly.invalidate();
-      await utils.operations.routes.list.invalidate();
-    },
-    onError: (error) => toast.error(error.message || "Não foi possível salvar o roteiro semanal."),
-  });
-  const [storeName, setStoreName] = useState("");
-  const [storeCity, setStoreCity] = useState("");
-  const [storeAddress, setStoreAddress] = useState("");
 
   const review = trpc.timeTracking.correctionRequests.review.useMutation({
     onSuccess: (_, variables) => {
@@ -98,16 +74,6 @@ export default function OperationsDashboard() {
       void utils.timeTracking.correctionRequests.pending.invalidate();
     },
     onError: () => toast.error("Não foi possível analisar o pedido de correção."),
-  });
-  const createStore = trpc.operations.stores.create.useMutation({
-    onSuccess: () => {
-      toast.success("Loja cadastrada.");
-      setStoreName("");
-      setStoreCity("");
-      setStoreAddress("");
-      void utils.operations.stores.list.invalidate();
-    },
-    onError: () => toast.error("Não foi possível cadastrar a loja. Confira os dados e tente novamente."),
   });
   const metrics = useMemo(() => {
     const rows = visits.data || [];
@@ -152,9 +118,9 @@ export default function OperationsDashboard() {
     }
   };
   const visibleSection = !hasFieldOperations ? "overview" : section === "visits" && !hasVisitCheckIn ? "overview" : section;
-  const title = visibleSection === "routes" ? (isCompanyAdmin ? "Lojas" : "Roteiros") : visibleSection === "visits" ? "Visitas" : isCompanyAdmin ? "Central da empresa" : isSupervisor ? "Painel do supervisor" : "Operação de campo";
+  const title = visibleSection === "routes" ? "Roteiros" : visibleSection === "visits" ? "Visitas" : isCompanyAdmin ? "Central da empresa" : isSupervisor ? "Painel do supervisor" : "Operação de campo";
   const description = visibleSection === "routes"
-    ? isCompanyAdmin ? "Cadastre lojas e consulte as rotas distribuídas. A programação semanal fica no cadastro de cada promotor." : "Consulte as rotas distribuídas para a equipe."
+    ? isCompanyAdmin ? "Escolha o promotor, o dia da semana e as lojas que ele visita." : user?.role === "promoter" ? "Suas lojas em cada dia da semana." : "Consulte os roteiros da equipe."
     : visibleSection === "visits"
       ? "Acompanhe a execução das visitas planejadas."
       : isCompanyAdmin
@@ -194,23 +160,7 @@ export default function OperationsDashboard() {
         />
       )}
       {visibleSection === "routes" && (
-        <RoutesModule weekly={weekly.data || []} promoters={promoters.data || []} saveWeekly={saveWeekly}
-          editingRoute={editingRoute} setEditingRoute={setEditingRoute} updateRoute={updateRoute} deleteRoute={deleteRoute}
-          isCompanyAdmin={isCompanyAdmin}
-          stores={stores.data || []}
-          storesLoading={stores.isLoading}
-          storesFailed={stores.isError}
-          storeName={storeName}
-          setStoreName={setStoreName}
-          storeCity={storeCity}
-          setStoreCity={setStoreCity}
-          storeAddress={storeAddress}
-          setStoreAddress={setStoreAddress}
-          createStore={createStore}
-          routes={routes.data || []}
-          routesLoading={routes.isLoading}
-          routesFailed={routes.isError}
-        />
+        <RoutesSection isCompanyAdmin={isCompanyAdmin} isPromoter={user?.role === "promoter"} stores={stores.data || []} today={today} />
       )}
       {visibleSection === "visits" && <VisitsModule visits={visits.data || []} metrics={metrics} loading={visits.isLoading} failed={visits.isError} />}
     </DashboardLayout>
@@ -438,60 +388,6 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
         })}
       </CardContent>
     </Card>
-  );
-}
-
-function RoutesModule({ weekly, promoters, saveWeekly, editingRoute, setEditingRoute, updateRoute, deleteRoute, isCompanyAdmin, stores, storesLoading, storesFailed, storeName, setStoreName, storeCity, setStoreCity, storeAddress, setStoreAddress, createStore, routes, routesLoading, routesFailed }: any) {
-  return (
-    <div className="space-y-6">
-      {isCompanyAdmin && (
-        <Card>
-          <CardHeader><CardTitle className="text-white">Cadastrar loja</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div><Label>Nome</Label><Input value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="Nome da loja" /></div>
-              <div><Label>Cidade</Label><Input value={storeCity} onChange={(e) => setStoreCity(e.target.value)} placeholder="Cidade" /></div>
-            </div>
-            <div><Label>Endereço</Label><Input value={storeAddress} onChange={(e) => setStoreAddress(e.target.value)} placeholder="Endereço completo" /></div>
-            <Button onClick={() => createStore.mutate({ name: storeName, city: storeCity, address: storeAddress })} disabled={!storeName.trim() || createStore.isPending}>Cadastrar loja</Button>
-          </CardContent>
-        </Card>
-      )}
-      <Card>
-        <CardHeader><CardTitle className="text-white">Lojas cadastradas</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          {storesLoading && <p className="text-sm text-slate-300">Carregando lojas...</p>}
-          {storesFailed && <p className="text-sm text-rose-200">Não foi possível carregar as lojas.</p>}
-          {!storesLoading && !storesFailed && !stores.length && <p className="text-sm text-slate-300">Nenhuma loja cadastrada.</p>}
-          {stores.map((store: any) => (
-            <div key={store.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
-              <p className="font-bold text-slate-100">{store.name}</p>
-              <p className="text-sm text-slate-300">{store.city}{store.address ? ` · ${store.address}` : ""}</p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader><CardTitle className="text-white">Roteiros</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          {routesLoading && <p className="text-sm text-slate-300">Carregando roteiros...</p>}
-          {routesFailed && <p className="text-sm text-rose-200">Não foi possível carregar os roteiros.</p>}
-          {!routesLoading && !routesFailed && !routes.length && <p className="text-sm text-slate-300">Nenhum roteiro encontrado.</p>}
-          {routes.map((route: any) => (
-            <div key={route.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
-              <div className="flex items-center justify-between">
-                <p className="font-bold text-slate-100">{route.name}</p>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setEditingRoute(route)}>Editar</Button>
-                  <Button size="sm" variant="outline" onClick={() => navigator.share?.({ title: route.name, text: `Roteiro: ${route.name}` }).catch(() => toast.info("Compartilhamento não disponível"))}>Compartilhar</Button>
-                  <Button size="sm" variant="outline" className="text-rose-300" onClick={async () => { if (await confirmAction({ title: "Excluir este roteiro?", description: "O promotor deixa de ver estas visitas na agenda.", confirmLabel: "Excluir roteiro" })) deleteRoute.mutate({ id: route.id }); }}>Excluir</Button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-    </div>
   );
 }
 

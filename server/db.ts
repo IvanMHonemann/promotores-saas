@@ -1019,34 +1019,77 @@ async function ensureWeeklyRouteSchedulesTable(database: any) {
   }
 }
 
-export async function saveWeeklyRouteSchedule(input: { companyId: number; promoterId: number; weekday: number; name: string; storeIds: number[] }) {
+/** Apaga a ocorrência de hoje gerada por um roteiro semanal, só se nenhuma visita foi iniciada (para ela ser recriada com as lojas novas). */
+async function dropPendingOccurrences(tx: any, companyId: number, scheduleId: number, fromDate: string, onlyDate = true) {
+  const rows = await tx.select({ id: operationalRoutes.id }).from(operationalRoutes).where(and(
+    eq(operationalRoutes.companyId, companyId), eq(operationalRoutes.weeklyScheduleId, scheduleId),
+    onlyDate ? eq(operationalRoutes.date, fromDate as any) : sql`${operationalRoutes.date} >= ${fromDate}`,
+  ));
+  for (const route of rows) {
+    const started = await tx.select({ id: operationalVisits.id }).from(operationalVisits).where(and(
+      eq(operationalVisits.routeId, route.id), eq(operationalVisits.companyId, companyId), sql`${operationalVisits.status} NOT IN ('pending', 'cancelled')`,
+    )).limit(1);
+    if (started[0]) continue; // histórico de visita feita nunca é apagado
+    await tx.delete(operationalVisits).where(and(eq(operationalVisits.routeId, route.id), eq(operationalVisits.companyId, companyId)));
+    await tx.delete(operationalRoutes).where(and(eq(operationalRoutes.id, route.id), eq(operationalRoutes.companyId, companyId)));
+  }
+}
+
+export class WeeklyRouteConflictError extends Error {}
+
+/**
+ * Cria ou edita um roteiro semanal (um por promotor por dia).
+ * Sem id: se o promotor já tem roteiro nesse dia, ele é substituído (comportamento antigo).
+ * Com id: edita aquele roteiro; se o novo promotor/dia já estiver ocupado por outro, recusa.
+ */
+export async function saveWeeklyRouteSchedule(input: { id?: number; companyId: number; promoterId: number; weekday: number; name: string; storeIds: number[] }) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
   await ensureWeeklyRouteSchedulesTable(database);
   const companyId = requireAccountId(input.companyId);
   const storeIds = [...new Set(input.storeIds)].filter((id) => Number.isInteger(id) && id > 0);
   if (!storeIds.length) throw new Error("Selecione ao menos uma loja.");
+  const today = todayInZone();
+  const values = { promoterId: input.promoterId, weekday: input.weekday, name: input.name.trim(), storeIds };
   return database.transaction(async (tx) => {
     const stores = await tx.select({ id: operationalStores.id }).from(operationalStores)
       .where(and(inArray(operationalStores.id, storeIds), eq(operationalStores.companyId, companyId), eq(operationalStores.active, true)));
     if (stores.length !== storeIds.length) throw new Error("Uma ou mais lojas não pertencem a esta empresa.");
-    await tx.insert(weeklyRouteSchedules).values({ ...input, companyId, storeIds, active: true })
-      .onDuplicateKeyUpdate({ set: { name: input.name, storeIds, active: true } });
-    // Remove roteiro materializado de hoje para que seja recriado com as novas lojas
-    const today = new Date().toISOString().slice(0, 10);
-    const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
-    if (weekday === input.weekday) {
-      const existing = await tx.select({ id: operationalRoutes.id }).from(operationalRoutes).where(and(
-        eq(operationalRoutes.companyId, companyId), eq(operationalRoutes.promoterId, input.promoterId), eq(operationalRoutes.date, today as any),
-      ));
-      for (const route of existing) {
-        await tx.delete(operationalVisits).where(eq(operationalVisits.routeId, route.id));
-        await tx.delete(operationalRoutes).where(eq(operationalRoutes.id, route.id));
-      }
+    let scheduleId: number;
+    if (input.id) {
+      const [current] = await tx.select().from(weeklyRouteSchedules).where(and(eq(weeklyRouteSchedules.id, input.id), eq(weeklyRouteSchedules.companyId, companyId))).limit(1);
+      if (!current) throw new WeeklyRouteConflictError("Roteiro não encontrado nesta empresa.");
+      const [taken] = await tx.select({ id: weeklyRouteSchedules.id }).from(weeklyRouteSchedules).where(and(
+        eq(weeklyRouteSchedules.companyId, companyId), eq(weeklyRouteSchedules.promoterId, input.promoterId), eq(weeklyRouteSchedules.weekday, input.weekday),
+      )).limit(1);
+      if (taken && taken.id !== input.id) throw new WeeklyRouteConflictError("Esse promotor já tem um roteiro nesse dia. Edite o roteiro que já existe.");
+      await tx.update(weeklyRouteSchedules).set({ ...values, active: true }).where(and(eq(weeklyRouteSchedules.id, input.id), eq(weeklyRouteSchedules.companyId, companyId)));
+      scheduleId = input.id;
+    } else {
+      await tx.insert(weeklyRouteSchedules).values({ ...values, companyId, active: true })
+        .onDuplicateKeyUpdate({ set: { name: values.name, storeIds, active: true } });
+      const [row] = await tx.select({ id: weeklyRouteSchedules.id }).from(weeklyRouteSchedules).where(and(
+        eq(weeklyRouteSchedules.companyId, companyId), eq(weeklyRouteSchedules.promoterId, input.promoterId), eq(weeklyRouteSchedules.weekday, input.weekday),
+      )).limit(1);
+      scheduleId = row.id;
     }
-    return (await tx.select().from(weeklyRouteSchedules).where(and(
-      eq(weeklyRouteSchedules.companyId, companyId), eq(weeklyRouteSchedules.promoterId, input.promoterId), eq(weeklyRouteSchedules.weekday, input.weekday),
-    )).limit(1))[0];
+    // A ocorrência de hoje (se ainda não começou) é refeita com as lojas/promotor novos.
+    await dropPendingOccurrences(tx, companyId, scheduleId, today);
+    return (await tx.select().from(weeklyRouteSchedules).where(eq(weeklyRouteSchedules.id, scheduleId)).limit(1))[0];
+  });
+}
+
+/** Exclui um roteiro semanal. Visitas futuras ainda não começadas somem; visitas feitas ficam no histórico. */
+export async function deleteWeeklyRouteSchedule(companyId: number, id: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const cid = requireAccountId(companyId);
+  return database.transaction(async (tx) => {
+    const [current] = await tx.select({ id: weeklyRouteSchedules.id }).from(weeklyRouteSchedules).where(and(eq(weeklyRouteSchedules.id, id), eq(weeklyRouteSchedules.companyId, cid))).limit(1);
+    if (!current) return { success: false as const };
+    await dropPendingOccurrences(tx, cid, id, todayInZone(), false);
+    await tx.delete(weeklyRouteSchedules).where(and(eq(weeklyRouteSchedules.id, id), eq(weeklyRouteSchedules.companyId, cid)));
+    return { success: true as const };
   });
 }
 
@@ -1155,6 +1198,8 @@ export async function materializeWeeklyRoutes(companyId: number, promoterId: num
           inArray(operationalStores.id, storeIds), eq(operationalStores.companyId, company), eq(operationalStores.active, true),
         ));
         if (!stores.length) return;
+        // Mantém a ordem das lojas definida no roteiro.
+        stores.sort((a, b) => storeIds.indexOf(a.id) - storeIds.indexOf(b.id));
         const inserted = await tx.insert(operationalRoutes).values({
           companyId: company, name: schedule.name, date: dateString as any, promoterId, weeklyScheduleId: schedule.id, status: "assigned",
         });
@@ -1254,7 +1299,8 @@ export async function createOperationalRouteWithVisits(input: { route: typeof op
     if (stores.length !== uniqueStoreIds.length) throw new Error("Uma ou mais lojas não pertencem a esta empresa.");
     const result = await tx.insert(operationalRoutes).values(input.route);
     const routeId = Number((result as any)[0]?.insertId);
-    await tx.insert(operationalVisits).values(stores.map((store) => ({ companyId, routeId, storeId: store.id, promoterId: input.route.promoterId, status: "pending" as const })));
+    // Mantém a ordem das lojas escolhida pela gestão.
+    await tx.insert(operationalVisits).values(uniqueStoreIds.map((storeId) => ({ companyId, routeId, storeId, promoterId: input.route.promoterId, status: "pending" as const })));
     const rows = await tx.select().from(operationalRoutes).where(eq(operationalRoutes.id, routeId)).limit(1);
     return rows[0];
   });

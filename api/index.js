@@ -3712,7 +3712,8 @@ function buildMirror(input) {
           if (openIn != null) issues.push("Entrada sem sa\xEDda anterior");
           openIn = t2;
         } else if (ev.type === "break_start") {
-          if (openIn == null) issues.push("In\xEDcio de intervalo sem entrada");
+          if (openBreak != null) issues.push("Dois in\xEDcios de intervalo seguidos");
+          else if (openIn == null) issues.push("In\xEDcio de intervalo sem entrada");
           else {
             worked += (t2 - openIn) / 6e4;
             if (night) nightMin += nightOverlap(openIn, t2, tz, night.s, night.e);
@@ -3720,7 +3721,7 @@ function buildMirror(input) {
           }
           openBreak = t2;
         } else if (ev.type === "break_end") {
-          if (openBreak == null) issues.push("Retorno de intervalo sem in\xEDcio");
+          if (openBreak == null) issues.push(openIn != null ? "Dois retornos de intervalo seguidos" : "Retorno de intervalo sem in\xEDcio");
           else {
             brk += (t2 - openBreak) / 6e4;
             openBreak = null;
@@ -3735,7 +3736,8 @@ function buildMirror(input) {
           }
         }
       }
-      if (openIn != null || openBreak != null) issues.push("Jornada incompleta: falta marca\xE7\xE3o de sa\xEDda ou retorno");
+      if (openBreak != null) issues.push("Jornada incompleta: falta o retorno do intervalo");
+      else if (openIn != null) issues.push("Jornada incompleta: falta a sa\xEDda");
     }
     const timeAlerts = [];
     for (const sh of dayShifts) for (const ev of sh.events) {
@@ -3750,6 +3752,9 @@ function buildMirror(input) {
     if (marks.some((m) => !m.synced)) issues.push("Marca\xE7\xE3o com sincroniza\xE7\xE3o pendente");
     if (marks.some((m) => m.kind === "automatic")) issues.push("Sa\xEDda autom\xE1tica do sistema (n\xE3o marcada pelo funcion\xE1rio)");
     if (marks.some((m) => m.kind === "legacy_adjusted")) issues.push("Ajuste antigo sem registro estruturado do valor original (ver observa\xE7\xF5es da marca\xE7\xE3o)");
+    const uniqueIssues = [...new Set(issues)];
+    issues.length = 0;
+    issues.push(...uniqueIssues);
     const isWorkday = workdays ? workdays.has(weekdayOf(d)) : null;
     const hasMarks = marks.length > 0;
     const excuseRow = excusesByDate.get(d);
@@ -3804,7 +3809,7 @@ function buildMirror(input) {
     deficitMinutes: configured ? marked.reduce((a, x) => a + Math.max(0, -(x.diffMinutes || 0)), 0) : null,
     nightMinutes: night ? sum((x) => x.nightMinutes) : null,
     nightReducedMinutes: night ? Math.round(sum((x) => x.nightMinutes) * 60 / 52.5) : null,
-    incompleteDays: marked.filter((x) => x.issues.some((i) => i.startsWith("Jornada incompleta") || i.includes("sem entrada") || i.includes("sem sa\xEDda") || i.includes("sem in\xEDcio"))).length,
+    incompleteDays: marked.filter((x) => x.issues.some((i) => i.startsWith("Jornada incompleta") || i.includes("sem entrada") || i.includes("sem sa\xEDda") || i.includes("sem in\xEDcio") || i.includes("seguidos"))).length,
     adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
     automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
     offlineMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.offline).length, 0),
@@ -3847,12 +3852,33 @@ function adjustmentText(m, tz) {
   if (m.originalLabel !== m.label) return `${m.label}: original ${m.originalLabel} ${from} para ${m.label} ${to}. ${why}`;
   return `${m.label}: original ${from} para ${to}. ${why}`;
 }
+function treatmentTexts(marks, tz) {
+  const out = [];
+  const groups = /* @__PURE__ */ new Map();
+  for (const m of marks) {
+    if (m.kind !== "adjusted") continue;
+    if (m.originalLabel) {
+      out.push(adjustmentText(m, tz));
+      continue;
+    }
+    const why = `${(m.justification || "").trim() || "sem justificativa"}${m.reviewedBy ? ` (por ${m.reviewedBy})` : ""}`;
+    const g = groups.get(why) || { why, times: [] };
+    g.times.push(localParts(m.time, tz).hm);
+    groups.set(why, g);
+  }
+  if (groups.size) {
+    const parts = [...groups.values()].map((g) => `${[...g.times].sort().join(", ")} \u2014 ${g.why}`);
+    const total = [...groups.values()].reduce((a, g) => a + g.times.length, 0);
+    out.unshift(`${total > 1 ? "Batidas inclu\xEDdas manualmente" : "Batida inclu\xEDda manualmente"}: ${parts.join("; ")}`);
+  }
+  return out;
+}
 function mirrorRows(report) {
   const tz = report.timeZone;
   return report.days.map((d) => {
     const pick = (t2) => d.marks.filter((m) => m.type === t2).map((m) => fmtMark(m, tz)).join(" / ") || "\u2014";
     const has = d.marks.length > 0;
-    const adj = d.marks.filter((m) => m.kind === "adjusted").map((m) => adjustmentText(m, tz));
+    const adj = treatmentTexts(d.marks, tz);
     const issues = [...d.issues, ...adj].join("; ") || "";
     return [
       fmtDate(d.date),
@@ -4824,6 +4850,9 @@ async function loadAdjustmentsByEvent(companyId, memberIds) {
   }
   return map;
 }
+function cleanReason(reason) {
+  return String(reason || "").replace(/^Batida incluída via solicitação aprovada em \S+?\.?\s*Motivo:\s*/i, "").trim();
+}
 function toMirrorEvents(rows4, adjByEvent) {
   return rows4.map((r) => {
     const a = adjByEvent.get(r.id);
@@ -4837,7 +4866,7 @@ function toMirrorEvents(rows4, adjByEvent) {
       synced: r.synced,
       notes,
       automatic: /automática/i.test(notes) && /^auto-clock-out:/.test(r.idempotencyKey || ""),
-      adjustment: a ? { originalType: a.originalType, originalTime: new Date(a.originalTime).toISOString(), justification: a.justification, reviewedBy: a.reviewedByName, reviewedAt: a.createdAt ? new Date(a.createdAt).toISOString() : null } : inclusion || r.origin === "adjustment" ? { originalType: inclusion ? "missing" : r.eventType, originalTime: (r.deviceTime || r.serverTime).toISOString(), justification: r.reason || "", reviewedBy: r.recordedByName, reviewedAt: r.serverTime.toISOString() } : null,
+      adjustment: a ? { originalType: a.originalType, originalTime: new Date(a.originalTime).toISOString(), justification: a.justification, reviewedBy: a.reviewedByName, reviewedAt: a.createdAt ? new Date(a.createdAt).toISOString() : null } : inclusion || r.origin === "adjustment" ? { originalType: inclusion ? "missing" : r.eventType, originalTime: (r.deviceTime || r.serverTime).toISOString(), justification: cleanReason(r.reason), reviewedBy: r.recordedByName, reviewedAt: r.serverTime.toISOString() } : null,
       legacyAdjustment: !a && r.origin === "original" && /Ajuste aprovado em/.test(notes),
       timeAlert: readTimeAlert(notes),
       offline: Boolean(r.offline),

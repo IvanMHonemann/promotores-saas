@@ -171,11 +171,13 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
           justification: ev.adjustment?.justification, reviewedBy: ev.adjustment?.reviewedBy, reviewedAt: ev.adjustment?.reviewedAt });
         if (ev.type === "clock_in") { if (openIn != null) issues.push("Entrada sem saída anterior"); openIn = t; }
         else if (ev.type === "break_start") {
-          if (openIn == null) issues.push("Início de intervalo sem entrada");
+          // Dois inícios seguidos: a entrada existe, o que falta é o retorno do intervalo anterior.
+          if (openBreak != null) issues.push("Dois inícios de intervalo seguidos");
+          else if (openIn == null) issues.push("Início de intervalo sem entrada");
           else { worked += (t - openIn) / 60000; if (night) nightMin += nightOverlap(openIn, t, tz, night.s, night.e); openIn = null; }
           openBreak = t;
         } else if (ev.type === "break_end") {
-          if (openBreak == null) issues.push("Retorno de intervalo sem início");
+          if (openBreak == null) issues.push(openIn != null ? "Dois retornos de intervalo seguidos" : "Retorno de intervalo sem início");
           else { brk += (t - openBreak) / 60000; openBreak = null; }
           openIn = t;
         } else if (ev.type === "clock_out") {
@@ -183,7 +185,8 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
           else { worked += (t - openIn) / 60000; if (night) nightMin += nightOverlap(openIn, t, tz, night.s, night.e); openIn = null; }
         }
       }
-      if (openIn != null || openBreak != null) issues.push("Jornada incompleta: falta marcação de saída ou retorno");
+      if (openBreak != null) issues.push("Jornada incompleta: falta o retorno do intervalo");
+      else if (openIn != null) issues.push("Jornada incompleta: falta a saída");
     }
     const timeAlerts: string[] = [];
     for (const sh of dayShifts) for (const ev of sh.events) {
@@ -199,6 +202,10 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     if (marks.some((m) => !m.synced)) issues.push("Marcação com sincronização pendente");
     if (marks.some((m) => m.kind === "automatic")) issues.push("Saída automática do sistema (não marcada pelo funcionário)");
     if (marks.some((m) => m.kind === "legacy_adjusted")) issues.push("Ajuste antigo sem registro estruturado do valor original (ver observações da marcação)");
+
+    // Mesma ocorrência repetida no dia (ex.: vários pares de intervalo) aparece uma vez só.
+    const uniqueIssues = [...new Set(issues)];
+    issues.length = 0; issues.push(...uniqueIssues);
 
     const isWorkday = workdays ? workdays.has(weekdayOf(d)) : null;
     const hasMarks = marks.length > 0;
@@ -254,7 +261,7 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     deficitMinutes: configured ? marked.reduce((a, x) => a + Math.max(0, -(x.diffMinutes || 0)), 0) : null,
     nightMinutes: night ? sum((x) => x.nightMinutes) : null,
     nightReducedMinutes: night ? Math.round(sum((x) => x.nightMinutes) * 60 / 52.5) : null,
-    incompleteDays: marked.filter((x) => x.issues.some((i) => i.startsWith("Jornada incompleta") || i.includes("sem entrada") || i.includes("sem saída") || i.includes("sem início"))).length,
+    incompleteDays: marked.filter((x) => x.issues.some((i) => i.startsWith("Jornada incompleta") || i.includes("sem entrada") || i.includes("sem saída") || i.includes("sem início") || i.includes("seguidos"))).length,
     adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
     automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
     offlineMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.offline).length, 0),
@@ -332,13 +339,38 @@ export function adjustmentText(m: DayRow["marks"][number], tz: string): string {
   return `${m.label}: original ${from} para ${to}. ${why}`;
 }
 
+/**
+ * Ocorrências das marcações tratadas, curtas:
+ * - batidas incluídas viram UMA linha por dia, agrupadas por justificativa/responsável
+ *   ("Batidas incluídas manualmente: 11:08, 12:08 — Esqueci (por Ivan)");
+ * - ajustes com original continuam um por marcação (original e novo horário).
+ */
+export function treatmentTexts(marks: DayRow["marks"], tz: string): string[] {
+  const out: string[] = [];
+  const groups = new Map<string, { why: string; times: string[] }>();
+  for (const m of marks) {
+    if (m.kind !== "adjusted") continue;
+    if (m.originalLabel) { out.push(adjustmentText(m, tz)); continue; }
+    const why = `${(m.justification || "").trim() || "sem justificativa"}${m.reviewedBy ? ` (por ${m.reviewedBy})` : ""}`;
+    const g = groups.get(why) || { why, times: [] };
+    g.times.push(localParts(m.time, tz).hm);
+    groups.set(why, g);
+  }
+  if (groups.size) {
+    const parts = [...groups.values()].map((g) => `${[...g.times].sort().join(", ")} — ${g.why}`);
+    const total = [...groups.values()].reduce((a, g) => a + g.times.length, 0);
+    out.unshift(`${total > 1 ? "Batidas incluídas manualmente" : "Batida incluída manualmente"}: ${parts.join("; ")}`);
+  }
+  return out;
+}
+
 export const MIRROR_HEADERS = ["Data", "Dia", "Entrada", "Início intervalo", "Retorno intervalo", "Saída", "Trabalhadas", "Intervalo", "Previstas", "Diferença", "Extras", "Adic. noturno", "Ocorrências"];
 export function mirrorRows(report: MirrorReport): string[][] {
   const tz = report.timeZone;
   return report.days.map((d) => {
     const pick = (t: MarkType) => d.marks.filter((m) => m.type === t).map((m) => fmtMark(m, tz)).join(" / ") || "—";
     const has = d.marks.length > 0;
-    const adj = d.marks.filter((m) => m.kind === "adjusted").map((m) => adjustmentText(m, tz));
+    const adj = treatmentTexts(d.marks, tz);
     const issues = [...d.issues, ...adj].join("; ") || "";
     return [fmtDate(d.date), WEEKDAYS[d.weekday], pick("clock_in"), pick("break_start"), pick("break_end"), pick("clock_out"),
       has ? fmtMinutes(d.workedMinutes) : "—", has ? fmtMinutes(d.breakMinutes) : "—", fmtMinutes(d.expectedMinutes), fmtMinutes(d.diffMinutes, true), fmtMinutes(d.overtimeMinutes), fmtMinutes(d.nightMinutes), issues];

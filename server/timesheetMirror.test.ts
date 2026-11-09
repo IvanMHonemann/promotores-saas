@@ -101,7 +101,7 @@ describe("espelho de ponto: texto das ocorrências", () => {
   it("batida incluída não aparece como 'original X → X'", () => {
     const adj = { originalType: "missing", originalTime: "2026-10-07T15:19:00Z", justification: "Esqueci", reviewedBy: "Ivan" };
     const text = rows([...base, ev(2, "break_start", "2026-10-07T15:19:00Z", { adjustment: adj })]);
-    expect(text).toContain("Início do intervalo: batida incluída manualmente às 12:19. Justificativa: Esqueci (por Ivan)");
+    expect(text).toContain("Batida incluída manualmente: 12:19 — Esqueci (por Ivan)");
     expect(text).not.toContain("original");
   });
   it("ajuste de horário mostra original e novo sem caracteres fora do Latin-1", () => {
@@ -114,5 +114,45 @@ describe("espelho de ponto: texto das ocorrências", () => {
     const adj = { originalType: "break_end", originalTime: "2026-10-07T21:00:00Z", justification: "Tipo errado" };
     const text = rows([ev(1, "clock_in", "2026-10-07T11:00:00Z"), ev(4, "clock_out", "2026-10-07T21:00:00Z", { adjustment: adj })]);
     expect(text).toContain("original Retorno do intervalo 18:00 para Saída 18:00");
+  });
+});
+
+describe("espelho de ponto: dia com várias inclusões (caso 24/10)", () => {
+  const inc = (id: number, type: any, time: string, justification: string) => ev(id, type, time, { adjustment: { originalType: "missing", originalTime: time, justification, reviewedBy: "Ivan" } });
+  const events = [
+    ev(1, "clock_in", "2026-10-24T10:34:00Z"),
+    inc(2, "break_start", "2026-10-24T14:08:00Z", "Esqueci"), inc(3, "break_end", "2026-10-24T15:08:00Z", "Esqueci"),
+    inc(4, "break_start", "2026-10-24T15:18:00Z", "Esquecimento"), inc(5, "break_start", "2026-10-24T15:19:00Z", "Esqueci"),
+    inc(6, "break_end", "2026-10-24T16:00:00Z", "Esqueci"), inc(7, "break_end", "2026-10-24T16:18:00Z", "Esquecimento"),
+  ];
+  const r = buildMirror({ events, from: "2026-10-24", to: "2026-10-24" });
+  const text = mirrorRows(r)[0][12];
+  it("não diz 'sem entrada' quando a entrada existe", () => {
+    expect(text).not.toContain("sem entrada");
+    expect(text).toContain("Dois inícios de intervalo seguidos");
+    expect(text).toContain("Dois retornos de intervalo seguidos");
+    expect(text).toContain("Jornada incompleta: falta a saída");
+  });
+  it("agrupa as inclusões numa linha por justificativa", () => {
+    expect(text).toContain("Batidas incluídas manualmente: 11:08, 12:08, 12:19, 13:00 — Esqueci (por Ivan); 12:18, 13:18 — Esquecimento (por Ivan)");
+    expect(text).not.toContain("Justificativa:");
+    expect(text.match(/Batidas incluídas/g)?.length).toBe(1);
+  });
+  it("ainda mostra todas as batidas efetivas com +", () => {
+    expect(mirrorRows(r)[0][3]).toBe("11:08+ / 12:18+ / 12:19+");
+  });
+  it("ocorrências não se repetem no mesmo dia", () => {
+    expect(new Set(r.days[0].issues).size).toBe(r.days[0].issues.length);
+    expect(r.totals.incompleteDays).toBe(1);
+  });
+});
+
+
+describe("espelho de ponto: motivo das inclusões antigas", () => {
+  it("remove o prefixo técnico 'Batida incluída via solicitação aprovada em ...'", async () => {
+    const { cleanReason } = await import("./modules/mirrorData");
+    expect(cleanReason("Batida incluída via solicitação aprovada em 2026-11-02T14:20:23.144Z. Motivo: Esqueci")).toBe("Esqueci");
+    expect(cleanReason("Esquecimento")).toBe("Esquecimento");
+    expect(cleanReason(null)).toBe("");
   });
 });

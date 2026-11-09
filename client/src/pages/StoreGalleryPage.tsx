@@ -7,7 +7,7 @@ import { StoreClientsPanel, type ClientFilter } from "@/components/StoreClientsP
 import { PhotoCapture } from "@/components/PhotoCapture";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet } from "@/lib/offlineCache";
-import { listPhotos } from "@/lib/photoQueue";
+import { useOutboxItems } from "@/hooks/useOutbox";
 import { useOnline } from "@/hooks/useOnline";
 import { toast } from "sonner";
 import { useBusy } from "@/components/BusyOverlay";
@@ -201,7 +201,10 @@ export default function StoreGalleryPage() {
   const cachedPhotos = useMemo(() => cacheGet<any[]>(`photos-${storeId}`) || [], [storeId, online, photos.data]);
   const displayPhotos = photos.data ?? (!online ? cachedPhotos : []);
 
-  const pending = useMemo(() => listPhotos().filter((p) => isNoStore ? !p.storeId : p.storeId === storeId), [storeId, isNoStore, online, photos.data]);
+  const outbox = useOutboxItems();
+  const pending = useMemo(() => outbox.filter((i) => i.kind === "photo" && i.blob && (isNoStore ? !i.payload.storeId : i.payload.storeId === storeId)), [outbox, storeId, isNoStore]);
+  const pendingUrls = useMemo(() => new Map(pending.map((p) => [p.id, URL.createObjectURL(p.blob!)])), [pending]);
+  useEffect(() => () => { pendingUrls.forEach((u) => URL.revokeObjectURL(u)); }, [pendingUrls]);
 
   const utils = trpc.useUtils();
   const restoreTrash = trpc.trash.restore.useMutation();
@@ -496,8 +499,8 @@ export default function StoreGalleryPage() {
             <div className="grid grid-cols-3 gap-2">
               {pending.map((p) => (
                 <div key={p.id} className="relative aspect-square overflow-hidden rounded-xl bg-slate-800 ring-2 ring-amber-400/50">
-                  <img src={`data:image/jpeg;base64,${p.imageBase64}`} alt="Pendente" className="absolute inset-0 h-full w-full object-cover" />
-                  <div className="absolute bottom-1 left-1 rounded bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-slate-950">Pendente</div>
+                  <img src={pendingUrls.get(p.id)} alt="Pendente" className="absolute inset-0 h-full w-full object-cover" />
+                  <div className={`absolute bottom-1 left-1 rounded px-1.5 py-0.5 text-xs font-bold ${p.status === "failed" ? "bg-rose-500 text-white" : "bg-amber-500 text-slate-950"}`}>{p.status === "failed" ? "Erro" : p.status === "sending" ? "Enviando" : "Pendente"}</div>
                 </div>
               ))}
             </div>

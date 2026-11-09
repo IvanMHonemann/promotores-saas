@@ -28,6 +28,10 @@ export type MirrorEvent = {
   legacyAdjustment?: boolean;
   /** Alerta de horário gravado na marcação (ver shared/punchTime). */
   timeAlert?: { kind: "server_time_used" | "offline"; text: string } | null;
+  /** Marcação feita sem internet e sincronizada depois (horário = aparelho; recebimento = servidor). */
+  offline?: boolean;
+  /** Alerta de possível alteração do relógio do aparelho (ver shared/offlineClock). */
+  clockAlert?: string | null;
 };
 
 export type LaborProfile = {
@@ -55,6 +59,8 @@ export type DayRow = {
   marks: Array<{
     type: MarkType; label: string; time: string; receivedAt: string; synced: boolean;
     kind: "original" | "adjusted" | "automatic" | "legacy_adjusted";
+    /** Registrado offline (sincronizado depois). */
+    offline?: boolean;
     originalTime?: string; originalLabel?: string; justification?: string; reviewedBy?: string | null; reviewedAt?: string | null;
   }>;
   workedMinutes: number;
@@ -79,6 +85,8 @@ export type MirrorTotals = {
   expectedMinutes: number | null; balanceMinutes: number | null; overtimeMinutes: number | null; deficitMinutes: number | null;
   nightMinutes: number | null; nightReducedMinutes: number | null;
   incompleteDays: number; adjustedMarks: number; automaticMarks: number; pendingSyncMarks: number; daysWithoutMarksOnWorkday: number | null;
+  /** Marcações registradas offline. */
+  offlineMarks?: number;
 };
 
 export type MirrorReport = { from: string; to: string; timeZone: string; days: DayRow[]; totals: MirrorTotals; notes: string[] };
@@ -158,7 +166,7 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
       for (const ev of sh.events) {
         const t = new Date(ev.time).getTime();
         const kind: DayRow["marks"][number]["kind"] = ev.automatic ? "automatic" : ev.adjustment ? "adjusted" : ev.legacyAdjustment ? "legacy_adjusted" : "original";
-        marks.push({ type: ev.type, label: MARK_LABEL[ev.type], time: ev.time, receivedAt: ev.receivedAt, synced: ev.synced, kind,
+        marks.push({ type: ev.type, label: MARK_LABEL[ev.type], time: ev.time, receivedAt: ev.receivedAt, synced: ev.synced, kind, offline: Boolean(ev.offline || ev.timeAlert?.kind === "offline"),
           originalTime: ev.adjustment?.originalTime, originalLabel: ev.adjustment ? MARK_LABEL[ev.adjustment.originalType] : undefined,
           justification: ev.adjustment?.justification, reviewedBy: ev.adjustment?.reviewedBy, reviewedAt: ev.adjustment?.reviewedAt });
         if (ev.type === "clock_in") { if (openIn != null) issues.push("Entrada sem saída anterior"); openIn = t; }
@@ -181,6 +189,11 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     for (const sh of dayShifts) for (const ev of sh.events) {
       if (ev.timeAlert?.kind === "server_time_used") timeAlerts.push(`${MARK_LABEL[ev.type]}: ${ev.timeAlert.text}`);
       else if (ev.timeAlert?.kind === "offline") timeAlerts.push(`${MARK_LABEL[ev.type]}: ${ev.timeAlert.text}`);
+    }
+    for (const sh of dayShifts) for (const ev of sh.events) {
+      if (ev.clockAlert) timeAlerts.push(`${MARK_LABEL[ev.type]}: ${ev.clockAlert}`);
+      // Registrado offline sem o texto do alerta (ex.: lacre antigo): ainda informa o horário de recebimento.
+      else if (ev.offline && ev.timeAlert?.kind !== "offline") timeAlerts.push(`${MARK_LABEL[ev.type]}: registrada offline; recebida pelo servidor em ${ev.receivedAt}`);
     }
     for (const t of timeAlerts) issues.push(`ALERTA de horário — ${t}`);
     if (marks.some((m) => !m.synced)) issues.push("Marcação com sincronização pendente");
@@ -244,6 +257,7 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     incompleteDays: marked.filter((x) => x.issues.some((i) => i.startsWith("Jornada incompleta") || i.includes("sem entrada") || i.includes("sem saída") || i.includes("sem início"))).length,
     adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
     automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
+    offlineMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.offline).length, 0),
     pendingSyncMarks: marked.reduce((a, x) => a + x.marks.filter((m) => !m.synced).length, 0),
     daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday && !x.excuse && !x.vacation).length : null,
   };
@@ -287,7 +301,7 @@ export function fmtPis(pis?: string | null): string {
 }
 /**
  * Horário da marcação no espelho.
- * Símbolos (legenda no rodapé): * ajustada, + incluída, # ajuste antigo, A automática, ? sync pendente.
+ * Símbolos (legenda no rodapé): * ajustada, + incluída, # ajuste antigo, A automática, ? sync pendente, o registrada offline.
  */
 export function fmtMark(m: DayRow["marks"][number], tz: string): string {
   const t = localParts(m.time, tz);
@@ -298,7 +312,8 @@ export function fmtMark(m: DayRow["marks"][number], tz: string): string {
   else if (included) tag = "+";
   else if (m.kind === "adjusted") tag = "*";
   const sync = m.synced ? "" : "?";
-  return `${t.hm}${tag}${sync}`;
+  const off = m.offline ? "o" : "";
+  return `${t.hm}${tag}${off}${sync}`;
 }
 
 /**
@@ -336,5 +351,6 @@ export function totalsLines(t: MirrorTotals): Array<[string, string]> {
     ["Adicional noturno (min. relógio)", fmtMinutes(t.nightMinutes)], ["Hora noturna reduzida (equivalente)", fmtMinutes(t.nightReducedMinutes)],
     ["Dias incompletos/inconsistentes", String(t.incompleteDays)], ["Dias úteis sem marcação", t.daysWithoutMarksOnWorkday == null ? "—" : String(t.daysWithoutMarksOnWorkday)],
     ["Marcações ajustadas", String(t.adjustedMarks)], ["Saídas automáticas do sistema", String(t.automaticMarks)], ["Marcações pendentes de sincronização", String(t.pendingSyncMarks)],
+    ["Marcações registradas offline", String(t.offlineMarks ?? 0)],
   ];
 }

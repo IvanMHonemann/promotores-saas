@@ -7,6 +7,7 @@ import * as db from "../db";
 import { timeEvents, vacationSchedules } from "../../drizzle/schema";
 import type { MirrorEvent, MirrorOptions, VacationRange } from "../../shared/timesheetMirror";
 import { readTimeAlert } from "../../shared/punchTime";
+import { readClockAlert } from "../../shared/offlineClock";
 import { effectiveRows, ensurePunchLedger } from "../ponto/ledger";
 
 /** Horário efetivo da marcação — o MESMO usado no cálculo do espelho (deviceTime, senão serverTime). */
@@ -106,6 +107,8 @@ export function toMirrorEvents(rows: Array<typeof timeEvents.$inferSelect>, adjB
           : null,
       legacyAdjustment: !a && r.origin === "original" && /Ajuste aprovado em/.test(notes),
       timeAlert: readTimeAlert(notes),
+      offline: Boolean((r as any).offline),
+      clockAlert: readClockAlert(notes),
     };
   });
 }

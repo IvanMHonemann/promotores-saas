@@ -97,6 +97,17 @@ export function useAuth(options?: UseAuthOptions) {
   });
 
   const logout = useCallback(async () => {
+    // Fila offline com itens: avisar antes, porque sair sem internet impede o envio até a mesma pessoa entrar de novo.
+    try {
+      const { listOutbox } = await import("@/lib/outboxDb");
+      const mine = (await listOutbox()).filter((i) => i.ownerId == null || i.ownerId === (cachedUser as any)?.id);
+      if (mine.length > 0) {
+        const msg = `Há ${mine.length === 1 ? "1 item aguardando envio" : `${mine.length} itens aguardando envio`} (ponto, visitas ou fotos) neste aparelho.\n\n` +
+          (isOffline ? "Sem internet eles ainda não chegaram ao servidor. Se sair agora, eles ficam guardados e só serão enviados quando você entrar de novo neste aparelho." : "Aguarde o envio terminar antes de sair. Se sair agora, eles só serão enviados quando você entrar de novo neste aparelho.") +
+          "\n\nSair mesmo assim?";
+        if (!window.confirm(msg)) return;
+      }
+    } catch { /* sem IndexedDB: segue */ }
     try {
       if (!isOffline) await logoutMutation.mutateAsync();
     } catch (error: unknown) {
@@ -104,6 +115,7 @@ export function useAuth(options?: UseAuthOptions) {
     } finally {
       localStorage.removeItem(LOCAL_SESSION_KEY);
       localStorage.removeItem("promotores-saas-act-as");
+      try { const { clearOfflineCache } = await import("@/lib/offlineCache"); await clearOfflineCache(); } catch { /* ignore */ }
       setCachedUser(null);
       utils.auth.me.setData(undefined, null);
       window.dispatchEvent(new Event("promotores-saas:logout"));
@@ -113,7 +125,7 @@ export function useAuth(options?: UseAuthOptions) {
         window.location.replace("/");
       }
     }
-  }, [isOffline, logoutMutation, utils]);
+  }, [cachedUser, isOffline, logoutMutation, utils]);
 
   const state = useMemo(() => {
     // O cache é a identidade imediata enquanto auth.me confirma a sessão.

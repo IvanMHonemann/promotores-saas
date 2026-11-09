@@ -30,8 +30,15 @@ export function resolvePunchTime(input: { deviceTime?: Date | null; serverNow: D
   if (!device) return { effectiveTime: serverNow, deviceTimeToStore: null, alert: "none", diffMinutes: 0, note: null };
   const diffMs = device.getTime() - serverNow.getTime();
   const diffMinutes = Math.round(diffMs / 60000);
-  if (Math.abs(diffMs) <= PUNCH_TOLERANCE_MS) return { effectiveTime: device, deviceTimeToStore: device, alert: "none", diffMinutes, note: null };
   const age = -diffMs;
+  // Marcação offline: mesmo sincronizada poucos minutos depois, fica registrada como offline (Portaria 671, Anexo IX).
+  if (input.offline && diffMs <= PUNCH_TOLERANCE_MS && age <= PUNCH_OFFLINE_MAX_AGE_MS && age > 0) {
+    return {
+      effectiveTime: device, deviceTimeToStore: device, alert: "offline", diffMinutes,
+      note: `${OFFLINE_MARKER} Marcação feita sem internet às ${fmt(device)} (horário do aparelho) e recebida pelo servidor às ${fmt(serverNow)}.`,
+    };
+  }
+  if (Math.abs(diffMs) <= PUNCH_TOLERANCE_MS) return { effectiveTime: device, deviceTimeToStore: device, alert: "none", diffMinutes, note: null };
   if (input.offline && diffMs <= PUNCH_TOLERANCE_MS && age <= PUNCH_OFFLINE_MAX_AGE_MS) {
     return {
       effectiveTime: device, deviceTimeToStore: device, alert: "offline", diffMinutes,

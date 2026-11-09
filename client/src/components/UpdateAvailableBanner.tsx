@@ -1,28 +1,14 @@
 import { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { applyWaitingUpdate } from "@/components/SwUpdatePrompt";
 
 const SEEN_KEY = "gondup_app_version";
 
 async function applyUpdate() {
-  const overlay = document.createElement("div");
-  overlay.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#07111f;color:#fff;font-family:system-ui;font-size:18px;";
-  overlay.textContent = "Atualizando aplicativo...";
-  document.body.appendChild(overlay);
-  try {
-    if ("caches" in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    }
-    if ("serviceWorker" in navigator) {
-      const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
-    }
-  } catch {
-    /* ignore */
-  }
+  // Não apaga caches nem desregistra o service worker: isso destruiria o modo offline e a fila guardada.
   try { localStorage.setItem(SEEN_KEY, (window as any).__APP_VERSION || ""); } catch { /* ignore */ }
-  window.location.replace("/?updated=" + Date.now());
+  await applyWaitingUpdate();
 }
 
 export default function UpdateAvailableBanner() {

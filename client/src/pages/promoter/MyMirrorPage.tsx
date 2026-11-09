@@ -132,7 +132,7 @@ export default function MyMirrorPage() {
                           <td className="p-1">
                             {d.marks.map((m: any, i: number) => (
                               <span key={i} className={`mr-2 inline-block ${m.kind === "adjusted" ? "text-amber-200" : ""}`} title={m.originalTime ? `Original: ${hhmm(m.originalTime)} — ${m.justification || ""}` : undefined}>
-                                {m.label.split(" ")[0]} {hhmm(m.time)}{m.kind === "adjusted" ? "*" : ""}{m.kind === "automatic" ? "A" : ""}
+                                {m.label.split(" ")[0]} {hhmm(m.time)}{m.kind === "adjusted" ? "*" : ""}{m.kind === "automatic" ? "A" : ""}{m.offline ? <span title="Registrada offline" className="ml-0.5 text-sky-300">(offline)</span> : null}
                               </span>
                             ))}
                           </td>

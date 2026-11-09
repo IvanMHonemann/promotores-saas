@@ -31,6 +31,7 @@ import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type Entitlem
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
 import { runPersistentGemini } from "./aiGithubService";
 import { todayInZone } from "../shared/expiry";
+import { findSubmission, listVisitOfflineMarks, offlineVisitFields, recordSubmission, resolveOfflineTime } from "./modules/offlineSync";
 
 const emptyToNull = (value?: string) => value?.trim() || null;
 const companyUserRole = z.enum(["company_admin", "supervisor", "promoter"]);
@@ -879,8 +880,20 @@ export const appRouter = router({
         return db.listOperationalVisits(ctx.accountId, { date, promoterId: promoterId ?? undefined });
       }),
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), routeId: z.number().int().positive().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(({ ctx, input }) => db.listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
-      start: commercialFeatureProcedure("visitCheckIn").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional() })).mutation(async ({ ctx, input }) => {
+      /** Marcas "registrado offline" (horário do aparelho x recebimento) para os relatórios do gestor. */
+      offlineMarks: commercialFeatureProcedure("fieldOperations").input(z.object({ visitIds: z.array(z.number().int().positive()).max(500) })).query(({ ctx, input }) => listVisitOfflineMarks(ctx.accountId, input.visitIds)),
+      start: commercialFeatureProcedure("visitCheckIn").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
         const promoterId = scopeMemberId(ctx);
+        // Reenvio da fila offline com a mesma chave: devolve a visita sem regravar nada.
+        if (input.clientId) {
+          const prior = await findSubmission(ctx.accountId, input.clientId);
+          if (prior) {
+            if (prior.kind !== "visit_start" || prior.entityId !== input.id) throw new TRPCError({ code: "CONFLICT", message: "Chave de envio já usada em outro registro." });
+            const [again] = await db.listOperationalVisits(ctx.accountId, { id: input.id, promoterId: promoterId ?? undefined });
+            if (again) return again;
+          }
+        }
+        const when = resolveOfflineTime({ deviceTime: input.deviceTime, offline: input.offline, clock: input.clock, serverNow: new Date() });
         const today = todayInZone();
         // Fecha automaticamente visitas de dias anteriores que ficaram abertas (esquecidas após o expediente).
         if (promoterId != null) {
@@ -906,13 +919,27 @@ export const appRouter = router({
           }
         }
 
-        return db.updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: new Date(), startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
+        const started = await db.updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: when.effectiveTime, startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
+        if (input.clientId) await recordSubmission({ companyId: ctx.accountId, memberAccountId: ctx.memberAccountId ?? null, clientId: input.clientId, kind: "visit_start", entityId: input.id, deviceTime: input.deviceTime ? new Date(input.deviceTime) : null, offline: when.offline, alert: when.clockAlert ?? when.timeNote });
+        return started;
       }),
-      complete: commercialFeatureProcedure("visitCheckIn").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
+      complete: commercialFeatureProcedure("visitCheckIn").input(z.object({ id: z.number().int().positive(), latitude: z.number().optional(), longitude: z.number().optional(), accuracy: z.number().optional(), notes: z.string().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
         const [owned] = await db.listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? undefined });
         if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "Visita não encontrada para esta empresa." });
+        if (input.clientId) {
+          const prior = await findSubmission(ctx.accountId, input.clientId);
+          if (prior && (prior.kind !== "visit_complete" || prior.entityId !== input.id)) throw new TRPCError({ code: "CONFLICT", message: "Chave de envio já usada em outro registro." });
+          if (prior) return owned;
+        }
         if (owned.visit.status === "completed") return owned; // reenvio: mantém o horário de saída original
-        return db.updateOperationalVisit(ctx.accountId, input.id, { status: "completed", actualEnd: new Date(), endLatitude: input.latitude, endLongitude: input.longitude, endAccuracy: input.accuracy, notes: input.notes });
+        const when = resolveOfflineTime({ deviceTime: input.deviceTime, offline: input.offline, clock: input.clock, serverNow: new Date() });
+        // Ordem: o check-out offline não pode ficar antes do check-in gravado.
+        const startMs = owned.visit.actualStart ? new Date(owned.visit.actualStart).getTime() : null;
+        const endTime = startMs != null && when.effectiveTime.getTime() < startMs ? new Date(startMs) : when.effectiveTime;
+        const alert = [when.clockAlert, when.timeNote, endTime !== when.effectiveTime ? "Check-out offline com horário anterior ao check-in; usado o horário do check-in." : null].filter(Boolean).join(" ") || null;
+        const completed = await db.updateOperationalVisit(ctx.accountId, input.id, { status: "completed", actualEnd: endTime, endLatitude: input.latitude, endLongitude: input.longitude, endAccuracy: input.accuracy, notes: input.notes });
+        if (input.clientId) await recordSubmission({ companyId: ctx.accountId, memberAccountId: ctx.memberAccountId ?? null, clientId: input.clientId, kind: "visit_complete", entityId: input.id, deviceTime: input.deviceTime ? new Date(input.deviceTime) : null, offline: when.offline, alert });
+        return completed;
       }),
     }),
   }),

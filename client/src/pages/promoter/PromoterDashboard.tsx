@@ -6,6 +6,8 @@ import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
 import { useOfflineQuery } from "@/lib/useOfflineQuery";
 import { VisitCheckIn } from "@/components/VisitCheckIn";
+import { useOutboxItems } from "@/hooks/useOutbox";
+import { applyQueuedPunches, applyQueuedVisits } from "@/lib/offlineOverlay";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,12 +34,19 @@ export default function PromoterDashboard() {
   const accessQuery = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
   const cachedAccess = cacheGet<any>("entitlements");
   if (accessQuery.data) cacheSet("entitlements", accessQuery.data);
-  const access = { ...accessQuery, data: accessQuery.data ?? (!isOnline() ? cachedAccess : undefined) };
+  const access = { ...accessQuery, data: accessQuery.data ?? cachedAccess ?? undefined };
   const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
   const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
   const hasProducts = Boolean(access.data?.effective?.products);
   const hasVisitCheckIn = Boolean(access.data?.effective?.visitCheckIn);
-  const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
+  const shiftQuery = trpc.timeTracking.shiftStatus.useQuery({ timeZone }, { enabled: hasTimeTracking });
+  const outboxItems = useOutboxItems();
+  useEffect(() => { if (shiftQuery.data) cacheSet(`shift-${today}`, shiftQuery.data); }, [shiftQuery.data, today]);
+  const cachedShift = cacheGet<any>(`shift-${today}`);
+  // Sem internet: usa o último status salvo + batidas guardadas no aparelho.
+  const shiftData = applyQueuedPunches(shiftQuery.data ?? cachedShift ?? undefined, outboxItems, today, (iso) => localDayKey(new Date(iso), timeZone)) as typeof shiftQuery.data;
+  const shiftFromCache = !shiftQuery.data && Boolean(shiftData);
+  const shift = { ...shiftQuery, data: shiftData, isLoading: shiftQuery.isLoading && !shiftData, error: shiftFromCache ? null : shiftQuery.error };
   const visitsQuery = trpc.operations.visits.today.useQuery({ date: today }, { enabled: hasFieldOperations, staleTime: 0, refetchOnWindowFocus: true });
   useEffect(() => {
     if (visitsQuery.data) cacheSet(`visits-today-${today}`, visitsQuery.data);
@@ -45,12 +54,12 @@ export default function PromoterDashboard() {
   const cachedVisits = cacheGet<any[]>(`visits-today-${today}`);
   const visits = {
     ...visitsQuery,
-    data: visitsQuery.data ?? (!isOnline() ? cachedVisits : undefined),
+    data: visitsQuery.data ?? cachedVisits ?? undefined,
     isLoading: visitsQuery.isLoading && isOnline() && !cachedVisits,
     error: visitsQuery.error && !cachedVisits ? visitsQuery.error : null,
   };
   const utils = trpc.useUtils();
-  const rows = hasFieldOperations ? visits.data || [] : [];
+  const rows = hasFieldOperations ? applyQueuedVisits(visits.data || [], outboxItems) : [];
   const alertsQuery = trpc.inventoryAlerts.useQuery(undefined, { enabled: hasProducts, staleTime: 60000 });
   const alerts = useOfflineQuery(alertsQuery, "alerts");
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 30 }, { enabled: hasTimeTracking });
@@ -180,7 +189,7 @@ export default function PromoterDashboard() {
               {visits.error && <p className="text-sm font-semibold text-rose-200">Não foi possível carregar o roteiro. Tente atualizar o painel.</p>}
               {!visits.isLoading && !visits.error && !rows.length && <p className="text-sm text-slate-300">Nenhuma visita planejada para hoje.</p>}
               {!isOnline() && rows.length > 0 && <p className="text-xs text-amber-200">Roteiro salvo neste aparelho (offline).</p>}
-              {rows.map(({ visit, store }) => (
+              {rows.map((row) => { const { visit, store } = row; return (
                 <div key={visit.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -190,7 +199,10 @@ export default function PromoterDashboard() {
                         {store.address || store.city}{store.state ? ` — ${store.state}` : ""}
                       </p>
                     </div>
-                    {hasVisitCheckIn && <Badge variant="outline" className="border-white/20 text-slate-200">{visitStatus[visit.status] || visit.status}</Badge>}
+                    <div className="flex flex-col items-end gap-1">
+                      {hasVisitCheckIn && <Badge variant="outline" className="border-white/20 text-slate-200">{visitStatus[visit.status] || visit.status}</Badge>}
+                      {(row as any).queued && <Badge variant="outline" className="border-amber-300/50 text-amber-200">Aguardando envio</Badge>}
+                    </div>
                   </div>
                   {hasVisitCheckIn && visit.status === "pending" && (
                     <Button
@@ -216,7 +228,7 @@ export default function PromoterDashboard() {
                     </>
                   )}
                 </div>
-              ))}
+              ); })}
             </CardContent>
           </Card>
         </section>}

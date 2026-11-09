@@ -19,6 +19,8 @@ import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExc
 import { punchOrderError } from "@shared/punchOrder";
 import { appendOriginalPunch, appendTreatment, effectiveRows, ensurePunchLedger, NEW_SHIFT_MARKER } from "../ponto/ledger";
 import { effectiveEventTime } from "./mirrorData";
+import { clockEvidenceSchema } from "./offlineSync";
+import { assessDeviceClock, clockAlertNote, OFFLINE_SEQUENCE_MARKER, readClockAlert } from "../../shared/offlineClock";
 
 const inFlightCorrections = new Set<string>();
 
@@ -216,6 +218,8 @@ export const timeTrackingRouter = router({
       idempotencyKey: z.string().min(1).max(64).optional(),
       timeZone: z.string().min(1),
       notes: z.string().optional(),
+      /** Evidência do relógio do aparelho (âncora com o servidor + tempo monotônico) para marcações offline. */
+      clock: clockEvidenceSchema,
     }))
     .mutation(async ({ ctx, input }) => {
       const companyId = ctx.accountId;
@@ -245,14 +249,23 @@ export const timeTrackingRouter = router({
       const recent = await effectiveRows(await database.select().from(timeEvents)
         .where(and(eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId)))
         .orderBy(desc(effectiveEventTime)).limit(100));
-      const todayEvents = recent.filter((event) => localDay(event.deviceTime || event.serverTime, input.timeZone) === today);
+      // Só conta o que aconteceu ATÉ o horário desta marcação: uma batida offline sincronizada depois é validada
+      // contra a anterior a ela, não contra a última gravada.
+      const effectiveMs = punchTime.effectiveTime.getTime();
+      const todayEvents = recent.filter((event) => localDay(event.deviceTime || event.serverTime, input.timeZone) === today && (event.deviceTime || event.serverTime).getTime() <= effectiveMs);
       const lastToday = todayEvents[0]?.eventType as TimeEventType | undefined;
+      const isOfflinePunch = punchTime.alert === "offline";
+      const clockNote = isOfflinePunch && input.deviceTime ? clockAlertNote(new Date(input.deviceTime), assessDeviceClock(new Date(input.deviceTime), input.clock, new Date())) : null;
       // Portaria 671, art. 74 I: o sistema não pode restringir horários de marcação. Uma nova entrada depois da
       // saída no mesmo dia é aceita e fica sinalizada para o administrador conferir (ex.: dupla pegada, retorno).
       const newShiftSameDay = input.eventType === "clock_in" && lastToday === "clock_out";
-      const notesWithAlert = [input.notes, punchTime.note, newShiftSameDay ? `${NEW_SHIFT_MARKER} Nova entrada registrada depois da saída no mesmo dia.` : null].filter(Boolean).join("\n") || undefined;
-      if (input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) throw new TRPCError({ code: "BAD_REQUEST", message: "Bata a entrada antes de registrar este evento." });
-      if (!isValidTransition(lastToday, input.eventType)) {
+      const sequenceOk = !(input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) && isValidTransition(lastToday, input.eventType);
+      // Marcação offline já aconteceu no aparelho: recusar faria a batida sumir (Portaria 671 proíbe restringir marcações).
+      // Ela é aceita e sinalizada para o gestor conferir.
+      const offlineSequenceNote = !sequenceOk && isOfflinePunch ? `${OFFLINE_SEQUENCE_MARKER} Marcação offline fora da sequência esperada (anterior: ${lastToday ?? "nenhuma"}). Conferir com o funcionário.` : null;
+      const notesWithAlert = [input.notes, punchTime.note, clockNote, offlineSequenceNote, newShiftSameDay ? `${NEW_SHIFT_MARKER} Nova entrada registrada depois da saída no mesmo dia.` : null].filter(Boolean).join("\n") || undefined;
+      if (!sequenceOk && !isOfflinePunch) {
+        if (input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) throw new TRPCError({ code: "BAD_REQUEST", message: "Bata a entrada antes de registrar este evento." });
         throw new TRPCError({ code: "BAD_REQUEST", message: "Sequência de marcação inválida. Confira o último evento do ponto." });
       }
 
@@ -294,7 +307,7 @@ export const timeTrackingRouter = router({
         module: "time_tracking",
         entityType: "time_event",
         entityId: inserted.id,
-        description: `Marcação de ponto (NSR ${inserted.nsr ?? "?"}): ${input.eventType}${newShiftSameDay ? " — nova entrada após saída no mesmo dia" : ""}${punchTime.alert === "server_time_used" ? ` — ALERTA: ${punchTime.note?.replace(TIME_ALERT_MARKER, "").trim()}` : punchTime.alert === "offline" ? " (feita offline)" : ""}`,
+        description: `Marcação de ponto (NSR ${inserted.nsr ?? "?"}): ${input.eventType}${newShiftSameDay ? " — nova entrada após saída no mesmo dia" : ""}${punchTime.alert === "server_time_used" ? ` — ALERTA: ${punchTime.note?.replace(TIME_ALERT_MARKER, "").trim()}` : punchTime.alert === "offline" ? " (feita offline)" : ""}${clockNote ? " — ALERTA: possível alteração do relógio do aparelho" : ""}${offlineSequenceNote ? " — fora de sequência" : ""}`,
       });
       return inserted;
     }),
@@ -436,6 +449,8 @@ export const timeTrackingRouter = router({
         synced: row.synced,
         notes: row.notes,
         timeAlert: readTimeAlert(row.notes),
+        offline: Boolean((row as any).offline),
+        clockAlert: readClockAlert(row.notes),
       }));
 
       let labor: LaborProfile | null = null;

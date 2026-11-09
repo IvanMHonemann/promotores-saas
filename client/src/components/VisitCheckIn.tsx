@@ -248,7 +248,7 @@ export function VisitCheckIn({
         }
         // Sem conexão/timeout: guarda tudo (com a mesma chave da foto) para sincronizar depois.
         if (!sandbox) {
-          enqueueVisit({
+          await enqueueVisit({
             action,
             visitId,
             storeId,
@@ -270,7 +270,7 @@ export function VisitCheckIn({
             )
           );
         if (sandbox) return;
-        toast.info("Salvo offline. Será sincronizado ao voltar a conexão.");
+        toast.info(`${label} salvo no aparelho às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}. Será enviado quando a internet voltar.`);
         onDone();
         return;
       }
@@ -286,7 +286,7 @@ export function VisitCheckIn({
           );
           return;
         }
-        enqueuePhoto({
+        await enqueuePhoto({
           storeId,
           visitId,
           capturedAt: current.capturedAt,

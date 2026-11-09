@@ -1,13 +1,10 @@
 /**
- * Fila offline de fotos.
- * Guarda a foto (base64) localmente e sincroniza ao voltar online.
+ * Foto guardada offline (Blob comprimido no IndexedDB, fila única em lib/outbox).
  */
+import { base64ToBlob, enqueueItem, nowEvidence } from "./outboxDb";
+import { requestSync } from "@/hooks/useOutbox";
 
-const KEY = "gondup:photo-queue";
-
-export type QueuedPhoto = {
-  id: string;
-  /** Ausente ou 0 = foto sem loja vinculada. */
+export type QueuedPhotoInput = {
   storeId?: number | null;
   storeClientId?: number;
   visitId?: number;
@@ -19,44 +16,12 @@ export type QueuedPhoto = {
   imageBase64: string;
   mimeType: string;
   idempotencyKey: string;
-  queuedAt: string;
 };
 
-function load(): QueuedPhoto[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function save(items: QueuedPhoto[]): boolean {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(items));
-    return true;
-  } catch (e) {
-    console.warn("Fila de fotos cheia", e);
-    return false;
-  }
-}
-
-export function enqueuePhoto(photo: Omit<QueuedPhoto, "id" | "queuedAt">): QueuedPhoto {
-  const item: QueuedPhoto = { ...photo, id: crypto.randomUUID(), queuedAt: new Date().toISOString() };
-  const items = load();
-  items.push(item);
-  if (!save(items)) throw new Error("Sem espaço para guardar a foto offline neste aparelho.");
+export async function enqueuePhoto(photo: QueuedPhotoInput, opts: { label?: string; dependsOn?: string } = {}) {
+  const { clock } = nowEvidence();
+  const { imageBase64, mimeType, ...payload } = photo;
+  const item = await enqueueItem({ kind: "photo", label: opts.label || "Foto", dependsOn: opts.dependsOn, deviceTime: photo.capturedAt, clock, blob: base64ToBlob(imageBase64, mimeType || "image/jpeg"), payload });
+  requestSync();
   return item;
-}
-
-export function listPhotos(): QueuedPhoto[] {
-  return load();
-}
-
-export function removePhoto(id: string) {
-  save(load().filter((p) => p.id !== id));
-}
-
-export function photoCount(): number {
-  return load().length;
 }

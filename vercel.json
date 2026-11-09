@@ -50,27 +50,5 @@
         }
       ]
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/scheduled/database-maintenance",
-      "schedule": "0 5 * * *"
-    },
-    {
-      "path": "/api/scheduled/database-maintenance",
-      "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/scheduled/database-maintenance",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/scheduled/archive-timesheets",
-      "schedule": "30 8 * * *"
-    },
-    {
-      "path": "/api/scheduled/database-backup",
-      "schedule": "30 5 * * *"
-    }
   ]
 }

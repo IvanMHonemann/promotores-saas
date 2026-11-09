@@ -29,7 +29,7 @@ export const ENTITLEMENT_CATALOG: ReadonlyArray<{
   { key: "timeTracking", label: "Ponto eletrônico com GPS", description: "Marcações de jornada, localização e histórico." },
   { key: "fieldOperations", label: "Lojas, roteiros e fotos", description: "Cadastro de lojas, planejamento de roteiros e fotos da operação em campo." },
   { key: "visitCheckIn", label: "Check-in e check-out de visitas", description: "Registro de entrada/saída na loja com foto e GPS, status da visita e acompanhamento da execução." },
-  { key: "products", label: "Produtos e validades", description: "Cadastro de produtos por loja e indústria, controle de validade, lote e alertas de vencimento." },
+  { key: "products", label: "Produtos e validades", description: "Cadastro de produtos por loja e marca/cliente, controle de validade, lote e alertas de vencimento." },
   { key: "reports", label: "Relatórios e auditoria", description: "Histórico do que foi feito em campo, relatórios e exportação." },
   { key: "teamManagement", label: "Gestão da equipe", description: "Cadastro de usuários e permissões individuais." },
   { key: "backup", label: "Cópia de segurança", description: "Guarda uma cópia dos dados da empresa e permite recuperar se algo for apagado." },

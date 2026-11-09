@@ -37,7 +37,7 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&"
 
 function shareProducts(products: Product[], today: string, alertDays: number) {
   if (!products.length) return;
-  const text = ["*Produtos e controle de validade*", ...products.map((p) => [`*${p.description}*`, `*Código:* ${p.productCode}`, p.clientName ? `*Indústria:* ${p.clientName}` : "", p.storeId ? `*Loja:* ${storeLabel(p)}` : "", p.lot ? `*Lote:* ${p.lot}` : "", `*Quantidade:* ${p.quantity}`, `*Validade:* ${formatDateBR(p.expirationDate)} (${situationLabel(p.expirationDate, today, alertDays)})`].filter(Boolean).join("\n"))].join("\n\n");
+  const text = ["*Produtos e controle de validade*", ...products.map((p) => [`*${p.description}*`, `*Código:* ${p.productCode}`, p.clientName ? `*Marca/Cliente:* ${p.clientName}` : "", p.storeId ? `*Loja:* ${storeLabel(p)}` : "", p.lot ? `*Lote:* ${p.lot}` : "", `*Quantidade:* ${p.quantity}`, `*Validade:* ${formatDateBR(p.expirationDate)} (${situationLabel(p.expirationDate, today, alertDays)})`].filter(Boolean).join("\n"))].join("\n\n");
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
 }
 function downloadCsv(csv: string, filename: string) {
@@ -188,7 +188,7 @@ export default function ProductsPage() {
         toast.success("Produto atualizado."); resetForm();
       } else {
         const r = await run("Salvando...", () => create.mutateAsync({ ...data, clientRequestId: requestId }));
-        if (r.merged) toast.success(`Já existia com a mesma loja, indústria, lote e validade: quantidade somada (agora ${r.product?.quantity ?? "?"}).`);
+        if (r.merged) toast.success(`Já existia com a mesma loja, marca/cliente, lote e validade: quantidade somada (agora ${r.product?.quantity ?? "?"}).`);
         else toast.success(r.duplicate ? "Esse cadastro já tinha sido salvo." : "Produto cadastrado.");
         if (goNext) nextItem(); else resetForm();
       }
@@ -220,7 +220,7 @@ export default function ProductsPage() {
     const groups = groupByIndustry(report.items as Product[]);
     const body = groups.map((g) => `<h2>${escapeHtml(g.name)} <small>(${g.items.length})</small></h2><table><thead><tr><th>Loja</th><th>Código</th><th>Descrição</th><th>Lote</th><th>Qtd.</th><th>Validade</th><th>Situação</th></tr></thead><tbody>${g.items.map((p) => `<tr><td>${escapeHtml(storeLabel(p))}</td><td>${escapeHtml(p.productCode)}</td><td>${escapeHtml(p.description)}</td><td>${escapeHtml(p.lot || "")}</td><td>${p.quantity}</td><td>${formatDateBR(p.expirationDate)}</td><td>${situationLabel(p.expirationDate, report.today, report.alertDays)}</td></tr>`).join("")}</tbody></table>`).join("");
     printWindow.document.open();
-    printWindow.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Produtos vencidos e a vencer</title><style>body{font:13px Arial,sans-serif;color:#111;padding:24px}h1{font-size:20px;margin:0 0 6px}h2{font-size:15px;margin:18px 0 6px}p{color:#444;margin:0 0 12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #aaa;padding:6px;text-align:left;vertical-align:top}th{background:#e8eef2}tr{break-inside:avoid}@media print{body{padding:0}@page{size:A4 portrait;margin:12mm}}</style></head><body><h1>Produtos vencidos e com validade em até ${report.alertDays} dias</h1><p>Emitido em ${formatDateBR(report.today)} (horário de Brasília) · ${report.items.length} produto(s), agrupados por indústria${report.truncated ? " · lista limitada a 5.000 itens" : ""}</p>${body}<script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+    printWindow.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Produtos vencidos e a vencer</title><style>body{font:13px Arial,sans-serif;color:#111;padding:24px}h1{font-size:20px;margin:0 0 6px}h2{font-size:15px;margin:18px 0 6px}p{color:#444;margin:0 0 12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #aaa;padding:6px;text-align:left;vertical-align:top}th{background:#e8eef2}tr{break-inside:avoid}@media print{body{padding:0}@page{size:A4 portrait;margin:12mm}}</style></head><body><h1>Produtos vencidos e com validade em até ${report.alertDays} dias</h1><p>Emitido em ${formatDateBR(report.today)} (horário de Brasília) · ${report.items.length} produto(s), agrupados por marca/cliente${report.truncated ? " · lista limitada a 5.000 itens" : ""}</p>${body}<script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
     printWindow.document.close();
   };
   const shareReportFile = async () => {
@@ -253,7 +253,7 @@ export default function ProductsPage() {
     return editingStoreRemoved && editing?.storeId ? [...list, { id: editing.storeId, name: storeLabel(editing) }] : list;
   }, [stores.data, editingStoreRemoved, editing]);
 
-  return <DashboardLayout title="Produtos e validades" description="Cadastre produtos por loja e indústria, acompanhe lotes e receba alertas de validade.">
+  return <DashboardLayout title="Produtos e validades" description="Cadastre produtos por loja e marca/cliente, acompanhe lotes e receba alertas de validade.">
     <div className="space-y-6">
       {!formOpen && <div><Button type="button" onClick={() => { setFormOpen(true); setRequestId(newRequestId()); }} className="h-12 w-full bg-teal-300 text-base font-bold text-slate-950 hover:bg-teal-200"><Plus className="mr-2 h-5 w-5"/>Cadastrar produto</Button></div>}
       <Card className="border-amber-300/25 bg-amber-300/10 text-white"><CardContent className="flex flex-col justify-between gap-3 p-4 lg:flex-row lg:items-center">
@@ -266,7 +266,7 @@ export default function ProductsPage() {
             </select> de antecedência</label>}
         </div></div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => void printReport()} variant="outline" className="h-11 border-white/25 text-white sm:h-10"><Printer className="mr-2 h-4 w-4"/>Imprimir por indústria</Button>
+          <Button onClick={() => void printReport()} variant="outline" className="h-11 border-white/25 text-white sm:h-10"><Printer className="mr-2 h-4 w-4"/>Imprimir por marca/cliente</Button>
           <Button onClick={() => void shareReportFile()} className="h-11 bg-emerald-600 text-white hover:bg-emerald-500 sm:h-10"><Share2 className="mr-2 h-4 w-4"/>Compartilhar arquivo</Button>
         </div>
       </CardContent></Card>
@@ -277,7 +277,7 @@ export default function ProductsPage() {
         <form onSubmit={(e) => { e.preventDefault(); if (canSubmit) void submit(sequential && !editing); }} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div><Label htmlFor="product-store">Loja</Label><select id="product-store" value={form.storeId} onChange={(e) => setForm({ ...form, storeId: e.target.value, storeClientId: "" })} className={`mt-1 ${selectCls}`}><option value="">Sem loja</option>{storeOptions.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}</select></div>
-          <div><Label htmlFor="product-client">Indústria</Label><select id="product-client" value={form.storeClientId} disabled={!form.storeId} onChange={(e) => setForm({ ...form, storeClientId: e.target.value })} className={`mt-1 ${selectCls} disabled:opacity-50`}><option value="">{form.storeId ? "Sem indústria" : "Escolha a loja"}</option>{(storeClients.data || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}{editing?.storeClientId && form.storeClientId === String(editing.storeClientId) && !(storeClients.data || []).some((c) => c.id === editing.storeClientId) && <option value={editing.storeClientId}>{editing.clientName || "Indústria removida"}</option>}</select></div>
+          <div><Label htmlFor="product-client">Marca/Cliente</Label><select id="product-client" value={form.storeClientId} disabled={!form.storeId} onChange={(e) => setForm({ ...form, storeClientId: e.target.value })} className={`mt-1 ${selectCls} disabled:opacity-50`}><option value="">{form.storeId ? "Sem marca/cliente" : "Escolha a loja"}</option>{(storeClients.data || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}{editing?.storeClientId && form.storeClientId === String(editing.storeClientId) && !(storeClients.data || []).some((c) => c.id === editing.storeClientId) && <option value={editing.storeClientId}>{editing.clientName || "Marca/cliente removida"}</option>}</select></div>
         </div>
         {editingStoreRemoved && <p className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-200">A loja deste produto foi removida. Você pode manter assim ou escolher outra loja.</p>}
         <Button type="button" onClick={() => void startCamera()} disabled={cameraOpen || lookupLoading} className="h-12 w-full bg-teal-300 text-base font-bold text-slate-950 hover:bg-teal-200"><Camera className="mr-2 h-5 w-5"/>Ler código de barras</Button>
@@ -301,14 +301,14 @@ export default function ProductsPage() {
             {!photo && editing?.photoKey && !removePhoto && <><Button type="button" variant="ghost" onClick={() => void openPhoto(editing)} className="h-11 text-teal-200">Ver foto atual</Button><Button type="button" variant="ghost" onClick={() => setRemovePhoto(true)} className="h-11 text-rose-200">Apagar foto</Button></>}
             {removePhoto && <span className="text-xs text-rose-200">A foto será apagada ao salvar.</span>}
           </div></div>
-        {!editing && <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-200"><input type="checkbox" className="h-5 w-5" checked={sequential} onChange={(e) => setSequential(e.target.checked)}/>Cadastro rápido: depois de salvar, já abrir o próximo (mantém loja e indústria)</label>}
+        {!editing && <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-200"><input type="checkbox" className="h-5 w-5" checked={sequential} onChange={(e) => setSequential(e.target.checked)}/>Cadastro rápido: depois de salvar, já abrir o próximo (mantém loja e marca/cliente)</label>}
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={resetForm} className="h-11 border-white/20 text-white"><X className="mr-1 h-4 w-4"/>{editing ? "Cancelar" : "Fechar"}</Button>
           {editing && editing.canManage && <Button type="button" variant="outline" disabled={remove.isPending} onClick={() => confirmRemove([editing.id], form.description)} className="h-11 border-rose-300/30 text-rose-200"><Trash2 className="mr-1 h-4 w-4"/>Excluir</Button>}
           <Button type="submit" disabled={create.isPending || update.isPending || !canSubmit} className="h-11 flex-1 bg-teal-300 font-bold text-slate-950 hover:bg-teal-200">{create.isPending || update.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4"/>}{editing ? "Salvar alterações" : sequential ? "Salvar e próximo" : "Cadastrar produto"}</Button>
         </div>
         </form>
-        <p className="text-xs text-slate-400">Mesmo produto, loja, indústria, lote e validade: a quantidade é somada ao registro que já existe.</p>
+        <p className="text-xs text-slate-400">Mesmo produto, loja, marca/cliente, lote e validade: a quantidade é somada ao registro que já existe.</p>
       </CardContent></Card>
       ) : null}
       <Card className="order-1 border-white/10 bg-slate-900/70 text-white xl:order-none"><CardHeader><CardTitle className="flex items-center justify-between gap-2"><span className="flex items-center gap-2"><Package className="h-5 w-5 text-teal-300"/>Estoque e validade</span><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="outline" aria-label="Mais opções" className="h-11 border-white/20 px-3 text-white sm:h-9"><MoreVertical className="h-5 w-5"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem disabled={exportCsv.isPending} onSelect={() => void doExport()}><Download className="mr-2 h-4 w-4"/>Exportar CSV</DropdownMenuItem></DropdownMenuContent></DropdownMenu></CardTitle></CardHeader><CardContent className="space-y-4">
@@ -320,7 +320,7 @@ export default function ProductsPage() {
           </div>
           {showFilters && <div className="grid gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 sm:grid-cols-2">
             <label className="space-y-1 text-xs text-slate-400">Loja<select aria-label="Filtrar por loja" value={storeFilter ?? ""} onChange={(e) => setStoreFilter(e.target.value ? Number(e.target.value) : undefined)} className={selectCls}><option value="">Todas as lojas</option>{(stores.data || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
-            <label className="space-y-1 text-xs text-slate-400">Indústria<select aria-label="Filtrar por indústria" value={industryFilter} onChange={(e) => setIndustryFilter(e.target.value)} className={selectCls}><option value="">Todas as indústrias</option>{(industries.data || []).map((n) => <option key={n} value={n}>{n}</option>)}<option value="__none__">Sem indústria</option></select></label>
+            <label className="space-y-1 text-xs text-slate-400">Marca/Cliente<select aria-label="Filtrar por marca/cliente" value={industryFilter} onChange={(e) => setIndustryFilter(e.target.value)} className={selectCls}><option value="">Todas as marcas/clientes</option>{(industries.data || []).map((n) => <option key={n} value={n}>{n}</option>)}<option value="__none__">Sem marca/cliente</option></select></label>
             <label className="space-y-1 text-xs text-slate-400">Validade a partir de<Input aria-label="Validade de" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={field}/></label>
             <label className="space-y-1 text-xs text-slate-400">Validade até<Input aria-label="Validade até" type="date" value={to} onChange={(e) => setTo(e.target.value)} className={field}/></label>
             <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="h-5 w-5" checked={mine} onChange={(e) => setMine(e.target.checked)}/>Só os que eu cadastrei</label>
@@ -339,7 +339,7 @@ export default function ProductsPage() {
           const days = daysUntil(p.expirationDate, today);
           const removedStore = Boolean(p.storeId && (p.storeActive === false || !p.storeName));
           return <div key={p.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3"><label className={`flex min-w-0 items-start gap-2 ${p.canManage ? "cursor-pointer" : ""}`}>{p.canManage ? <input type="checkbox" className="mt-0.5 h-5 w-5" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds((old) => old.includes(p.id) ? old.filter((id) => id !== p.id) : [...old, p.id])} aria-label={`Selecionar ${p.description}`}/> : <span className="w-5"/>}<div className="min-w-0"><p className="break-words font-bold text-white">{p.description}</p><p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-slate-400"><Barcode className="h-3 w-3"/>{p.productCode}{p.lot ? ` · Lote ${p.lot}` : ""}</p><p className="mt-0.5 text-xs text-slate-400">{p.clientName || "Sem indústria"} · {removedStore ? <span className="text-amber-300">{storeLabel(p)}</span> : storeLabel(p)}{p.createdByName ? ` · por ${p.createdByName}` : ""}</p></div></label>
+            <div className="flex flex-wrap items-start justify-between gap-3"><label className={`flex min-w-0 items-start gap-2 ${p.canManage ? "cursor-pointer" : ""}`}>{p.canManage ? <input type="checkbox" className="mt-0.5 h-5 w-5" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds((old) => old.includes(p.id) ? old.filter((id) => id !== p.id) : [...old, p.id])} aria-label={`Selecionar ${p.description}`}/> : <span className="w-5"/>}<div className="min-w-0"><p className="break-words font-bold text-white">{p.description}</p><p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-slate-400"><Barcode className="h-3 w-3"/>{p.productCode}{p.lot ? ` · Lote ${p.lot}` : ""}</p><p className="mt-0.5 text-xs text-slate-400">{p.clientName || "Sem marca/cliente"} · {removedStore ? <span className="text-amber-300">{storeLabel(p)}</span> : storeLabel(p)}{p.createdByName ? ` · por ${p.createdByName}` : ""}</p></div></label>
               <Badge className={expired ? "bg-rose-500 text-white" : near ? "bg-amber-400 text-slate-950" : "bg-emerald-500/20 text-emerald-200"}>{expired ? <><AlertTriangle className="mr-1 h-3 w-3"/>Vencido há {-days} dia(s)</> : near ? <><AlertTriangle className="mr-1 h-3 w-3"/>{days === 0 ? "Vence hoje" : `Vence em ${days} dia(s)`}</> : "Em dia"}</Badge></div>
             <div className="mt-3 grid grid-cols-3 gap-2 text-sm"><div><p className="text-xs text-slate-400">Quantidade</p><p className="font-semibold">{p.quantity}</p></div><div><p className="text-xs text-slate-400">Validade</p><p className="font-semibold">{formatDateBR(p.expirationDate)}</p></div><div><p className="text-xs text-slate-400">Preço</p><p className="font-semibold">{money(p.price)}</p></div></div>
             <div className="mt-3 flex flex-wrap justify-end gap-2">

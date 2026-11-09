@@ -11,6 +11,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { LocationLabel } from "./geolocation";
 import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
+import { defaultCorrectionJustification, formatGroupedCorrectionTitle, groupCorrectionItems, justificationRequiresText } from "@shared/correctionGroups";
 import { punchOrderError, sortPunches } from "@shared/punchOrder";
 
 type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
@@ -53,6 +54,8 @@ export default function PromoterClockPage() {
   const [correctTime, setCorrectTime] = useState("");
   const [justification, setJustification] = useState("");
   const [justificationType, setJustificationType] = useState<JustificationType>("normal");
+  /** Motivo rápido da inclusão/correção normal: Esquecimento (default) ou Outro (exige texto). */
+  const [detailReason, setDetailReason] = useState<"esquecimento" | "other">("esquecimento");
   const [missingTimes, setMissingTimes] = useState<Partial<Record<EventType, string>>>({});
   const [hideMissingAlert, setHideMissingAlert] = useState(false);
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
@@ -92,6 +95,7 @@ export default function PromoterClockPage() {
       setPhotoBase64(null);
       setPhotoPreview(null);
       setJustificationType("normal");
+      setDetailReason("esquecimento");
       void utils.timeTracking.myCorrections.invalidate();
       void utils.timeTracking.myHistory.invalidate();
       void utils.timeTracking.myMissingPunch.invalidate();
@@ -142,10 +146,12 @@ export default function PromoterClockPage() {
       }
       return;
     }
-    if (reason.length < 5) {
-      toast.error("Escreva pelo menos 5 caracteres na justificativa");
+    const effectiveType: JustificationType = detailReason === "other" ? "other" : justificationType;
+    if (justificationRequiresText(effectiveType) && reason.length < 5) {
+      toast.error("Descreva o que aconteceu (mínimo 5 caracteres)");
       return;
     }
+    const resolvedReason = reason || defaultCorrectionJustification({ justificationType: effectiveType, timeEventId: null });
     const toSend = missingList.filter((t) => missingTimes[t]);
     if (!toSend.length) {
       toast.error("Informe o horário de pelo menos uma batida faltante");
@@ -172,8 +178,8 @@ export default function PromoterClockPage() {
           timeEventId: null,
           requestedType: type,
           requestedTime: new Date(`${selectedDate}T${time}:00`).toISOString(),
-          justification: reason,
-          justificationType,
+          justification: resolvedReason,
+          justificationType: effectiveType,
           attachmentBase64: photoBase64 || undefined,
         } as any);
       }
@@ -187,7 +193,13 @@ export default function PromoterClockPage() {
     e.preventDefault();
     if (sending || correction.isPending) return;
     const eventId = Number(selectedEventId);
-    if (!eventId || !correctTime || (justification.trim().length < 5 && justificationType === "normal")) return;
+    if (!eventId || !correctTime) return;
+    const effectiveType: JustificationType = detailReason === "other" ? "other" : justificationType;
+    const reason = justification.trim();
+    if (justificationRequiresText(effectiveType) && reason.length < 5) {
+      toast.error("Descreva o que aconteceu (mínimo 5 caracteres)");
+      return;
+    }
     const original = events.find((item) => item.id === eventId);
     if (!original) return;
     const already = (corrections.data || []).some(({ request }) => (request.status === "pending" || request.status === "approved") && request.timeEventId === eventId);
@@ -201,8 +213,8 @@ export default function PromoterClockPage() {
       timeEventId: eventId,
       requestedType: original.eventType as EventType,
       requestedTime: new Date(`${selectedDate}T${correctTime}:00`).toISOString(),
-      justification: justification.trim() || justificationLabels[justificationType],
-      justificationType,
+      justification: reason || defaultCorrectionJustification({ justificationType: effectiveType, timeEventId: eventId }),
+      justificationType: effectiveType,
       attachmentBase64: photoBase64 || undefined,
     } as any);
   };
@@ -217,7 +229,8 @@ export default function PromoterClockPage() {
   }, []);
 
   const dayExcuse = useMemo(() => corrections.data?.map((row) => row.request).find((request) => looksLikeFullDayExcuse(request) && request.status !== "rejected" && new Date(request.requestedTime).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === selectedDate), [corrections.data, selectedDate]);
-  const canSubmitAdd = !sending && !correction.isPending && !dayExcuse && (isFullDay || (missingList.some((t) => missingTimes[t]) && justification.trim().length >= 5));
+  const needsObservation = justificationRequiresText(detailReason === "other" ? "other" : justificationType);
+  const canSubmitAdd = !sending && !correction.isPending && !dayExcuse && (isFullDay || (missingList.some((t) => missingTimes[t]) && (!needsObservation || justification.trim().length >= 5)));
 
   return (
     <DashboardLayout title="Cartão ponto" description="Histórico, localização e pedidos de correção.">
@@ -357,7 +370,16 @@ export default function PromoterClockPage() {
                     </div>
                   )}
 
-                  <textarea required={!isFullDay} minLength={isFullDay ? 0 : 5} value={justification} onChange={(e) => setJustification(e.target.value)} placeholder={justificationType === "medical_certificate" ? "Detalhes do atestado (opcional se houver foto)" : isFullDay ? "Observação (opcional)" : "Justificativa (mínimo 5 caracteres)"} className="min-h-20 w-full rounded-xl border border-white/15 bg-slate-950/60 p-3 text-sm text-slate-100 placeholder:text-slate-400" />
+                  {!isFullDay && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-slate-200">Motivo</p>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => setDetailReason("esquecimento")} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${detailReason === "esquecimento" ? "border-teal-300 bg-teal-300/20 text-teal-100" : "border-white/15 text-slate-300"}`}>Esquecimento</button>
+                        <button type="button" onClick={() => setDetailReason("other")} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${detailReason === "other" ? "border-teal-300 bg-teal-300/20 text-teal-100" : "border-white/15 text-slate-300"}`}>Outro</button>
+                      </div>
+                    </div>
+                  )}
+                  <textarea required={needsObservation && !isFullDay} minLength={needsObservation && !isFullDay ? 5 : 0} value={justification} onChange={(e) => setJustification(e.target.value)} placeholder={justificationType === "medical_certificate" ? "Detalhes do atestado (opcional se houver foto)" : isFullDay ? "Observação (opcional)" : needsObservation ? "Descreva o que aconteceu (obrigatório)" : "Observação (opcional)"} className="min-h-20 w-full rounded-xl border border-white/15 bg-slate-950/60 p-3 text-sm text-slate-100 placeholder:text-slate-400" />
 
                   <div className="space-y-2">
                     <p className="text-sm font-semibold text-slate-200">{justificationType === "medical_certificate" ? "Foto do atestado (opcional)" : "Comprovante / foto (opcional)"}</p>
@@ -387,7 +409,14 @@ export default function PromoterClockPage() {
                     Horário correto
                     <input required type="time" value={correctTime} onChange={(e) => setCorrectTime(e.target.value)} className="h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 font-normal text-slate-100" />
                   </label>
-                  <textarea required={justificationType === "normal"} minLength={justificationType === "normal" ? 5 : 0} value={justification} onChange={(e) => setJustification(e.target.value)} placeholder="Motivo da correção" className="min-h-20 w-full rounded-xl border border-white/15 bg-slate-950/60 p-3 text-sm text-slate-100 placeholder:text-slate-400" />
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-slate-200">Motivo</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setDetailReason("esquecimento")} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${detailReason === "esquecimento" ? "border-teal-300 bg-teal-300/20 text-teal-100" : "border-white/15 text-slate-300"}`}>Horário incorreto</button>
+                      <button type="button" onClick={() => setDetailReason("other")} className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${detailReason === "other" ? "border-teal-300 bg-teal-300/20 text-teal-100" : "border-white/15 text-slate-300"}`}>Outro</button>
+                    </div>
+                  </div>
+                  <textarea required={needsObservation} minLength={needsObservation ? 5 : 0} value={justification} onChange={(e) => setJustification(e.target.value)} placeholder={needsObservation ? "Descreva o que aconteceu (obrigatório)" : "Observação (opcional)"} className="min-h-20 w-full rounded-xl border border-white/15 bg-slate-950/60 p-3 text-sm text-slate-100 placeholder:text-slate-400" />
 
                   <div className="space-y-2">
                     <p className="text-sm font-semibold text-slate-200">Comprovante / foto (opcional)</p>
@@ -398,7 +427,7 @@ export default function PromoterClockPage() {
                     {photoPreview && <img src={photoPreview} alt="Miniatura do comprovante" className="h-16 w-16 rounded-lg border border-white/15 object-cover" />}
                   </div>
 
-                  <Button type="submit" disabled={sending || correction.isPending || !selectedEventId || !correctTime || (justification.trim().length < 5 && justificationType === "normal")} className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400">
+                  <Button type="submit" disabled={sending || correction.isPending || !selectedEventId || !correctTime || (needsObservation && justification.trim().length < 5)} className="w-full bg-teal-300 text-slate-950 hover:bg-teal-200 disabled:bg-slate-700 disabled:text-slate-400">
                     <Send className="mr-2 h-4 w-4" /> {correction.isPending ? "Enviando..." : "Enviar pedido de correção"}
                   </Button>
                 </form>
@@ -408,25 +437,28 @@ export default function PromoterClockPage() {
                 <p className="mb-3 font-bold text-slate-100">Meus pedidos recentes</p>
                 <div className="space-y-2">
                   {!corrections.data?.length && <p className="text-sm text-slate-300">Nenhum pedido enviado.</p>}
-                  {corrections.data?.map(({ request }) => (
-                    <div key={request.id} className="rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-slate-100">
-                          {looksLikeFullDayExcuse(request)
-                            ? `${fullDayExcuseLabel(inferFullDayExcuseType(request))} · ${new Date(request.requestedTime).toLocaleDateString("pt-BR")}`
-                            : `${labels[request.requestedType as EventType] ?? request.requestedType} · ${new Date(request.requestedTime).toLocaleString("pt-BR")}`}
-                          {looksLikeFullDayExcuse(request) ? <span className="ml-2 text-xs text-teal-300">(dia inteiro)</span> : !request.timeEventId ? <span className="ml-2 text-xs text-teal-300">(inclusão)</span> : null}
-                        </span>
+                  {groupCorrectionItems(corrections.data || [], { isExcuse: looksLikeFullDayExcuse, includeMember: false }).map((items) => {
+                    const request = items[0].request;
+                    const title = formatGroupedCorrectionTitle(items, {
+                      isExcuse: looksLikeFullDayExcuse,
+                      excuseLabel: (r) => fullDayExcuseLabel(inferFullDayExcuseType(r) || "day_off"),
+                    });
+                    const justification = [...new Set(items.map((i) => (i.request.justification || "").trim()).filter(Boolean))].join(" · ");
+                    return (
+                    <div key={items.map((i) => i.request.id).join("-")} className="rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-semibold text-slate-100">{title}</span>
                         <Badge variant="outline" className={request.status === "approved" ? "border-emerald-300 text-emerald-300" : request.status === "rejected" ? "border-red-300 text-red-300" : "border-amber-300 text-amber-300"}>
                           {request.status === "approved" ? "Aprovado" : request.status === "rejected" ? "Recusado" : "Pendente"}
                         </Badge>
                       </div>
-                      <p className="mt-1 text-slate-300">{request.justification}</p>
+                      {justification && <p className="mt-1 text-slate-300">{justification}</p>}
                       {request.status === "rejected" && (
                         <p className="mt-1 text-xs font-semibold text-rose-300">Recusado{request.reviewNotes ? `: ${request.reviewNotes}` : ""}</p>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </CardContent>

@@ -16,6 +16,7 @@ import { storageGetSignedUrl } from "../storage";
 import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared/punchTime";
 import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
+import { defaultCorrectionJustification, justificationRequiresText } from "../../shared/correctionGroups";
 import { punchOrderError } from "@shared/punchOrder";
 import { activeDisregards, appendOriginalPunch, appendTreatment, effectiveRows, ensureDisregardsTable, ensurePunchLedger, NEW_SHIFT_MARKER, supersededIds } from "../ponto/ledger";
 import { effectiveEventTime } from "./mirrorData";
@@ -573,8 +574,20 @@ export const timeTrackingRouter = router({
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
       const jType = input.justificationType || "normal";
       const fullDay = isFullDayExcuseType(jType);
-      const reason = (input.justification || "").trim() || (fullDay ? fullDayExcuseLabel(jType) : "");
-      if (!fullDay && reason.length < 5) throw new TRPCError({ code: "BAD_REQUEST", message: "Escreva pelo menos 5 caracteres na justificativa." });
+      let reason = (input.justification || "").trim();
+      if (!reason) {
+        reason = defaultCorrectionJustification({
+          justificationType: jType,
+          timeEventId: input.timeEventId ?? null,
+          fullDay,
+          fullDayLabel: fullDay ? fullDayExcuseLabel(jType) : undefined,
+        });
+      }
+      // Observação obrigatória só em "Outro"; opções pré-definidas (Esquecimento etc.) bastam.
+      if (justificationRequiresText(jType) && reason.length < 5) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Descreva o que aconteceu (mínimo 5 caracteres)." });
+      }
+      if (!reason) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe a justificativa." });
       if (!fullDay && !input.requestedType) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe o tipo de marcação." });
       await ensureCorrectionExtras();
 

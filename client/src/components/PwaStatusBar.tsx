@@ -127,8 +127,9 @@ export function PwaStatusBar() {
             </div>
             <p className="text-right text-sm font-semibold text-slate-200">{installProgress}%</p>
             <ol className="mt-4 space-y-1.5 text-xs text-slate-400">
-              <li className={installProgress >= 55 ? "text-emerald-400" : ""}>1. Baixar aplicativo</li>
-              <li className={installProgress >= 100 ? "text-emerald-400" : ""}>2. Abrir automaticamente</li>
+              <li className={installProgress >= 18 ? "text-emerald-400" : ""}>1. Baixando…</li>
+              <li className={installProgress >= 48 ? "text-emerald-400" : ""}>2. Instalando…</li>
+              <li className={installProgress >= 96 ? "text-emerald-400" : ""}>3. Pronto!</li>
             </ol>
           </div>
         </div>
@@ -137,9 +138,12 @@ export function PwaStatusBar() {
       {showOpenFallback && !isInstalling && (
         <div data-testid="pwa-open-fallback" className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center print:hidden">
           <div className="w-full max-w-sm rounded-2xl border border-teal-300/30 bg-slate-900 p-5 text-white shadow-2xl">
-            <p className="text-base font-bold">Aplicativo pronto</p>
+            <p className="text-base font-bold">Aplicativo instalado</p>
             <p className="mt-1 text-sm text-slate-300">
-              {installStep || "O GondUp foi instalado. Toque para abrir fora do navegador."}
+              {installStep || "O GondUp está na sua tela inicial. Toque em Abrir ou no ícone GondUp."}
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              No Android o Chrome não abre o app sozinho — use o botão abaixo ou o ícone na tela inicial.
             </p>
             <Button data-testid="pwa-open-app" className="mt-4 w-full bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={() => openApp()}>
               Abrir aplicativo

@@ -7,6 +7,7 @@ import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { PwaStatusBar } from "./components/PwaStatusBar";
+import { PwaInstallOverlay } from "./components/PwaInstallOverlay";
 import { SwUpdatePrompt } from "./components/SwUpdatePrompt";
 import { BusyProvider } from "./components/BusyOverlay";
 import { GlobalMutationIndicator } from "./components/GlobalMutationIndicator";
@@ -325,6 +326,7 @@ function App() {
             <ConfirmHost />
             <GlobalMutationIndicator />
             <PwaStatusBar />
+            <PwaInstallOverlay />
             <SwUpdatePrompt />
             <Suspense fallback={<LoadingScreen />}>
               <Router />

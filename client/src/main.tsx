@@ -11,7 +11,7 @@ import { hydrateOfflineCache } from "@/lib/offlineCache";
 
 initClientSentry();
 
-const FORCE_RELOAD_VERSION = "v20";
+const FORCE_RELOAD_VERSION = "v21";
 (window as any).__APP_VERSION = FORCE_RELOAD_VERSION;
 if (typeof window !== "undefined" && window.location.pathname === "/plataforma/teste-check-in-out") {
   localStorage.removeItem("promotores-saas-act-as");
@@ -62,6 +62,11 @@ if ("serviceWorker" in navigator) {
     }).catch((error) => console.warn("Service worker não registrado", error));
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (!hadController || refreshing) return;
+      // Não recarrega no meio do fluxo de instalação PWA (barra sumiria).
+      if ((window as any).__gondupInstallBusy) {
+        console.info("[gondup-pwa] skip reload: install busy");
+        return;
+      }
       refreshing = true;
       // Não limpa o cache aqui: limpar no meio do reload (ex.: arrastar a tela) deixa tela branca.
       const reload = () => {

@@ -52,3 +52,29 @@ export function moveItem<T>(list: T[], index: number, delta: -1 | 1): T[] {
   [next[index], next[target]] = [next[target], next[index]];
   return next;
 }
+
+type OccurrenceKey = { id: number; weeklyScheduleId?: number | null; date?: unknown };
+
+/**
+ * Ocorrências repetidas do mesmo roteiro semanal no mesmo dia (sobra de corrida antiga ao editar).
+ * Devolve os ids que devem ficar escondidos: mantém a que já tem visita iniciada (ou a mais antiga);
+ * se mais de uma já tem visita iniciada, nenhuma com trabalho feito é escondida.
+ */
+export function duplicateOccurrenceIds<T extends OccurrenceKey>(routes: T[], startedRouteIds: Iterable<number> = []): Set<number> {
+  const started = new Set(startedRouteIds);
+  const groups = new Map<string, T[]>();
+  for (const route of routes) {
+    if (!route.weeklyScheduleId) continue;
+    const day = route.date instanceof Date ? route.date.toISOString().slice(0, 10) : String(route.date ?? "").slice(0, 10);
+    const key = `${route.weeklyScheduleId}|${day}`;
+    groups.set(key, [...(groups.get(key) || []), route]);
+  }
+  const hidden = new Set<number>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const sorted = [...group].sort((a, b) => a.id - b.id);
+    const keep = sorted.find((r) => started.has(r.id)) ?? sorted[0];
+    for (const r of sorted) if (r.id !== keep.id && !started.has(r.id)) hidden.add(r.id);
+  }
+  return hidden;
+}

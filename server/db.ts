@@ -26,6 +26,7 @@ import {
 } from "../drizzle/schema";
 import { ensureStoreOwnersTable, recordStoreOwner, storeVisibleToMember } from "./storeAccess";
 import { todayInZone, addDays } from "../shared/expiry";
+import { duplicateOccurrenceIds } from "../shared/routeSchedule";
 import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits, weeklyRouteSchedules, inventoryProducts } from "../drizzle/schema";
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -987,7 +988,36 @@ export async function listOperationalRoutes(companyId: number, options: { date?:
   const conditions = [eq(operationalRoutes.companyId, requireAccountId(companyId))];
   if (options.date) conditions.push(eq(operationalRoutes.date, options.date as any));
   if (options.promoterId) conditions.push(eq(operationalRoutes.promoterId, options.promoterId));
-  return database.select().from(operationalRoutes).where(and(...conditions)).orderBy(desc(operationalRoutes.date), desc(operationalRoutes.id));
+  const rows = await database.select().from(operationalRoutes).where(and(...conditions)).orderBy(desc(operationalRoutes.date), desc(operationalRoutes.id));
+  // Ocorrência repetida do mesmo roteiro semanal no mesmo dia não aparece duas vezes na agenda.
+  const candidates = duplicateOccurrenceIds(rows);
+  if (!candidates.size) return rows;
+  const started = await startedRouteIds(database, requireAccountId(companyId), rows.map((r) => r.id));
+  const hidden = duplicateOccurrenceIds(rows, started);
+  return rows.filter((r) => !hidden.has(r.id));
+}
+
+async function startedRouteIds(database: any, companyId: number, routeIds: number[]): Promise<number[]> {
+  if (!routeIds.length) return [];
+  const rows = await database.select({ routeId: operationalVisits.routeId }).from(operationalVisits).where(and(
+    eq(operationalVisits.companyId, companyId), inArray(operationalVisits.routeId, routeIds), sql`${operationalVisits.status} NOT IN ('pending', 'cancelled')`,
+  ));
+  return rows.map((r: any) => Number(r.routeId));
+}
+
+let weeklyOccurrenceIndexChecked = false;
+/** Garante a chave única (roteiro semanal + dia) no banco. Se já houver repetição antiga, só avisa; a tela esconde as repetidas. */
+async function ensureWeeklyOccurrenceUniqueIndex(database: any) {
+  if (weeklyOccurrenceIndexChecked) return;
+  weeklyOccurrenceIndexChecked = true;
+  try {
+    const found: any = await database.execute(sql`SELECT COUNT(*) AS n FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'routes' AND index_name = 'routes_weekly_occurrence_unique'`);
+    const rows = Array.isArray(found?.[0]) ? found[0] : found?.rows ?? [];
+    if (Number(rows?.[0]?.n ?? 0) > 0) return;
+    await database.execute(sql`CREATE UNIQUE INDEX routes_weekly_occurrence_unique ON routes (weeklyScheduleId, date)`);
+  } catch (e: any) {
+    console.warn("[routes] unique index weekly occurrence", e?.code || e?.message);
+  }
 }
 
 export async function listWeeklyRouteSchedules(companyId: number) {
@@ -1184,13 +1214,20 @@ export async function materializeWeeklyRoutes(companyId: number, promoterId: num
   const schedules = await database.select().from(weeklyRouteSchedules).where(and(
     eq(weeklyRouteSchedules.companyId, company), eq(weeklyRouteSchedules.promoterId, promoterId), eq(weeklyRouteSchedules.weekday, weekday), eq(weeklyRouteSchedules.active, true),
   ));
+  if (schedules.length) await ensureWeeklyOccurrenceUniqueIndex(database);
   for (const schedule of schedules) {
     try {
       await database.transaction(async (tx) => {
-        // Não materializa se já existe qualquer roteiro para essa data/promotor (manual ou semanal)
+        // Trava o roteiro semanal: telas abertas ao mesmo tempo (agenda, painel, app do promotor)
+        // não conseguem criar a mesma ocorrência duas vezes depois de uma edição.
+        const [locked] = await tx.select({ id: weeklyRouteSchedules.id }).from(weeklyRouteSchedules)
+          .where(and(eq(weeklyRouteSchedules.id, schedule.id), eq(weeklyRouteSchedules.companyId, company))).for("update");
+        if (!locked) return;
+        // Não materializa se já existe qualquer roteiro para essa data/promotor (manual ou semanal).
+        // Leitura com trava para enxergar o que outra requisição acabou de gravar.
         const existing = await tx.select({ id: operationalRoutes.id }).from(operationalRoutes).where(and(
           eq(operationalRoutes.companyId, company), eq(operationalRoutes.promoterId, promoterId), eq(operationalRoutes.date, dateString as any),
-        )).limit(1);
+        )).limit(1).for("update");
         if (existing.length) return;
         const storeIds = Array.isArray(schedule.storeIds) ? schedule.storeIds : [];
         if (!storeIds.length) return;
@@ -1208,7 +1245,9 @@ export async function materializeWeeklyRoutes(companyId: number, promoterId: num
       });
     } catch (error: any) {
       // Duas requisições simultâneas podem tentar materializar a mesma ocorrência; a chave única torna isso idempotente.
-      if (error?.code !== "ER_DUP_ENTRY") throw error;
+      // Conflito de escrita/trava também significa que a outra requisição já criou a ocorrência.
+      const raced = error?.code === "ER_DUP_ENTRY" || error?.code === "ER_LOCK_DEADLOCK" || error?.errno === 9007 || /write conflict/i.test(String(error?.message || ""));
+      if (!raced) throw error;
     }
   }
   return listOperationalRoutes(company, { date: dateString, promoterId });
@@ -1314,13 +1353,17 @@ export async function listOperationalVisits(companyId: number, options: { id?: n
   if (options.promoterId) conditions.push(eq(operationalVisits.promoterId, options.promoterId));
   if (options.routeId) conditions.push(eq(operationalVisits.routeId, options.routeId));
   if (options.date) conditions.push(eq(operationalRoutes.date, options.date as any));
-  const rows = await database.select({ visit: operationalVisits, store: operationalStores })
+  const rows = await database.select({ visit: operationalVisits, store: operationalStores, occurrence: { id: operationalRoutes.id, weeklyScheduleId: operationalRoutes.weeklyScheduleId, date: operationalRoutes.date } })
     .from(operationalVisits)
     .innerJoin(operationalStores, and(eq(operationalVisits.storeId, operationalStores.id), eq(operationalStores.companyId, operationalVisits.companyId)))
     .innerJoin(operationalRoutes, and(eq(operationalVisits.routeId, operationalRoutes.id), eq(operationalRoutes.companyId, operationalVisits.companyId)))
     .where(and(...conditions))
     .orderBy(operationalVisits.plannedStart, operationalVisits.id);
-  return rows;
+  // Esconde as visitas pendentes de uma ocorrência repetida do mesmo roteiro semanal (mesma regra da agenda).
+  const occurrences = [...new Map(rows.map((r) => [r.occurrence.id, r.occurrence])).values()];
+  const started = rows.filter((r) => r.visit.status !== "pending" && r.visit.status !== "cancelled").map((r) => r.occurrence.id);
+  const hidden = options.id ? new Set<number>() : duplicateOccurrenceIds(occurrences, started);
+  return rows.filter((r) => !hidden.has(r.occurrence.id)).map(({ visit, store }) => ({ visit, store }));
 }
 
 export async function updateOperationalVisit(companyId: number, id: number, data: Partial<typeof operationalVisits.$inferInsert>) {

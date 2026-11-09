@@ -57,3 +57,36 @@ describe("tela e servidor de roteiros", () => {
     expect(db).toContain("stores.sort((a, b) => storeIds.indexOf(a.id) - storeIds.indexOf(b.id))");
   });
 });
+
+describe("roteiro do dia não duplica ao editar", async () => {
+  const { duplicateOccurrenceIds } = await import("../shared/routeSchedule");
+  const day = "2026-11-09T00:00:00.000Z";
+  it("duas ocorrências do mesmo roteiro semanal no mesmo dia viram uma só", () => {
+    const hidden = duplicateOccurrenceIds([{ id: 600004, weeklyScheduleId: 30001, date: day }, { id: 600003, weeklyScheduleId: 30001, date: day }]);
+    expect([...hidden]).toEqual([600004]);
+  });
+  it("mantém a que já tem visita iniciada e nunca esconde trabalho feito", () => {
+    const routes = [{ id: 1, weeklyScheduleId: 5, date: day }, { id: 2, weeklyScheduleId: 5, date: day }];
+    expect([...duplicateOccurrenceIds(routes, [2])]).toEqual([1]);
+    expect([...duplicateOccurrenceIds(routes, [1, 2])]).toEqual([]);
+  });
+  it("roteiros diferentes, dias diferentes ou avulsos não são escondidos", () => {
+    expect(duplicateOccurrenceIds([
+      { id: 1, weeklyScheduleId: 5, date: day }, { id: 2, weeklyScheduleId: 6, date: day },
+      { id: 3, weeklyScheduleId: 5, date: new Date("2026-11-16T00:00:00Z") }, { id: 4, weeklyScheduleId: null, date: day }, { id: 5, weeklyScheduleId: null, date: day },
+    ]).size).toBe(0);
+  });
+  it("a criação da ocorrência trava o roteiro e a agenda/visitas escondem repetidas", () => {
+    const db = src("server/db.ts");
+    expect(db).toMatch(/weeklyRouteSchedules\.companyId, company\)\)\)\.for\("update"\)/);
+    expect(db).toMatch(/eq\(operationalRoutes\.date, dateString as any\),\s*\)\)\.limit\(1\)\.for\("update"\)/);
+    expect(db).toContain("ensureWeeklyOccurrenceUniqueIndex");
+    expect((db.match(/duplicateOccurrenceIds\(/g) || []).length).toBeGreaterThanOrEqual(3);
+  });
+  it("agenda de hoje tem Editar no menu ⋮ abrindo o mesmo roteiro semanal", () => {
+    const page = src("client/src/pages/operations/RoutesSection.tsx");
+    expect(page).toContain("onEdit={isCompanyAdmin && schedule ? () => editSchedule(schedule) : undefined}");
+    expect(page).toContain("route?.weeklyScheduleId ? schedules.find((s) => s.id === route.weeklyScheduleId)");
+    expect(page).toContain("!dailyHidden.has(r.id)");
+  });
+});

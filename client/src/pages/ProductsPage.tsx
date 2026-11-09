@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Barcode, Camera, CameraOff, Check, ChevronLeft, ChevronRight, Download, ImageIcon, Loader2, MessageCircle, MoreVertical, Package, Pencil, Plus, Printer, Search, Share2, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useBusy } from "@/components/BusyOverlay";
-import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
+// O leitor de código de barras (~400 kB) só é baixado quando a câmera é aberta.
+import type { IScannerControls } from "@zxing/browser";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -138,9 +139,13 @@ export default function ProductsPage() {
     setCameraError(""); scannedRef.current = false;
     if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) { setCameraError("A câmera exige uma conexão segura (HTTPS) e permissão no navegador."); return; }
     setCameraOpen(true);
-    requestAnimationFrame(() => {
+    requestAnimationFrame(async () => {
       const video = videoRef.current;
       if (!video) { setCameraError("Não foi possível abrir a visualização da câmera."); setCameraOpen(false); return; }
+      let BrowserMultiFormatReader: typeof import("@zxing/browser").BrowserMultiFormatReader;
+      try { ({ BrowserMultiFormatReader } = await import("@zxing/browser")); }
+      catch { setCameraError("Não foi possível carregar o leitor de código de barras. Verifique a internet e tente novamente."); stopCamera(); return; }
+      if (!video.isConnected) return; // a câmera foi fechada enquanto o leitor carregava
       const reader = new BrowserMultiFormatReader();
       void reader.decodeFromConstraints({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 }, advanced: [{ focusMode: "continuous" } as any] }, audio: false }, video, (result, _error, controls) => {
         if (controls && !controlsRef.current) controlsRef.current = controls;

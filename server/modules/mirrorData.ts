@@ -91,6 +91,11 @@ export async function loadAdjustmentsByEvent(companyId: number, memberIds: numbe
   return map;
 }
 
+/** Motivo sem o prefixo técnico gravado pelas inclusões antigas ("Batida incluída via solicitação aprovada em <data>. Motivo: X"). */
+export function cleanReason(reason?: string | null): string {
+  return String(reason || "").replace(/^Batida incluída via solicitação aprovada em \S+?\.?\s*Motivo:\s*/i, "").trim();
+}
+
 /** Converte linhas de time_events no formato do espelho (marcação original x tratada). */
 export function toMirrorEvents(rows: Array<typeof timeEvents.$inferSelect>, adjByEvent: Map<number, any>): MirrorEvent[] {
   return rows.map((r) => {
@@ -103,7 +108,7 @@ export function toMirrorEvents(rows: Array<typeof timeEvents.$inferSelect>, adjB
       adjustment: a
         ? { originalType: a.originalType, originalTime: new Date(a.originalTime).toISOString(), justification: a.justification, reviewedBy: a.reviewedByName, reviewedAt: a.createdAt ? new Date(a.createdAt).toISOString() : null }
         : inclusion || r.origin === "adjustment"
-          ? { originalType: (inclusion ? "missing" : r.eventType) as any, originalTime: (r.deviceTime || r.serverTime).toISOString(), justification: r.reason || "", reviewedBy: r.recordedByName, reviewedAt: r.serverTime.toISOString() }
+          ? { originalType: (inclusion ? "missing" : r.eventType) as any, originalTime: (r.deviceTime || r.serverTime).toISOString(), justification: cleanReason(r.reason), reviewedBy: r.recordedByName, reviewedAt: r.serverTime.toISOString() }
           : null,
       legacyAdjustment: !a && r.origin === "original" && /Ajuste aprovado em/.test(notes),
       timeAlert: readTimeAlert(notes),

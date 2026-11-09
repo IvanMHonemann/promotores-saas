@@ -11,7 +11,7 @@ import { hydrateOfflineCache } from "@/lib/offlineCache";
 
 initClientSentry();
 
-const FORCE_RELOAD_VERSION = "v18";
+const FORCE_RELOAD_VERSION = "v19";
 (window as any).__APP_VERSION = FORCE_RELOAD_VERSION;
 if (typeof window !== "undefined" && window.location.pathname === "/plataforma/teste-check-in-out") {
   localStorage.removeItem("promotores-saas-act-as");

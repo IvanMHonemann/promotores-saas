@@ -32,18 +32,16 @@ type NavItem = {
 };
 
 function InstallButton() {
-  const { canInstall, showInstallOffer, install, isInstalling, isIosInstallable } = useInstallPrompt();
+  const { showInstallOffer, isInstalling, isIosInstallable, beginNativeInstallFromGesture } = useInstallPrompt();
   if (!showInstallOffer) return null;
   const onClick = () => {
-    if (canInstall) {
-      void install();
-      return;
-    }
+    const result = beginNativeInstallFromGesture();
+    if (result === "prompting" || result === "busy") return;
     if (isIosInstallable) {
       alert("No iPhone: toque em Compartilhar e depois em Adicionar à Tela de Início.");
       return;
     }
-    alert("No Chrome ou Edge: abra o menu ⋮ e escolha Instalar aplicativo (ou Adicionar à tela inicial).");
+    alert("No Chrome: toque no menu ⋮ e escolha Instalar app (ou Adicionar à tela inicial).");
   };
   return (
     <button

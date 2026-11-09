@@ -13,7 +13,7 @@ import { auditFromCtx, requestMeta } from "../audit";
 import { buildMirror, type LaborProfile } from "../../shared/timesheetMirror";
 import { loadApprovedDayExcuses } from "../modules/correctionExtras";
 import { effectiveEventTime, loadAdjustmentsByEvent, loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, toMirrorEvents } from "../modules/mirrorData";
-import { ensurePunchLedger, toLedgerRow, DEFAULT_TZ, supersededIds } from "./ledger";
+import { activeDisregards, ensurePunchLedger, toLedgerRow, DEFAULT_TZ, supersededIds } from "./ledger";
 import { buildAej, buildAfd, onlyDigits, sha256, toAejSequence, toLatin1, verifyLedger, formatD, type AejMark, type AejWorker } from "./repFormat";
 import { buildReceiptData, buildReceiptPdf, receiptEmailHtml } from "./receipt";
 import { sendEmail } from "../email";
@@ -87,7 +87,7 @@ export async function memberMonthMirror(companyId: number, memberId: number, mon
   const document = {
     v: 1, month, employer: { name: employer.name, document: employer.document },
     worker: { id: member.id, name: member.name, cpf: onlyDigits(labor?.cpf) || null, jobTitle: labor?.jobTitle ?? null, admissionDate: labor?.admissionDate ?? null },
-    days: report.days.map((d) => ({ date: d.date, marks: d.marks.map((m) => [m.type, m.time, m.kind, m.originalTime ?? null]), worked: d.workedMinutes, expected: d.expectedMinutes, issues: d.issues })),
+    days: report.days.map((d) => ({ date: d.date, marks: d.marks.map((m) => [m.type, m.time, m.kind, m.originalTime ?? null]), worked: d.workedMinutes, expected: d.expectedMinutes, issues: d.issues, ...(d.disregarded?.length ? { disregarded: d.disregarded.map((m) => [m.type, m.time, m.reason]) } : {}) })),
     totals: report.totals,
   };
   return { member, employer, labor, report, from, to, documentHash: sha256(JSON.stringify(document)) };
@@ -358,6 +358,8 @@ export const pontoLegalRouter = router({
       const inPeriod = all.filter((r) => { const d = formatD(r.deviceTime || r.serverTime, r.timeZone || TZ); return d >= input.from && d <= input.to; });
       const replacedBy = new Map<number, (typeof all)[number]>();
       for (const r of all) if (r.replacesEventId) replacedBy.set(r.replacesEventId, r);
+      // Desconsideradas pelo administrador: saem da sequência tratada e entram como "D" (desconsiderada) com o motivo.
+      const disregarded = await activeDisregards(ctx.accountId, inPeriod.map((r) => r.id));
       const workers: AejWorker[] = [];
       const missingCpf: string[] = [];
       const missingSchedule: string[] = [];
@@ -367,7 +369,7 @@ export const pontoLegalRouter = router({
         const labor = await readJson<LaborProfile>(`labor_profile:${m.id}`, ctx.accountId);
         const cpf = onlyDigits(labor?.cpf);
         if (cpf.length !== 11) missingCpf.push(m.name);
-        const effective = mine.filter((r) => !replacedBy.has(r.id));
+        const effective = mine.filter((r) => !replacedBy.has(r.id) && !disregarded.has(r.id));
         const byDay = new Map<string, typeof effective>();
         for (const r of effective) { const d = formatD(r.deviceTime || r.serverTime, TZ); byDay.set(d, [...(byDay.get(d) || []), r]); }
         const marks: AejMark[] = [];
@@ -379,6 +381,10 @@ export const pontoLegalRouter = router({
         for (const r of mine.filter((x) => replacedBy.has(x.id))) {
           const by = replacedBy.get(r.id)!;
           marks.push({ markedAt: r.deviceTime || r.serverTime, tpMarc: "D", seq: 0, fonte: r.origin === "original" ? "O" : "I", motivo: `Substituída por ajuste aprovado por ${by.recordedByName || "administrador"}: ${by.reason || ""}` });
+        }
+        for (const r of mine.filter((x) => !replacedBy.has(x.id) && disregarded.has(x.id))) {
+          const d = disregarded.get(r.id)!;
+          marks.push({ markedAt: r.deviceTime || r.serverTime, tpMarc: "D", seq: 0, fonte: r.origin === "original" ? "O" : "I", motivo: `Desconsiderada por ${d.decidedByName || "administrador"}: ${d.reason}` });
         }
         marks.sort((a, b) => a.markedAt.getTime() - b.markedAt.getTime());
         const sched = (labor?.schedule || []).filter((p) => Array.isArray(p) && p.length === 2);

@@ -76,7 +76,7 @@ export function missingLegalFields(data: MirrorData, r: MirrorResult): string[] 
   return miss;
 }
 export const periodLabel = (r: MirrorReport) => `${fmtDate(r.from)} a ${fmtDate(r.to)}`;
-export const LEGEND = "Legenda (horário de Brasília, America/Sao_Paulo): * = marcação ajustada por correção aprovada (original e justificativa em Ocorrências); + = batida incluída manualmente; # = ajuste antigo sem original estruturado; A = saída automática do sistema; (pendente) = sincronização pendente; (off) = registrada offline (sem internet; horário do aparelho, recebida depois pelo servidor). — = não aplicável/não configurado. DSR = descanso semanal remunerado.";
+export const LEGEND = "Legenda (horário de Brasília, America/Sao_Paulo): * = marcação ajustada por correção aprovada (original e justificativa em Ocorrências); + = batida incluída manualmente; # = ajuste antigo sem original estruturado; A = saída automática do sistema; (pendente) = sincronização pendente; batida desconsiderada = fora das colunas e do cálculo, listada em Ocorrências (registro original preservado); (off) = registrada offline (sem internet; horário do aparelho, recebida depois pelo servidor). — = não aplicável/não configurado. DSR = descanso semanal remunerado.";
 export const DISCLAIMER = "Documento gerado pelo GondUp a partir das batidas registradas. A batida original é preservada; correções viram registros à parte. Serve para conferência e arquivo da empresa.";
 
 /** Resumo do documento; a planilha e a tela continuam com os indicadores completos. */
@@ -89,6 +89,7 @@ export function documentTotals(r: MirrorResult): Array<[string, string]> {
     ...(t.adjustedMarks ? [all[11]] : []),
     ...(t.pendingSyncMarks ? [all[13]] : []),
     ...(t.offlineMarks ? [all[14]] : []),
+    ...(t.disregardedMarks ? [all[15]] : []),
   ];
 }
 
@@ -102,6 +103,7 @@ export function documentLegend(report: MirrorReport): string {
     marks.some((m) => m.kind === "automatic") && "A saída automática",
     marks.some((m) => m.offline) && "(off) registrada sem internet",
     marks.some((m) => !m.synced) && "(pendente) ainda não enviada ao servidor",
+    report.days.some((d) => d.disregarded?.length) && "batidas desconsideradas pelo administrador ficam fora das colunas e do cálculo (registro original preservado; ver Ocorrências)",
   ].filter(Boolean);
   return items.length ? `Legenda: ${items.join("; ")}.` : "";
 }

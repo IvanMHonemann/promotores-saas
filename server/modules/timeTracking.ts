@@ -17,7 +17,7 @@ import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared
 import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
 import { punchOrderError } from "@shared/punchOrder";
-import { appendOriginalPunch, appendTreatment, effectiveRows, ensurePunchLedger, NEW_SHIFT_MARKER } from "../ponto/ledger";
+import { activeDisregards, appendOriginalPunch, appendTreatment, effectiveRows, ensureDisregardsTable, ensurePunchLedger, NEW_SHIFT_MARKER, supersededIds } from "../ponto/ledger";
 import { effectiveEventTime } from "./mirrorData";
 import { clockEvidenceSchema } from "./offlineSync";
 import { assessDeviceClock, clockAlertNote, OFFLINE_SEQUENCE_MARKER, readClockAlert } from "../../shared/offlineClock";
@@ -321,9 +321,49 @@ export const timeTrackingRouter = router({
       const start = new Date(Date.UTC(year, mon - 1, 1));
       const end = new Date(Date.UTC(year, mon, 1));
       await ensurePunchLedger();
+      // Desconsideradas continuam na lista (marcadas em `disregard`) para o admin ver e poder reconsiderar.
       return effectiveRows(await database.select().from(timeEvents)
         .where(and(eq(timeEvents.memberAccountId, input.memberId), eq(timeEvents.companyId, ctx.accountId), gte(effectiveEventTime, start), lt(effectiveEventTime, end)))
-        .orderBy(effectiveEventTime));
+        .orderBy(effectiveEventTime), { keepDisregarded: true });
+    }),
+
+  /**
+   * Desconsidera uma batida (ex.: inclusão repetida). Justificativa obrigatória. NÃO apaga nada:
+   * a marcação continua no banco/AFD; só deixa de contar no espelho e no cálculo. Pode ser revertida.
+   */
+  disregardEvent: companyAdminFeatureProcedure("timeTracking")
+    .input(z.object({ eventId: z.number().int().positive(), reason: z.string().trim().min(5, "Escreva pelo menos 5 caracteres na justificativa.").max(500) }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+      await ensurePunchLedger();
+      await ensureDisregardsTable();
+      const event = (await database.select().from(timeEvents).where(and(eq(timeEvents.id, input.eventId), eq(timeEvents.companyId, ctx.accountId))).limit(1))[0];
+      if (!event) throw new TRPCError({ code: "NOT_FOUND", message: "Marcação não encontrada nesta empresa." });
+      if ((await supersededIds(ctx.accountId, [event.id])).has(event.id)) throw new TRPCError({ code: "BAD_REQUEST", message: "Esta marcação já foi substituída por um ajuste. Desconsidere a marcação atual." });
+      if ((await activeDisregards(ctx.accountId, [event.id])).has(event.id)) throw new TRPCError({ code: "CONFLICT", message: "Esta batida já está desconsiderada." });
+      const by = ctx.user?.name || `Administrador #${ctx.memberAccountId ?? "?"}`;
+      await database.execute(sql`INSERT INTO time_event_disregards (companyId, memberAccountId, timeEventId, reason, decidedByMemberId, decidedByName)
+        VALUES (${ctx.accountId}, ${event.memberAccountId}, ${event.id}, ${input.reason}, ${ctx.memberAccountId ?? null}, ${by})`);
+      const markedAt = (event.deviceTime || event.serverTime).toISOString();
+      await auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "time_event", entityId: event.id, description: `Batida desconsiderada (${event.eventType} em ${markedAt}). Motivo: ${input.reason}`, newData: { eventId: event.id, memberAccountId: event.memberAccountId, eventType: event.eventType, markedAt, reason: input.reason, disregarded: true } });
+      return { success: true as const };
+    }),
+
+  /** Reverte a desconsideração: a batida volta a contar. O registro da desconsideração fica no histórico (revertedAt). */
+  reconsiderEvent: companyAdminFeatureProcedure("timeTracking")
+    .input(z.object({ eventId: z.number().int().positive(), reason: z.string().trim().max(500).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+      await ensureDisregardsTable();
+      const active = (await activeDisregards(ctx.accountId, [input.eventId])).get(input.eventId);
+      if (!active) throw new TRPCError({ code: "NOT_FOUND", message: "Esta batida não está desconsiderada." });
+      const by = ctx.user?.name || `Administrador #${ctx.memberAccountId ?? "?"}`;
+      await database.execute(sql`UPDATE time_event_disregards SET revertedAt = CURRENT_TIMESTAMP, revertedByMemberId = ${ctx.memberAccountId ?? null}, revertedByName = ${by}, revertReason = ${input.reason || null}
+        WHERE id = ${active.id} AND companyId = ${ctx.accountId} AND revertedAt IS NULL`);
+      await auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "time_event", entityId: input.eventId, description: `Batida reconsiderada (volta a contar no espelho)${input.reason ? `. Motivo: ${input.reason}` : ""}`, oldData: { disregardReason: active.reason, disregardedBy: active.decidedByName }, newData: { eventId: input.eventId, disregarded: false, reason: input.reason || null } });
+      return { success: true as const };
     }),
 
   companyApprovedExcuses: companyAdminFeatureProcedure("timeTracking")
@@ -392,7 +432,7 @@ export const timeTrackingRouter = router({
   }),
 
   myHistory: commercialFeatureProcedure("timeTracking")
-    .input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional())
+    .input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), includeDisregarded: z.boolean().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const companyId = ctx.accountId;
       const memberId = ctx.memberAccountId;
@@ -406,10 +446,13 @@ export const timeTrackingRouter = router({
         conditions.push(gte(effectiveEventTime, start), lt(effectiveEventTime, end));
       }
       await ensurePunchLedger();
-      return effectiveRows(await database.select().from(timeEvents)
+      const rows = await database.select().from(timeEvents)
         .where(and(...conditions))
         .orderBy(desc(effectiveEventTime))
-        .limit(input?.limit || 100));
+        .limit(input?.limit || 100);
+      // Padrão: só batidas que contam. A tela de ponto pede as desconsideradas para mostrá-las riscadas.
+      if (input?.includeDisregarded) return effectiveRows(rows, { keepDisregarded: true });
+      return (await effectiveRows(rows)).map((r) => ({ ...r, disregard: null }));
     }),
 
   myTimeSummary: commercialFeatureProcedure("timeTracking")
@@ -451,6 +494,7 @@ export const timeTrackingRouter = router({
         timeAlert: readTimeAlert(row.notes),
         offline: Boolean((row as any).offline),
         clockAlert: readClockAlert(row.notes),
+        disregarded: row.disregard ? { reason: row.disregard.reason, by: row.disregard.decidedByName, at: row.disregard.createdAt } : null,
       }));
 
       let labor: LaborProfile | null = null;

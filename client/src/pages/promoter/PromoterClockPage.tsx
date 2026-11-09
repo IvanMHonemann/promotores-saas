@@ -60,11 +60,14 @@ export default function PromoterClockPage() {
   const [sending, setSending] = useState(false);
   const utils = trpc.useUtils();
 
-  const history = trpc.timeTracking.myHistory.useQuery({ limit: 100, date: selectedDate });
+  const history = trpc.timeTracking.myHistory.useQuery({ limit: 100, date: selectedDate, includeDisregarded: true });
   const missingPunch = trpc.timeTracking.myMissingPunch.useQuery(undefined, { staleTime: 60000 });
   const corrections = trpc.timeTracking.myCorrections.useQuery();
 
-  const events = sortPunches(history.data ?? [], (e) => e.deviceTime || e.serverTime, (e) => e.eventType);
+  // Todas as batidas do dia (inclui as desconsideradas pelo administrador, exibidas riscadas).
+  const allEvents = sortPunches(history.data ?? [], (e) => e.deviceTime || e.serverTime, (e) => e.eventType);
+  // Só as que contam: usadas para faltas, correções e ordem das batidas.
+  const events = allEvents.filter((e: any) => !e.disregard);
   const dayPunches = events.map((e) => ({ id: e.id, type: e.eventType as EventType, time: e.deviceTime || e.serverTime }));
   const typesPresent = new Set(events.map((e) => e.eventType as EventType));
 
@@ -267,18 +270,23 @@ export default function PromoterClockPage() {
               )}
               <div className="mt-4 space-y-3">
                 {history.isLoading && <p className="text-sm text-slate-300">Carregando marcações...</p>}
-                {!history.isLoading && !events.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-slate-300">Nenhuma marcação neste dia.</p>}
-                {events.map((event) => (
-                  <div key={event.id} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
+                {!history.isLoading && !allEvents.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-slate-300">Nenhuma marcação neste dia.</p>}
+                {allEvents.map((event: any) => (
+                  <div key={event.id} className={`rounded-xl border border-white/10 bg-slate-950/40 p-4 ${event.disregard ? "opacity-60" : ""}`}>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <p className="font-bold text-slate-100">{labels[event.eventType as EventType]}</p>
-                        <p className="text-sm text-slate-300">Horário: {new Date(event.deviceTime || event.serverTime).toLocaleTimeString("pt-BR")}</p>
+                        <p className={`font-bold ${event.disregard ? "text-slate-400 line-through" : "text-slate-100"}`}>{labels[event.eventType as EventType]}</p>
+                        <p className={`text-sm text-slate-300 ${event.disregard ? "line-through" : ""}`}>Horário: {new Date(event.deviceTime || event.serverTime).toLocaleTimeString("pt-BR")}</p>
                       </div>
-                      <Badge variant="outline" className="w-fit border-emerald-300 bg-emerald-50 text-emerald-700">
-                        <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Registrado
-                      </Badge>
+                      {event.disregard ? (
+                        <Badge variant="outline" className="w-fit border-slate-400 bg-slate-700/40 text-slate-200">Desconsiderada pela empresa</Badge>
+                      ) : (
+                        <Badge variant="outline" className="w-fit border-emerald-300 bg-emerald-50 text-emerald-700">
+                          <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Registrado
+                        </Badge>
+                      )}
                     </div>
+                    {event.disregard && <p className="mt-2 text-sm text-slate-300">Não conta nas horas. Motivo: {event.disregard.reason}</p>}
                     <p className="mt-3 flex items-start gap-2 text-sm text-slate-300">
                       <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-teal-300" />
                       <LocationLabel latitude={event.latitude} longitude={event.longitude} />

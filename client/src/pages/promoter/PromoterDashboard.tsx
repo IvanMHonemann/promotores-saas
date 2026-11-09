@@ -25,6 +25,13 @@ const visitStatus: Record<string, string> = {
   completed: "Concluída",
 };
 
+function formatVisitClock(iso: string | Date | null | undefined) {
+  if (!iso) return null;
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+}
+
 export default function PromoterDashboard() {
   const [checkIn, setCheckIn] = useState<{ action: "start" | "complete"; visitId: number; storeId: number; storeName: string; storeAddress?: string | null } | null>(null);
   const { user } = useAuth();
@@ -222,10 +229,19 @@ export default function PromoterDashboard() {
                   {hasVisitCheckIn && visit.status === "in_progress" && (
                     <>
                       <VisitTimer startTime={visit.actualStart} />
+                      <p className="mt-2 text-xs font-semibold text-teal-200">
+                        Check-in feito às {formatVisitClock(visit.actualStart) || "—"}
+                      </p>
                       <Button className="mt-3 w-full bg-amber-500 text-slate-950 hover:bg-amber-400" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name, storeAddress: store.address || null })} disabled={!canManageVisits}>
                         Check-out (foto da fachada)
                       </Button>
                     </>
+                  )}
+                  {hasVisitCheckIn && visit.status === "completed" && (
+                    <p className="mt-3 text-sm font-semibold text-emerald-200">
+                      Check-in {formatVisitClock(visit.actualStart) ? `às ${formatVisitClock(visit.actualStart)}` : "feito"}
+                      {formatVisitClock(visit.actualEnd) ? ` · Check-out às ${formatVisitClock(visit.actualEnd)}` : ""}
+                    </p>
                   )}
                 </div>
               ); })}

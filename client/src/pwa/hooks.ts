@@ -7,6 +7,8 @@ type BeforeInstallPromptEvent = Event & {
 
 type Phase = "idle" | "prompting" | "progress" | "ready";
 
+type RelatedApp = { platform?: string; url?: string; id?: string };
+
 export type PwaDebugInfo = {
   hasDeferredPrompt: boolean;
   standalone: boolean;
@@ -15,9 +17,12 @@ export type PwaDebugInfo = {
   lastError: string;
   isInstalling: boolean;
   justInstalled: boolean;
+  alreadyInstalled: boolean;
   swControlled: boolean;
   phase: Phase;
   transitions: string[];
+  relatedApps: string;
+  relatedAppsApi: string;
 };
 
 declare global {
@@ -25,6 +30,9 @@ declare global {
     __gondupDeferredPrompt?: BeforeInstallPromptEvent | null;
     __gondupPwaDebug?: PwaDebugInfo;
     __gondupInstallBusy?: boolean;
+  }
+  interface Navigator {
+    getInstalledRelatedApps?: () => Promise<RelatedApp[]>;
   }
 }
 
@@ -55,32 +63,39 @@ export function useOnlineStatus() {
 type InstallStore = {
   deferredPrompt: BeforeInstallPromptEvent | null;
   phase: Phase;
-  installProgress: number;
   installStep: string;
   justInstalled: boolean;
+  /** Já detectado via getInstalledRelatedApps / standalone */
+  alreadyInstalled: boolean;
   isIosDevice: boolean;
   isStandalone: boolean;
   lastOutcome: string;
   lastError: string;
   transitions: string[];
+  relatedAppsJson: string;
+  relatedAppsApi: "unknown" | "supported" | "unsupported" | "error";
 };
 
-const MIN_OVERLAY_MS = 5500;
-const INSTALL_TIMEOUT_MS = 25_000;
+const MIN_OVERLAY_MS = 2500;
+const RELATED_POLL_MS = 1000;
+const RELATED_POLL_TIMEOUT_MS = 60_000;
+const FALLBACK_READY_MS = 12_000;
 const MAX_TRANSITIONS = 40;
 
 const listeners = new Set<() => void>();
 let store: InstallStore = {
   deferredPrompt: typeof window === "undefined" ? null : window.__gondupDeferredPrompt || null,
   phase: "idle",
-  installProgress: 0,
   installStep: "",
   justInstalled: false,
+  alreadyInstalled: false,
   isIosDevice: false,
   isStandalone: typeof window === "undefined" ? false : isStandaloneDisplay(),
   lastOutcome: "",
   lastError: "",
   transitions: [],
+  relatedAppsJson: "[]",
+  relatedAppsApi: "unknown",
 };
 
 function emit() {
@@ -114,8 +129,7 @@ function logPwa(...args: unknown[]) {
 }
 
 function recordTransition(to: Phase, reason: string) {
-  const from = store.phase;
-  const line = `${new Date().toISOString().slice(11, 23)} ${from}→${to} (${reason})`;
+  const line = `${new Date().toISOString().slice(11, 23)} ${store.phase}→${to} (${reason})`;
   const transitions = [...store.transitions, line].slice(-MAX_TRANSITIONS);
   logPwa("transition", line);
   return transitions;
@@ -131,26 +145,23 @@ function syncDebug() {
     lastError: store.lastError,
     isInstalling: store.phase === "progress",
     justInstalled: store.justInstalled,
+    alreadyInstalled: store.alreadyInstalled,
     swControlled: Boolean(navigator.serviceWorker?.controller),
     phase: store.phase,
     transitions: store.transitions,
+    relatedApps: store.relatedAppsJson,
+    relatedAppsApi: store.relatedAppsApi,
   };
 }
 
 let bootstrapped = false;
-let progressTicker: ReturnType<typeof setInterval> | null = null;
 let readyTimer: ReturnType<typeof setTimeout> | null = null;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 let progressStartedAt = 0;
 let gotAppInstalled = false;
-/** true entre prompt() e o fim do fluxo iniciado pelo nosso botão */
 let ourPromptFlow = false;
-
-function clearProgressTicker() {
-  if (progressTicker) {
-    clearInterval(progressTicker);
-    progressTicker = null;
-  }
-}
+let readyScheduled = false;
 
 function clearReadyTimer() {
   if (readyTimer) {
@@ -158,138 +169,169 @@ function clearReadyTimer() {
     readyTimer = null;
   }
 }
-
-function appStartUrl() {
-  return `${window.location.origin}/?installed=1&utm_source=pwa_install`;
-}
-
-function tryOpenInstalledApp(reason: string) {
-  const appUrl = appStartUrl();
-  logPwa("tryOpenInstalledApp", reason, appUrl);
-  try {
-    const win = window.open(appUrl, "_blank", "noopener,noreferrer");
-    if (win) {
-      try {
-        win.focus();
-      } catch {
-        /* ignore */
-      }
-      return true;
-    }
-  } catch {
-    /* ignore */
+function clearPollTimer() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
   }
-  return false;
+}
+function clearFallbackTimer() {
+  if (fallbackTimer) {
+    clearTimeout(fallbackTimer);
+    fallbackTimer = null;
+  }
 }
 
-/** Idempotente: se já estamos em progress, não reinicia nem zera a barra. */
+async function queryRelatedApps(): Promise<RelatedApp[]> {
+  if (typeof navigator === "undefined" || typeof navigator.getInstalledRelatedApps !== "function") {
+    patch({ relatedAppsApi: "unsupported", relatedAppsJson: "[]" });
+    return [];
+  }
+  try {
+    const apps = await navigator.getInstalledRelatedApps();
+    patch({
+      relatedAppsApi: "supported",
+      relatedAppsJson: JSON.stringify(apps || []),
+    });
+    return apps || [];
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logPwa("getInstalledRelatedApps error", msg);
+    patch({ relatedAppsApi: "error", lastError: msg, relatedAppsJson: "[]" });
+    return [];
+  }
+}
+
+function isOurWebAppInstalled(apps: RelatedApp[]) {
+  return apps.some((a) => {
+    if ((a.platform || "").toLowerCase() !== "webapp") return false;
+    const url = (a.url || "").toLowerCase();
+    return url.includes("gondup.com") && url.includes("manifest");
+  });
+}
+
+async function refreshAlreadyInstalled(reason: string) {
+  if (isStandaloneDisplay()) {
+    patch({ alreadyInstalled: true, isStandalone: true });
+    logPwa("alreadyInstalled via standalone", reason);
+    return true;
+  }
+  const apps = await queryRelatedApps();
+  const yes = isOurWebAppInstalled(apps);
+  patch({ alreadyInstalled: yes });
+  logPwa("alreadyInstalled check", reason, { yes, apps });
+  return yes;
+}
+
+/** Idempotente. */
 function enterProgress(reason: string) {
   if (store.phase === "progress" || store.phase === "ready") {
-    logPwa("enterProgress skipped (already", store.phase, ")", reason);
+    logPwa("enterProgress skipped", store.phase, reason);
     return;
   }
   const transitions = recordTransition("progress", reason);
   progressStartedAt = Date.now();
-  clearProgressTicker();
+  readyScheduled = false;
   patch({
     phase: "progress",
     transitions,
     justInstalled: false,
-    installStep: "Baixando aplicativo…",
-    installProgress: 18,
+    installStep: "Instalando o GondUp… isso leva alguns segundos.",
   });
-  progressTicker = setInterval(() => {
-    if (store.phase !== "progress") {
-      clearProgressTicker();
-      return;
-    }
-    const elapsed = Date.now() - progressStartedAt;
-    let progress = store.installProgress;
-    let step = store.installStep;
-    if (elapsed < 1800) {
-      progress = Math.min(45, progress + 4);
-      step = "Baixando aplicativo…";
-    } else if (elapsed < 4000) {
-      progress = Math.min(78, Math.max(progress, 48) + 3);
-      step = "Instalando no aparelho…";
-    } else {
-      progress = Math.min(94, Math.max(progress, 80) + 1);
-      step = gotAppInstalled ? "Quase pronto…" : "Finalizando instalação…";
-    }
-    patch({ installProgress: progress, installStep: step });
-  }, 280);
+  startCompletionWatch();
 }
 
-function enterReady(reason: string) {
+function enterReady(reason: string, message: string) {
   if (store.phase === "ready") {
     logPwa("enterReady skipped", reason);
     return;
   }
-  clearProgressTicker();
   clearReadyTimer();
+  clearPollTimer();
+  clearFallbackTimer();
   ourPromptFlow = false;
+  readyScheduled = false;
   const transitions = recordTransition("ready", reason);
   patch({
     phase: "ready",
     transitions,
-    installProgress: 100,
-    installStep: "Pronto! O GondUp foi instalado na tela inicial.",
+    installStep: message,
     justInstalled: true,
+    alreadyInstalled: true,
     deferredPrompt: null,
     lastOutcome: "installed",
   });
   window.__gondupDeferredPrompt = null;
-  window.setTimeout(() => {
-    if (!isStandaloneDisplay()) tryOpenInstalledApp("auto-after-overlay");
-  }, 400);
 }
 
-/**
- * Agenda ready só uma vez; respeita MIN_OVERLAY_MS desde o início do progress.
- * Nunca volta para idle no meio.
- */
-function scheduleReady(reason: string) {
-  if (store.phase === "ready") return;
-  if (readyTimer) {
-    logPwa("scheduleReady already pending", reason);
+function scheduleReady(reason: string, message: string) {
+  if (store.phase === "ready" || readyScheduled) {
+    logPwa("scheduleReady skipped", reason, { readyScheduled, phase: store.phase });
     return;
   }
-  if (store.phase !== "progress") {
-    enterProgress(`scheduleReady-needed-progress:${reason}`);
-  }
+  readyScheduled = true;
+  clearReadyTimer();
+  if (store.phase !== "progress") enterProgress(`scheduleReady:${reason}`);
   const elapsed = progressStartedAt ? Date.now() - progressStartedAt : 0;
   const wait = Math.max(0, MIN_OVERLAY_MS - elapsed);
-  logPwa("scheduleReady", reason, { elapsed, wait, gotAppInstalled });
+  logPwa("scheduleReady", reason, { elapsed, wait });
   readyTimer = setTimeout(() => {
     readyTimer = null;
-    clearProgressTicker();
-    patch({ installProgress: 100, installStep: "Pronto!" });
-    window.setTimeout(() => enterReady(`after-min-overlay:${reason}`), 700);
+    enterReady(reason, message);
   }, wait);
 }
 
-let waitInstalledTimer: ReturnType<typeof setTimeout> | null = null;
+function startCompletionWatch() {
+  clearPollTimer();
+  clearFallbackTimer();
 
-function clearWaitInstalledTimer() {
-  if (waitInstalledTimer) {
-    clearTimeout(waitInstalledTimer);
-    waitInstalledTimer = null;
-  }
+  // Poll real: getInstalledRelatedApps (Android Chrome).
+  void (async () => {
+    const first = await queryRelatedApps();
+    if (store.phase === "progress" && isOurWebAppInstalled(first)) {
+      scheduleReady("related-apps-immediate", "Pronto! O GondUp foi instalado.");
+      return;
+    }
+  })();
+
+  pollTimer = setInterval(() => {
+    void (async () => {
+      if (store.phase !== "progress") {
+        clearPollTimer();
+        return;
+      }
+      const apps = await queryRelatedApps();
+      if (isOurWebAppInstalled(apps)) {
+        clearPollTimer();
+        scheduleReady("related-apps-poll", "Pronto! O GondUp foi instalado.");
+      }
+    })();
+  }, RELATED_POLL_MS);
+
+  window.setTimeout(() => clearPollTimer(), RELATED_POLL_TIMEOUT_MS);
+
+  // Fallback se a API não confirmar (ou não existir): após appinstalled + delay honesto.
+  fallbackTimer = setTimeout(() => {
+    fallbackTimer = null;
+    if (store.phase !== "progress") return;
+    if (store.relatedAppsApi === "supported" && !gotAppInstalled) {
+      // API existe mas ainda não viu o app e nem appinstalled — espera mais via poll até timeout.
+      logPwa("fallback timer: still waiting related apps");
+      return;
+    }
+    const msg = gotAppInstalled
+      ? "Instalação enviada ao Chrome — quando aparecer o aviso do Chrome, toque em Abrir, ou abra pelo ícone GondUp na tela inicial."
+      : "Se o Chrome concluir a instalação, abra pelo ícone GondUp na tela inicial (ou pelo aviso Abrir do Chrome).";
+    scheduleReady("fallback-timeout", msg);
+  }, FALLBACK_READY_MS);
 }
 
 function onUserAccepted(reason: string) {
   logPwa("onUserAccepted", reason, { phase: store.phase, gotAppInstalled });
   enterProgress(reason);
   if (gotAppInstalled) {
-    clearWaitInstalledTimer();
-    scheduleReady("accepted-and-appinstalled");
-    return;
-  }
-  if (!waitInstalledTimer && !readyTimer) {
-    waitInstalledTimer = setTimeout(() => {
-      waitInstalledTimer = null;
-      scheduleReady("timeout-waiting-appinstalled");
-    }, INSTALL_TIMEOUT_MS);
+    // Ainda precisamos da confirmação real via related apps / fallback — não fecha na hora.
+    logPwa("accepted with appinstalled already — waiting related apps / fallback");
   }
 }
 
@@ -297,6 +339,11 @@ export function beginNativeInstallFromGesture(): "prompting" | "no-prompt" | "bu
   if (store.phase === "progress" || store.phase === "prompting") {
     logPwa("beginNativeInstall: busy", store.phase);
     return "busy";
+  }
+  if (store.alreadyInstalled || isStandaloneDisplay()) {
+    logPwa("beginNativeInstall: already installed");
+    patch({ alreadyInstalled: true, lastOutcome: "already-installed" });
+    return "no-prompt";
   }
   const promptEvent = store.deferredPrompt || window.__gondupDeferredPrompt || null;
   if (!promptEvent) {
@@ -307,9 +354,10 @@ export function beginNativeInstallFromGesture(): "prompting" | "no-prompt" | "bu
 
   gotAppInstalled = false;
   ourPromptFlow = true;
-  clearProgressTicker();
+  readyScheduled = false;
   clearReadyTimer();
-  clearWaitInstalledTimer();
+  clearPollTimer();
+  clearFallbackTimer();
   progressStartedAt = 0;
 
   const transitions = recordTransition("prompting", "beginNativeInstall");
@@ -319,7 +367,6 @@ export function beginNativeInstallFromGesture(): "prompting" | "no-prompt" | "bu
     deferredPrompt: null,
     lastError: "",
     lastOutcome: "prompting",
-    installProgress: 0,
     installStep: "",
   });
   window.__gondupDeferredPrompt = null;
@@ -344,14 +391,13 @@ export function beginNativeInstallFromGesture(): "prompting" | "no-prompt" | "bu
       logPwa("userChoice", choice.outcome, { phase: store.phase, gotAppInstalled });
       patch({ lastOutcome: choice.outcome });
       if (choice.outcome !== "accepted") {
-        clearProgressTicker();
         clearReadyTimer();
-        clearWaitInstalledTimer();
+        clearPollTimer();
+        clearFallbackTimer();
         ourPromptFlow = false;
-        // Se appinstalled já colocou progress (não deveria no nosso fluxo), não derruba.
         if (store.phase === "prompting" || store.phase === "idle") {
           const tr = recordTransition("idle", "dismissed");
-          patch({ phase: "idle", transitions: tr, installProgress: 0, installStep: "" });
+          patch({ phase: "idle", transitions: tr, installStep: "" });
         }
         return;
       }
@@ -359,13 +405,13 @@ export function beginNativeInstallFromGesture(): "prompting" | "no-prompt" | "bu
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logPwa("install flow error", msg);
-      clearProgressTicker();
       clearReadyTimer();
-      clearWaitInstalledTimer();
+      clearPollTimer();
+      clearFallbackTimer();
       ourPromptFlow = false;
       if (store.phase !== "progress" && store.phase !== "ready") {
         const tr = recordTransition("idle", "error");
-        patch({ phase: "idle", transitions: tr, installProgress: 0, installStep: "", lastOutcome: "error", lastError: msg });
+        patch({ phase: "idle", transitions: tr, installStep: "", lastOutcome: "error", lastError: msg });
       }
     }
   })();
@@ -382,43 +428,43 @@ function bootstrapInstallListeners() {
     isIosDevice: /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1),
     isStandalone: isStandaloneDisplay(),
     deferredPrompt: window.__gondupDeferredPrompt || null,
+    alreadyInstalled: isStandaloneDisplay(),
   });
-  logPwa("bootstrap", { hasPrompt: Boolean(store.deferredPrompt), standalone: store.isStandalone });
+  logPwa("bootstrap", { standalone: store.isStandalone });
+  void refreshAlreadyInstalled("bootstrap");
 
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     const bip = event as BeforeInstallPromptEvent;
     window.__gondupDeferredPrompt = bip;
-    patch({ deferredPrompt: bip, lastOutcome: store.lastOutcome || "bip-captured" });
+    // Se BIP disparou, em geral ainda não está instalado como WebAPK.
+    patch({ deferredPrompt: bip, lastOutcome: store.lastOutcome || "bip-captured", alreadyInstalled: false });
     logPwa("beforeinstallprompt captured");
   });
 
   window.addEventListener("appinstalled", () => {
-    logPwa("appinstalled event", { phase: store.phase, ourPromptFlow, gotAppInstalled });
+    logPwa("appinstalled event", { phase: store.phase, ourPromptFlow });
     gotAppInstalled = true;
     window.__gondupDeferredPrompt = null;
     patch({ deferredPrompt: null });
 
     if (ourPromptFlow || store.phase === "prompting" || store.phase === "progress") {
-      // Fluxo do nosso botão: NÃO reinicia a barra. Só marca e agenda ready se já estamos em progress.
-      // Se ainda estamos em prompting (userChoice pendente), espera o aceite para enterProgress.
       if (store.phase === "progress") {
-        clearWaitInstalledTimer();
-        scheduleReady("appinstalled-while-progress");
+        // Continua no progresso; related-apps / fallback decidem o ready.
+        logPwa("appinstalled while progress — keep overlay, wait real completion");
       } else {
-        logPwa("appinstalled while prompting — wait for userChoice to start/keep overlay");
+        logPwa("appinstalled while prompting — wait userChoice");
       }
       return;
     }
 
-    // Instalação só pelo menu ⋮ do Chrome (sem nosso prompt): aí sim mostra a barra.
+    // Menu ⋮ do Chrome: mostra progresso e espera related apps / fallback.
     enterProgress("appinstalled-via-browser-menu");
-    scheduleReady("appinstalled-via-browser-menu");
   });
 
-  // visibilitychange: não esconde a barra (Chrome Android esconde a aba no diálogo/WebAPK).
   document.addEventListener("visibilitychange", () => {
     logPwa("visibilitychange", document.visibilityState, { phase: store.phase });
+    if (document.visibilityState === "visible") void refreshAlreadyInstalled("visibility");
   });
 
   syncDebug();
@@ -427,6 +473,8 @@ function bootstrapInstallListeners() {
     simulatePrompting: __testSimulatePrompting,
     simulateAccepted: __testSimulateAccepted,
     simulateAppInstalled: __testSimulateAppInstalled,
+    simulateRelatedInstalled: __testSimulateRelatedInstalled,
+    forceReady: __testForceReady,
     getPhase: () => store.phase,
     getTransitions: () => store.transitions.slice(),
   };
@@ -441,68 +489,69 @@ export function useInstallPrompt() {
 
   const install = useCallback(() => beginNativeInstallFromGesture() === "prompting", []);
 
-  const openApp = useCallback(() => {
-    tryOpenInstalledApp("user-tap-abrir");
-    const tr = recordTransition("idle", "open-app-dismiss");
-    patch({ phase: "idle", transitions: tr, installStep: "" });
-  }, []);
-
-  const dismissOpenFallback = useCallback(() => {
+  const dismissReady = useCallback(() => {
     const tr = recordTransition("idle", "dismiss-ready");
     patch({ phase: "idle", transitions: tr, installStep: "" });
   }, []);
 
   const isInstalling = snap.phase === "progress";
-  const showOpenFallback = snap.phase === "ready";
+  const showReady = snap.phase === "ready";
   const showInstallOffer =
-    !snap.isStandalone && !snap.justInstalled && snap.phase === "idle";
+    !snap.isStandalone && !snap.alreadyInstalled && !snap.justInstalled && snap.phase === "idle";
 
   return {
-    canInstall: Boolean(snap.deferredPrompt) && !snap.isStandalone && snap.phase === "idle",
+    canInstall: Boolean(snap.deferredPrompt) && showInstallOffer,
     showInstallOffer,
-    isIosInstallable: snap.isIosDevice && !snap.isStandalone && snap.phase === "idle",
+    alreadyInstalled: snap.alreadyInstalled || snap.isStandalone,
+    isIosInstallable: snap.isIosDevice && !snap.isStandalone && !snap.alreadyInstalled && snap.phase === "idle",
     isStandalone: snap.isStandalone,
     install,
     beginNativeInstallFromGesture,
-    openApp,
-    dismissOpenFallback,
+    dismissReady,
+    /** @deprecated use dismissReady — não abrimos o WebAPK pelo site */
+    dismissOpenFallback: dismissReady,
+    openApp: dismissReady,
     isInstalling,
-    installProgress: snap.installProgress,
+    installProgress: 0,
     installStep: snap.installStep,
-    showOpenFallback,
+    showOpenFallback: showReady,
+    showReady,
     lastOutcome: snap.lastOutcome,
     phase: snap.phase,
     transitions: snap.transitions,
   };
 }
 
+export function __testResetInstallSession() {
+  clearReadyTimer();
+  clearPollTimer();
+  clearFallbackTimer();
+  gotAppInstalled = false;
+  ourPromptFlow = false;
+  readyScheduled = false;
+  progressStartedAt = 0;
+  patch({
+    phase: "idle",
+    installStep: "",
+    justInstalled: false,
+    alreadyInstalled: false,
+    lastOutcome: "",
+    lastError: "",
+    transitions: [],
+    relatedAppsJson: "[]",
+    relatedAppsApi: "unknown",
+  });
+}
 
 export function __testSimulatePrompting() {
   ourPromptFlow = true;
   gotAppInstalled = false;
-  clearProgressTicker();
+  readyScheduled = false;
   clearReadyTimer();
-  clearWaitInstalledTimer();
+  clearPollTimer();
+  clearFallbackTimer();
   const transitions = recordTransition("prompting", "test-prompting");
-  patch({ phase: "prompting", transitions, installProgress: 0, installStep: "", justInstalled: false });
-}
-
-export function __testResetInstallSession() {
-  clearProgressTicker();
-  clearReadyTimer();
-  clearWaitInstalledTimer();
-  gotAppInstalled = false;
-  ourPromptFlow = false;
-  progressStartedAt = 0;
-  patch({
-    phase: "idle",
-    installProgress: 0,
-    installStep: "",
-    justInstalled: false,
-    lastOutcome: "",
-    lastError: "",
-    transitions: [],
-  });
+  patch({ phase: "prompting", transitions, installStep: "", justInstalled: false });
 }
 
 export function __testSimulateAccepted() {
@@ -513,11 +562,25 @@ export function __testSimulateAccepted() {
 export function __testSimulateAppInstalled() {
   gotAppInstalled = true;
   if (ourPromptFlow || store.phase === "prompting" || store.phase === "progress") {
-    if (store.phase === "progress") scheduleReady("test-appinstalled-while-progress");
-    else logPwa("test appinstalled while prompting — wait accepted");
+    logPwa("test appinstalled during our flow");
     return;
   }
   enterProgress("test-appinstalled-first");
-  scheduleReady("test-appinstalled-first");
 }
 
+
+export function __testForceReady(message: string) {
+  if (store.phase !== "progress") enterProgress("test-force-ready");
+  scheduleReady("test-force-ready", message);
+}
+
+export function __testSimulateRelatedInstalled() {
+  patch({
+    relatedAppsApi: "supported",
+    relatedAppsJson: JSON.stringify([{ platform: "webapp", url: "https://gondup.com/manifest.json" }]),
+    alreadyInstalled: true,
+  });
+  if (store.phase === "progress") {
+    scheduleReady("test-related-installed", "Pronto! O GondUp foi instalado.");
+  }
+}

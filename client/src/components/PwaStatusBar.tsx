@@ -31,6 +31,9 @@ function PwaDebugPanel() {
       <p>phase: {info.phase || "—"}</p>
       <p>instalando: {info.isInstalling ? "sim" : "não"}</p>
       <p>já instalou: {info.justInstalled ? "sim" : "não"}</p>
+      <p>related installed: {info.alreadyInstalled ? "sim" : "não"}</p>
+      <p>relatedApps API: {info.relatedAppsApi || "—"}</p>
+      <p>relatedApps: {info.relatedApps || "[]"}</p>
       <p>último outcome: {info.lastOutcome || "—"}</p>
       <p>erro: {info.lastError || "—"}</p>
       <p className="mt-1 max-h-28 overflow-y-auto whitespace-pre-wrap break-all text-amber-200/80">
@@ -45,10 +48,11 @@ export function PwaStatusBar() {
   const isOnline = useOnlineStatus();
   const {
     showInstallOffer,
+    alreadyInstalled,
     isInstalling,
     isIosInstallable,
     isStandalone,
-    showOpenFallback,
+    showReady,
   } = useInstallPrompt();
   const [showIosGuide, setShowIosGuide] = useState(false);
   const [showAndroidGuide, setShowAndroidGuide] = useState(false);
@@ -95,7 +99,7 @@ export function PwaStatusBar() {
         <span>{isOnline ? "Online" : "Offline — dados locais"}</span>
       </div>
 
-      {showInstallOffer && !isInstalling && !showOpenFallback && (
+      {showInstallOffer && !isInstalling && !showReady && (
         <div className="pwa-install-cta fixed bottom-3 left-3 z-40 print:hidden">
           <Button
             size="sm"
@@ -105,6 +109,15 @@ export function PwaStatusBar() {
           >
             <Download className="h-4 w-4" /> Baixar aplicativo
           </Button>
+        </div>
+      )}
+
+      {alreadyInstalled && !isStandalone && !isInstalling && !showReady && (
+        <div
+          data-testid="pwa-already-installed"
+          className="pwa-install-cta fixed bottom-3 left-3 z-40 max-w-[min(100vw-1.5rem,18rem)] rounded-2xl border border-teal-300/30 bg-slate-900/95 px-3 py-2 text-[11px] font-semibold text-teal-100 shadow-lg print:hidden"
+        >
+          App já instalado — abra pelo ícone GondUp
         </div>
       )}
 

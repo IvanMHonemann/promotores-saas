@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
+import { formatGroupedCorrectionTitle, groupCorrectionItems } from "@shared/correctionGroups";
 import RoutesSection from "./RoutesSection";
 import SetupChecklist, { AttentionCard, buildSetupSteps } from "@/components/SetupChecklist";
 
@@ -313,16 +314,7 @@ function PresenceCard({ entries, loading, failed, timeZone }: { entries: Company
 }
 
 function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve, approveMany, reviewPending }: any) {
-  const dayKey = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  const groups = new Map<string, any[]>();
-  for (const item of corrections) {
-    const req = item.request;
-    const key = `${req.memberAccountId}:${dayKey(req.requestedTime)}`;
-    const list = groups.get(key) || [];
-    list.push(item);
-    groups.set(key, list);
-  }
-  const grouped = [...groups.values()];
+  const grouped = groupCorrectionItems(corrections as any[], { isExcuse: looksLikeFullDayExcuse, includeMember: true });
   return (
     <Card className="border-amber-300/30 bg-amber-300/10">
       <CardHeader>
@@ -337,13 +329,12 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
           const { request, employee } = first;
           const ids = items.map((item: any) => item.request.id);
           const photo = items.find((item: any) => item.attachmentUrl);
-          const day = new Date(request.requestedTime).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
           return (
             <div key={ids.join("-")} className="rounded-xl border border-white/10 bg-slate-950/40 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="font-bold text-slate-100">{employee?.userName || `Promotor #${request.memberAccountId}`}</p>
-                  <p className="mt-1 text-xs text-slate-400">{looksLikeFullDayExcuse(request) ? `${fullDayExcuseLabel(inferFullDayExcuseType(request))} · dia inteiro` : items.length > 1 ? `${items.length} horários` : "1 horário"} · {day}</p>
+                  <p className="mt-1 text-xs text-slate-400">{formatGroupedCorrectionTitle(items, { isExcuse: looksLikeFullDayExcuse, excuseLabel: (r) => fullDayExcuseLabel(inferFullDayExcuseType(r) || "day_off") })}</p>
                 </div>
                 <Badge variant="outline" className="border-amber-300/40 text-amber-200">Pendente</Badge>
               </div>

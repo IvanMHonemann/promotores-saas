@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
+import { formatGroupedCorrectionTitle, groupCorrectionItems } from "@shared/correctionGroups";
 
 const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Intervalo", break_end: "Retorno", clock_out: "Saída" };
 
@@ -144,25 +145,16 @@ export default function TimesheetPage() {
           <CardContent>
             {(() => {
               const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Início do intervalo", break_end: "Fim do intervalo", clock_out: "Saída" };
-              const dayKey = (iso: string | Date) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-              const groups = new Map<string, any[]>();
-              for (const item of corrections.data || []) {
-                const key = `${item.request.memberAccountId}:${dayKey(item.request.requestedTime)}`;
-                const list = groups.get(key) || [];
-                list.push(item);
-                groups.set(key, list);
-              }
-              const grouped = [...groups.values()];
+              const grouped = groupCorrectionItems(corrections.data || [], { isExcuse: looksLikeFullDayExcuse, includeMember: true });
               if (!grouped.length) return <p className="text-sm text-slate-400">Nenhuma solicitação pendente.</p>;
               return grouped.map((items) => {
                 const first = items[0];
                 const ids = items.map((item: any) => item.request.id);
                 const photo = items.find((item: any) => item.attachmentUrl);
-                const day = new Date(first.request.requestedTime).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
                 return (
                   <div key={ids.join("-")} className="mb-3 rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
                     <p className="font-semibold text-white">{first.employee?.userName || "Promotor"}</p>
-                    <p className="text-xs text-teal-300">{looksLikeFullDayExcuse(first.request) ? `${fullDayExcuseLabel(inferFullDayExcuseType(first.request))} · dia inteiro` : (({normal:"Correção normal", other:"Outro"} as any)[first.request.justificationType] || "Correção normal")} · {day}</p>
+                    <p className="text-xs text-teal-300">{formatGroupedCorrectionTitle(items, { isExcuse: looksLikeFullDayExcuse, excuseLabel: (r) => fullDayExcuseLabel(inferFullDayExcuseType(r) || "day_off") })}</p>
                     <div className="mt-2 space-y-1">
                       {looksLikeFullDayExcuse(first.request) ? (
                         <p className="text-slate-200">Abono do dia — sem horários</p>

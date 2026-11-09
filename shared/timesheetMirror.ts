@@ -311,8 +311,8 @@ export function fmtMark(m: DayRow["marks"][number], tz: string): string {
   else if (m.kind === "legacy_adjusted") tag = "#";
   else if (included) tag = "+";
   else if (m.kind === "adjusted") tag = "*";
-  const sync = m.synced ? "" : "(pendente)";
-  const off = m.offline ? "(off)" : "";
+  const sync = m.synced ? "" : " (pendente)";
+  const off = m.offline ? " (off)" : "";
   return `${t.hm}${tag}${off}${sync}`;
 }
 

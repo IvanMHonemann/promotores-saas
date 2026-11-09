@@ -50,7 +50,7 @@ describe("PDF do espelho de ponto", () => {
     expect(fmtMark({ ...base, kind: "adjusted", justification: "incluiu" }, "America/Sao_Paulo")).toBe("08:00+");
     expect(fmtMark({ ...base, kind: "automatic" }, "America/Sao_Paulo")).toBe("08:00A");
     expect(fmtMark({ ...base, kind: "legacy_adjusted" }, "America/Sao_Paulo")).toBe("08:00#");
-    expect(fmtMark({ ...base, kind: "original", synced: false }, "America/Sao_Paulo")).toBe("08:00(pendente)");
+    expect(fmtMark({ ...base, kind: "original", synced: false }, "America/Sao_Paulo")).toBe("08:00 (pendente)");
   });
 
   it("fmtCpf e fmtPis formatam para o espelho da empresa", () => {

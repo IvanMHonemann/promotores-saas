@@ -10,8 +10,14 @@ import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/t
 import { loadApprovedDayExcuses } from "./correctionExtras";
 import { loadAdjustmentsByEvent, loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, OPTIONAL_HOLIDAYS_SETTING, toMirrorEvents } from "./mirrorData";
 import { readTimeAlert } from "../../shared/punchTime";
+import { buildMemberReports } from "./timeBank";
+import { closedPeriodBalance, monthBounds } from "../../shared/timeBank";
 
 const TZ = "America/Sao_Paulo";
+const monthStr = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Mês inválido (use AAAA-MM).");
+function todayIn(timeZone: string) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const hm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 
@@ -140,26 +146,45 @@ export const timesheetMirrorRouter = router({
       const legal = await readJson<z.infer<typeof legalSchema>>("company_legal_profile", ctx.accountId);
       // Consultas em lote (4 no total, independentes do nº de funcionários) em vez de 3+ por funcionário.
       const memberIds = members.map((m) => m.id);
-      // Filtra pelo mesmo horário usado no cálculo (deviceTime, senão serverTime): batida offline sincronizada depois não some do mês.
-      const eventRows = await loadMirrorEventRows(ctx.accountId, memberIds, input.from, input.to);
-      const eventsByMember = new Map<number, typeof eventRows>();
-      for (const r of eventRows) eventsByMember.set(r.memberAccountId, [...(eventsByMember.get(r.memberAccountId) || []), r]);
-      const adjByEvent = await loadAdjustmentsByEvent(ctx.accountId, memberIds);
-      const laborByMember = new Map<number, LaborProfile>();
-      if (memberIds.length) {
-        const laborRows: any[] = ((await database.execute(sql`SELECT settingKey, settingValue FROM system_settings WHERE accountId = ${ctx.accountId} AND settingKey LIKE 'labor\\_profile:%'`)) as any)[0];
-        for (const r of laborRows) { try { laborByMember.set(Number(String(r.settingKey).split(":")[1]), JSON.parse(r.settingValue)); } catch { /* ignora perfil corrompido */ } }
-      }
-      const excusesByMember = await loadApprovedDayExcuses(ctx.accountId, memberIds, input.from, input.to);
-      const vacationsByMember = await loadMemberVacations(ctx.accountId, memberIds, input.from, input.to);
-      const options = await loadMirrorOptions(ctx.accountId);
+      // Consultas em lote via buildMemberReports (mesma regra do banco de horas); filtra pelo horário efetivo
+      // (deviceTime, senão serverTime): batida offline sincronizada depois não some do mês.
+      const reports = await buildMemberReports(ctx.accountId, memberIds, input.from, input.to, TZ);
       const results = members.map((m) => {
-        const events: MirrorEvent[] = toMirrorEvents(eventsByMember.get(m.id) || [], adjByEvent);
-        const labor = laborByMember.get(m.id) ?? null;
-        return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: labor ? { ...labor } : null, report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [], vacations: vacationsByMember.get(m.id) || [], options }) };
+        const r = reports.get(m.id)!;
+        return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: r.labor ? { ...r.labor } : null, report: r.report };
       });
       void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "timesheet_mirror", description: `Gerou espelho de ponto ${input.from} a ${input.to} (${results.length} funcionário(s))`, newData: { from: input.from, to: input.to, memberIds: results.map((r) => r.member.id) } });
       return { company: { name: company?.name ?? "", legal: legal ?? null }, generatedAt: new Date().toISOString(), timeZone: TZ, results };
+    }),
+
+  /**
+   * Banco de horas da equipe (administrador da empresa): saldo do mês de cada funcionário, com a mesma regra do
+   * promotor (closedPeriodBalance) e do espelho (buildMirror). Sempre restrito à empresa da sessão.
+   */
+  teamTimeBank: companyAdminFeatureProcedure("timeTracking")
+    .input(z.object({ month: monthStr }))
+    .query(async ({ ctx, input }) => {
+      const { from, to } = monthBounds(input.month);
+      const today = todayIn(TZ);
+      const members = await companyMembers(ctx.accountId);
+      const reports = await buildMemberReports(ctx.accountId, members.map((m) => m.id), from, to, TZ);
+      const rows = members.map((m) => {
+        const r = reports.get(m.id)!;
+        return { id: m.id, name: m.name, active: Boolean(m.active), employeeCode: m.employeeCode ?? null, lastEventAt: r.lastEventAt, ...closedPeriodBalance(r.report, r.labor, today) };
+      }).filter((r) => r.active || r.daysTracked > 0);
+      return { month: input.month, from, to, generatedAt: new Date().toISOString(), rows };
+    }),
+
+  /** Detalhe diário do banco de horas de UM funcionário da empresa (previsto x trabalhado, extra/débito). */
+  memberTimeBank: companyAdminFeatureProcedure("timeTracking")
+    .input(z.object({ memberId: z.number().int().positive(), month: monthStr }))
+    .query(async ({ ctx, input }) => {
+      const [member] = await companyMembers(ctx.accountId, [input.memberId]);
+      if (!member) throw new TRPCError({ code: "NOT_FOUND", message: "Funcionário não encontrado nesta empresa." });
+      const { from, to } = monthBounds(input.month);
+      const r = (await buildMemberReports(ctx.accountId, [member.id], from, to, TZ)).get(member.id)!;
+      const days = r.report.days.map((d) => ({ date: d.date, weekday: d.weekday, workedMinutes: d.workedMinutes, expectedMinutes: d.expectedMinutes, diffMinutes: d.diffMinutes, marks: d.marks.map((m) => ({ type: m.type, label: m.label, time: m.time, kind: m.kind })), issues: d.issues, holiday: d.holiday ?? null, excuse: d.excuse?.label ?? null, vacation: Boolean(d.vacation) }));
+      return { member: { id: member.id, name: member.name, employeeCode: member.employeeCode ?? null }, month: input.month, lastEventAt: r.lastEventAt, balance: closedPeriodBalance(r.report, r.labor, todayIn(TZ)), days, notes: r.report.notes };
     }),
 
   /** Registra no log de auditoria que o espelho foi exportado/impresso/compartilhado. */

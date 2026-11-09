@@ -3537,6 +3537,936 @@ var init_brDocs = __esm({
   }
 });
 
+// shared/punchTime.ts
+function resolvePunchTime(input) {
+  const { serverNow } = input;
+  const device = input.deviceTime && !Number.isNaN(input.deviceTime.getTime()) ? input.deviceTime : null;
+  if (!device) return { effectiveTime: serverNow, deviceTimeToStore: null, alert: "none", diffMinutes: 0, note: null };
+  const diffMs = device.getTime() - serverNow.getTime();
+  const diffMinutes = Math.round(diffMs / 6e4);
+  const age = -diffMs;
+  if (input.offline && diffMs <= PUNCH_TOLERANCE_MS && age <= PUNCH_OFFLINE_MAX_AGE_MS && age > 0) {
+    return {
+      effectiveTime: device,
+      deviceTimeToStore: device,
+      alert: "offline",
+      diffMinutes,
+      note: `${OFFLINE_MARKER} Marca\xE7\xE3o feita sem internet \xE0s ${fmt(device)} (hor\xE1rio do aparelho) e recebida pelo servidor \xE0s ${fmt(serverNow)}.`
+    };
+  }
+  if (Math.abs(diffMs) <= PUNCH_TOLERANCE_MS) return { effectiveTime: device, deviceTimeToStore: device, alert: "none", diffMinutes, note: null };
+  if (input.offline && diffMs <= PUNCH_TOLERANCE_MS && age <= PUNCH_OFFLINE_MAX_AGE_MS) {
+    return {
+      effectiveTime: device,
+      deviceTimeToStore: device,
+      alert: "offline",
+      diffMinutes,
+      note: `${OFFLINE_MARKER} Marca\xE7\xE3o feita sem internet \xE0s ${fmt(device)} (hor\xE1rio do aparelho) e recebida pelo servidor \xE0s ${fmt(serverNow)}.`
+    };
+  }
+  return {
+    effectiveTime: serverNow,
+    deviceTimeToStore: null,
+    alert: "server_time_used",
+    diffMinutes,
+    note: `${TIME_ALERT_MARKER} Hor\xE1rio do aparelho (${fmt(device)}) divergiu ${Math.abs(diffMinutes)} min do servidor (${fmt(serverNow)}); considerado o hor\xE1rio do servidor.`
+  };
+}
+function readTimeAlert(notes) {
+  if (!notes) return null;
+  for (const line of String(notes).split("\n")) {
+    if (line.startsWith(TIME_ALERT_MARKER)) return { kind: "server_time_used", text: line.slice(TIME_ALERT_MARKER.length).trim() };
+    if (line.startsWith(OFFLINE_MARKER)) return { kind: "offline", text: line.slice(OFFLINE_MARKER.length).trim() };
+  }
+  return null;
+}
+var PUNCH_TOLERANCE_MS, PUNCH_OFFLINE_MAX_AGE_MS, TIME_ALERT_MARKER, OFFLINE_MARKER, fmt;
+var init_punchTime = __esm({
+  "shared/punchTime.ts"() {
+    "use strict";
+    PUNCH_TOLERANCE_MS = 5 * 60 * 1e3;
+    PUNCH_OFFLINE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1e3;
+    TIME_ALERT_MARKER = "[ALERTA-HORARIO]";
+    OFFLINE_MARKER = "[MARCACAO-OFFLINE]";
+    fmt = (d) => d.toISOString();
+  }
+});
+
+// shared/offlineClock.ts
+function assessDeviceClock(deviceTime, clock, serverNow) {
+  const reasons = [];
+  const anchorServer = valid(clock?.anchorServerTime);
+  const anchorDevice = valid(clock?.anchorDeviceTime);
+  if (deviceTime.getTime() > serverNow.getTime() + CLOCK_DRIFT_LIMIT_MS) reasons.push("hor\xE1rio do aparelho est\xE1 no futuro em rela\xE7\xE3o ao servidor");
+  if (!anchorServer || !anchorDevice) return { suspect: reasons.length > 0, estimatedTime: null, driftMs: null, reasons };
+  const anchorSkew = anchorDevice.getTime() - anchorServer.getTime();
+  if (Math.abs(anchorSkew) > CLOCK_DRIFT_LIMIT_MS) reasons.push(`rel\xF3gio do aparelho j\xE1 estava ${Math.round(Math.abs(anchorSkew) / 6e4)} min ${anchorSkew > 0 ? "adiantado" : "atrasado"} na \xFAltima conex\xE3o`);
+  const deviceDelta = deviceTime.getTime() - anchorDevice.getTime();
+  if (deviceDelta < -CLOCK_DRIFT_LIMIT_MS) reasons.push("rel\xF3gio do aparelho voltou para antes da \xFAltima conex\xE3o");
+  let estimated = null;
+  let drift = null;
+  const mono = clock?.monoElapsedMs;
+  if (typeof mono === "number" && Number.isFinite(mono) && mono >= 0) {
+    estimated = new Date(anchorServer.getTime() + mono);
+    drift = deviceTime.getTime() - estimated.getTime();
+    if (Math.abs(drift) > CLOCK_DRIFT_LIMIT_MS) reasons.push(`rel\xF3gio do aparelho divergiu ${Math.round(Math.abs(drift) / 6e4)} min do tempo decorrido medido pelo app`);
+  } else {
+    estimated = new Date(deviceTime.getTime() - anchorSkew);
+    drift = anchorSkew;
+  }
+  if (estimated && estimated.getTime() > serverNow.getTime() + CLOCK_DRIFT_LIMIT_MS) reasons.push("hora estimada da marca\xE7\xE3o \xE9 posterior ao recebimento");
+  return { suspect: reasons.length > 0, estimatedTime: estimated, driftMs: drift, reasons };
+}
+function clockAlertNote(deviceTime, a) {
+  if (!a.suspect) return null;
+  return `${CLOCK_ALERT_MARKER} Poss\xEDvel altera\xE7\xE3o do rel\xF3gio do aparelho: ${a.reasons.join("; ")}. Hor\xE1rio do aparelho ${deviceTime.toISOString()}${a.estimatedTime ? `, estimado pelo sistema ${a.estimatedTime.toISOString()}` : ""}. Conferir com o funcion\xE1rio.`;
+}
+function readClockAlert(notes) {
+  if (!notes) return null;
+  const line = String(notes).split("\n").find((l) => l.startsWith(CLOCK_ALERT_MARKER));
+  return line ? line.slice(CLOCK_ALERT_MARKER.length).trim() : null;
+}
+var CLOCK_DRIFT_LIMIT_MS, CLOCK_ALERT_MARKER, valid, OFFLINE_SEQUENCE_MARKER;
+var init_offlineClock = __esm({
+  "shared/offlineClock.ts"() {
+    "use strict";
+    CLOCK_DRIFT_LIMIT_MS = 2 * 60 * 1e3;
+    CLOCK_ALERT_MARKER = "[ALERTA-RELOGIO]";
+    valid = (s) => {
+      if (!s) return null;
+      const d = new Date(s);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    OFFLINE_SEQUENCE_MARKER = "[SEQUENCIA-OFFLINE]";
+  }
+});
+
+// server/ponto/repFormat.ts
+import { createHash } from "node:crypto";
+function crc16Kermit(text4) {
+  let crc = 0;
+  const bytes = Buffer.from(text4, "latin1");
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i++) crc = crc & 1 ? crc >>> 1 ^ 33800 : crc >>> 1;
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
+function padA(value, size) {
+  const clean = String(value ?? "").replace(/[\r\n|]/g, " ").normalize("NFC");
+  return clean.slice(0, size).padEnd(size, " ");
+}
+function padN(value, size) {
+  const digits = onlyDigits(String(value ?? ""));
+  return digits.slice(-size).padStart(size, "0");
+}
+function tzOffset(date3, timeZone) {
+  try {
+    const name = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" }).formatToParts(date3).find((p) => p.type === "timeZoneName")?.value || "GMT";
+    const m = /GMT([+-])(\d{2}):?(\d{2})?/.exec(name);
+    if (!m) return "+0000";
+    return `${m[1]}${m[2]}${m[3] ?? "00"}`;
+  } catch {
+    return "-0300";
+  }
+}
+function localParts(date3, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(date3);
+  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+  return { y: p.year, mo: p.month, d: p.day, h: p.hour === "24" ? "00" : p.hour, mi: p.minute };
+}
+function formatDH(date3, timeZone) {
+  const p = localParts(date3, timeZone);
+  return `${p.y}-${p.mo}-${p.d}T${p.h}:${p.mi}:00${tzOffset(date3, timeZone)}`;
+}
+function formatD(date3, timeZone) {
+  const p = localParts(date3, timeZone);
+  return `${p.y}-${p.mo}-${p.d}`;
+}
+function afdType7Fields(p) {
+  return padN(p.nsr, 9) + "7" + formatDH(p.markedAt, p.timeZone) + padN(p.cpf, 12) + formatDH(p.recordedAt, p.timeZone) + (p.collector || COLLECTOR_BROWSER) + (p.offline ? "1" : "0");
+}
+function punchHash(p, previousHash) {
+  return sha256(afdType7Fields(p) + (previousHash || ""));
+}
+function punchContentHash(c) {
+  return sha256(["C1", c.nsr ?? "", c.memberAccountId, c.eventType, c.markedAt.toISOString(), c.recordedAt.toISOString(), c.clientTime ? c.clientTime.toISOString() : "", num(c.latitude), num(c.longitude), num(c.accuracy), c.timeZone || "", onlyDigits(c.cpf), c.offline ? 1 : 0].join("|"));
+}
+function treatmentHash(t2, previousHash) {
+  const payload = [
+    "T1",
+    t2.kind,
+    t2.replacesEventId ?? "",
+    t2.memberAccountId,
+    t2.eventType,
+    t2.markedAt.toISOString(),
+    t2.recordedAt.toISOString(),
+    t2.correctionRequestId ?? "",
+    t2.decidedBy,
+    t2.reason
+  ].join("|");
+  return sha256(payload + (previousHash || ""));
+}
+function verifyLedger(rows4) {
+  const problems = [];
+  const originals = rows4.filter((r) => r.origin === "original").sort((a, b) => (a.nsr ?? Infinity) - (b.nsr ?? Infinity) || a.id - b.id);
+  const treatments = rows4.filter((r) => r.origin !== "original").sort((a, b) => a.id - b.id);
+  let prev = null;
+  let expectedNsr = 1;
+  const seen = /* @__PURE__ */ new Set();
+  for (const r of originals) {
+    if (r.nsr == null || !r.recordHash) {
+      problems.push({ id: r.id, nsr: r.nsr, kind: "unsealed", message: "Marca\xE7\xE3o sem NSR/hash (ainda n\xE3o selada)." });
+      continue;
+    }
+    if (seen.has(r.nsr)) problems.push({ id: r.id, nsr: r.nsr, kind: "duplicate", message: `NSR ${r.nsr} repetido.` });
+    seen.add(r.nsr);
+    if (r.nsr !== expectedNsr) problems.push({ id: r.id, nsr: r.nsr, kind: "gap", message: `Sequ\xEAncia quebrada: esperado NSR ${expectedNsr}, encontrado ${r.nsr}.` });
+    expectedNsr = r.nsr + 1;
+    if ((r.prevHash || null) !== (prev || null)) problems.push({ id: r.id, nsr: r.nsr, kind: "chain", message: `Encadeamento quebrado no NSR ${r.nsr}: o hash anterior gravado n\xE3o confere.` });
+    const recomputed = punchHash({ nsr: r.nsr, markedAt: r.markedAt, recordedAt: r.recordedAt, cpf: r.cpf, timeZone: r.timeZone || "America/Sao_Paulo", collector: r.collectorId || COLLECTOR_BROWSER, offline: r.offline }, r.prevHash);
+    if (recomputed !== r.recordHash) problems.push({ id: r.id, nsr: r.nsr, kind: "hash", message: `Conte\xFAdo da marca\xE7\xE3o NSR ${r.nsr} n\xE3o confere com o hash gravado (poss\xEDvel altera\xE7\xE3o).` });
+    else if (r.contentHash && punchContentHash({ nsr: r.nsr, memberAccountId: r.memberAccountId, eventType: r.eventType, markedAt: r.markedAt, recordedAt: r.recordedAt, clientTime: r.clientTime ?? null, latitude: r.latitude ?? null, longitude: r.longitude ?? null, accuracy: r.accuracy ?? null, timeZone: r.timeZone, cpf: r.cpf, offline: r.offline }) !== r.contentHash) {
+      problems.push({ id: r.id, nsr: r.nsr, kind: "hash", message: `Tipo, hor\xE1rio ou localiza\xE7\xE3o da marca\xE7\xE3o NSR ${r.nsr} n\xE3o confere com o selo gravado (poss\xEDvel altera\xE7\xE3o).` });
+    }
+    prev = r.recordHash;
+  }
+  let tPrev = null;
+  for (const t2 of treatments) {
+    if (!t2.recordHash) {
+      problems.push({ id: t2.id, nsr: null, kind: "unsealed", message: "Tratamento sem hash (ainda n\xE3o selado)." });
+      continue;
+    }
+    if ((t2.prevHash || null) !== (tPrev || null)) problems.push({ id: t2.id, nsr: null, kind: "chain", message: `Encadeamento de tratamentos quebrado no registro ${t2.id}.` });
+    const recomputed = treatmentHash({ id: t2.id, kind: t2.origin === "inclusion" ? "inclusion" : "adjustment", replacesEventId: t2.replacesEventId, memberAccountId: t2.memberAccountId, eventType: t2.eventType, markedAt: t2.markedAt, recordedAt: t2.recordedAt, reason: t2.reason || "", decidedBy: t2.recordedByName || "", correctionRequestId: t2.correctionRequestId }, t2.prevHash);
+    if (recomputed !== t2.recordHash) problems.push({ id: t2.id, nsr: null, kind: "hash", message: `Tratamento ${t2.id} n\xE3o confere com o hash gravado (poss\xEDvel altera\xE7\xE3o).` });
+    tPrev = t2.recordHash;
+  }
+  const lastNsr = originals.reduce((m, r) => Math.max(m, r.nsr ?? 0), 0);
+  return { ok: problems.length === 0, originals: originals.length, treatments: treatments.length, problems, lastNsr };
+}
+function employerIdType(doc) {
+  return onlyDigits(doc).length === 11 ? "2" : "1";
+}
+function buildAfd(input) {
+  const tz = input.timeZone;
+  const lines = [];
+  const h = "0000000001" + employerIdType(input.employer.document) + padA(onlyDigits(input.employer.document), 14) + padN("", 14) + padA(input.employer.name, 150) + padN(input.inpiNumber || "", 17) + input.from + input.to + formatDH(input.generatedAt, tz) + AFD_LAYOUT_VERSION + employerIdType(input.developer.document) + padA(onlyDigits(input.developer.document), 14) + padA("", 30);
+  lines.push(h + crc16Kermit(h));
+  const punches = [...input.punches].sort((a, b) => a.nsr - b.nsr);
+  for (const p of punches) lines.push(afdType7Fields(p) + p.hash);
+  lines.push("999999999" + padN(0, 9) + padN(0, 9) + padN(0, 9) + padN(0, 9) + padN(0, 9) + padN(punches.length, 9) + "9");
+  lines.push(padA(SIGNATURE_PLACEHOLDER, 100));
+  const fileName = `AFD${onlyDigits(input.inpiNumber || "") || "SEMINPI"}${onlyDigits(input.employer.document) || "SEMCNPJ"}REP_P.txt`;
+  return { content: lines.join("\r\n") + "\r\n", fileName, lines };
+}
+function toAejSequence(dayMarks) {
+  let seq = 0;
+  return [...dayMarks].sort((a, b) => a.time.getTime() - b.time.getTime()).map((m) => {
+    const entry = m.type === "clock_in" || m.type === "break_end";
+    if (entry || seq === 0) seq += 1;
+    return { ...m, tpMarc: entry ? "E" : "S", seq };
+  });
+}
+function buildAej(input) {
+  const tz = input.timeZone;
+  const doc = onlyDigits(input.employer.document);
+  const clean = (v, max) => String(v ?? "").replace(/[\r\n|]/g, " ").trim().slice(0, max);
+  const lines = [];
+  const counts = [0, 0, 0, 0, 0, 0, 0, 0];
+  const push = (type, fields) => {
+    lines.push(fields.join("|"));
+    counts[type - 1] += 1;
+  };
+  push(1, ["01", employerIdType(doc), doc, "", "", clean(input.employer.name, 150), input.from, input.to, formatDH(input.generatedAt, tz), AEJ_LAYOUT_VERSION]);
+  push(2, ["02", 1, 3, padN(input.inpiNumber || "", 17)]);
+  const contracts = /* @__PURE__ */ new Map();
+  input.workers.forEach((w) => {
+    if (w.contract) contracts.set(w.contract.code, w.contract);
+  });
+  input.workers.forEach((w, i) => push(3, ["03", i + 1, padN(w.cpf, 11), clean(w.name, 150)]));
+  for (const c of contracts.values()) push(4, ["04", clean(c.code, 30), Math.max(0, Math.round(c.dailyMinutes)), ...c.pairs.flat()]);
+  input.workers.forEach((w, i) => {
+    for (const m of w.marks) {
+      const firstEntry = m.tpMarc === "E" && m.seq === 1;
+      const motivo = m.tpMarc === "D" || m.fonte === "I" ? clean(m.motivo || "Tratamento aprovado pelo empregador", 150) : "";
+      push(5, ["05", i + 1, formatDH(m.markedAt, tz), m.fonte === "O" ? 1 : "", m.tpMarc, String(m.seq).padStart(3, "0"), m.fonte, firstEntry && w.contract ? clean(w.contract.code, 30) : "", motivo]);
+    }
+  });
+  input.workers.forEach((w, i) => {
+    if (w.matEsocial) push(6, ["06", i + 1, clean(w.matEsocial, 30)]);
+  });
+  push(8, ["08", PTRP_NAME, clean(input.ptrp.version, 8), employerIdType(input.ptrp.developerDocument), onlyDigits(input.ptrp.developerDocument), clean(input.ptrp.developerName, 150), clean(input.ptrp.developerEmail, 50)]);
+  lines.push(["99", ...counts].join("|"));
+  lines.push(padA(SIGNATURE_PLACEHOLDER, 100));
+  return { content: lines.join("\r\n") + "\r\n", fileName: `AEJ_${doc || "SEMCNPJ"}_${input.from}_${input.to}.txt`, lines };
+}
+function toLatin1(text4) {
+  return Buffer.from(text4.replace(/[^\x00-\xff]/g, "?"), "latin1");
+}
+var AFD_LAYOUT_VERSION, AEJ_LAYOUT_VERSION, SIGNATURE_PLACEHOLDER, COLLECTOR_BROWSER, PTRP_NAME, onlyDigits, sha256, num;
+var init_repFormat = __esm({
+  "server/ponto/repFormat.ts"() {
+    "use strict";
+    AFD_LAYOUT_VERSION = "003";
+    AEJ_LAYOUT_VERSION = "002";
+    SIGNATURE_PLACEHOLDER = "ASSINATURA_DIGITAL_EM_ARQUIVO_P7S";
+    COLLECTOR_BROWSER = "02";
+    PTRP_NAME = "GondUp";
+    onlyDigits = (v) => String(v ?? "").replace(/\D/g, "");
+    sha256 = (text4) => createHash("sha256").update(text4, "utf8").digest("hex");
+    num = (v) => v == null || Number.isNaN(Number(v)) ? "" : Number(v).toFixed(6);
+  }
+});
+
+// server/ponto/ledger.ts
+import { sql as sql3, inArray as inArray2, and as and3, eq as eq3 } from "drizzle-orm";
+async function ensurePunchLedger() {
+  if (ready) return ready;
+  ready = (async () => {
+    const database2 = await getDb();
+    if (!database2 || typeof database2.execute !== "function") return;
+    for (const alter of ALTERS) await database2.execute(sql3.raw(`ALTER TABLE time_events ${alter}`));
+    await database2.execute(sql3.raw("CREATE UNIQUE INDEX IF NOT EXISTS time_events_company_nsr_unique ON time_events (companyId, nsr)"));
+    await database2.execute(sql3.raw("CREATE INDEX IF NOT EXISTS time_events_replaces_idx ON time_events (companyId, replacesEventId)"));
+    await database2.execute(sql3.raw(`CREATE TABLE IF NOT EXISTS rep_ledger_state (
+      companyId INT NOT NULL PRIMARY KEY,
+      lastNsr BIGINT NOT NULL DEFAULT 0,
+      lastHash VARCHAR(64) NULL,
+      lastTreatmentHash VARCHAR(64) NULL,
+      initializedAt TIMESTAMP NULL,
+      updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )`));
+    await database2.execute(sql3.raw(`CREATE TABLE IF NOT EXISTS timesheet_acceptances (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      companyId INT NOT NULL,
+      memberAccountId INT NOT NULL,
+      month CHAR(7) NOT NULL,
+      decision VARCHAR(16) NOT NULL DEFAULT 'accepted',
+      documentHash CHAR(64) NOT NULL,
+      summary TEXT NULL,
+      comment TEXT NULL,
+      ipAddress VARCHAR(64) NULL,
+      userAgent VARCHAR(512) NULL,
+      acceptedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY timesheet_acceptances_member_idx (companyId, memberAccountId, month),
+      KEY timesheet_acceptances_month_idx (companyId, month)
+    )`));
+  })().catch((e) => {
+    ready = null;
+    throw e;
+  });
+  return ready;
+}
+async function loadWorkerCpf(companyId, memberId) {
+  try {
+    const raw = await getSetting(`labor_profile:${memberId}`, companyId, "");
+    if (!raw) return null;
+    const cpf = onlyDigits(JSON.parse(raw)?.cpf);
+    return cpf.length === 11 ? cpf : null;
+  } catch {
+    return null;
+  }
+}
+async function lockState(tx, companyId) {
+  await tx.execute(sql3`INSERT IGNORE INTO rep_ledger_state (companyId, lastNsr) VALUES (${companyId}, 0)`);
+  const [rows4] = await tx.execute(sql3`SELECT lastNsr, lastHash, lastTreatmentHash, initializedAt FROM rep_ledger_state WHERE companyId = ${companyId} FOR UPDATE`);
+  const row2 = rows4?.[0] ?? {};
+  let state = { lastNsr: Number(row2.lastNsr ?? 0), lastHash: row2.lastHash ?? null, lastTreatmentHash: row2.lastTreatmentHash ?? null };
+  if (!row2.initializedAt) {
+    state = await sealLegacy(tx, companyId, state);
+    await tx.execute(sql3`UPDATE rep_ledger_state SET lastNsr = ${state.lastNsr}, lastHash = ${state.lastHash}, lastTreatmentHash = ${state.lastTreatmentHash}, initializedAt = UTC_TIMESTAMP() WHERE companyId = ${companyId}`);
+  }
+  return state;
+}
+async function sealLegacy(tx, companyId, state) {
+  const [rows4] = await tx.execute(sql3`SELECT id, memberAccountId, eventType, serverTime, deviceTime, latitude, longitude, accuracy, notes FROM time_events WHERE companyId = ${companyId} AND recordHash IS NULL ORDER BY id`);
+  if (!rows4?.length) return state;
+  const cpfCache = /* @__PURE__ */ new Map();
+  let { lastNsr, lastHash, lastTreatmentHash } = state;
+  for (const r of rows4) {
+    const memberId = Number(r.memberAccountId);
+    if (!cpfCache.has(memberId)) cpfCache.set(memberId, await loadWorkerCpf(companyId, memberId));
+    const cpf = cpfCache.get(memberId) ?? null;
+    const recordedAt = new Date(r.serverTime);
+    const markedAt = new Date(r.deviceTime || r.serverTime);
+    const offline = /\[MARCACAO-OFFLINE\]/.test(String(r.notes || ""));
+    if (LEGACY_INCLUSION.test(String(r.notes || ""))) {
+      const reason = String(r.notes || "").slice(0, 2e3);
+      const hash2 = treatmentHash({ id: Number(r.id), kind: "inclusion", replacesEventId: null, memberAccountId: memberId, eventType: r.eventType, markedAt, recordedAt, reason, decidedBy: "", correctionRequestId: null }, lastTreatmentHash);
+      await tx.execute(sql3`UPDATE time_events SET origin = 'inclusion', reason = ${reason}, recordHash = ${hash2}, prevHash = ${lastTreatmentHash}, timeZone = ${DEFAULT_TZ}, sealedLegacy = 1 WHERE id = ${r.id} AND recordHash IS NULL`);
+      lastTreatmentHash = hash2;
+      continue;
+    }
+    const nsr = lastNsr + 1;
+    const p = { nsr, markedAt, recordedAt, cpf, timeZone: DEFAULT_TZ, collector: COLLECTOR_BROWSER, offline };
+    const hash = punchHash(p, lastHash);
+    const content = punchContentHash({ nsr, memberAccountId: memberId, eventType: r.eventType, markedAt, recordedAt, clientTime: null, latitude: r.latitude, longitude: r.longitude, accuracy: r.accuracy, timeZone: DEFAULT_TZ, cpf, offline });
+    await tx.execute(sql3`UPDATE time_events SET nsr = ${nsr}, recordHash = ${hash}, prevHash = ${lastHash}, contentHash = ${content}, timeZone = ${DEFAULT_TZ}, collectorId = ${COLLECTOR_BROWSER}, offline = ${offline ? 1 : 0}, workerCpf = ${cpf}, sealedLegacy = 1 WHERE id = ${r.id} AND recordHash IS NULL`);
+    lastNsr = nsr;
+    lastHash = hash;
+  }
+  return { lastNsr, lastHash, lastTreatmentHash };
+}
+async function appendOriginalPunch(input) {
+  await ensurePunchLedger();
+  const database2 = await getDb();
+  if (!database2) throw new Error("Banco de dados indispon\xEDvel.");
+  const cpf = await loadWorkerCpf(input.companyId, input.memberAccountId);
+  return database2.transaction(async (tx) => {
+    const state = await lockState(tx, input.companyId);
+    const nsr = state.lastNsr + 1;
+    const recordedAt = truncSec(/* @__PURE__ */ new Date());
+    const deviceTime = input.deviceTimeToStore ? truncSec(input.deviceTimeToStore) : null;
+    const markedAt = deviceTime ?? recordedAt;
+    const clientTime = input.clientTime ? truncSec(input.clientTime) : null;
+    const tz = validTimeZone(input.timeZone);
+    const hash = punchHash({ nsr, markedAt, recordedAt, cpf, timeZone: tz, collector: COLLECTOR_BROWSER, offline: input.offline }, state.lastHash);
+    const content = punchContentHash({ nsr, memberAccountId: input.memberAccountId, eventType: input.eventType, markedAt, recordedAt, clientTime, latitude: input.latitude, longitude: input.longitude, accuracy: input.accuracy, timeZone: tz, cpf, offline: input.offline });
+    const result = await tx.insert(timeEvents).values({
+      companyId: input.companyId,
+      memberAccountId: input.memberAccountId,
+      eventType: input.eventType,
+      serverTime: recordedAt,
+      deviceTime,
+      latitude: input.latitude,
+      longitude: input.longitude,
+      accuracy: input.accuracy,
+      locationStatus: input.locationStatus,
+      locationError: input.locationError ?? null,
+      deviceInfo: input.deviceInfo ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
+      notes: input.notes ?? null,
+      synced: true,
+      nsr,
+      recordHash: hash,
+      prevHash: state.lastHash,
+      contentHash: content,
+      timeZone: tz,
+      collectorId: COLLECTOR_BROWSER,
+      offline: input.offline,
+      clientTime,
+      workerCpf: cpf,
+      origin: "original"
+    });
+    await tx.execute(sql3`UPDATE rep_ledger_state SET lastNsr = ${nsr}, lastHash = ${hash} WHERE companyId = ${input.companyId}`);
+    return Number(result?.[0]?.insertId);
+  });
+}
+async function appendTreatment(tx, input) {
+  const state = await lockState(tx, input.companyId);
+  const recordedAt = truncSec(/* @__PURE__ */ new Date());
+  const markedAt = truncSec(input.markedAt);
+  const reason = input.reason.slice(0, 2e3);
+  const hash = treatmentHash({ id: null, kind: input.kind, replacesEventId: input.replacesEventId, memberAccountId: input.memberAccountId, eventType: input.eventType, markedAt, recordedAt, reason, decidedBy: input.decidedByName, correctionRequestId: input.correctionRequestId }, state.lastTreatmentHash);
+  const result = await tx.insert(timeEvents).values({
+    companyId: input.companyId,
+    memberAccountId: input.memberAccountId,
+    eventType: input.eventType,
+    serverTime: recordedAt,
+    deviceTime: markedAt,
+    notes: input.notes ?? null,
+    synced: true,
+    locationStatus: "unavailable",
+    origin: input.kind,
+    replacesEventId: input.replacesEventId,
+    correctionRequestId: input.correctionRequestId,
+    recordedByMemberId: input.decidedByMemberId,
+    recordedByName: input.decidedByName,
+    reason,
+    recordHash: hash,
+    prevHash: state.lastTreatmentHash,
+    timeZone: validTimeZone(input.timeZone || DEFAULT_TZ)
+  });
+  await tx.execute(sql3`UPDATE rep_ledger_state SET lastTreatmentHash = ${hash} WHERE companyId = ${input.companyId}`);
+  return Number(result?.[0]?.insertId);
+}
+function validTimeZone(tz) {
+  const value = String(tz || "").trim();
+  if (!value) return DEFAULT_TZ;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return value.slice(0, 64);
+  } catch {
+    return DEFAULT_TZ;
+  }
+}
+async function supersededIds(companyId, ids) {
+  const out = /* @__PURE__ */ new Set();
+  if (!ids.length) return out;
+  await ensurePunchLedger();
+  const database2 = await getDb();
+  if (!database2) return out;
+  for (let i = 0; i < ids.length; i += 1e3) {
+    const chunk = ids.slice(i, i + 1e3);
+    const rows4 = await database2.select({ id: timeEvents.replacesEventId }).from(timeEvents).where(and3(eq3(timeEvents.companyId, companyId), inArray2(timeEvents.replacesEventId, chunk)));
+    for (const r of rows4) if (r.id != null) out.add(Number(r.id));
+  }
+  return out;
+}
+async function ensureDisregardsTable() {
+  if (disregardsReady) return disregardsReady;
+  disregardsReady = (async () => {
+    const database2 = await getDb();
+    if (!database2 || typeof database2.execute !== "function") return;
+    await database2.execute(sql3.raw(`CREATE TABLE IF NOT EXISTS time_event_disregards (
+      id INT AUTO_INCREMENT NOT NULL,
+      companyId INT NOT NULL,
+      memberAccountId INT NOT NULL,
+      timeEventId INT NOT NULL,
+      reason TEXT NOT NULL,
+      decidedByMemberId INT NULL,
+      decidedByName VARCHAR(255) NULL,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      revertedAt TIMESTAMP NULL,
+      revertedByMemberId INT NULL,
+      revertedByName VARCHAR(255) NULL,
+      revertReason TEXT NULL,
+      PRIMARY KEY (id),
+      KEY time_event_disregards_event_idx (companyId, timeEventId),
+      KEY time_event_disregards_member_idx (companyId, memberAccountId)
+    )`));
+  })().catch((e) => {
+    disregardsReady = null;
+    throw e;
+  });
+  return disregardsReady;
+}
+async function activeDisregards(companyId, ids) {
+  const out = /* @__PURE__ */ new Map();
+  if (!ids.length) return out;
+  try {
+    const database2 = await getDb();
+    if (!database2 || typeof database2.execute !== "function") return out;
+    await ensureDisregardsTable();
+    for (let i = 0; i < ids.length; i += 1e3) {
+      const chunk = ids.slice(i, i + 1e3);
+      const res = await database2.execute(sql3`SELECT id, timeEventId, reason, decidedByName, createdAt FROM time_event_disregards WHERE companyId = ${companyId} AND revertedAt IS NULL AND timeEventId IN (${sql3.join(chunk.map((id2) => sql3`${id2}`), sql3`, `)}) ORDER BY id`);
+      const rows4 = Array.isArray(res?.[0]) ? res[0] : [];
+      for (const r of rows4) out.set(Number(r.timeEventId), { id: Number(r.id), reason: String(r.reason || ""), decidedByName: r.decidedByName ?? null, createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : "" });
+    }
+  } catch (error) {
+    console.warn("[ponto] desconsidera\xE7\xF5es indispon\xEDveis", error);
+  }
+  return out;
+}
+async function effectiveRows(rows4, opts) {
+  if (!rows4.length) return rows4;
+  const companyId = rows4[0].companyId;
+  const gone = await supersededIds(companyId, rows4.map((r) => r.id));
+  const kept = gone.size ? rows4.filter((r) => !gone.has(r.id)) : rows4;
+  const dis = await activeDisregards(companyId, kept.map((r) => r.id));
+  if (opts?.keepDisregarded) return kept.map((r) => ({ ...r, disregard: dis.get(r.id) ?? null }));
+  return dis.size ? kept.filter((r) => !dis.has(r.id)) : kept;
+}
+function toLedgerRow(r) {
+  return {
+    id: Number(r.id),
+    origin: String(r.origin || "original"),
+    nsr: r.nsr == null ? null : Number(r.nsr),
+    recordHash: r.recordHash ?? null,
+    prevHash: r.prevHash ?? null,
+    memberAccountId: Number(r.memberAccountId),
+    eventType: String(r.eventType),
+    markedAt: new Date(r.deviceTime || r.serverTime),
+    recordedAt: new Date(r.serverTime),
+    cpf: r.workerCpf ?? null,
+    timeZone: r.timeZone ?? null,
+    collectorId: r.collectorId ?? null,
+    offline: Boolean(Number(r.offline ?? 0)),
+    replacesEventId: r.replacesEventId == null ? null : Number(r.replacesEventId),
+    correctionRequestId: r.correctionRequestId == null ? null : Number(r.correctionRequestId),
+    recordedByName: r.recordedByName ?? null,
+    reason: r.reason ?? null,
+    contentHash: r.contentHash ?? null,
+    clientTime: r.clientTime ? new Date(r.clientTime) : null,
+    latitude: r.latitude == null ? null : Number(r.latitude),
+    longitude: r.longitude == null ? null : Number(r.longitude),
+    accuracy: r.accuracy == null ? null : Number(r.accuracy)
+  };
+}
+var DEFAULT_TZ, NEW_SHIFT_MARKER, truncSec, ready, ALTERS, LEGACY_INCLUSION, disregardsReady;
+var init_ledger = __esm({
+  "server/ponto/ledger.ts"() {
+    "use strict";
+    init_db();
+    init_schema();
+    init_repFormat();
+    DEFAULT_TZ = "America/Sao_Paulo";
+    NEW_SHIFT_MARKER = "[NOVA-JORNADA-MESMO-DIA]";
+    truncSec = (d) => new Date(Math.floor(d.getTime() / 1e3) * 1e3);
+    ready = null;
+    ALTERS = [
+      "ADD COLUMN IF NOT EXISTS nsr BIGINT NULL",
+      "ADD COLUMN IF NOT EXISTS recordHash VARCHAR(64) NULL",
+      "ADD COLUMN IF NOT EXISTS prevHash VARCHAR(64) NULL",
+      "ADD COLUMN IF NOT EXISTS contentHash VARCHAR(64) NULL",
+      "ADD COLUMN IF NOT EXISTS timeZone VARCHAR(64) NULL",
+      "ADD COLUMN IF NOT EXISTS collectorId VARCHAR(8) NULL",
+      "ADD COLUMN IF NOT EXISTS offline TINYINT(1) NOT NULL DEFAULT 0",
+      "ADD COLUMN IF NOT EXISTS clientTime TIMESTAMP NULL",
+      "ADD COLUMN IF NOT EXISTS workerCpf VARCHAR(14) NULL",
+      "ADD COLUMN IF NOT EXISTS origin VARCHAR(16) NOT NULL DEFAULT 'original'",
+      "ADD COLUMN IF NOT EXISTS replacesEventId INT NULL",
+      "ADD COLUMN IF NOT EXISTS correctionRequestId INT NULL",
+      "ADD COLUMN IF NOT EXISTS recordedByMemberId INT NULL",
+      "ADD COLUMN IF NOT EXISTS recordedByName VARCHAR(255) NULL",
+      "ADD COLUMN IF NOT EXISTS reason TEXT NULL",
+      "ADD COLUMN IF NOT EXISTS sealedLegacy TINYINT(1) NOT NULL DEFAULT 0"
+    ];
+    LEGACY_INCLUSION = /^Batida incluída via solicitação aprovada/;
+    disregardsReady = null;
+  }
+});
+
+// server/modules/vacations.ts
+var vacations_exports = {};
+__export(vacations_exports, {
+  ensureVacationSchedulesTable: () => ensureVacationSchedulesTable,
+  vacationsRouter: () => vacationsRouter
+});
+import { TRPCError as TRPCError5 } from "@trpc/server";
+import { and as and4, eq as eq4, gte, lte, ne, inArray as inArray3 } from "drizzle-orm";
+import { z } from "zod";
+function asDateStr(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.slice(0, 10);
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(value.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return String(value).slice(0, 10);
+}
+function dbDate(value) {
+  return value;
+}
+async function ensureVacationSchedulesTable() {
+  if (tableReady) return tableReady;
+  tableReady = (async () => {
+    const database2 = await getDb();
+    if (!database2) return;
+    await database2.execute(`CREATE TABLE IF NOT EXISTS vacation_schedules (
+      id int AUTO_INCREMENT PRIMARY KEY,
+      companyId int NOT NULL,
+      memberAccountId int NOT NULL,
+      startDate date NOT NULL,
+      endDate date NOT NULL,
+      days int NOT NULL,
+      status enum('scheduled','cancelled') NOT NULL DEFAULT 'scheduled',
+      notes text,
+      createdByMemberAccountId int NOT NULL,
+      updatedByMemberAccountId int,
+      cancelledByMemberAccountId int,
+      cancelledAt timestamp NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY vacation_schedules_company_member_idx (companyId, memberAccountId),
+      KEY vacation_schedules_company_dates_idx (companyId, startDate, endDate),
+      KEY vacation_schedules_status_idx (status)
+    )`);
+  })().catch((e) => {
+    tableReady = null;
+    throw e;
+  });
+  return tableReady;
+}
+function daysBetween(start, end) {
+  const s = /* @__PURE__ */ new Date(start + "T00:00:00");
+  const e = /* @__PURE__ */ new Date(end + "T00:00:00");
+  if (e < s) throw new TRPCError5({ code: "BAD_REQUEST", message: "Data final n\xE3o pode ser anterior \xE0 inicial." });
+  return Math.round((e.getTime() - s.getTime()) / 864e5) + 1;
+}
+function assertManager(ctx) {
+  if (ctx.user?.role === "promoter") {
+    throw new TRPCError5({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem gerenciar f\xE9rias." });
+  }
+}
+async function assertNoOverlap(tx, companyId, memberAccountId, startDate, endDate, excludeId) {
+  const conditions = [
+    eq4(vacationSchedules.companyId, companyId),
+    eq4(vacationSchedules.memberAccountId, memberAccountId),
+    eq4(vacationSchedules.status, "scheduled"),
+    and4(lte(vacationSchedules.startDate, dbDate(endDate)), gte(vacationSchedules.endDate, dbDate(startDate)))
+  ];
+  if (excludeId) conditions.push(ne(vacationSchedules.id, excludeId));
+  const existing = await tx.select({ id: vacationSchedules.id }).from(vacationSchedules).where(and4(...conditions)).limit(1);
+  if (existing.length) throw new TRPCError5({ code: "CONFLICT", message: "J\xE1 existe f\xE9rias sobrepostas para este funcion\xE1rio no per\xEDodo informado." });
+}
+async function teamOverlapWarning(database2, companyId, memberAccountId, startDate, endDate) {
+  const [me] = await database2.select({ supervisorId: memberAccounts2.supervisorId }).from(memberAccounts2).where(eq4(memberAccounts2.id, memberAccountId)).limit(1);
+  if (!me?.supervisorId) return null;
+  const teammates = await database2.select({ id: memberAccounts2.id, userName: memberAccounts2.userName }).from(memberAccounts2).where(and4(eq4(memberAccounts2.companyId, companyId), eq4(memberAccounts2.supervisorId, me.supervisorId), ne(memberAccounts2.id, memberAccountId), eq4(memberAccounts2.active, true)));
+  if (!teammates.length) return null;
+  const ids = teammates.map((t2) => t2.id);
+  const overlaps = await database2.select({ memberAccountId: vacationSchedules.memberAccountId }).from(vacationSchedules).where(and4(
+    eq4(vacationSchedules.companyId, companyId),
+    eq4(vacationSchedules.status, "scheduled"),
+    inArray3(vacationSchedules.memberAccountId, ids),
+    and4(lte(vacationSchedules.startDate, dbDate(endDate)), gte(vacationSchedules.endDate, dbDate(startDate)))
+  ));
+  if (!overlaps.length) return null;
+  const names = teammates.filter((t2) => overlaps.some((o) => o.memberAccountId === t2.id)).map((t2) => t2.userName);
+  return names.length ? `Aten\xE7\xE3o: ${names.join(", ")} da mesma equipe tamb\xE9m estar\xE3o de f\xE9rias neste per\xEDodo.` : null;
+}
+async function requireDb() {
+  const database2 = await getDb();
+  if (!database2) throw new TRPCError5({ code: "SERVICE_UNAVAILABLE", message: "Banco de dados indispon\xEDvel no momento. Tente novamente em instantes." });
+  return database2;
+}
+var dateStr, tableReady, vacationsRouter;
+var init_vacations = __esm({
+  "server/modules/vacations.ts"() {
+    "use strict";
+    init_schema();
+    init_trpc();
+    init_db();
+    dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+    tableReady = null;
+    vacationsRouter = router({
+      members: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
+        assertManager(ctx);
+        const database2 = await requireDb();
+        return database2.select({ id: memberAccounts2.id, userName: memberAccounts2.userName }).from(memberAccounts2).where(and4(eq4(memberAccounts2.companyId, ctx.accountId), eq4(memberAccounts2.active, true))).orderBy(memberAccounts2.userName);
+      }),
+      list: commercialFeatureProcedure("timeTracking").input(z.object({
+        memberAccountId: z.number().int().positive().optional(),
+        from: dateStr.optional(),
+        to: dateStr.optional(),
+        status: z.enum(["scheduled", "cancelled", "all"]).optional()
+      }).optional()).query(async ({ ctx, input }) => {
+        assertManager(ctx);
+        await ensureVacationSchedulesTable();
+        const database2 = await requireDb();
+        const conds = [eq4(vacationSchedules.companyId, ctx.accountId)];
+        if (input?.memberAccountId) conds.push(eq4(vacationSchedules.memberAccountId, input.memberAccountId));
+        if (input?.status && input.status !== "all") conds.push(eq4(vacationSchedules.status, input.status));
+        if (input?.from) conds.push(gte(vacationSchedules.endDate, dbDate(input.from)));
+        if (input?.to) conds.push(lte(vacationSchedules.startDate, dbDate(input.to)));
+        const rows4 = await database2.select({
+          id: vacationSchedules.id,
+          memberAccountId: vacationSchedules.memberAccountId,
+          startDate: vacationSchedules.startDate,
+          endDate: vacationSchedules.endDate,
+          days: vacationSchedules.days,
+          status: vacationSchedules.status,
+          notes: vacationSchedules.notes,
+          createdAt: vacationSchedules.createdAt,
+          cancelledAt: vacationSchedules.cancelledAt,
+          createdByMemberAccountId: vacationSchedules.createdByMemberAccountId,
+          updatedByMemberAccountId: vacationSchedules.updatedByMemberAccountId,
+          cancelledByMemberAccountId: vacationSchedules.cancelledByMemberAccountId,
+          memberName: memberAccounts2.userName
+        }).from(vacationSchedules).innerJoin(memberAccounts2, eq4(memberAccounts2.id, vacationSchedules.memberAccountId)).where(and4(...conds)).orderBy(vacationSchedules.startDate);
+        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+      }),
+      mine: protectedProcedure.query(async ({ ctx }) => {
+        if (!ctx.memberAccountId || !ctx.accountId) throw new TRPCError5({ code: "FORBIDDEN" });
+        await ensureVacationSchedulesTable();
+        const database2 = await requireDb();
+        const rows4 = await database2.select().from(vacationSchedules).where(and4(eq4(vacationSchedules.companyId, ctx.accountId), eq4(vacationSchedules.memberAccountId, ctx.memberAccountId))).orderBy(vacationSchedules.startDate);
+        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+      }),
+      create: commercialFeatureProcedure("timeTracking").input(z.object({
+        memberAccountId: z.number().int().positive(),
+        startDate: dateStr,
+        endDate: dateStr,
+        notes: z.string().max(500).optional()
+      })).mutation(async ({ ctx, input }) => {
+        assertManager(ctx);
+        await ensureVacationSchedulesTable();
+        const database2 = await requireDb();
+        const [member] = await database2.select({ id: memberAccounts2.id, companyId: memberAccounts2.companyId, active: memberAccounts2.active }).from(memberAccounts2).where(eq4(memberAccounts2.id, input.memberAccountId)).limit(1);
+        if (!member || member.companyId !== ctx.accountId || !member.active) {
+          throw new TRPCError5({ code: "NOT_FOUND", message: "Funcion\xE1rio n\xE3o encontrado ou inativo." });
+        }
+        const days = daysBetween(input.startDate, input.endDate);
+        const warning = await teamOverlapWarning(database2, ctx.accountId, input.memberAccountId, input.startDate, input.endDate);
+        await database2.transaction(async (tx) => {
+          await assertNoOverlap(tx, ctx.accountId, input.memberAccountId, input.startDate, input.endDate);
+          await tx.insert(vacationSchedules).values({
+            companyId: ctx.accountId,
+            memberAccountId: input.memberAccountId,
+            startDate: dbDate(input.startDate),
+            endDate: dbDate(input.endDate),
+            days,
+            notes: input.notes || null,
+            createdByMemberAccountId: ctx.memberAccountId
+          });
+        });
+        return { ok: true, warning };
+      }),
+      update: commercialFeatureProcedure("timeTracking").input(z.object({
+        id: z.number().int().positive(),
+        startDate: dateStr,
+        endDate: dateStr,
+        notes: z.string().max(500).optional()
+      })).mutation(async ({ ctx, input }) => {
+        assertManager(ctx);
+        await ensureVacationSchedulesTable();
+        const database2 = await requireDb();
+        const days = daysBetween(input.startDate, input.endDate);
+        let warning = null;
+        await database2.transaction(async (tx) => {
+          const [row2] = await tx.select().from(vacationSchedules).where(and4(eq4(vacationSchedules.id, input.id), eq4(vacationSchedules.companyId, ctx.accountId))).limit(1);
+          if (!row2) throw new TRPCError5({ code: "NOT_FOUND" });
+          if (row2.status === "cancelled") throw new TRPCError5({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel editar f\xE9rias canceladas." });
+          await assertNoOverlap(tx, ctx.accountId, row2.memberAccountId, input.startDate, input.endDate, input.id);
+          warning = await teamOverlapWarning(tx, ctx.accountId, row2.memberAccountId, input.startDate, input.endDate);
+          await tx.update(vacationSchedules).set({
+            startDate: dbDate(input.startDate),
+            endDate: dbDate(input.endDate),
+            days,
+            notes: input.notes ?? row2.notes,
+            updatedByMemberAccountId: ctx.memberAccountId
+          }).where(eq4(vacationSchedules.id, input.id));
+        });
+        return { ok: true, warning };
+      }),
+      cancel: commercialFeatureProcedure("timeTracking").input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        assertManager(ctx);
+        await ensureVacationSchedulesTable();
+        const database2 = await requireDb();
+        await database2.transaction(async (tx) => {
+          const [row2] = await tx.select().from(vacationSchedules).where(and4(eq4(vacationSchedules.id, input.id), eq4(vacationSchedules.companyId, ctx.accountId))).limit(1);
+          if (!row2) throw new TRPCError5({ code: "NOT_FOUND" });
+          if (row2.status === "cancelled") return;
+          await tx.update(vacationSchedules).set({
+            status: "cancelled",
+            cancelledAt: /* @__PURE__ */ new Date(),
+            cancelledByMemberAccountId: ctx.memberAccountId
+          }).where(eq4(vacationSchedules.id, input.id));
+        });
+        return { ok: true };
+      }),
+      calendar: commercialFeatureProcedure("timeTracking").input(z.object({ year: z.number().int(), month: z.number().int().min(1).max(12).optional() })).query(async ({ ctx, input }) => {
+        assertManager(ctx);
+        await ensureVacationSchedulesTable();
+        const database2 = await requireDb();
+        const from = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-01` : `${input.year}-01-01`;
+        const last = new Date(input.year, input.month ?? 12, 0).getDate();
+        const to = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-${String(last).padStart(2, "0")}` : `${input.year}-12-31`;
+        const rows4 = await database2.select({
+          id: vacationSchedules.id,
+          memberAccountId: vacationSchedules.memberAccountId,
+          memberName: memberAccounts2.userName,
+          startDate: vacationSchedules.startDate,
+          endDate: vacationSchedules.endDate,
+          status: vacationSchedules.status,
+          createdByMemberAccountId: vacationSchedules.createdByMemberAccountId,
+          updatedByMemberAccountId: vacationSchedules.updatedByMemberAccountId,
+          cancelledByMemberAccountId: vacationSchedules.cancelledByMemberAccountId
+        }).from(vacationSchedules).innerJoin(memberAccounts2, eq4(memberAccounts2.id, vacationSchedules.memberAccountId)).where(and4(
+          eq4(vacationSchedules.companyId, ctx.accountId),
+          eq4(vacationSchedules.status, "scheduled"),
+          lte(vacationSchedules.startDate, dbDate(to)),
+          gte(vacationSchedules.endDate, dbDate(from))
+        ));
+        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+      })
+    });
+  }
+});
+
+// server/modules/mirrorData.ts
+import { and as and5, eq as eq5, gte as gte2, inArray as inArray4, lt, sql as sql4 } from "drizzle-orm";
+function mirrorWindow(from, to) {
+  return {
+    start: new Date(Date.parse(`${from}T00:00:00Z`) - 15 * 36e5),
+    end: new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 36e5)
+  };
+}
+async function loadMirrorEventRows(companyId, memberIds, from, to) {
+  if (!memberIds.length) return [];
+  const database2 = await getDb();
+  if (!database2) return [];
+  const { start, end } = mirrorWindow(from, to);
+  await ensurePunchLedger();
+  return effectiveRows(await database2.select().from(timeEvents).where(and5(eq5(timeEvents.companyId, companyId), inArray4(timeEvents.memberAccountId, memberIds), gte2(effectiveEventTime, start), lt(effectiveEventTime, end))).orderBy(effectiveEventTime), { keepDisregarded: true });
+}
+async function loadMemberVacations(companyId, memberIds, from, to) {
+  const map = /* @__PURE__ */ new Map();
+  if (!memberIds.length) return map;
+  try {
+    const { ensureVacationSchedulesTable: ensureVacationSchedulesTable2 } = await Promise.resolve().then(() => (init_vacations(), vacations_exports));
+    await ensureVacationSchedulesTable2();
+    const database2 = await getDb();
+    if (!database2) return map;
+    const rows4 = await database2.select({ memberAccountId: vacationSchedules.memberAccountId, startDate: vacationSchedules.startDate, endDate: vacationSchedules.endDate }).from(vacationSchedules).where(and5(eq5(vacationSchedules.companyId, companyId), eq5(vacationSchedules.status, "scheduled"), inArray4(vacationSchedules.memberAccountId, memberIds)));
+    for (const r of rows4) {
+      const startDate = dateOnly(r.startDate), endDate = dateOnly(r.endDate);
+      if (!startDate || !endDate || endDate < from || startDate > to) continue;
+      map.set(r.memberAccountId, [...map.get(r.memberAccountId) || [], { startDate, endDate }]);
+    }
+  } catch (error) {
+    console.warn("[mirror] n\xE3o foi poss\xEDvel carregar f\xE9rias", error);
+  }
+  return map;
+}
+function dateOnly(value) {
+  if (!value) return "";
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+async function loadMirrorOptions(companyId) {
+  const raw = await getSetting(OPTIONAL_HOLIDAYS_SETTING, companyId, "");
+  return { optionalHolidaysAsHoliday: raw === "1" || raw === "true" };
+}
+async function loadAdjustmentsByEvent(companyId, memberIds) {
+  const map = /* @__PURE__ */ new Map();
+  if (!memberIds.length) return map;
+  const database2 = await getDb();
+  if (!database2) return map;
+  try {
+    const { ensureAdjustmentsTable: ensureAdjustmentsTable2 } = await Promise.resolve().then(() => (init_timesheetMirror2(), timesheetMirror_exports));
+    await ensureAdjustmentsTable2();
+    const rows4 = (await database2.execute(sql4`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${companyId} AND memberAccountId IN (${sql4.join(memberIds.map((id2) => sql4`${id2}`), sql4`, `)}) ORDER BY id`))[0];
+    for (const a of rows4) if (!map.has(Number(a.timeEventId))) map.set(Number(a.timeEventId), a);
+  } catch (error) {
+    console.warn("[mirror] ajustes indispon\xEDveis", error);
+  }
+  return map;
+}
+function cleanReason(reason) {
+  return String(reason || "").replace(/^Batida incluída via solicitação aprovada em \S+?\.?\s*Motivo:\s*/i, "").trim();
+}
+function toMirrorEvents(rows4, adjByEvent) {
+  return rows4.map((r) => {
+    const a = adjByEvent.get(r.id);
+    const notes = r.notes || "";
+    const inclusion = r.origin === "inclusion";
+    return {
+      id: r.id,
+      type: r.eventType,
+      time: (r.deviceTime || r.serverTime).toISOString(),
+      receivedAt: r.serverTime.toISOString(),
+      synced: r.synced,
+      notes,
+      automatic: /automática/i.test(notes) && /^auto-clock-out:/.test(r.idempotencyKey || ""),
+      adjustment: a ? { originalType: a.originalType, originalTime: new Date(a.originalTime).toISOString(), justification: a.justification, reviewedBy: a.reviewedByName, reviewedAt: a.createdAt ? new Date(a.createdAt).toISOString() : null } : inclusion || r.origin === "adjustment" ? { originalType: inclusion ? "missing" : r.eventType, originalTime: (r.deviceTime || r.serverTime).toISOString(), justification: cleanReason(r.reason), reviewedBy: r.recordedByName, reviewedAt: r.serverTime.toISOString() } : null,
+      legacyAdjustment: !a && r.origin === "original" && /Ajuste aprovado em/.test(notes),
+      timeAlert: readTimeAlert(notes),
+      offline: Boolean(r.offline),
+      clockAlert: readClockAlert(notes),
+      disregarded: r.disregard ? { reason: r.disregard.reason, by: r.disregard.decidedByName, at: r.disregard.createdAt } : null
+    };
+  });
+}
+var effectiveEventTime, OPTIONAL_HOLIDAYS_SETTING;
+var init_mirrorData = __esm({
+  "server/modules/mirrorData.ts"() {
+    "use strict";
+    init_db();
+    init_schema();
+    init_punchTime();
+    init_offlineClock();
+    init_ledger();
+    effectiveEventTime = sql4`COALESCE(${timeEvents.deviceTime}, ${timeEvents.serverTime})`;
+    OPTIONAL_HOLIDAYS_SETTING = "mirror_optional_holidays_as_holiday";
+  }
+});
+
 // shared/holidays.ts
 function easterSunday(year) {
   const a = year % 19;
@@ -3645,7 +4575,7 @@ var init_correctionExcuse = __esm({
 });
 
 // shared/timesheetMirror.ts
-function localParts(iso, timeZone) {
+function localParts2(iso, timeZone) {
   const f = new Intl.DateTimeFormat("en-CA", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const v = Object.fromEntries(f.formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
   return { date: `${v.year}-${v.month}-${v.day}`, time: `${v.hour}:${v.minute}:${v.second}`, hm: `${v.hour}:${v.minute}`, minutesOfDay: Number(v.hour) * 60 + Number(v.minute) };
@@ -3653,7 +4583,7 @@ function localParts(iso, timeZone) {
 function nightOverlap(aMs, bMs, tz, start, end) {
   let n = 0;
   for (let t2 = Math.ceil(aMs / 6e4) * 6e4; t2 < bMs; t2 += 6e4) {
-    const m = localParts(new Date(t2).toISOString(), tz).minutesOfDay;
+    const m = localParts2(new Date(t2).toISOString(), tz).minutesOfDay;
     if (start > end ? m >= start || m < end : m >= start && m < end) n++;
   }
   return n;
@@ -3666,14 +4596,14 @@ function buildMirror(input) {
   const disregardedByDate = /* @__PURE__ */ new Map();
   for (const e of sorted) {
     if (!e.disregarded) continue;
-    const date3 = localParts(e.time, tz).date;
+    const date3 = localParts2(e.time, tz).date;
     disregardedByDate.set(date3, [...disregardedByDate.get(date3) || [], { type: e.type, label: MARK_LABEL[e.type], time: e.time, reason: e.disregarded.reason, by: e.disregarded.by ?? null }]);
   }
   const notes = [];
   const shifts = [];
   let cur = null;
   for (const ev of events) {
-    const date3 = localParts(ev.time, tz).date;
+    const date3 = localParts2(ev.time, tz).date;
     const lastT = cur ? new Date(cur.events[cur.events.length - 1].time).getTime() : 0;
     const stale = cur && new Date(ev.time).getTime() - lastT > 20 * 36e5;
     if (ev.type === "clock_in" || !cur || stale) {
@@ -3852,7 +4782,7 @@ function fmtMinutes(min, signed = false) {
   return `${sign}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
 }
 function fmtMark(m, tz) {
-  const t2 = localParts(m.time, tz);
+  const t2 = localParts2(m.time, tz);
   const included = m.kind === "adjusted" && !m.originalLabel;
   let tag = "";
   if (m.kind === "automatic") tag = "A";
@@ -3864,10 +4794,10 @@ function fmtMark(m, tz) {
   return `${t2.hm}${tag}${off}${sync}`;
 }
 function adjustmentText(m, tz) {
-  const to = localParts(m.time, tz).hm;
+  const to = localParts2(m.time, tz).hm;
   const why = `Justificativa: ${m.justification}${m.reviewedBy ? ` (por ${m.reviewedBy})` : ""}`;
   if (!m.originalLabel) return `${m.label}: batida inclu\xEDda manualmente \xE0s ${to}. ${why}`;
-  const from = localParts(m.originalTime, tz).hm;
+  const from = localParts2(m.originalTime, tz).hm;
   if (m.originalLabel !== m.label) return `${m.label}: original ${m.originalLabel} ${from} para ${m.label} ${to}. ${why}`;
   return `${m.label}: original ${from} para ${to}. ${why}`;
 }
@@ -3882,7 +4812,7 @@ function treatmentTexts(marks, tz) {
     }
     const why = `${(m.justification || "").trim() || "sem justificativa"}${m.reviewedBy ? ` (por ${m.reviewedBy})` : ""}`;
     const g = groups.get(why) || { why, times: [] };
-    g.times.push(localParts(m.time, tz).hm);
+    g.times.push(localParts2(m.time, tz).hm);
     groups.set(why, g);
   }
   if (groups.size) {
@@ -3897,7 +4827,7 @@ function disregardedText(list, tz) {
   const groups = /* @__PURE__ */ new Map();
   for (const m of list) {
     const why = `${m.reason.trim() || "sem justificativa"}${m.by ? ` (por ${m.by})` : ""}`;
-    groups.set(why, [...groups.get(why) || [], localParts(m.time, tz).hm]);
+    groups.set(why, [...groups.get(why) || [], localParts2(m.time, tz).hm]);
   }
   const parts = [...groups.entries()].map(([why, times]) => `${times.sort().join(", ")} \u2014 ${why}`);
   return `${list.length > 1 ? "Batidas desconsideradas" : "Batida desconsiderada"}: ${parts.join("; ")}`;
@@ -3973,20 +4903,62 @@ var init_timesheetMirror = __esm({
   }
 });
 
+// shared/timeBank.ts
+function laborConfigured(labor) {
+  return Boolean(labor?.dailyMinutes && labor.dailyMinutes > 0 && labor.workdays?.length);
+}
+function closedPeriodBalance(report, labor, today) {
+  const configured = laborConfigured(labor);
+  const openToday = report.days.find((day) => day.date === today && day.issues.some((issue) => issue.startsWith("Jornada incompleta")));
+  let workedMinutes = report.totals.workedMinutes;
+  let expectedMinutes = report.totals.expectedMinutes ?? 0;
+  let overtimeMinutes = report.totals.overtimeMinutes ?? 0;
+  let deficitMinutes = report.totals.deficitMinutes ?? 0;
+  let balanceMinutes = report.totals.balanceMinutes ?? 0;
+  if (openToday) {
+    const todayDiff = openToday.diffMinutes ?? 0;
+    workedMinutes = Math.max(0, workedMinutes - openToday.workedMinutes);
+    expectedMinutes = Math.max(0, expectedMinutes - (openToday.expectedMinutes ?? 0));
+    if (todayDiff > 0) overtimeMinutes = Math.max(0, overtimeMinutes - todayDiff);
+    if (todayDiff < 0) deficitMinutes = Math.max(0, deficitMinutes + todayDiff);
+    balanceMinutes -= todayDiff;
+  }
+  return {
+    daysTracked: report.totals.daysWithMarks,
+    workedMinutes,
+    expectedMinutes: configured ? expectedMinutes : 0,
+    balanceMinutes: configured ? balanceMinutes : 0,
+    overtimeMinutes: configured ? overtimeMinutes : 0,
+    deficitMinutes: configured ? deficitMinutes : 0,
+    openShift: Boolean(openToday),
+    configured
+  };
+}
+function monthBounds(month) {
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
+}
+var init_timeBank = __esm({
+  "shared/timeBank.ts"() {
+    "use strict";
+  }
+});
+
 // server/modules/correctionExtras.ts
-import { and as and3, eq as eq3, gte, inArray as inArray2, lt, sql as sql3 } from "drizzle-orm";
+import { and as and6, eq as eq6, gte as gte3, inArray as inArray5, lt as lt2, sql as sql5 } from "drizzle-orm";
 async function ensureCorrectionExtras() {
-  if (ready) return ready;
-  ready = (async () => {
+  if (ready2) return ready2;
+  ready2 = (async () => {
     const database2 = await getDb();
     if (!database2) return;
-    await database2.execute(sql3`ALTER TABLE time_correction_requests ADD COLUMN IF NOT EXISTS justificationType varchar(32) NULL DEFAULT 'normal'`);
-    await database2.execute(sql3`ALTER TABLE time_correction_requests ADD COLUMN IF NOT EXISTS attachmentKey varchar(512) NULL`);
+    await database2.execute(sql5`ALTER TABLE time_correction_requests ADD COLUMN IF NOT EXISTS justificationType varchar(32) NULL DEFAULT 'normal'`);
+    await database2.execute(sql5`ALTER TABLE time_correction_requests ADD COLUMN IF NOT EXISTS attachmentKey varchar(512) NULL`);
   })().catch((e) => {
-    ready = null;
+    ready2 = null;
     throw e;
   });
-  return ready;
+  return ready2;
 }
 async function saveCorrectionAttachment(companyId, requestId, base64, mime = "image/jpeg") {
   if (!base64) return null;
@@ -4008,12 +4980,12 @@ async function loadApprovedDayExcuses(companyId, memberIds, from, to) {
   await ensureCorrectionExtras();
   const start = new Date(Date.parse(`${from}T00:00:00Z`) - 15 * 36e5);
   const end = new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 36e5);
-  const rows4 = await database2.select().from(timeCorrectionRequests).where(and3(
-    eq3(timeCorrectionRequests.companyId, companyId),
-    inArray2(timeCorrectionRequests.memberAccountId, memberIds),
-    eq3(timeCorrectionRequests.status, "approved"),
-    gte(timeCorrectionRequests.requestedTime, start),
-    lt(timeCorrectionRequests.requestedTime, end)
+  const rows4 = await database2.select().from(timeCorrectionRequests).where(and6(
+    eq6(timeCorrectionRequests.companyId, companyId),
+    inArray5(timeCorrectionRequests.memberAccountId, memberIds),
+    eq6(timeCorrectionRequests.status, "approved"),
+    gte3(timeCorrectionRequests.requestedTime, start),
+    lt2(timeCorrectionRequests.requestedTime, end)
   ));
   for (const row2 of rows4) {
     if (!looksLikeFullDayExcuse(row2)) continue;
@@ -4028,7 +5000,7 @@ async function loadApprovedDayExcuses(companyId, memberIds, from, to) {
   }
   return map;
 }
-var ready;
+var ready2;
 var init_correctionExtras = __esm({
   "server/modules/correctionExtras.ts"() {
     "use strict";
@@ -4037,937 +5009,59 @@ var init_correctionExtras = __esm({
     init_schema();
     init_storage();
     init_correctionExcuse();
-    ready = null;
-  }
-});
-
-// shared/punchTime.ts
-function resolvePunchTime(input) {
-  const { serverNow } = input;
-  const device = input.deviceTime && !Number.isNaN(input.deviceTime.getTime()) ? input.deviceTime : null;
-  if (!device) return { effectiveTime: serverNow, deviceTimeToStore: null, alert: "none", diffMinutes: 0, note: null };
-  const diffMs = device.getTime() - serverNow.getTime();
-  const diffMinutes = Math.round(diffMs / 6e4);
-  const age = -diffMs;
-  if (input.offline && diffMs <= PUNCH_TOLERANCE_MS && age <= PUNCH_OFFLINE_MAX_AGE_MS && age > 0) {
-    return {
-      effectiveTime: device,
-      deviceTimeToStore: device,
-      alert: "offline",
-      diffMinutes,
-      note: `${OFFLINE_MARKER} Marca\xE7\xE3o feita sem internet \xE0s ${fmt(device)} (hor\xE1rio do aparelho) e recebida pelo servidor \xE0s ${fmt(serverNow)}.`
-    };
-  }
-  if (Math.abs(diffMs) <= PUNCH_TOLERANCE_MS) return { effectiveTime: device, deviceTimeToStore: device, alert: "none", diffMinutes, note: null };
-  if (input.offline && diffMs <= PUNCH_TOLERANCE_MS && age <= PUNCH_OFFLINE_MAX_AGE_MS) {
-    return {
-      effectiveTime: device,
-      deviceTimeToStore: device,
-      alert: "offline",
-      diffMinutes,
-      note: `${OFFLINE_MARKER} Marca\xE7\xE3o feita sem internet \xE0s ${fmt(device)} (hor\xE1rio do aparelho) e recebida pelo servidor \xE0s ${fmt(serverNow)}.`
-    };
-  }
-  return {
-    effectiveTime: serverNow,
-    deviceTimeToStore: null,
-    alert: "server_time_used",
-    diffMinutes,
-    note: `${TIME_ALERT_MARKER} Hor\xE1rio do aparelho (${fmt(device)}) divergiu ${Math.abs(diffMinutes)} min do servidor (${fmt(serverNow)}); considerado o hor\xE1rio do servidor.`
-  };
-}
-function readTimeAlert(notes) {
-  if (!notes) return null;
-  for (const line of String(notes).split("\n")) {
-    if (line.startsWith(TIME_ALERT_MARKER)) return { kind: "server_time_used", text: line.slice(TIME_ALERT_MARKER.length).trim() };
-    if (line.startsWith(OFFLINE_MARKER)) return { kind: "offline", text: line.slice(OFFLINE_MARKER.length).trim() };
-  }
-  return null;
-}
-var PUNCH_TOLERANCE_MS, PUNCH_OFFLINE_MAX_AGE_MS, TIME_ALERT_MARKER, OFFLINE_MARKER, fmt;
-var init_punchTime = __esm({
-  "shared/punchTime.ts"() {
-    "use strict";
-    PUNCH_TOLERANCE_MS = 5 * 60 * 1e3;
-    PUNCH_OFFLINE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1e3;
-    TIME_ALERT_MARKER = "[ALERTA-HORARIO]";
-    OFFLINE_MARKER = "[MARCACAO-OFFLINE]";
-    fmt = (d) => d.toISOString();
-  }
-});
-
-// shared/offlineClock.ts
-function assessDeviceClock(deviceTime, clock, serverNow) {
-  const reasons = [];
-  const anchorServer = valid(clock?.anchorServerTime);
-  const anchorDevice = valid(clock?.anchorDeviceTime);
-  if (deviceTime.getTime() > serverNow.getTime() + CLOCK_DRIFT_LIMIT_MS) reasons.push("hor\xE1rio do aparelho est\xE1 no futuro em rela\xE7\xE3o ao servidor");
-  if (!anchorServer || !anchorDevice) return { suspect: reasons.length > 0, estimatedTime: null, driftMs: null, reasons };
-  const anchorSkew = anchorDevice.getTime() - anchorServer.getTime();
-  if (Math.abs(anchorSkew) > CLOCK_DRIFT_LIMIT_MS) reasons.push(`rel\xF3gio do aparelho j\xE1 estava ${Math.round(Math.abs(anchorSkew) / 6e4)} min ${anchorSkew > 0 ? "adiantado" : "atrasado"} na \xFAltima conex\xE3o`);
-  const deviceDelta = deviceTime.getTime() - anchorDevice.getTime();
-  if (deviceDelta < -CLOCK_DRIFT_LIMIT_MS) reasons.push("rel\xF3gio do aparelho voltou para antes da \xFAltima conex\xE3o");
-  let estimated = null;
-  let drift = null;
-  const mono = clock?.monoElapsedMs;
-  if (typeof mono === "number" && Number.isFinite(mono) && mono >= 0) {
-    estimated = new Date(anchorServer.getTime() + mono);
-    drift = deviceTime.getTime() - estimated.getTime();
-    if (Math.abs(drift) > CLOCK_DRIFT_LIMIT_MS) reasons.push(`rel\xF3gio do aparelho divergiu ${Math.round(Math.abs(drift) / 6e4)} min do tempo decorrido medido pelo app`);
-  } else {
-    estimated = new Date(deviceTime.getTime() - anchorSkew);
-    drift = anchorSkew;
-  }
-  if (estimated && estimated.getTime() > serverNow.getTime() + CLOCK_DRIFT_LIMIT_MS) reasons.push("hora estimada da marca\xE7\xE3o \xE9 posterior ao recebimento");
-  return { suspect: reasons.length > 0, estimatedTime: estimated, driftMs: drift, reasons };
-}
-function clockAlertNote(deviceTime, a) {
-  if (!a.suspect) return null;
-  return `${CLOCK_ALERT_MARKER} Poss\xEDvel altera\xE7\xE3o do rel\xF3gio do aparelho: ${a.reasons.join("; ")}. Hor\xE1rio do aparelho ${deviceTime.toISOString()}${a.estimatedTime ? `, estimado pelo sistema ${a.estimatedTime.toISOString()}` : ""}. Conferir com o funcion\xE1rio.`;
-}
-function readClockAlert(notes) {
-  if (!notes) return null;
-  const line = String(notes).split("\n").find((l) => l.startsWith(CLOCK_ALERT_MARKER));
-  return line ? line.slice(CLOCK_ALERT_MARKER.length).trim() : null;
-}
-var CLOCK_DRIFT_LIMIT_MS, CLOCK_ALERT_MARKER, valid, OFFLINE_SEQUENCE_MARKER;
-var init_offlineClock = __esm({
-  "shared/offlineClock.ts"() {
-    "use strict";
-    CLOCK_DRIFT_LIMIT_MS = 2 * 60 * 1e3;
-    CLOCK_ALERT_MARKER = "[ALERTA-RELOGIO]";
-    valid = (s) => {
-      if (!s) return null;
-      const d = new Date(s);
-      return Number.isNaN(d.getTime()) ? null : d;
-    };
-    OFFLINE_SEQUENCE_MARKER = "[SEQUENCIA-OFFLINE]";
-  }
-});
-
-// server/ponto/repFormat.ts
-import { createHash } from "node:crypto";
-function crc16Kermit(text4) {
-  let crc = 0;
-  const bytes = Buffer.from(text4, "latin1");
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let i = 0; i < 8; i++) crc = crc & 1 ? crc >>> 1 ^ 33800 : crc >>> 1;
-  }
-  return crc.toString(16).toUpperCase().padStart(4, "0");
-}
-function padA(value, size) {
-  const clean = String(value ?? "").replace(/[\r\n|]/g, " ").normalize("NFC");
-  return clean.slice(0, size).padEnd(size, " ");
-}
-function padN(value, size) {
-  const digits = onlyDigits(String(value ?? ""));
-  return digits.slice(-size).padStart(size, "0");
-}
-function tzOffset(date3, timeZone) {
-  try {
-    const name = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" }).formatToParts(date3).find((p) => p.type === "timeZoneName")?.value || "GMT";
-    const m = /GMT([+-])(\d{2}):?(\d{2})?/.exec(name);
-    if (!m) return "+0000";
-    return `${m[1]}${m[2]}${m[3] ?? "00"}`;
-  } catch {
-    return "-0300";
-  }
-}
-function localParts2(date3, timeZone) {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(date3);
-  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
-  return { y: p.year, mo: p.month, d: p.day, h: p.hour === "24" ? "00" : p.hour, mi: p.minute };
-}
-function formatDH(date3, timeZone) {
-  const p = localParts2(date3, timeZone);
-  return `${p.y}-${p.mo}-${p.d}T${p.h}:${p.mi}:00${tzOffset(date3, timeZone)}`;
-}
-function formatD(date3, timeZone) {
-  const p = localParts2(date3, timeZone);
-  return `${p.y}-${p.mo}-${p.d}`;
-}
-function afdType7Fields(p) {
-  return padN(p.nsr, 9) + "7" + formatDH(p.markedAt, p.timeZone) + padN(p.cpf, 12) + formatDH(p.recordedAt, p.timeZone) + (p.collector || COLLECTOR_BROWSER) + (p.offline ? "1" : "0");
-}
-function punchHash(p, previousHash) {
-  return sha256(afdType7Fields(p) + (previousHash || ""));
-}
-function punchContentHash(c) {
-  return sha256(["C1", c.nsr ?? "", c.memberAccountId, c.eventType, c.markedAt.toISOString(), c.recordedAt.toISOString(), c.clientTime ? c.clientTime.toISOString() : "", num(c.latitude), num(c.longitude), num(c.accuracy), c.timeZone || "", onlyDigits(c.cpf), c.offline ? 1 : 0].join("|"));
-}
-function treatmentHash(t2, previousHash) {
-  const payload = [
-    "T1",
-    t2.kind,
-    t2.replacesEventId ?? "",
-    t2.memberAccountId,
-    t2.eventType,
-    t2.markedAt.toISOString(),
-    t2.recordedAt.toISOString(),
-    t2.correctionRequestId ?? "",
-    t2.decidedBy,
-    t2.reason
-  ].join("|");
-  return sha256(payload + (previousHash || ""));
-}
-function verifyLedger(rows4) {
-  const problems = [];
-  const originals = rows4.filter((r) => r.origin === "original").sort((a, b) => (a.nsr ?? Infinity) - (b.nsr ?? Infinity) || a.id - b.id);
-  const treatments = rows4.filter((r) => r.origin !== "original").sort((a, b) => a.id - b.id);
-  let prev = null;
-  let expectedNsr = 1;
-  const seen = /* @__PURE__ */ new Set();
-  for (const r of originals) {
-    if (r.nsr == null || !r.recordHash) {
-      problems.push({ id: r.id, nsr: r.nsr, kind: "unsealed", message: "Marca\xE7\xE3o sem NSR/hash (ainda n\xE3o selada)." });
-      continue;
-    }
-    if (seen.has(r.nsr)) problems.push({ id: r.id, nsr: r.nsr, kind: "duplicate", message: `NSR ${r.nsr} repetido.` });
-    seen.add(r.nsr);
-    if (r.nsr !== expectedNsr) problems.push({ id: r.id, nsr: r.nsr, kind: "gap", message: `Sequ\xEAncia quebrada: esperado NSR ${expectedNsr}, encontrado ${r.nsr}.` });
-    expectedNsr = r.nsr + 1;
-    if ((r.prevHash || null) !== (prev || null)) problems.push({ id: r.id, nsr: r.nsr, kind: "chain", message: `Encadeamento quebrado no NSR ${r.nsr}: o hash anterior gravado n\xE3o confere.` });
-    const recomputed = punchHash({ nsr: r.nsr, markedAt: r.markedAt, recordedAt: r.recordedAt, cpf: r.cpf, timeZone: r.timeZone || "America/Sao_Paulo", collector: r.collectorId || COLLECTOR_BROWSER, offline: r.offline }, r.prevHash);
-    if (recomputed !== r.recordHash) problems.push({ id: r.id, nsr: r.nsr, kind: "hash", message: `Conte\xFAdo da marca\xE7\xE3o NSR ${r.nsr} n\xE3o confere com o hash gravado (poss\xEDvel altera\xE7\xE3o).` });
-    else if (r.contentHash && punchContentHash({ nsr: r.nsr, memberAccountId: r.memberAccountId, eventType: r.eventType, markedAt: r.markedAt, recordedAt: r.recordedAt, clientTime: r.clientTime ?? null, latitude: r.latitude ?? null, longitude: r.longitude ?? null, accuracy: r.accuracy ?? null, timeZone: r.timeZone, cpf: r.cpf, offline: r.offline }) !== r.contentHash) {
-      problems.push({ id: r.id, nsr: r.nsr, kind: "hash", message: `Tipo, hor\xE1rio ou localiza\xE7\xE3o da marca\xE7\xE3o NSR ${r.nsr} n\xE3o confere com o selo gravado (poss\xEDvel altera\xE7\xE3o).` });
-    }
-    prev = r.recordHash;
-  }
-  let tPrev = null;
-  for (const t2 of treatments) {
-    if (!t2.recordHash) {
-      problems.push({ id: t2.id, nsr: null, kind: "unsealed", message: "Tratamento sem hash (ainda n\xE3o selado)." });
-      continue;
-    }
-    if ((t2.prevHash || null) !== (tPrev || null)) problems.push({ id: t2.id, nsr: null, kind: "chain", message: `Encadeamento de tratamentos quebrado no registro ${t2.id}.` });
-    const recomputed = treatmentHash({ id: t2.id, kind: t2.origin === "inclusion" ? "inclusion" : "adjustment", replacesEventId: t2.replacesEventId, memberAccountId: t2.memberAccountId, eventType: t2.eventType, markedAt: t2.markedAt, recordedAt: t2.recordedAt, reason: t2.reason || "", decidedBy: t2.recordedByName || "", correctionRequestId: t2.correctionRequestId }, t2.prevHash);
-    if (recomputed !== t2.recordHash) problems.push({ id: t2.id, nsr: null, kind: "hash", message: `Tratamento ${t2.id} n\xE3o confere com o hash gravado (poss\xEDvel altera\xE7\xE3o).` });
-    tPrev = t2.recordHash;
-  }
-  const lastNsr = originals.reduce((m, r) => Math.max(m, r.nsr ?? 0), 0);
-  return { ok: problems.length === 0, originals: originals.length, treatments: treatments.length, problems, lastNsr };
-}
-function employerIdType(doc) {
-  return onlyDigits(doc).length === 11 ? "2" : "1";
-}
-function buildAfd(input) {
-  const tz = input.timeZone;
-  const lines = [];
-  const h = "0000000001" + employerIdType(input.employer.document) + padA(onlyDigits(input.employer.document), 14) + padN("", 14) + padA(input.employer.name, 150) + padN(input.inpiNumber || "", 17) + input.from + input.to + formatDH(input.generatedAt, tz) + AFD_LAYOUT_VERSION + employerIdType(input.developer.document) + padA(onlyDigits(input.developer.document), 14) + padA("", 30);
-  lines.push(h + crc16Kermit(h));
-  const punches = [...input.punches].sort((a, b) => a.nsr - b.nsr);
-  for (const p of punches) lines.push(afdType7Fields(p) + p.hash);
-  lines.push("999999999" + padN(0, 9) + padN(0, 9) + padN(0, 9) + padN(0, 9) + padN(0, 9) + padN(punches.length, 9) + "9");
-  lines.push(padA(SIGNATURE_PLACEHOLDER, 100));
-  const fileName = `AFD${onlyDigits(input.inpiNumber || "") || "SEMINPI"}${onlyDigits(input.employer.document) || "SEMCNPJ"}REP_P.txt`;
-  return { content: lines.join("\r\n") + "\r\n", fileName, lines };
-}
-function toAejSequence(dayMarks) {
-  let seq = 0;
-  return [...dayMarks].sort((a, b) => a.time.getTime() - b.time.getTime()).map((m) => {
-    const entry = m.type === "clock_in" || m.type === "break_end";
-    if (entry || seq === 0) seq += 1;
-    return { ...m, tpMarc: entry ? "E" : "S", seq };
-  });
-}
-function buildAej(input) {
-  const tz = input.timeZone;
-  const doc = onlyDigits(input.employer.document);
-  const clean = (v, max) => String(v ?? "").replace(/[\r\n|]/g, " ").trim().slice(0, max);
-  const lines = [];
-  const counts = [0, 0, 0, 0, 0, 0, 0, 0];
-  const push = (type, fields) => {
-    lines.push(fields.join("|"));
-    counts[type - 1] += 1;
-  };
-  push(1, ["01", employerIdType(doc), doc, "", "", clean(input.employer.name, 150), input.from, input.to, formatDH(input.generatedAt, tz), AEJ_LAYOUT_VERSION]);
-  push(2, ["02", 1, 3, padN(input.inpiNumber || "", 17)]);
-  const contracts = /* @__PURE__ */ new Map();
-  input.workers.forEach((w) => {
-    if (w.contract) contracts.set(w.contract.code, w.contract);
-  });
-  input.workers.forEach((w, i) => push(3, ["03", i + 1, padN(w.cpf, 11), clean(w.name, 150)]));
-  for (const c of contracts.values()) push(4, ["04", clean(c.code, 30), Math.max(0, Math.round(c.dailyMinutes)), ...c.pairs.flat()]);
-  input.workers.forEach((w, i) => {
-    for (const m of w.marks) {
-      const firstEntry = m.tpMarc === "E" && m.seq === 1;
-      const motivo = m.tpMarc === "D" || m.fonte === "I" ? clean(m.motivo || "Tratamento aprovado pelo empregador", 150) : "";
-      push(5, ["05", i + 1, formatDH(m.markedAt, tz), m.fonte === "O" ? 1 : "", m.tpMarc, String(m.seq).padStart(3, "0"), m.fonte, firstEntry && w.contract ? clean(w.contract.code, 30) : "", motivo]);
-    }
-  });
-  input.workers.forEach((w, i) => {
-    if (w.matEsocial) push(6, ["06", i + 1, clean(w.matEsocial, 30)]);
-  });
-  push(8, ["08", PTRP_NAME, clean(input.ptrp.version, 8), employerIdType(input.ptrp.developerDocument), onlyDigits(input.ptrp.developerDocument), clean(input.ptrp.developerName, 150), clean(input.ptrp.developerEmail, 50)]);
-  lines.push(["99", ...counts].join("|"));
-  lines.push(padA(SIGNATURE_PLACEHOLDER, 100));
-  return { content: lines.join("\r\n") + "\r\n", fileName: `AEJ_${doc || "SEMCNPJ"}_${input.from}_${input.to}.txt`, lines };
-}
-function toLatin1(text4) {
-  return Buffer.from(text4.replace(/[^\x00-\xff]/g, "?"), "latin1");
-}
-var AFD_LAYOUT_VERSION, AEJ_LAYOUT_VERSION, SIGNATURE_PLACEHOLDER, COLLECTOR_BROWSER, PTRP_NAME, onlyDigits, sha256, num;
-var init_repFormat = __esm({
-  "server/ponto/repFormat.ts"() {
-    "use strict";
-    AFD_LAYOUT_VERSION = "003";
-    AEJ_LAYOUT_VERSION = "002";
-    SIGNATURE_PLACEHOLDER = "ASSINATURA_DIGITAL_EM_ARQUIVO_P7S";
-    COLLECTOR_BROWSER = "02";
-    PTRP_NAME = "GondUp";
-    onlyDigits = (v) => String(v ?? "").replace(/\D/g, "");
-    sha256 = (text4) => createHash("sha256").update(text4, "utf8").digest("hex");
-    num = (v) => v == null || Number.isNaN(Number(v)) ? "" : Number(v).toFixed(6);
-  }
-});
-
-// server/ponto/ledger.ts
-import { sql as sql4, inArray as inArray3, and as and4, eq as eq4 } from "drizzle-orm";
-async function ensurePunchLedger() {
-  if (ready2) return ready2;
-  ready2 = (async () => {
-    const database2 = await getDb();
-    if (!database2 || typeof database2.execute !== "function") return;
-    for (const alter of ALTERS) await database2.execute(sql4.raw(`ALTER TABLE time_events ${alter}`));
-    await database2.execute(sql4.raw("CREATE UNIQUE INDEX IF NOT EXISTS time_events_company_nsr_unique ON time_events (companyId, nsr)"));
-    await database2.execute(sql4.raw("CREATE INDEX IF NOT EXISTS time_events_replaces_idx ON time_events (companyId, replacesEventId)"));
-    await database2.execute(sql4.raw(`CREATE TABLE IF NOT EXISTS rep_ledger_state (
-      companyId INT NOT NULL PRIMARY KEY,
-      lastNsr BIGINT NOT NULL DEFAULT 0,
-      lastHash VARCHAR(64) NULL,
-      lastTreatmentHash VARCHAR(64) NULL,
-      initializedAt TIMESTAMP NULL,
-      updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    )`));
-    await database2.execute(sql4.raw(`CREATE TABLE IF NOT EXISTS timesheet_acceptances (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      companyId INT NOT NULL,
-      memberAccountId INT NOT NULL,
-      month CHAR(7) NOT NULL,
-      decision VARCHAR(16) NOT NULL DEFAULT 'accepted',
-      documentHash CHAR(64) NOT NULL,
-      summary TEXT NULL,
-      comment TEXT NULL,
-      ipAddress VARCHAR(64) NULL,
-      userAgent VARCHAR(512) NULL,
-      acceptedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      KEY timesheet_acceptances_member_idx (companyId, memberAccountId, month),
-      KEY timesheet_acceptances_month_idx (companyId, month)
-    )`));
-  })().catch((e) => {
     ready2 = null;
-    throw e;
-  });
-  return ready2;
-}
-async function loadWorkerCpf(companyId, memberId) {
-  try {
-    const raw = await getSetting(`labor_profile:${memberId}`, companyId, "");
-    if (!raw) return null;
-    const cpf = onlyDigits(JSON.parse(raw)?.cpf);
-    return cpf.length === 11 ? cpf : null;
-  } catch {
-    return null;
-  }
-}
-async function lockState(tx, companyId) {
-  await tx.execute(sql4`INSERT IGNORE INTO rep_ledger_state (companyId, lastNsr) VALUES (${companyId}, 0)`);
-  const [rows4] = await tx.execute(sql4`SELECT lastNsr, lastHash, lastTreatmentHash, initializedAt FROM rep_ledger_state WHERE companyId = ${companyId} FOR UPDATE`);
-  const row2 = rows4?.[0] ?? {};
-  let state = { lastNsr: Number(row2.lastNsr ?? 0), lastHash: row2.lastHash ?? null, lastTreatmentHash: row2.lastTreatmentHash ?? null };
-  if (!row2.initializedAt) {
-    state = await sealLegacy(tx, companyId, state);
-    await tx.execute(sql4`UPDATE rep_ledger_state SET lastNsr = ${state.lastNsr}, lastHash = ${state.lastHash}, lastTreatmentHash = ${state.lastTreatmentHash}, initializedAt = UTC_TIMESTAMP() WHERE companyId = ${companyId}`);
-  }
-  return state;
-}
-async function sealLegacy(tx, companyId, state) {
-  const [rows4] = await tx.execute(sql4`SELECT id, memberAccountId, eventType, serverTime, deviceTime, latitude, longitude, accuracy, notes FROM time_events WHERE companyId = ${companyId} AND recordHash IS NULL ORDER BY id`);
-  if (!rows4?.length) return state;
-  const cpfCache = /* @__PURE__ */ new Map();
-  let { lastNsr, lastHash, lastTreatmentHash } = state;
-  for (const r of rows4) {
-    const memberId = Number(r.memberAccountId);
-    if (!cpfCache.has(memberId)) cpfCache.set(memberId, await loadWorkerCpf(companyId, memberId));
-    const cpf = cpfCache.get(memberId) ?? null;
-    const recordedAt = new Date(r.serverTime);
-    const markedAt = new Date(r.deviceTime || r.serverTime);
-    const offline = /\[MARCACAO-OFFLINE\]/.test(String(r.notes || ""));
-    if (LEGACY_INCLUSION.test(String(r.notes || ""))) {
-      const reason = String(r.notes || "").slice(0, 2e3);
-      const hash2 = treatmentHash({ id: Number(r.id), kind: "inclusion", replacesEventId: null, memberAccountId: memberId, eventType: r.eventType, markedAt, recordedAt, reason, decidedBy: "", correctionRequestId: null }, lastTreatmentHash);
-      await tx.execute(sql4`UPDATE time_events SET origin = 'inclusion', reason = ${reason}, recordHash = ${hash2}, prevHash = ${lastTreatmentHash}, timeZone = ${DEFAULT_TZ}, sealedLegacy = 1 WHERE id = ${r.id} AND recordHash IS NULL`);
-      lastTreatmentHash = hash2;
-      continue;
-    }
-    const nsr = lastNsr + 1;
-    const p = { nsr, markedAt, recordedAt, cpf, timeZone: DEFAULT_TZ, collector: COLLECTOR_BROWSER, offline };
-    const hash = punchHash(p, lastHash);
-    const content = punchContentHash({ nsr, memberAccountId: memberId, eventType: r.eventType, markedAt, recordedAt, clientTime: null, latitude: r.latitude, longitude: r.longitude, accuracy: r.accuracy, timeZone: DEFAULT_TZ, cpf, offline });
-    await tx.execute(sql4`UPDATE time_events SET nsr = ${nsr}, recordHash = ${hash}, prevHash = ${lastHash}, contentHash = ${content}, timeZone = ${DEFAULT_TZ}, collectorId = ${COLLECTOR_BROWSER}, offline = ${offline ? 1 : 0}, workerCpf = ${cpf}, sealedLegacy = 1 WHERE id = ${r.id} AND recordHash IS NULL`);
-    lastNsr = nsr;
-    lastHash = hash;
-  }
-  return { lastNsr, lastHash, lastTreatmentHash };
-}
-async function appendOriginalPunch(input) {
-  await ensurePunchLedger();
-  const database2 = await getDb();
-  if (!database2) throw new Error("Banco de dados indispon\xEDvel.");
-  const cpf = await loadWorkerCpf(input.companyId, input.memberAccountId);
-  return database2.transaction(async (tx) => {
-    const state = await lockState(tx, input.companyId);
-    const nsr = state.lastNsr + 1;
-    const recordedAt = truncSec(/* @__PURE__ */ new Date());
-    const deviceTime = input.deviceTimeToStore ? truncSec(input.deviceTimeToStore) : null;
-    const markedAt = deviceTime ?? recordedAt;
-    const clientTime = input.clientTime ? truncSec(input.clientTime) : null;
-    const tz = validTimeZone(input.timeZone);
-    const hash = punchHash({ nsr, markedAt, recordedAt, cpf, timeZone: tz, collector: COLLECTOR_BROWSER, offline: input.offline }, state.lastHash);
-    const content = punchContentHash({ nsr, memberAccountId: input.memberAccountId, eventType: input.eventType, markedAt, recordedAt, clientTime, latitude: input.latitude, longitude: input.longitude, accuracy: input.accuracy, timeZone: tz, cpf, offline: input.offline });
-    const result = await tx.insert(timeEvents).values({
-      companyId: input.companyId,
-      memberAccountId: input.memberAccountId,
-      eventType: input.eventType,
-      serverTime: recordedAt,
-      deviceTime,
-      latitude: input.latitude,
-      longitude: input.longitude,
-      accuracy: input.accuracy,
-      locationStatus: input.locationStatus,
-      locationError: input.locationError ?? null,
-      deviceInfo: input.deviceInfo ?? null,
-      idempotencyKey: input.idempotencyKey ?? null,
-      notes: input.notes ?? null,
-      synced: true,
-      nsr,
-      recordHash: hash,
-      prevHash: state.lastHash,
-      contentHash: content,
-      timeZone: tz,
-      collectorId: COLLECTOR_BROWSER,
-      offline: input.offline,
-      clientTime,
-      workerCpf: cpf,
-      origin: "original"
-    });
-    await tx.execute(sql4`UPDATE rep_ledger_state SET lastNsr = ${nsr}, lastHash = ${hash} WHERE companyId = ${input.companyId}`);
-    return Number(result?.[0]?.insertId);
-  });
-}
-async function appendTreatment(tx, input) {
-  const state = await lockState(tx, input.companyId);
-  const recordedAt = truncSec(/* @__PURE__ */ new Date());
-  const markedAt = truncSec(input.markedAt);
-  const reason = input.reason.slice(0, 2e3);
-  const hash = treatmentHash({ id: null, kind: input.kind, replacesEventId: input.replacesEventId, memberAccountId: input.memberAccountId, eventType: input.eventType, markedAt, recordedAt, reason, decidedBy: input.decidedByName, correctionRequestId: input.correctionRequestId }, state.lastTreatmentHash);
-  const result = await tx.insert(timeEvents).values({
-    companyId: input.companyId,
-    memberAccountId: input.memberAccountId,
-    eventType: input.eventType,
-    serverTime: recordedAt,
-    deviceTime: markedAt,
-    notes: input.notes ?? null,
-    synced: true,
-    locationStatus: "unavailable",
-    origin: input.kind,
-    replacesEventId: input.replacesEventId,
-    correctionRequestId: input.correctionRequestId,
-    recordedByMemberId: input.decidedByMemberId,
-    recordedByName: input.decidedByName,
-    reason,
-    recordHash: hash,
-    prevHash: state.lastTreatmentHash,
-    timeZone: validTimeZone(input.timeZone || DEFAULT_TZ)
-  });
-  await tx.execute(sql4`UPDATE rep_ledger_state SET lastTreatmentHash = ${hash} WHERE companyId = ${input.companyId}`);
-  return Number(result?.[0]?.insertId);
-}
-function validTimeZone(tz) {
-  const value = String(tz || "").trim();
-  if (!value) return DEFAULT_TZ;
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return value.slice(0, 64);
-  } catch {
-    return DEFAULT_TZ;
-  }
-}
-async function supersededIds(companyId, ids) {
-  const out = /* @__PURE__ */ new Set();
-  if (!ids.length) return out;
-  await ensurePunchLedger();
-  const database2 = await getDb();
-  if (!database2) return out;
-  for (let i = 0; i < ids.length; i += 1e3) {
-    const chunk = ids.slice(i, i + 1e3);
-    const rows4 = await database2.select({ id: timeEvents.replacesEventId }).from(timeEvents).where(and4(eq4(timeEvents.companyId, companyId), inArray3(timeEvents.replacesEventId, chunk)));
-    for (const r of rows4) if (r.id != null) out.add(Number(r.id));
-  }
-  return out;
-}
-async function ensureDisregardsTable() {
-  if (disregardsReady) return disregardsReady;
-  disregardsReady = (async () => {
-    const database2 = await getDb();
-    if (!database2 || typeof database2.execute !== "function") return;
-    await database2.execute(sql4.raw(`CREATE TABLE IF NOT EXISTS time_event_disregards (
-      id INT AUTO_INCREMENT NOT NULL,
-      companyId INT NOT NULL,
-      memberAccountId INT NOT NULL,
-      timeEventId INT NOT NULL,
-      reason TEXT NOT NULL,
-      decidedByMemberId INT NULL,
-      decidedByName VARCHAR(255) NULL,
-      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      revertedAt TIMESTAMP NULL,
-      revertedByMemberId INT NULL,
-      revertedByName VARCHAR(255) NULL,
-      revertReason TEXT NULL,
-      PRIMARY KEY (id),
-      KEY time_event_disregards_event_idx (companyId, timeEventId),
-      KEY time_event_disregards_member_idx (companyId, memberAccountId)
-    )`));
-  })().catch((e) => {
-    disregardsReady = null;
-    throw e;
-  });
-  return disregardsReady;
-}
-async function activeDisregards(companyId, ids) {
-  const out = /* @__PURE__ */ new Map();
-  if (!ids.length) return out;
-  try {
-    const database2 = await getDb();
-    if (!database2 || typeof database2.execute !== "function") return out;
-    await ensureDisregardsTable();
-    for (let i = 0; i < ids.length; i += 1e3) {
-      const chunk = ids.slice(i, i + 1e3);
-      const res = await database2.execute(sql4`SELECT id, timeEventId, reason, decidedByName, createdAt FROM time_event_disregards WHERE companyId = ${companyId} AND revertedAt IS NULL AND timeEventId IN (${sql4.join(chunk.map((id2) => sql4`${id2}`), sql4`, `)}) ORDER BY id`);
-      const rows4 = Array.isArray(res?.[0]) ? res[0] : [];
-      for (const r of rows4) out.set(Number(r.timeEventId), { id: Number(r.id), reason: String(r.reason || ""), decidedByName: r.decidedByName ?? null, createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : "" });
-    }
-  } catch (error) {
-    console.warn("[ponto] desconsidera\xE7\xF5es indispon\xEDveis", error);
-  }
-  return out;
-}
-async function effectiveRows(rows4, opts) {
-  if (!rows4.length) return rows4;
-  const companyId = rows4[0].companyId;
-  const gone = await supersededIds(companyId, rows4.map((r) => r.id));
-  const kept = gone.size ? rows4.filter((r) => !gone.has(r.id)) : rows4;
-  const dis = await activeDisregards(companyId, kept.map((r) => r.id));
-  if (opts?.keepDisregarded) return kept.map((r) => ({ ...r, disregard: dis.get(r.id) ?? null }));
-  return dis.size ? kept.filter((r) => !dis.has(r.id)) : kept;
-}
-function toLedgerRow(r) {
-  return {
-    id: Number(r.id),
-    origin: String(r.origin || "original"),
-    nsr: r.nsr == null ? null : Number(r.nsr),
-    recordHash: r.recordHash ?? null,
-    prevHash: r.prevHash ?? null,
-    memberAccountId: Number(r.memberAccountId),
-    eventType: String(r.eventType),
-    markedAt: new Date(r.deviceTime || r.serverTime),
-    recordedAt: new Date(r.serverTime),
-    cpf: r.workerCpf ?? null,
-    timeZone: r.timeZone ?? null,
-    collectorId: r.collectorId ?? null,
-    offline: Boolean(Number(r.offline ?? 0)),
-    replacesEventId: r.replacesEventId == null ? null : Number(r.replacesEventId),
-    correctionRequestId: r.correctionRequestId == null ? null : Number(r.correctionRequestId),
-    recordedByName: r.recordedByName ?? null,
-    reason: r.reason ?? null,
-    contentHash: r.contentHash ?? null,
-    clientTime: r.clientTime ? new Date(r.clientTime) : null,
-    latitude: r.latitude == null ? null : Number(r.latitude),
-    longitude: r.longitude == null ? null : Number(r.longitude),
-    accuracy: r.accuracy == null ? null : Number(r.accuracy)
-  };
-}
-var DEFAULT_TZ, NEW_SHIFT_MARKER, truncSec, ready2, ALTERS, LEGACY_INCLUSION, disregardsReady;
-var init_ledger = __esm({
-  "server/ponto/ledger.ts"() {
-    "use strict";
-    init_db();
-    init_schema();
-    init_repFormat();
-    DEFAULT_TZ = "America/Sao_Paulo";
-    NEW_SHIFT_MARKER = "[NOVA-JORNADA-MESMO-DIA]";
-    truncSec = (d) => new Date(Math.floor(d.getTime() / 1e3) * 1e3);
-    ready2 = null;
-    ALTERS = [
-      "ADD COLUMN IF NOT EXISTS nsr BIGINT NULL",
-      "ADD COLUMN IF NOT EXISTS recordHash VARCHAR(64) NULL",
-      "ADD COLUMN IF NOT EXISTS prevHash VARCHAR(64) NULL",
-      "ADD COLUMN IF NOT EXISTS contentHash VARCHAR(64) NULL",
-      "ADD COLUMN IF NOT EXISTS timeZone VARCHAR(64) NULL",
-      "ADD COLUMN IF NOT EXISTS collectorId VARCHAR(8) NULL",
-      "ADD COLUMN IF NOT EXISTS offline TINYINT(1) NOT NULL DEFAULT 0",
-      "ADD COLUMN IF NOT EXISTS clientTime TIMESTAMP NULL",
-      "ADD COLUMN IF NOT EXISTS workerCpf VARCHAR(14) NULL",
-      "ADD COLUMN IF NOT EXISTS origin VARCHAR(16) NOT NULL DEFAULT 'original'",
-      "ADD COLUMN IF NOT EXISTS replacesEventId INT NULL",
-      "ADD COLUMN IF NOT EXISTS correctionRequestId INT NULL",
-      "ADD COLUMN IF NOT EXISTS recordedByMemberId INT NULL",
-      "ADD COLUMN IF NOT EXISTS recordedByName VARCHAR(255) NULL",
-      "ADD COLUMN IF NOT EXISTS reason TEXT NULL",
-      "ADD COLUMN IF NOT EXISTS sealedLegacy TINYINT(1) NOT NULL DEFAULT 0"
-    ];
-    LEGACY_INCLUSION = /^Batida incluída via solicitação aprovada/;
-    disregardsReady = null;
   }
 });
 
-// server/modules/vacations.ts
-var vacations_exports = {};
-__export(vacations_exports, {
-  ensureVacationSchedulesTable: () => ensureVacationSchedulesTable,
-  vacationsRouter: () => vacationsRouter
-});
-import { TRPCError as TRPCError5 } from "@trpc/server";
-import { and as and5, eq as eq5, gte as gte2, lte, ne, inArray as inArray4 } from "drizzle-orm";
-import { z } from "zod";
-function asDateStr(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value.slice(0, 10);
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const y = value.getUTCFullYear();
-    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(value.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-  return String(value).slice(0, 10);
-}
-function dbDate(value) {
-  return value;
-}
-async function ensureVacationSchedulesTable() {
-  if (tableReady) return tableReady;
-  tableReady = (async () => {
-    const database2 = await getDb();
-    if (!database2) return;
-    await database2.execute(`CREATE TABLE IF NOT EXISTS vacation_schedules (
-      id int AUTO_INCREMENT PRIMARY KEY,
-      companyId int NOT NULL,
-      memberAccountId int NOT NULL,
-      startDate date NOT NULL,
-      endDate date NOT NULL,
-      days int NOT NULL,
-      status enum('scheduled','cancelled') NOT NULL DEFAULT 'scheduled',
-      notes text,
-      createdByMemberAccountId int NOT NULL,
-      updatedByMemberAccountId int,
-      cancelledByMemberAccountId int,
-      cancelledAt timestamp NULL,
-      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      KEY vacation_schedules_company_member_idx (companyId, memberAccountId),
-      KEY vacation_schedules_company_dates_idx (companyId, startDate, endDate),
-      KEY vacation_schedules_status_idx (status)
-    )`);
-  })().catch((e) => {
-    tableReady = null;
-    throw e;
-  });
-  return tableReady;
-}
-function daysBetween(start, end) {
-  const s = /* @__PURE__ */ new Date(start + "T00:00:00");
-  const e = /* @__PURE__ */ new Date(end + "T00:00:00");
-  if (e < s) throw new TRPCError5({ code: "BAD_REQUEST", message: "Data final n\xE3o pode ser anterior \xE0 inicial." });
-  return Math.round((e.getTime() - s.getTime()) / 864e5) + 1;
-}
-function assertManager(ctx) {
-  if (ctx.user?.role === "promoter") {
-    throw new TRPCError5({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem gerenciar f\xE9rias." });
-  }
-}
-async function assertNoOverlap(tx, companyId, memberAccountId, startDate, endDate, excludeId) {
-  const conditions = [
-    eq5(vacationSchedules.companyId, companyId),
-    eq5(vacationSchedules.memberAccountId, memberAccountId),
-    eq5(vacationSchedules.status, "scheduled"),
-    and5(lte(vacationSchedules.startDate, dbDate(endDate)), gte2(vacationSchedules.endDate, dbDate(startDate)))
-  ];
-  if (excludeId) conditions.push(ne(vacationSchedules.id, excludeId));
-  const existing = await tx.select({ id: vacationSchedules.id }).from(vacationSchedules).where(and5(...conditions)).limit(1);
-  if (existing.length) throw new TRPCError5({ code: "CONFLICT", message: "J\xE1 existe f\xE9rias sobrepostas para este funcion\xE1rio no per\xEDodo informado." });
-}
-async function teamOverlapWarning(database2, companyId, memberAccountId, startDate, endDate) {
-  const [me] = await database2.select({ supervisorId: memberAccounts2.supervisorId }).from(memberAccounts2).where(eq5(memberAccounts2.id, memberAccountId)).limit(1);
-  if (!me?.supervisorId) return null;
-  const teammates = await database2.select({ id: memberAccounts2.id, userName: memberAccounts2.userName }).from(memberAccounts2).where(and5(eq5(memberAccounts2.companyId, companyId), eq5(memberAccounts2.supervisorId, me.supervisorId), ne(memberAccounts2.id, memberAccountId), eq5(memberAccounts2.active, true)));
-  if (!teammates.length) return null;
-  const ids = teammates.map((t2) => t2.id);
-  const overlaps = await database2.select({ memberAccountId: vacationSchedules.memberAccountId }).from(vacationSchedules).where(and5(
-    eq5(vacationSchedules.companyId, companyId),
-    eq5(vacationSchedules.status, "scheduled"),
-    inArray4(vacationSchedules.memberAccountId, ids),
-    and5(lte(vacationSchedules.startDate, dbDate(endDate)), gte2(vacationSchedules.endDate, dbDate(startDate)))
-  ));
-  if (!overlaps.length) return null;
-  const names = teammates.filter((t2) => overlaps.some((o) => o.memberAccountId === t2.id)).map((t2) => t2.userName);
-  return names.length ? `Aten\xE7\xE3o: ${names.join(", ")} da mesma equipe tamb\xE9m estar\xE3o de f\xE9rias neste per\xEDodo.` : null;
-}
-async function requireDb() {
-  const database2 = await getDb();
-  if (!database2) throw new TRPCError5({ code: "SERVICE_UNAVAILABLE", message: "Banco de dados indispon\xEDvel no momento. Tente novamente em instantes." });
-  return database2;
-}
-var dateStr, tableReady, vacationsRouter;
-var init_vacations = __esm({
-  "server/modules/vacations.ts"() {
-    "use strict";
-    init_schema();
-    init_trpc();
-    init_db();
-    dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-    tableReady = null;
-    vacationsRouter = router({
-      members: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
-        assertManager(ctx);
-        const database2 = await requireDb();
-        return database2.select({ id: memberAccounts2.id, userName: memberAccounts2.userName }).from(memberAccounts2).where(and5(eq5(memberAccounts2.companyId, ctx.accountId), eq5(memberAccounts2.active, true))).orderBy(memberAccounts2.userName);
-      }),
-      list: commercialFeatureProcedure("timeTracking").input(z.object({
-        memberAccountId: z.number().int().positive().optional(),
-        from: dateStr.optional(),
-        to: dateStr.optional(),
-        status: z.enum(["scheduled", "cancelled", "all"]).optional()
-      }).optional()).query(async ({ ctx, input }) => {
-        assertManager(ctx);
-        await ensureVacationSchedulesTable();
-        const database2 = await requireDb();
-        const conds = [eq5(vacationSchedules.companyId, ctx.accountId)];
-        if (input?.memberAccountId) conds.push(eq5(vacationSchedules.memberAccountId, input.memberAccountId));
-        if (input?.status && input.status !== "all") conds.push(eq5(vacationSchedules.status, input.status));
-        if (input?.from) conds.push(gte2(vacationSchedules.endDate, dbDate(input.from)));
-        if (input?.to) conds.push(lte(vacationSchedules.startDate, dbDate(input.to)));
-        const rows4 = await database2.select({
-          id: vacationSchedules.id,
-          memberAccountId: vacationSchedules.memberAccountId,
-          startDate: vacationSchedules.startDate,
-          endDate: vacationSchedules.endDate,
-          days: vacationSchedules.days,
-          status: vacationSchedules.status,
-          notes: vacationSchedules.notes,
-          createdAt: vacationSchedules.createdAt,
-          cancelledAt: vacationSchedules.cancelledAt,
-          createdByMemberAccountId: vacationSchedules.createdByMemberAccountId,
-          updatedByMemberAccountId: vacationSchedules.updatedByMemberAccountId,
-          cancelledByMemberAccountId: vacationSchedules.cancelledByMemberAccountId,
-          memberName: memberAccounts2.userName
-        }).from(vacationSchedules).innerJoin(memberAccounts2, eq5(memberAccounts2.id, vacationSchedules.memberAccountId)).where(and5(...conds)).orderBy(vacationSchedules.startDate);
-        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
-      }),
-      mine: protectedProcedure.query(async ({ ctx }) => {
-        if (!ctx.memberAccountId || !ctx.accountId) throw new TRPCError5({ code: "FORBIDDEN" });
-        await ensureVacationSchedulesTable();
-        const database2 = await requireDb();
-        const rows4 = await database2.select().from(vacationSchedules).where(and5(eq5(vacationSchedules.companyId, ctx.accountId), eq5(vacationSchedules.memberAccountId, ctx.memberAccountId))).orderBy(vacationSchedules.startDate);
-        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
-      }),
-      create: commercialFeatureProcedure("timeTracking").input(z.object({
-        memberAccountId: z.number().int().positive(),
-        startDate: dateStr,
-        endDate: dateStr,
-        notes: z.string().max(500).optional()
-      })).mutation(async ({ ctx, input }) => {
-        assertManager(ctx);
-        await ensureVacationSchedulesTable();
-        const database2 = await requireDb();
-        const [member] = await database2.select({ id: memberAccounts2.id, companyId: memberAccounts2.companyId, active: memberAccounts2.active }).from(memberAccounts2).where(eq5(memberAccounts2.id, input.memberAccountId)).limit(1);
-        if (!member || member.companyId !== ctx.accountId || !member.active) {
-          throw new TRPCError5({ code: "NOT_FOUND", message: "Funcion\xE1rio n\xE3o encontrado ou inativo." });
-        }
-        const days = daysBetween(input.startDate, input.endDate);
-        const warning = await teamOverlapWarning(database2, ctx.accountId, input.memberAccountId, input.startDate, input.endDate);
-        await database2.transaction(async (tx) => {
-          await assertNoOverlap(tx, ctx.accountId, input.memberAccountId, input.startDate, input.endDate);
-          await tx.insert(vacationSchedules).values({
-            companyId: ctx.accountId,
-            memberAccountId: input.memberAccountId,
-            startDate: dbDate(input.startDate),
-            endDate: dbDate(input.endDate),
-            days,
-            notes: input.notes || null,
-            createdByMemberAccountId: ctx.memberAccountId
-          });
-        });
-        return { ok: true, warning };
-      }),
-      update: commercialFeatureProcedure("timeTracking").input(z.object({
-        id: z.number().int().positive(),
-        startDate: dateStr,
-        endDate: dateStr,
-        notes: z.string().max(500).optional()
-      })).mutation(async ({ ctx, input }) => {
-        assertManager(ctx);
-        await ensureVacationSchedulesTable();
-        const database2 = await requireDb();
-        const days = daysBetween(input.startDate, input.endDate);
-        let warning = null;
-        await database2.transaction(async (tx) => {
-          const [row2] = await tx.select().from(vacationSchedules).where(and5(eq5(vacationSchedules.id, input.id), eq5(vacationSchedules.companyId, ctx.accountId))).limit(1);
-          if (!row2) throw new TRPCError5({ code: "NOT_FOUND" });
-          if (row2.status === "cancelled") throw new TRPCError5({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel editar f\xE9rias canceladas." });
-          await assertNoOverlap(tx, ctx.accountId, row2.memberAccountId, input.startDate, input.endDate, input.id);
-          warning = await teamOverlapWarning(tx, ctx.accountId, row2.memberAccountId, input.startDate, input.endDate);
-          await tx.update(vacationSchedules).set({
-            startDate: dbDate(input.startDate),
-            endDate: dbDate(input.endDate),
-            days,
-            notes: input.notes ?? row2.notes,
-            updatedByMemberAccountId: ctx.memberAccountId
-          }).where(eq5(vacationSchedules.id, input.id));
-        });
-        return { ok: true, warning };
-      }),
-      cancel: commercialFeatureProcedure("timeTracking").input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-        assertManager(ctx);
-        await ensureVacationSchedulesTable();
-        const database2 = await requireDb();
-        await database2.transaction(async (tx) => {
-          const [row2] = await tx.select().from(vacationSchedules).where(and5(eq5(vacationSchedules.id, input.id), eq5(vacationSchedules.companyId, ctx.accountId))).limit(1);
-          if (!row2) throw new TRPCError5({ code: "NOT_FOUND" });
-          if (row2.status === "cancelled") return;
-          await tx.update(vacationSchedules).set({
-            status: "cancelled",
-            cancelledAt: /* @__PURE__ */ new Date(),
-            cancelledByMemberAccountId: ctx.memberAccountId
-          }).where(eq5(vacationSchedules.id, input.id));
-        });
-        return { ok: true };
-      }),
-      calendar: commercialFeatureProcedure("timeTracking").input(z.object({ year: z.number().int(), month: z.number().int().min(1).max(12).optional() })).query(async ({ ctx, input }) => {
-        assertManager(ctx);
-        await ensureVacationSchedulesTable();
-        const database2 = await requireDb();
-        const from = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-01` : `${input.year}-01-01`;
-        const last = new Date(input.year, input.month ?? 12, 0).getDate();
-        const to = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-${String(last).padStart(2, "0")}` : `${input.year}-12-31`;
-        const rows4 = await database2.select({
-          id: vacationSchedules.id,
-          memberAccountId: vacationSchedules.memberAccountId,
-          memberName: memberAccounts2.userName,
-          startDate: vacationSchedules.startDate,
-          endDate: vacationSchedules.endDate,
-          status: vacationSchedules.status,
-          createdByMemberAccountId: vacationSchedules.createdByMemberAccountId,
-          updatedByMemberAccountId: vacationSchedules.updatedByMemberAccountId,
-          cancelledByMemberAccountId: vacationSchedules.cancelledByMemberAccountId
-        }).from(vacationSchedules).innerJoin(memberAccounts2, eq5(memberAccounts2.id, vacationSchedules.memberAccountId)).where(and5(
-          eq5(vacationSchedules.companyId, ctx.accountId),
-          eq5(vacationSchedules.status, "scheduled"),
-          lte(vacationSchedules.startDate, dbDate(to)),
-          gte2(vacationSchedules.endDate, dbDate(from))
-        ));
-        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
-      })
-    });
-  }
-});
-
-// server/modules/mirrorData.ts
-import { and as and6, eq as eq6, gte as gte3, inArray as inArray5, lt as lt2, sql as sql5 } from "drizzle-orm";
-function mirrorWindow(from, to) {
-  return {
-    start: new Date(Date.parse(`${from}T00:00:00Z`) - 15 * 36e5),
-    end: new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 36e5)
-  };
-}
-async function loadMirrorEventRows(companyId, memberIds, from, to) {
-  if (!memberIds.length) return [];
-  const database2 = await getDb();
-  if (!database2) return [];
-  const { start, end } = mirrorWindow(from, to);
-  await ensurePunchLedger();
-  return effectiveRows(await database2.select().from(timeEvents).where(and6(eq6(timeEvents.companyId, companyId), inArray5(timeEvents.memberAccountId, memberIds), gte3(effectiveEventTime, start), lt2(effectiveEventTime, end))).orderBy(effectiveEventTime), { keepDisregarded: true });
-}
-async function loadMemberVacations(companyId, memberIds, from, to) {
-  const map = /* @__PURE__ */ new Map();
-  if (!memberIds.length) return map;
-  try {
-    const { ensureVacationSchedulesTable: ensureVacationSchedulesTable2 } = await Promise.resolve().then(() => (init_vacations(), vacations_exports));
-    await ensureVacationSchedulesTable2();
-    const database2 = await getDb();
-    if (!database2) return map;
-    const rows4 = await database2.select({ memberAccountId: vacationSchedules.memberAccountId, startDate: vacationSchedules.startDate, endDate: vacationSchedules.endDate }).from(vacationSchedules).where(and6(eq6(vacationSchedules.companyId, companyId), eq6(vacationSchedules.status, "scheduled"), inArray5(vacationSchedules.memberAccountId, memberIds)));
-    for (const r of rows4) {
-      const startDate = dateOnly(r.startDate), endDate = dateOnly(r.endDate);
-      if (!startDate || !endDate || endDate < from || startDate > to) continue;
-      map.set(r.memberAccountId, [...map.get(r.memberAccountId) || [], { startDate, endDate }]);
-    }
-  } catch (error) {
-    console.warn("[mirror] n\xE3o foi poss\xEDvel carregar f\xE9rias", error);
-  }
-  return map;
-}
-function dateOnly(value) {
-  if (!value) return "";
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value.toISOString().slice(0, 10);
-  return String(value).slice(0, 10);
-}
-async function loadMirrorOptions(companyId) {
-  const raw = await getSetting(OPTIONAL_HOLIDAYS_SETTING, companyId, "");
-  return { optionalHolidaysAsHoliday: raw === "1" || raw === "true" };
-}
-async function loadAdjustmentsByEvent(companyId, memberIds) {
+// server/modules/timeBank.ts
+import { sql as sql6 } from "drizzle-orm";
+async function loadLaborProfiles(companyId, memberIds) {
   const map = /* @__PURE__ */ new Map();
   if (!memberIds.length) return map;
   const database2 = await getDb();
   if (!database2) return map;
-  try {
-    const { ensureAdjustmentsTable: ensureAdjustmentsTable2 } = await Promise.resolve().then(() => (init_timesheetMirror2(), timesheetMirror_exports));
-    await ensureAdjustmentsTable2();
-    const rows4 = (await database2.execute(sql5`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${companyId} AND memberAccountId IN (${sql5.join(memberIds.map((id2) => sql5`${id2}`), sql5`, `)}) ORDER BY id`))[0];
-    for (const a of rows4) if (!map.has(Number(a.timeEventId))) map.set(Number(a.timeEventId), a);
-  } catch (error) {
-    console.warn("[mirror] ajustes indispon\xEDveis", error);
+  const wanted = new Set(memberIds);
+  const rows4 = (await database2.execute(sql6`SELECT settingKey, settingValue FROM system_settings WHERE accountId = ${companyId} AND settingKey LIKE 'labor\\_profile:%'`))[0];
+  for (const r of rows4) {
+    const id2 = Number(String(r.settingKey).split(":")[1]);
+    if (!wanted.has(id2)) continue;
+    try {
+      map.set(id2, JSON.parse(r.settingValue));
+    } catch {
+    }
   }
   return map;
 }
-function cleanReason(reason) {
-  return String(reason || "").replace(/^Batida incluída via solicitação aprovada em \S+?\.?\s*Motivo:\s*/i, "").trim();
+async function buildMemberReports(companyId, memberIds, from, to, timeZone) {
+  const out = /* @__PURE__ */ new Map();
+  if (!memberIds.length) return out;
+  const eventRows = await loadMirrorEventRows(companyId, memberIds, from, to);
+  const eventsByMember = /* @__PURE__ */ new Map();
+  for (const r of eventRows) eventsByMember.set(r.memberAccountId, [...eventsByMember.get(r.memberAccountId) || [], r]);
+  const [adjByEvent, laborByMember, excusesByMember, vacationsByMember, options] = await Promise.all([
+    loadAdjustmentsByEvent(companyId, memberIds),
+    loadLaborProfiles(companyId, memberIds),
+    loadApprovedDayExcuses(companyId, memberIds, from, to),
+    loadMemberVacations(companyId, memberIds, from, to),
+    loadMirrorOptions(companyId)
+  ]);
+  for (const id2 of memberIds) {
+    const rows4 = eventsByMember.get(id2) || [];
+    const labor = laborByMember.get(id2) ?? null;
+    const report = buildMirror({ events: toMirrorEvents(rows4, adjByEvent), from, to, timeZone, labor, excuses: excusesByMember.get(id2) || [], vacations: vacationsByMember.get(id2) || [], options });
+    const last = rows4.length ? rows4[rows4.length - 1] : null;
+    out.set(id2, { memberId: id2, labor, report, lastEventAt: last ? (last.deviceTime || last.serverTime).toISOString() : null });
+  }
+  return out;
 }
-function toMirrorEvents(rows4, adjByEvent) {
-  return rows4.map((r) => {
-    const a = adjByEvent.get(r.id);
-    const notes = r.notes || "";
-    const inclusion = r.origin === "inclusion";
-    return {
-      id: r.id,
-      type: r.eventType,
-      time: (r.deviceTime || r.serverTime).toISOString(),
-      receivedAt: r.serverTime.toISOString(),
-      synced: r.synced,
-      notes,
-      automatic: /automática/i.test(notes) && /^auto-clock-out:/.test(r.idempotencyKey || ""),
-      adjustment: a ? { originalType: a.originalType, originalTime: new Date(a.originalTime).toISOString(), justification: a.justification, reviewedBy: a.reviewedByName, reviewedAt: a.createdAt ? new Date(a.createdAt).toISOString() : null } : inclusion || r.origin === "adjustment" ? { originalType: inclusion ? "missing" : r.eventType, originalTime: (r.deviceTime || r.serverTime).toISOString(), justification: cleanReason(r.reason), reviewedBy: r.recordedByName, reviewedAt: r.serverTime.toISOString() } : null,
-      legacyAdjustment: !a && r.origin === "original" && /Ajuste aprovado em/.test(notes),
-      timeAlert: readTimeAlert(notes),
-      offline: Boolean(r.offline),
-      clockAlert: readClockAlert(notes),
-      disregarded: r.disregard ? { reason: r.disregard.reason, by: r.disregard.decidedByName, at: r.disregard.createdAt } : null
-    };
-  });
-}
-var effectiveEventTime, OPTIONAL_HOLIDAYS_SETTING;
-var init_mirrorData = __esm({
-  "server/modules/mirrorData.ts"() {
+var init_timeBank2 = __esm({
+  "server/modules/timeBank.ts"() {
     "use strict";
     init_db();
-    init_schema();
-    init_punchTime();
-    init_offlineClock();
-    init_ledger();
-    effectiveEventTime = sql5`COALESCE(${timeEvents.deviceTime}, ${timeEvents.serverTime})`;
-    OPTIONAL_HOLIDAYS_SETTING = "mirror_optional_holidays_as_holiday";
+    init_timesheetMirror();
+    init_timeBank();
+    init_correctionExtras();
+    init_mirrorData();
   }
 });
 
@@ -4980,7 +5074,10 @@ __export(timesheetMirror_exports, {
 });
 import { z as z2 } from "zod";
 import { TRPCError as TRPCError6 } from "@trpc/server";
-import { and as and7, eq as eq7, inArray as inArray6, sql as sql6 } from "drizzle-orm";
+import { and as and7, eq as eq7, inArray as inArray6, sql as sql7 } from "drizzle-orm";
+function todayIn(timeZone) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(/* @__PURE__ */ new Date());
+}
 async function ensureAdjustmentsTable() {
   if (adjustmentsReady) return adjustmentsReady;
   adjustmentsReady = (async () => {
@@ -5014,7 +5111,7 @@ async function recordAdjustment(a) {
   await ensureAdjustmentsTable();
   const database2 = await getDb();
   if (!database2) throw new Error("Banco de dados indispon\xEDvel.");
-  await database2.execute(sql6`INSERT INTO time_event_adjustments
+  await database2.execute(sql7`INSERT INTO time_event_adjustments
     (companyId, timeEventId, correctionRequestId, memberAccountId, originalType, originalTime, correctedType, correctedTime, justification, reviewedByMemberId, reviewedByName)
     VALUES (${a.companyId}, ${a.timeEventId}, ${a.correctionRequestId}, ${a.memberAccountId}, ${a.originalType}, ${a.originalTime}, ${a.correctedType}, ${a.correctedTime}, ${a.justification}, ${a.reviewedByMemberId ?? null}, ${a.reviewedByName ?? null})`);
 }
@@ -5035,7 +5132,7 @@ async function companyMembers(companyId, memberIds) {
   const rows4 = await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq7(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and7(...where));
   return rows4.filter((r) => r.role !== "company_admin");
 }
-var TZ, dateStr2, hm, adjustmentsReady, legalSchema, laborSchema, timesheetMirrorRouter;
+var TZ, monthStr, dateStr2, hm, adjustmentsReady, legalSchema, laborSchema, timesheetMirrorRouter;
 var init_timesheetMirror2 = __esm({
   "server/modules/timesheetMirror.ts"() {
     "use strict";
@@ -5044,10 +5141,11 @@ var init_timesheetMirror2 = __esm({
     init_db();
     init_schema();
     init_audit();
-    init_timesheetMirror();
-    init_correctionExtras();
     init_mirrorData();
+    init_timeBank2();
+    init_timeBank();
     TZ = "America/Sao_Paulo";
+    monthStr = z2.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "M\xEAs inv\xE1lido (use AAAA-MM).");
     dateStr2 = z2.string().regex(/^\d{4}-\d{2}-\d{2}$/);
     hm = z2.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
     adjustmentsReady = null;
@@ -5118,30 +5216,37 @@ var init_timesheetMirror2 = __esm({
         const company = (await database2.select({ name: companies2.name }).from(companies2).where(eq7(companies2.id, ctx.accountId)).limit(1))[0];
         const legal = await readJson("company_legal_profile", ctx.accountId);
         const memberIds = members.map((m) => m.id);
-        const eventRows = await loadMirrorEventRows(ctx.accountId, memberIds, input.from, input.to);
-        const eventsByMember = /* @__PURE__ */ new Map();
-        for (const r of eventRows) eventsByMember.set(r.memberAccountId, [...eventsByMember.get(r.memberAccountId) || [], r]);
-        const adjByEvent = await loadAdjustmentsByEvent(ctx.accountId, memberIds);
-        const laborByMember = /* @__PURE__ */ new Map();
-        if (memberIds.length) {
-          const laborRows = (await database2.execute(sql6`SELECT settingKey, settingValue FROM system_settings WHERE accountId = ${ctx.accountId} AND settingKey LIKE 'labor\\_profile:%'`))[0];
-          for (const r of laborRows) {
-            try {
-              laborByMember.set(Number(String(r.settingKey).split(":")[1]), JSON.parse(r.settingValue));
-            } catch {
-            }
-          }
-        }
-        const excusesByMember = await loadApprovedDayExcuses(ctx.accountId, memberIds, input.from, input.to);
-        const vacationsByMember = await loadMemberVacations(ctx.accountId, memberIds, input.from, input.to);
-        const options = await loadMirrorOptions(ctx.accountId);
+        const reports = await buildMemberReports(ctx.accountId, memberIds, input.from, input.to, TZ);
         const results = members.map((m) => {
-          const events = toMirrorEvents(eventsByMember.get(m.id) || [], adjByEvent);
-          const labor = laborByMember.get(m.id) ?? null;
-          return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: labor ? { ...labor } : null, report: buildMirror({ events, from: input.from, to: input.to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [], vacations: vacationsByMember.get(m.id) || [], options }) };
+          const r = reports.get(m.id);
+          return { member: { id: m.id, name: m.name, role: m.role, employeeCode: m.employeeCode ?? null }, labor: r.labor ? { ...r.labor } : null, report: r.report };
         });
         void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "timesheet_mirror", description: `Gerou espelho de ponto ${input.from} a ${input.to} (${results.length} funcion\xE1rio(s))`, newData: { from: input.from, to: input.to, memberIds: results.map((r) => r.member.id) } });
         return { company: { name: company?.name ?? "", legal: legal ?? null }, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), timeZone: TZ, results };
+      }),
+      /**
+       * Banco de horas da equipe (administrador da empresa): saldo do mês de cada funcionário, com a mesma regra do
+       * promotor (closedPeriodBalance) e do espelho (buildMirror). Sempre restrito à empresa da sessão.
+       */
+      teamTimeBank: companyAdminFeatureProcedure("timeTracking").input(z2.object({ month: monthStr })).query(async ({ ctx, input }) => {
+        const { from, to } = monthBounds(input.month);
+        const today = todayIn(TZ);
+        const members = await companyMembers(ctx.accountId);
+        const reports = await buildMemberReports(ctx.accountId, members.map((m) => m.id), from, to, TZ);
+        const rows4 = members.map((m) => {
+          const r = reports.get(m.id);
+          return { id: m.id, name: m.name, active: Boolean(m.active), employeeCode: m.employeeCode ?? null, lastEventAt: r.lastEventAt, ...closedPeriodBalance(r.report, r.labor, today) };
+        }).filter((r) => r.active || r.daysTracked > 0);
+        return { month: input.month, from, to, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), rows: rows4 };
+      }),
+      /** Detalhe diário do banco de horas de UM funcionário da empresa (previsto x trabalhado, extra/débito). */
+      memberTimeBank: companyAdminFeatureProcedure("timeTracking").input(z2.object({ memberId: z2.number().int().positive(), month: monthStr })).query(async ({ ctx, input }) => {
+        const [member] = await companyMembers(ctx.accountId, [input.memberId]);
+        if (!member) throw new TRPCError6({ code: "NOT_FOUND", message: "Funcion\xE1rio n\xE3o encontrado nesta empresa." });
+        const { from, to } = monthBounds(input.month);
+        const r = (await buildMemberReports(ctx.accountId, [member.id], from, to, TZ)).get(member.id);
+        const days = r.report.days.map((d) => ({ date: d.date, weekday: d.weekday, workedMinutes: d.workedMinutes, expectedMinutes: d.expectedMinutes, diffMinutes: d.diffMinutes, marks: d.marks.map((m) => ({ type: m.type, label: m.label, time: m.time, kind: m.kind })), issues: d.issues, holiday: d.holiday ?? null, excuse: d.excuse?.label ?? null, vacation: Boolean(d.vacation) }));
+        return { member: { id: member.id, name: member.name, employeeCode: member.employeeCode ?? null }, month: input.month, lastEventAt: r.lastEventAt, balance: closedPeriodBalance(r.report, r.labor, todayIn(TZ)), days, notes: r.report.notes };
       }),
       /** Registra no log de auditoria que o espelho foi exportado/impresso/compartilhado. */
       logExport: companyAdminFeatureProcedure("timeTracking").input(z2.object({ kind: z2.enum(["pdf", "xlsx", "print", "whatsapp"]), from: dateStr2, to: dateStr2, count: z2.number().int().min(1).max(500) })).mutation(async ({ ctx, input }) => {
@@ -5157,7 +5262,7 @@ var missingPunch_exports = {};
 __export(missingPunch_exports, {
   findMissingPunches: () => findMissingPunches
 });
-import { inArray as inArray7, sql as sql7 } from "drizzle-orm";
+import { inArray as inArray7, sql as sql8 } from "drizzle-orm";
 function local(d) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: TZ2, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(d).map((x) => [x.type, x.value]));
   return { date: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour}:${p.minute}` };
@@ -5167,11 +5272,11 @@ async function findMissingPunches(opts = {}) {
   if (!database2) return [];
   await ensurePunchLedger();
   const since = new Date(Date.now() - 14 * 864e5);
-  const filters = [sql7`COALESCE(te.deviceTime, te.serverTime) >= ${since}`];
-  if (opts.companyId) filters.push(sql7`te.companyId = ${opts.companyId}`);
-  if (opts.memberId) filters.push(sql7`te.memberAccountId = ${opts.memberId}`);
-  const where = sql7.join(filters, sql7` AND `);
-  const [raw] = await database2.execute(sql7`
+  const filters = [sql8`COALESCE(te.deviceTime, te.serverTime) >= ${since}`];
+  if (opts.companyId) filters.push(sql8`te.companyId = ${opts.companyId}`);
+  if (opts.memberId) filters.push(sql8`te.memberAccountId = ${opts.memberId}`);
+  const where = sql8.join(filters, sql8` AND `);
+  const [raw] = await database2.execute(sql8`
     SELECT te.id, te.companyId, te.memberAccountId, te.eventType, te.serverTime, te.deviceTime
     FROM time_events te
     JOIN (
@@ -5190,7 +5295,7 @@ async function findMissingPunches(opts = {}) {
   const profiles = await database2.select({ id: promoterProfiles.memberAccountId, end: promoterProfiles.workEndTime }).from(promoterProfiles).where(inArray7(promoterProfiles.memberAccountId, ids));
   const endByMember = new Map(profiles.map((p) => [p.id, p.end]));
   const companyIds = [...new Set(open.map((o) => o.companyId))];
-  const [settingRows] = await database2.execute(sql7`SELECT accountId, settingValue FROM system_settings WHERE settingKey = 'auto_clock_out_time' AND accountId IN (${sql7.join(companyIds.map((c) => sql7`${c}`), sql7`, `)})`);
+  const [settingRows] = await database2.execute(sql8`SELECT accountId, settingValue FROM system_settings WHERE settingKey = 'auto_clock_out_time' AND accountId IN (${sql8.join(companyIds.map((c) => sql8`${c}`), sql8`, `)})`);
   const limitByCompany = new Map(settingRows.map((r) => [Number(r.accountId), String(r.settingValue)]));
   const now = local(/* @__PURE__ */ new Date());
   const out = [];
@@ -5521,7 +5626,7 @@ __export(clock_exports, {
   sntpQuery: () => sntpQuery
 });
 import dgram from "node:dgram";
-import { sql as sql10 } from "drizzle-orm";
+import { sql as sql11 } from "drizzle-orm";
 function readNtpTimestamp(buf, offset) {
   const seconds = buf.readUInt32BE(offset);
   const fraction = buf.readUInt32BE(offset + 4);
@@ -5583,7 +5688,7 @@ async function sampleLegalTime() {
 async function ensureClockTable() {
   const database2 = await getDb();
   if (!database2 || typeof database2.execute !== "function") return null;
-  await database2.execute(sql10.raw(`CREATE TABLE IF NOT EXISTS clock_checks (
+  await database2.execute(sql11.raw(`CREATE TABLE IF NOT EXISTS clock_checks (
     id INT AUTO_INCREMENT PRIMARY KEY,
     checkedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     source VARCHAR(64) NOT NULL,
@@ -5606,7 +5711,7 @@ async function runClockCheck(trigger = "agendado") {
     let databaseOffsetMs = null;
     if (database2) {
       const before = Date.now();
-      const [rows4] = await database2.execute(sql10`SELECT UNIX_TIMESTAMP(UTC_TIMESTAMP(3)) * 1000 AS ms`);
+      const [rows4] = await database2.execute(sql11`SELECT UNIX_TIMESTAMP(UTC_TIMESTAMP(3)) * 1000 AS ms`);
       const after = Date.now();
       const dbMs = Number(rows4?.[0]?.ms);
       if (Number.isFinite(dbMs)) databaseOffsetMs = Math.round((before + after) / 2 + sample.offsetMs - dbMs);
@@ -5619,9 +5724,9 @@ async function runClockCheck(trigger = "agendado") {
   let previousOk = null;
   if (database2) {
     try {
-      const [prev] = await database2.execute(sql10`SELECT ok FROM clock_checks WHERE error IS NULL ORDER BY id DESC LIMIT 1`);
+      const [prev] = await database2.execute(sql11`SELECT ok FROM clock_checks WHERE error IS NULL ORDER BY id DESC LIMIT 1`);
       previousOk = prev?.[0] ? Boolean(Number(prev[0].ok)) : null;
-      await database2.execute(sql10`INSERT INTO clock_checks (source, method, precisionMs, serverOffsetMs, databaseOffsetMs, ok, error)
+      await database2.execute(sql11`INSERT INTO clock_checks (source, method, precisionMs, serverOffsetMs, databaseOffsetMs, ok, error)
         VALUES (${result.source}, ${result.method}, ${result.precisionMs}, ${result.serverOffsetMs}, ${result.databaseOffsetMs}, ${result.ok ? 1 : 0}, ${result.error ?? null})`);
     } catch (e) {
       console.warn("[clock] falha ao gravar", e);
@@ -5635,7 +5740,7 @@ async function runClockCheck(trigger = "agendado") {
 async function latestClockChecks(limit = 10) {
   const database2 = await ensureClockTable();
   if (!database2) return [];
-  const [rows4] = await database2.execute(sql10`SELECT checkedAt, source, method, precisionMs, serverOffsetMs, databaseOffsetMs, ok, error FROM clock_checks ORDER BY id DESC LIMIT ${limit}`);
+  const [rows4] = await database2.execute(sql11`SELECT checkedAt, source, method, precisionMs, serverOffsetMs, databaseOffsetMs, ok, error FROM clock_checks ORDER BY id DESC LIMIT ${limit}`);
   return (rows4 || []).map((r) => ({ ...r, ok: Boolean(Number(r.ok)) }));
 }
 var NTP_SERVERS, MAX_DRIFT_MS, NTP_EPOCH_OFFSET;
@@ -5661,13 +5766,13 @@ __export(timesheetArchive_exports, {
 import { createHash as createHash2 } from "node:crypto";
 import { z as z7 } from "zod";
 import { TRPCError as TRPCError10 } from "@trpc/server";
-import { and as and11, eq as eq11, inArray as inArray11, sql as sql13 } from "drizzle-orm";
+import { and as and11, eq as eq11, inArray as inArray11, sql as sql14 } from "drizzle-orm";
 async function ensureTimesheetArchivesTable() {
   if (ready5) return ready5;
   ready5 = (async () => {
     const database2 = await getDb();
     if (!database2) return;
-    await database2.execute(sql13`CREATE TABLE IF NOT EXISTS timesheet_archives (
+    await database2.execute(sql14`CREATE TABLE IF NOT EXISTS timesheet_archives (
       id int AUTO_INCREMENT PRIMARY KEY,
       companyId int NOT NULL,
       memberAccountId int NOT NULL,
@@ -5807,7 +5912,7 @@ async function archiveClosedMonth(companyId, year, month, memberIds) {
         report
       });
       const hash = createHash2("sha256").update(buf).digest("hex");
-      const existing = (await database2.execute(sql13`SELECT id, version, contentHash FROM timesheet_archives WHERE companyId = ${companyId} AND memberAccountId = ${m.id} AND year = ${year} AND month = ${month} ORDER BY version DESC LIMIT 1`))[0] ?? [];
+      const existing = (await database2.execute(sql14`SELECT id, version, contentHash FROM timesheet_archives WHERE companyId = ${companyId} AND memberAccountId = ${m.id} AND year = ${year} AND month = ${month} ORDER BY version DESC LIMIT 1`))[0] ?? [];
       const last = existing[0];
       if (last && last.contentHash === hash) {
         results.push({ companyId, memberId: m.id, year, month, version: last.version, skipped: true, reason: "hash igual" });
@@ -5816,13 +5921,13 @@ async function archiveClosedMonth(companyId, year, month, memberIds) {
       const version = last ? Number(last.version) + 1 : 1;
       const keyBase = `archives/${companyId}/${year}/${String(month).padStart(2, "0")}/${m.id}/v${version}-espelho.pdf`;
       const uploaded = await storagePut(keyBase, buf, "application/pdf");
-      await database2.execute(sql13`INSERT INTO timesheet_archives (companyId, memberAccountId, year, month, version, fileKey, contentHash, mimeType, sizeBytes, status, generatedAt)
+      await database2.execute(sql14`INSERT INTO timesheet_archives (companyId, memberAccountId, year, month, version, fileKey, contentHash, mimeType, sizeBytes, status, generatedAt)
         VALUES (${companyId}, ${m.id}, ${year}, ${month}, ${version}, ${uploaded.key}, ${hash}, 'application/pdf', ${buf.length}, 'ready', NOW())`);
       results.push({ companyId, memberId: m.id, year, month, version, skipped: false });
     } catch (err) {
       console.warn(`[archive] company=${companyId} member=${m.id} ${year}-${month}`, err);
       try {
-        await database2.execute(sql13`INSERT INTO timesheet_archives (companyId, memberAccountId, year, month, version, status, notes, generatedAt)
+        await database2.execute(sql14`INSERT INTO timesheet_archives (companyId, memberAccountId, year, month, version, status, notes, generatedAt)
           VALUES (${companyId}, ${m.id}, ${year}, ${month}, 1, 'failed', ${String(err?.message || err).slice(0, 500)}, NOW())
           ON DUPLICATE KEY UPDATE status = 'failed', notes = VALUES(notes), generatedAt = NOW()`);
       } catch {
@@ -5882,14 +5987,14 @@ var init_timesheetArchive = __esm({
         await ensureTimesheetArchivesTable();
         const database2 = await getDb();
         if (!database2) return [];
-        const conds = [sql13`a.companyId = ${ctx.accountId}`];
-        if (input?.memberId) conds.push(sql13`a.memberAccountId = ${input.memberId}`);
-        if (input?.year) conds.push(sql13`a.year = ${input.year}`);
-        if (input?.month) conds.push(sql13`a.month = ${input.month}`);
-        const rows4 = (await database2.execute(sql13`SELECT a.*, m.userName AS memberName
+        const conds = [sql14`a.companyId = ${ctx.accountId}`];
+        if (input?.memberId) conds.push(sql14`a.memberAccountId = ${input.memberId}`);
+        if (input?.year) conds.push(sql14`a.year = ${input.year}`);
+        if (input?.month) conds.push(sql14`a.month = ${input.month}`);
+        const rows4 = (await database2.execute(sql14`SELECT a.*, m.userName AS memberName
         FROM timesheet_archives a
         LEFT JOIN member_accounts m ON m.id = a.memberAccountId AND m.companyId = a.companyId
-        WHERE ${sql13.join(conds, sql13` AND `)}
+        WHERE ${sql14.join(conds, sql14` AND `)}
         ORDER BY a.year DESC, a.month DESC, a.memberAccountId, a.version DESC
         LIMIT 500`))[0] ?? [];
         return rows4;
@@ -5898,7 +6003,7 @@ var init_timesheetArchive = __esm({
         await ensureTimesheetArchivesTable();
         const database2 = await getDb();
         if (!database2) throw new TRPCError10({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
-        const rows4 = (await database2.execute(sql13`SELECT fileKey, status FROM timesheet_archives WHERE id = ${input.id} AND companyId = ${ctx.accountId} LIMIT 1`))[0] ?? [];
+        const rows4 = (await database2.execute(sql14`SELECT fileKey, status FROM timesheet_archives WHERE id = ${input.id} AND companyId = ${ctx.accountId} LIMIT 1`))[0] ?? [];
         const row2 = rows4[0];
         if (!row2 || row2.status !== "ready" || !row2.fileKey) throw new TRPCError10({ code: "NOT_FOUND", message: "Arquivo n\xE3o encontrado ou indispon\xEDvel." });
         const url = await storageGetSignedUrl(row2.fileKey);
@@ -6234,7 +6339,7 @@ __export(platformCompanies_exports, {
   setCompanyPlan: () => setCompanyPlan,
   startOfDay: () => startOfDay
 });
-import { and as and12, eq as eq12, inArray as inArray12, sql as sql14 } from "drizzle-orm";
+import { and as and12, eq as eq12, inArray as inArray12, sql as sql15 } from "drizzle-orm";
 import { TRPCError as TRPCError11 } from "@trpc/server";
 async function database() {
   const d = await getDb();
@@ -6246,9 +6351,9 @@ async function listCompaniesOverview() {
   const [rows4, plans, pays, counts, admins, flags] = await Promise.all([
     d.select().from(companies).orderBy(companies.name),
     d.select().from(subscriptionPlans),
-    d.execute(sql14`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
-    d.execute(sql14`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
-    d.execute(sql14`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
+    d.execute(sql15`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
+    d.execute(sql15`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
+    d.execute(sql15`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
     d.select().from(systemSettings).where(inArray12(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY]))
   ]);
   const planById = new Map(plans.map((p) => [p.id, p]));
@@ -6362,7 +6467,7 @@ async function purgeCompany(companyId, confirmName) {
   let filesDeleted = 0;
   try {
     const d = await database();
-    const [photoRows] = await d.execute(sql14`SELECT fileKey, thumbnailKey FROM store_photos WHERE companyId = ${companyId}`);
+    const [photoRows] = await d.execute(sql15`SELECT fileKey, thumbnailKey FROM store_photos WHERE companyId = ${companyId}`);
     const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
     for (const p of photoRows) {
       for (const k of [p.fileKey, p.thumbnailKey]) if (k) {
@@ -6497,11 +6602,11 @@ var init_rateLimit = __esm({
 });
 
 // server/storeClients.ts
-import { sql as sql15 } from "drizzle-orm";
+import { sql as sql16 } from "drizzle-orm";
 function ensureStoreClientsSchema(db) {
   if (!ensured) {
     ensured = (async () => {
-      await db.execute(sql15.raw(`CREATE TABLE IF NOT EXISTS store_clients (
+      await db.execute(sql16.raw(`CREATE TABLE IF NOT EXISTS store_clients (
         id int AUTO_INCREMENT NOT NULL,
         companyId int NOT NULL,
         storeId int NOT NULL,
@@ -6515,7 +6620,7 @@ function ensureStoreClientsSchema(db) {
         PRIMARY KEY (id),
         KEY store_clients_company_store_idx (companyId, storeId)
       )`));
-      await db.execute(sql15.raw(`CREATE TABLE IF NOT EXISTS store_photos (
+      await db.execute(sql16.raw(`CREATE TABLE IF NOT EXISTS store_photos (
         id int AUTO_INCREMENT NOT NULL,
         companyId int NOT NULL,
         storeId int NOT NULL,
@@ -6541,12 +6646,12 @@ function ensureStoreClientsSchema(db) {
         KEY store_photos_expires_idx (expiresAt),
         UNIQUE KEY store_photos_company_idempotency_unique (companyId,idempotencyKey)
       )`));
-      const res = await db.execute(sql15`SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_photos' AND COLUMN_NAME = 'storeClientId'`);
+      const res = await db.execute(sql16`SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_photos' AND COLUMN_NAME = 'storeClientId'`);
       const first = Array.isArray(res?.[0]) ? res[0][0] : Array.isArray(res) ? res[0] : res?.rows?.[0];
       if (Number(first?.n ?? 0) === 0) {
-        await db.execute(sql15.raw(`ALTER TABLE store_photos ADD COLUMN storeClientId int NULL`));
+        await db.execute(sql16.raw(`ALTER TABLE store_photos ADD COLUMN storeClientId int NULL`));
         try {
-          await db.execute(sql15.raw(`CREATE INDEX store_photos_client_idx ON store_photos (companyId, storeClientId)`));
+          await db.execute(sql16.raw(`CREATE INDEX store_photos_client_idx ON store_photos (companyId, storeClientId)`));
         } catch {
         }
       }
@@ -6573,18 +6678,18 @@ __export(storePhotos_exports, {
   storePhotosRouter: () => storePhotosRouter
 });
 import { z as z9 } from "zod";
-import { and as and13, desc as desc5, eq as eq13, gte as gte8, lte as lte3, sql as sql16 } from "drizzle-orm";
+import { and as and13, desc as desc5, eq as eq13, gte as gte8, lte as lte3, sql as sql17 } from "drizzle-orm";
 import { TRPCError as TRPCError13 } from "@trpc/server";
 async function moveStorePhotosToTrash(db, accountId, photos, actor) {
   if (photos.length === 0) return;
   await ensureTrashTable();
   const storeIds = Array.from(new Set(photos.map((p) => p.storeId)));
-  const storeRows = await db.select({ id: stores.id, name: stores.name }).from(stores).where(and13(eq13(stores.companyId, accountId), sql16`${stores.id} IN (${sql16.join(storeIds.map((id2) => sql16`${id2}`), sql16`, `)})`));
+  const storeRows = await db.select({ id: stores.id, name: stores.name }).from(stores).where(and13(eq13(stores.companyId, accountId), sql17`${stores.id} IN (${sql17.join(storeIds.map((id2) => sql17`${id2}`), sql17`, `)})`));
   const storeName = new Map(storeRows.map((r) => [r.id, r.name]));
   const clientOf = /* @__PURE__ */ new Map();
   try {
     await ensureStoreClientsSchema(db);
-    const res = await db.execute(sql16`SELECT id, storeClientId FROM store_photos WHERE companyId = ${accountId} AND id IN (${sql16.join(photos.map((p) => sql16`${p.id}`), sql16`, `)})`);
+    const res = await db.execute(sql17`SELECT id, storeClientId FROM store_photos WHERE companyId = ${accountId} AND id IN (${sql17.join(photos.map((p) => sql17`${p.id}`), sql17`, `)})`);
     for (const r of Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? []) clientOf.set(Number(r.id), r.storeClientId == null ? null : Number(r.storeClientId));
   } catch {
   }
@@ -6603,7 +6708,7 @@ async function moveStorePhotosToTrash(db, accountId, photos, actor) {
         expiresAt
       }))
     );
-    await tx.delete(storePhotos).where(and13(eq13(storePhotos.companyId, accountId), sql16`${storePhotos.id} IN (${sql16.join(photos.map((p) => sql16`${p.id}`), sql16`, `)})`));
+    await tx.delete(storePhotos).where(and13(eq13(storePhotos.companyId, accountId), sql17`${storePhotos.id} IN (${sql17.join(photos.map((p) => sql17`${p.id}`), sql17`, `)})`));
   });
 }
 async function ensureStorePhotosTable(db) {
@@ -6645,13 +6750,13 @@ async function ensureStorePhotosTable(db) {
 }
 async function assertStoreClient(db, companyId, storeId, storeClientId) {
   await ensureStoreClientsSchema(db);
-  const res = await db.execute(sql16`SELECT id, active FROM store_clients WHERE id = ${storeClientId} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`);
+  const res = await db.execute(sql17`SELECT id, active FROM store_clients WHERE id = ${storeClientId} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`);
   const r = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0];
   if (!r) throw new TRPCError13({ code: "BAD_REQUEST", message: "Cliente n\xE3o encontrado nesta loja." });
   if (!r.active) throw new TRPCError13({ code: "BAD_REQUEST", message: "Este cliente foi removido da loja." });
 }
 async function linkPhotoToClient(db, companyId, photoId, storeClientId) {
-  await db.execute(sql16`UPDATE store_photos SET storeClientId = ${storeClientId} WHERE id = ${photoId} AND companyId = ${companyId}`);
+  await db.execute(sql17`UPDATE store_photos SET storeClientId = ${storeClientId} WHERE id = ${photoId} AND companyId = ${companyId}`);
 }
 async function expireOldStorePhotos() {
   const db = await getDb();
@@ -6702,9 +6807,9 @@ var init_storePhotos = __esm({
           await ensurePromoterStoreAssignmentsTable(db);
           conditions.push(storeVisibleToMember(stores.id, memberId));
         }
-        const ownPhotos = memberId !== null ? sql16` AND store_photos.promoterId = ${memberId}` : sql16``;
+        const ownPhotos = memberId !== null ? sql17` AND store_photos.promoterId = ${memberId}` : sql17``;
         if (input?.search) {
-          conditions.push(sql16`${stores.name} LIKE ${`%${input.search}%`}`);
+          conditions.push(sql17`${stores.name} LIKE ${`%${input.search}%`}`);
         }
         if (input?.city) {
           conditions.push(eq13(stores.city, input.city));
@@ -6716,8 +6821,8 @@ var init_storePhotos = __esm({
             city: stores.city,
             state: stores.state,
             address: stores.address,
-            photoCount: sql16`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
-            lastActivity: sql16`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`
+            photoCount: sql17`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
+            lastActivity: sql17`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`
           }).from(stores).where(and13(...conditions)).orderBy(desc5(stores.updatedAt));
           return rows4;
         } catch (err) {
@@ -6734,8 +6839,8 @@ var init_storePhotos = __esm({
         if (!db) return { count: 0, lastActivity: null };
         await ensureStorePhotosTable(db);
         const memberId = scopeMemberId(ctx);
-        const own = memberId !== null ? sql16` AND promoterId = ${memberId}` : sql16``;
-        const res = await db.execute(sql16`SELECT COUNT(*) AS c, MAX(capturedAt) AS lastAt FROM store_photos WHERE companyId = ${ctx.accountId} AND storeId IS NULL AND uploadStatus = 'uploaded'${own}`);
+        const own = memberId !== null ? sql17` AND promoterId = ${memberId}` : sql17``;
+        const res = await db.execute(sql17`SELECT COUNT(*) AS c, MAX(capturedAt) AS lastAt FROM store_photos WHERE companyId = ${ctx.accountId} AND storeId IS NULL AND uploadStatus = 'uploaded'${own}`);
         const row2 = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0] ?? {};
         return { count: Number(row2.c ?? 0), lastActivity: row2.lastAt ?? null };
       }),
@@ -6758,10 +6863,10 @@ var init_storePhotos = __esm({
           await assertStoreAccess(db, ctx, input.storeId);
           conditions.push(eq13(storePhotos.storeId, input.storeId));
         } else {
-          conditions.push(sql16`store_photos.storeId IS NULL`);
+          conditions.push(sql17`store_photos.storeId IS NULL`);
         }
-        if (input.storeClientId) conditions.push(sql16`store_photos.storeClientId = ${input.storeClientId}`);
-        else if (input.withoutClient) conditions.push(sql16`store_photos.storeClientId IS NULL`);
+        if (input.storeClientId) conditions.push(sql17`store_photos.storeClientId = ${input.storeClientId}`);
+        else if (input.withoutClient) conditions.push(sql17`store_photos.storeClientId IS NULL`);
         if (memberId !== null) conditions.push(eq13(storePhotos.promoterId, memberId));
         if (input.from) conditions.push(gte8(storePhotos.capturedAt, new Date(input.from)));
         if (input.to) conditions.push(lte3(storePhotos.capturedAt, new Date(input.to)));
@@ -6783,9 +6888,9 @@ var init_storePhotos = __esm({
           fileSize: storePhotos.fileSize,
           uploadStatus: storePhotos.uploadStatus,
           expiresAt: storePhotos.expiresAt,
-          storeClientId: sql16`store_photos.storeClientId`,
-          clientName: sql16`(SELECT name FROM store_clients WHERE store_clients.id = store_photos.storeClientId AND store_clients.companyId = ${ctx.accountId})`,
-          promoterName: sql16`(SELECT userName FROM member_accounts WHERE member_accounts.id = store_photos.promoterId AND member_accounts.companyId = ${ctx.accountId})`
+          storeClientId: sql17`store_photos.storeClientId`,
+          clientName: sql17`(SELECT name FROM store_clients WHERE store_clients.id = store_photos.storeClientId AND store_clients.companyId = ${ctx.accountId})`,
+          promoterName: sql17`(SELECT userName FROM member_accounts WHERE member_accounts.id = store_photos.promoterId AND member_accounts.companyId = ${ctx.accountId})`
         }).from(storePhotos).where(and13(...conditions)).orderBy(desc5(storePhotos.capturedAt));
         return photos;
       }),
@@ -6995,7 +7100,7 @@ var init_storePhotos = __esm({
       bulkDelete: commercialFeatureProcedure("fieldOperations").input(z9.object({ photoIds: z9.array(z9.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
         const db = await getDb();
         if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
-        const photos = await db.select().from(storePhotos).where(and13(eq13(storePhotos.companyId, ctx.accountId), sql16`${storePhotos.id} IN (${sql16.join(input.photoIds.map((id2) => sql16`${id2}`), sql16`, `)})`));
+        const photos = await db.select().from(storePhotos).where(and13(eq13(storePhotos.companyId, ctx.accountId), sql17`${storePhotos.id} IN (${sql17.join(input.photoIds.map((id2) => sql17`${id2}`), sql17`, `)})`));
         if (photos.length === 0) return { deleted: 0 };
         const memberId = scopeMemberId(ctx);
         const allowed = photos.filter((photo) => memberId === null || photo.promoterId === memberId);
@@ -7030,13 +7135,13 @@ var init_storePhotos = __esm({
         let clientName = "Sem cliente";
         if (input.storeClientId && input.storeId != null) {
           await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
-          const res2 = await db.execute(sql16`SELECT name FROM store_clients WHERE id = ${input.storeClientId} AND companyId = ${ctx.accountId} LIMIT 1`);
+          const res2 = await db.execute(sql17`SELECT name FROM store_clients WHERE id = ${input.storeClientId} AND companyId = ${ctx.accountId} LIMIT 1`);
           clientName = (Array.isArray(res2?.[0]) ? res2[0] : Array.isArray(res2) ? res2 : res2?.rows ?? [])[0]?.name ?? clientName;
         }
         const memberId = scopeMemberId(ctx);
-        const owner = memberId !== null ? sql16` AND promoterId = ${memberId}` : sql16``;
-        const ids = sql16.join(input.photoIds.map((id2) => sql16`${id2}`), sql16`, `);
-        const res = await db.execute(sql16`UPDATE store_photos SET storeClientId = ${input.storeClientId} WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND id IN (${ids})${owner}`);
+        const owner = memberId !== null ? sql17` AND promoterId = ${memberId}` : sql17``;
+        const ids = sql17.join(input.photoIds.map((id2) => sql17`${id2}`), sql17`, `);
+        const res = await db.execute(sql17`UPDATE store_photos SET storeClientId = ${input.storeClientId} WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND id IN (${ids})${owner}`);
         const moved = Number((Array.isArray(res) ? res[0] : res)?.affectedRows ?? 0);
         if (moved === 0) throw new TRPCError13({ code: "FORBIDDEN", message: "Nenhuma das fotos selecionadas p\xF4de ser movida (s\xF3 \xE9 poss\xEDvel mover as suas pr\xF3prias fotos desta loja)." });
         await auditFromCtx(ctx, {
@@ -7214,7 +7319,7 @@ __export(products_exports, {
 });
 import { z as z11 } from "zod";
 import { TRPCError as TRPCError15 } from "@trpc/server";
-import { sql as sql18 } from "drizzle-orm";
+import { sql as sql19 } from "drizzle-orm";
 async function ready6() {
   const database2 = await getDb();
   if (!database2) throw new TRPCError15({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
@@ -7231,26 +7336,26 @@ async function getProductsAlertDays(companyId) {
   }
 }
 function buildWhere(ctx, f, today, alertDays) {
-  const parts = [sql18`ip.companyId = ${ctx.accountId}`];
+  const parts = [sql19`ip.companyId = ${ctx.accountId}`];
   const memberId = hasFullStoreAccess(ctx) ? null : ctx.memberAccountId ?? -1;
-  if (memberId !== null) parts.push(sql18`(ip.createdByMemberId = ${memberId} OR (ip.storeId IS NOT NULL AND ${storeAssignedToPromoter(sql18`ip.storeId`, memberId)}))`);
-  if (f.mine && ctx.memberAccountId) parts.push(sql18`ip.createdByMemberId = ${ctx.memberAccountId}`);
+  if (memberId !== null) parts.push(sql19`(ip.createdByMemberId = ${memberId} OR (ip.storeId IS NOT NULL AND ${storeAssignedToPromoter(sql19`ip.storeId`, memberId)}))`);
+  if (f.mine && ctx.memberAccountId) parts.push(sql19`ip.createdByMemberId = ${ctx.memberAccountId}`);
   const search = f.search?.trim();
   if (search) {
     const pattern = `%${search.toLowerCase().replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
-    parts.push(sql18`(LOWER(ip.productCode) LIKE ${pattern} OR LOWER(ip.description) LIKE ${pattern} OR LOWER(COALESCE(ip.lot, '')) LIKE ${pattern})`);
+    parts.push(sql19`(LOWER(ip.productCode) LIKE ${pattern} OR LOWER(ip.description) LIKE ${pattern} OR LOWER(COALESCE(ip.lot, '')) LIKE ${pattern})`);
   }
   const limit = addDays(today, alertDays);
-  if (f.expiry === "expired") parts.push(sql18`ip.expirationDate < ${today}`);
-  if (f.expiry === "near") parts.push(sql18`ip.expirationDate >= ${today} AND ip.expirationDate <= ${limit}`);
-  if (f.expiry === "alert") parts.push(sql18`ip.expirationDate <= ${limit}`);
-  if (f.expiry === "valid") parts.push(sql18`ip.expirationDate > ${limit}`);
-  if (f.storeId) parts.push(sql18`ip.storeId = ${f.storeId}`);
-  if (f.storeClientId) parts.push(sql18`ip.storeClientId = ${f.storeClientId}`);
-  if (f.clientName) parts.push(f.clientName === "__none__" ? sql18`c.name IS NULL` : sql18`c.name = ${f.clientName}`);
-  if (f.from) parts.push(sql18`ip.expirationDate >= ${f.from}`);
-  if (f.to) parts.push(sql18`ip.expirationDate <= ${f.to}`);
-  return sql18.join(parts, sql18` AND `);
+  if (f.expiry === "expired") parts.push(sql19`ip.expirationDate < ${today}`);
+  if (f.expiry === "near") parts.push(sql19`ip.expirationDate >= ${today} AND ip.expirationDate <= ${limit}`);
+  if (f.expiry === "alert") parts.push(sql19`ip.expirationDate <= ${limit}`);
+  if (f.expiry === "valid") parts.push(sql19`ip.expirationDate > ${limit}`);
+  if (f.storeId) parts.push(sql19`ip.storeId = ${f.storeId}`);
+  if (f.storeClientId) parts.push(sql19`ip.storeClientId = ${f.storeClientId}`);
+  if (f.clientName) parts.push(f.clientName === "__none__" ? sql19`c.name IS NULL` : sql19`c.name = ${f.clientName}`);
+  if (f.from) parts.push(sql19`ip.expirationDate >= ${f.from}`);
+  if (f.to) parts.push(sql19`ip.expirationDate <= ${f.to}`);
+  return sql19.join(parts, sql19` AND `);
 }
 function mapRow(ctx, r) {
   return {
@@ -7272,12 +7377,12 @@ async function queryProducts(ctx, f, opts) {
   const today = todayInZone();
   const alertDays = await getProductsAlertDays(ctx.accountId);
   const where = buildWhere(ctx, f, today, alertDays);
-  const items = rowsOf(await database2.execute(sql18`SELECT ${COLUMNS} ${FROM} WHERE ${where} ORDER BY ip.expirationDate ASC, ip.description ASC, ip.id ASC LIMIT ${opts.limit} OFFSET ${opts.offset ?? 0}`)).map((r) => mapRow(ctx, r));
+  const items = rowsOf(await database2.execute(sql19`SELECT ${COLUMNS} ${FROM} WHERE ${where} ORDER BY ip.expirationDate ASC, ip.description ASC, ip.id ASC LIMIT ${opts.limit} OFFSET ${opts.offset ?? 0}`)).map((r) => mapRow(ctx, r));
   return { items, today, alertDays, where, database: database2 };
 }
 async function loadOne(ctx, id2) {
   const database2 = await ready6();
-  const r = rowsOf(await database2.execute(sql18`SELECT ${COLUMNS} ${FROM} WHERE ip.id = ${id2} AND ip.companyId = ${ctx.accountId} LIMIT 1`))[0];
+  const r = rowsOf(await database2.execute(sql19`SELECT ${COLUMNS} ${FROM} WHERE ip.id = ${id2} AND ip.companyId = ${ctx.accountId} LIMIT 1`))[0];
   return r ? mapRow(ctx, r) : null;
 }
 async function loadManageable(ctx, id2) {
@@ -7295,7 +7400,7 @@ async function validatePlace(ctx, storeId, storeClientId) {
   const store = await assertStoreAccess(database2, ctx, storeId);
   if (!store.active) throw new TRPCError15({ code: "BAD_REQUEST", message: "Essa loja foi removida. Escolha outra loja." });
   if (storeClientId) {
-    const c = rowsOf(await database2.execute(sql18`SELECT id FROM store_clients WHERE id = ${storeClientId} AND companyId = ${ctx.accountId} AND storeId = ${storeId} AND active = true LIMIT 1`))[0];
+    const c = rowsOf(await database2.execute(sql19`SELECT id FROM store_clients WHERE id = ${storeClientId} AND companyId = ${ctx.accountId} AND storeId = ${storeId} AND active = true LIMIT 1`))[0];
     if (!c) throw new TRPCError15({ code: "BAD_REQUEST", message: "Marca/cliente n\xE3o encontrada nesta loja." });
   }
   return { storeId, storeClientId: storeClientId ?? null };
@@ -7355,11 +7460,11 @@ var init_products2 = __esm({
       to: z11.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       mine: z11.boolean().optional()
     });
-    FROM = sql18`FROM inventory_products ip
+    FROM = sql19`FROM inventory_products ip
   LEFT JOIN stores s ON s.id = ip.storeId AND s.companyId = ip.companyId
   LEFT JOIN store_clients c ON c.id = ip.storeClientId AND c.companyId = ip.companyId
   LEFT JOIN member_accounts m ON m.id = ip.createdByMemberId AND m.companyId = ip.companyId`;
-    COLUMNS = sql18`ip.id, ip.companyId, ip.productCode, ip.description, ip.quantity, ip.expirationDate, ip.price, ip.storeId, ip.storeClientId, ip.lot, ip.photoKey,
+    COLUMNS = sql19`ip.id, ip.companyId, ip.productCode, ip.description, ip.quantity, ip.expirationDate, ip.price, ip.storeId, ip.storeClientId, ip.lot, ip.photoKey,
   ip.createdByMemberId, ip.createdAt, ip.updatedAt, s.name AS storeName, s.active AS storeActive, c.name AS clientName, m.userName AS createdByName`;
     productFields = {
       productCode: z11.string().trim().min(1).max(64),
@@ -7372,7 +7477,7 @@ var init_products2 = __esm({
       lot: z11.string().trim().max(64).nullish(),
       photoBase64: z11.string().min(100).max(MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE).optional()
     };
-    nullSafe = (col, v) => v == null ? sql18.raw(`${col} IS NULL`) : sql18`${sql18.raw(col)} = ${v}`;
+    nullSafe = (col, v) => v == null ? sql19.raw(`${col} IS NULL`) : sql19`${sql19.raw(col)} = ${v}`;
     productsRouter = router({
       settings: commercialFeatureProcedure("products").query(async ({ ctx }) => ({ alertDays: await getProductsAlertDays(ctx.accountId) })),
       setAlertDays: commercialFeatureProcedure("products").input(z11.object({ days: z11.number().int().min(1).max(180) })).mutation(async ({ ctx, input }) => {
@@ -7390,13 +7495,13 @@ var init_products2 = __esm({
       storeClients: commercialFeatureProcedure("products").input(z11.object({ storeId: z11.number().int().positive() })).query(async ({ ctx, input }) => {
         const database2 = await ready6();
         await assertStoreAccess(database2, ctx, input.storeId);
-        return rowsOf(await database2.execute(sql18`SELECT id, name FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true ORDER BY name`)).map((r) => ({ id: Number(r.id), name: String(r.name) }));
+        return rowsOf(await database2.execute(sql19`SELECT id, name FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true ORDER BY name`)).map((r) => ({ id: Number(r.id), name: String(r.name) }));
       }),
       /** Nomes de indústria usados nos produtos visíveis (filtro e agrupamento do relatório). */
       industries: commercialFeatureProcedure("products").query(async ({ ctx }) => {
         const database2 = await ready6();
         const where = buildWhere(ctx, {}, todayInZone(), 30);
-        return rowsOf(await database2.execute(sql18`SELECT DISTINCT c.name AS name ${FROM} WHERE ${where} AND c.name IS NOT NULL ORDER BY c.name LIMIT 500`)).map((r) => String(r.name));
+        return rowsOf(await database2.execute(sql19`SELECT DISTINCT c.name AS name ${FROM} WHERE ${where} AND c.name IS NOT NULL ORDER BY c.name LIMIT 500`)).map((r) => String(r.name));
       }),
       lookupByCode: commercialFeatureProcedure("products").input(z11.object({ code: z11.string().trim().min(6).max(64) })).query(async ({ ctx, input }) => {
         const { lookupProductByCode: lookupProductByCode2 } = await Promise.resolve().then(() => (init_productLookup(), productLookup_exports));
@@ -7408,7 +7513,7 @@ var init_products2 = __esm({
         const pageSize = f.pageSize ?? PRODUCTS_PAGE_SIZE;
         const page = f.page ?? 1;
         const { items, alertDays, where, database: database2, today } = await queryProducts(ctx, f, { limit: pageSize, offset: (page - 1) * pageSize });
-        const total = Number(rowsOf(await database2.execute(sql18`SELECT COUNT(*) AS n ${FROM} WHERE ${where}`))[0]?.n ?? 0);
+        const total = Number(rowsOf(await database2.execute(sql19`SELECT COUNT(*) AS n ${FROM} WHERE ${where}`))[0]?.n ?? 0);
         return { items, total, page, pageSize, pages: Math.max(1, Math.ceil(total / pageSize)), alertDays, today };
       }),
       /** Contagem do alerta: vencidos + que vencem dentro da janela da empresa. */
@@ -7417,7 +7522,7 @@ var init_products2 = __esm({
         const today = todayInZone();
         const alertDays = await getProductsAlertDays(ctx.accountId);
         const where = buildWhere(ctx, {}, today, alertDays);
-        const r = rowsOf(await database2.execute(sql18`SELECT
+        const r = rowsOf(await database2.execute(sql19`SELECT
       SUM(CASE WHEN ip.expirationDate < ${today} THEN 1 ELSE 0 END) AS expired,
       SUM(CASE WHEN ip.expirationDate >= ${today} AND ip.expirationDate <= ${addDays(today, alertDays)} THEN 1 ELSE 0 END) AS near,
       COUNT(*) AS total ${FROM} WHERE ${where}`))[0] ?? {};
@@ -7437,7 +7542,7 @@ var init_products2 = __esm({
       photoUrl: commercialFeatureProcedure("products").input(z11.object({ id: z11.number().int().positive() })).query(async ({ ctx, input }) => {
         const database2 = await ready6();
         const where = buildWhere(ctx, {}, todayInZone(), 30);
-        const row2 = rowsOf(await database2.execute(sql18`SELECT ip.photoKey ${FROM} WHERE ${where} AND ip.id = ${input.id} LIMIT 1`))[0];
+        const row2 = rowsOf(await database2.execute(sql19`SELECT ip.photoKey ${FROM} WHERE ${where} AND ip.id = ${input.id} LIMIT 1`))[0];
         if (!row2?.photoKey || !isTenantMediaKey(row2.photoKey, ctx.accountId, ["product-photos"])) throw new TRPCError15({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         const { storageGetSignedUrl: storageGetSignedUrl2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         return { url: await storageGetSignedUrl2(String(row2.photoKey)) };
@@ -7445,11 +7550,11 @@ var init_products2 = __esm({
       /** Quantos produtos ainda apontam para a loja (aviso antes de remover a loja). */
       countByStore: commercialFeatureProcedure("products").input(z11.object({ storeId: z11.number().int().positive() })).query(async ({ ctx, input }) => {
         const database2 = await ready6();
-        return { count: Number(rowsOf(await database2.execute(sql18`SELECT COUNT(*) AS n FROM inventory_products WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId}`))[0]?.n ?? 0) };
+        return { count: Number(rowsOf(await database2.execute(sql19`SELECT COUNT(*) AS n FROM inventory_products WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId}`))[0]?.n ?? 0) };
       }),
       create: commercialFeatureProcedure("products").input(z11.object({ ...productFields, clientRequestId: z11.string().min(8).max(64).regex(/^[A-Za-z0-9_-]+$/) })).mutation(async ({ ctx, input }) => {
         const database2 = await ready6();
-        const prior = rowsOf(await database2.execute(sql18`SELECT productId, merged FROM inventory_product_requests WHERE companyId = ${ctx.accountId} AND clientRequestId = ${input.clientRequestId} LIMIT 1`))[0];
+        const prior = rowsOf(await database2.execute(sql19`SELECT productId, merged FROM inventory_product_requests WHERE companyId = ${ctx.accountId} AND clientRequestId = ${input.clientRequestId} LIMIT 1`))[0];
         if (prior) return { product: await loadOne(ctx, Number(prior.productId)), merged: Boolean(Number(prior.merged)), duplicate: true };
         const place = await validatePlace(ctx, input.storeId, input.storeClientId);
         const lot = normalizeLot(input.lot);
@@ -7458,7 +7563,7 @@ var init_products2 = __esm({
         let result;
         try {
           result = await database2.transaction(async (tx) => {
-            const existing = rowsOf(await tx.execute(sql18`SELECT id, quantity, price, photoKey FROM inventory_products
+            const existing = rowsOf(await tx.execute(sql19`SELECT id, quantity, price, photoKey FROM inventory_products
           WHERE companyId = ${ctx.accountId} AND productCode = ${key.productCode} AND expirationDate = ${key.expirationDate}
             AND ${nullSafe("storeId", key.storeId)} AND ${nullSafe("storeClientId", key.storeClientId)} AND ${nullSafe("lot", key.lot)}
           ORDER BY id ASC LIMIT 1 FOR UPDATE`))[0];
@@ -7466,20 +7571,20 @@ var init_products2 = __esm({
             if (existing) {
               const keepPrice = Number(existing.price) > 0 ? existing.price : input.price;
               const usePhoto = photoKey && !existing.photoKey;
-              await tx.execute(sql18`UPDATE inventory_products SET quantity = quantity + ${input.quantity}, price = ${keepPrice}${usePhoto ? sql18`, photoKey = ${photoKey}` : sql18``} WHERE id = ${existing.id} AND companyId = ${ctx.accountId}`);
+              await tx.execute(sql19`UPDATE inventory_products SET quantity = quantity + ${input.quantity}, price = ${keepPrice}${usePhoto ? sql19`, photoKey = ${photoKey}` : sql19``} WHERE id = ${existing.id} AND companyId = ${ctx.accountId}`);
               out = { id: Number(existing.id), merged: true, previousQuantity: Number(existing.quantity), photoUnused: Boolean(photoKey && !usePhoto) };
             } else {
-              const ins = await tx.execute(sql18`INSERT INTO inventory_products (companyId, productCode, description, quantity, expirationDate, price, storeId, storeClientId, lot, photoKey, createdByMemberId)
+              const ins = await tx.execute(sql19`INSERT INTO inventory_products (companyId, productCode, description, quantity, expirationDate, price, storeId, storeClientId, lot, photoKey, createdByMemberId)
             VALUES (${ctx.accountId}, ${key.productCode}, ${input.description}, ${input.quantity}, ${key.expirationDate}, ${input.price}, ${key.storeId}, ${key.storeClientId}, ${key.lot}, ${photoKey}, ${ctx.memberAccountId ?? null})`);
               out = { id: Number(ins?.[0]?.insertId ?? ins?.insertId), merged: false };
             }
-            await tx.execute(sql18`INSERT INTO inventory_product_requests (companyId, clientRequestId, productId, merged) VALUES (${ctx.accountId}, ${input.clientRequestId}, ${out.id}, ${out.merged})`);
+            await tx.execute(sql19`INSERT INTO inventory_product_requests (companyId, clientRequestId, productId, merged) VALUES (${ctx.accountId}, ${input.clientRequestId}, ${out.id}, ${out.merged})`);
             return out;
           });
         } catch (error) {
           await deleteLabelPhoto(ctx.accountId, photoKey);
           if (/duplicate/i.test(String(error?.message ?? error?.cause?.message ?? ""))) {
-            const p = rowsOf(await database2.execute(sql18`SELECT productId, merged FROM inventory_product_requests WHERE companyId = ${ctx.accountId} AND clientRequestId = ${input.clientRequestId} LIMIT 1`))[0];
+            const p = rowsOf(await database2.execute(sql19`SELECT productId, merged FROM inventory_product_requests WHERE companyId = ${ctx.accountId} AND clientRequestId = ${input.clientRequestId} LIMIT 1`))[0];
             if (p) return { product: await loadOne(ctx, Number(p.productId)), merged: Boolean(Number(p.merged)), duplicate: true };
           }
           throw error;
@@ -7498,7 +7603,7 @@ var init_products2 = __esm({
         let photoKey = before.photoKey;
         if (input.photoBase64) photoKey = await uploadLabelPhoto(ctx.accountId, input.photoBase64, `${input.id}-${Date.now()}`);
         else if (input.removePhoto) photoKey = null;
-        await database2.execute(sql18`UPDATE inventory_products SET productCode = ${input.productCode}, description = ${input.description}, quantity = ${input.quantity}, expirationDate = ${input.expirationDate}, price = ${input.price},
+        await database2.execute(sql19`UPDATE inventory_products SET productCode = ${input.productCode}, description = ${input.description}, quantity = ${input.quantity}, expirationDate = ${input.expirationDate}, price = ${input.price},
       storeId = ${place.storeId}, storeClientId = ${place.storeClientId}, lot = ${normalizeLot(input.lot)}, photoKey = ${photoKey} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
         if (before.photoKey && before.photoKey !== photoKey) await deleteLabelPhoto(ctx.accountId, before.photoKey);
         const product = await loadOne(ctx, input.id);
@@ -7795,15 +7900,14 @@ init_schema();
 init_audit();
 init_timesheetMirror2();
 init_missingPunch();
-init_timesheetMirror();
 init_correctionExtras();
 init_storage();
 init_punchTime();
-init_mirrorData();
+init_timeBank2();
 init_correctionExcuse();
 import { z as z4 } from "zod";
 import { TRPCError as TRPCError7 } from "@trpc/server";
-import { eq as eq8, and as and8, desc as desc2, gte as gte5, lt as lt4, lte as lte2, inArray as inArray8, sql as sql9 } from "drizzle-orm";
+import { eq as eq8, and as and8, desc as desc2, gte as gte5, lt as lt4, lte as lte2, inArray as inArray8, sql as sql10 } from "drizzle-orm";
 
 // shared/correctionGroups.ts
 function defaultCorrectionJustification(input) {
@@ -7847,7 +7951,7 @@ init_mirrorData();
 init_db();
 init_punchTime();
 init_offlineClock();
-import { sql as sql8 } from "drizzle-orm";
+import { sql as sql9 } from "drizzle-orm";
 import { z as z3 } from "zod";
 var clockEvidenceSchema = z3.object({
   anchorServerTime: z3.string().datetime().nullish(),
@@ -7878,7 +7982,7 @@ function ensureOfflineSubmissions() {
   ready3 = (async () => {
     const database2 = await getDb();
     if (!database2 || typeof database2.execute !== "function") return;
-    await database2.execute(sql8.raw(`CREATE TABLE IF NOT EXISTS offline_submissions (
+    await database2.execute(sql9.raw(`CREATE TABLE IF NOT EXISTS offline_submissions (
       id INT AUTO_INCREMENT PRIMARY KEY,
       companyId INT NOT NULL,
       memberAccountId INT NULL,
@@ -7902,7 +8006,7 @@ async function findSubmission(companyId, clientId) {
   await ensureOfflineSubmissions();
   const database2 = await getDb();
   if (!database2) return null;
-  const [rows4] = await database2.execute(sql8`SELECT kind, entityId FROM offline_submissions WHERE companyId = ${companyId} AND clientId = ${clientId} LIMIT 1`);
+  const [rows4] = await database2.execute(sql9`SELECT kind, entityId FROM offline_submissions WHERE companyId = ${companyId} AND clientId = ${clientId} LIMIT 1`);
   const r = rows4?.[0];
   return r ? { kind: String(r.kind), entityId: r.entityId == null ? null : Number(r.entityId) } : null;
 }
@@ -7910,7 +8014,7 @@ async function recordSubmission(input) {
   await ensureOfflineSubmissions();
   const database2 = await getDb();
   if (!database2) return;
-  await database2.execute(sql8`INSERT IGNORE INTO offline_submissions (companyId, memberAccountId, clientId, kind, entityId, deviceTime, offline, alert)
+  await database2.execute(sql9`INSERT IGNORE INTO offline_submissions (companyId, memberAccountId, clientId, kind, entityId, deviceTime, offline, alert)
     VALUES (${input.companyId}, ${input.memberAccountId}, ${input.clientId}, ${input.kind}, ${input.entityId}, ${input.deviceTime}, ${input.offline ? 1 : 0}, ${input.alert})`);
 }
 async function listVisitOfflineMarks(companyId, visitIds) {
@@ -7919,8 +8023,8 @@ async function listVisitOfflineMarks(companyId, visitIds) {
   await ensureOfflineSubmissions();
   const database2 = await getDb();
   if (!database2) return [];
-  const [rows4] = await database2.execute(sql8`SELECT kind, entityId, offline, deviceTime, receivedAt, alert FROM offline_submissions
-    WHERE companyId = ${companyId} AND kind IN ('visit_start', 'visit_complete') AND entityId IN (${sql8.join(ids.map((id2) => sql8`${id2}`), sql8`, `)})`);
+  const [rows4] = await database2.execute(sql9`SELECT kind, entityId, offline, deviceTime, receivedAt, alert FROM offline_submissions
+    WHERE companyId = ${companyId} AND kind IN ('visit_start', 'visit_complete') AND entityId IN (${sql9.join(ids.map((id2) => sql9`${id2}`), sql9`, `)})`);
   return (rows4 || []).filter((r) => Number(r.offline) === 1 || r.alert).map((r) => ({
     visitId: Number(r.entityId),
     phase: r.kind === "visit_start" ? "start" : "complete",
@@ -8207,7 +8311,7 @@ var timeTrackingRouter = router({
     if ((await supersededIds(ctx.accountId, [event.id])).has(event.id)) throw new TRPCError7({ code: "BAD_REQUEST", message: "Esta marca\xE7\xE3o j\xE1 foi substitu\xEDda por um ajuste. Desconsidere a marca\xE7\xE3o atual." });
     if ((await activeDisregards(ctx.accountId, [event.id])).has(event.id)) throw new TRPCError7({ code: "CONFLICT", message: "Esta batida j\xE1 est\xE1 desconsiderada." });
     const by = ctx.user?.name || `Administrador #${ctx.memberAccountId ?? "?"}`;
-    await database2.execute(sql9`INSERT INTO time_event_disregards (companyId, memberAccountId, timeEventId, reason, decidedByMemberId, decidedByName)
+    await database2.execute(sql10`INSERT INTO time_event_disregards (companyId, memberAccountId, timeEventId, reason, decidedByMemberId, decidedByName)
         VALUES (${ctx.accountId}, ${event.memberAccountId}, ${event.id}, ${input.reason}, ${ctx.memberAccountId ?? null}, ${by})`);
     const markedAt = (event.deviceTime || event.serverTime).toISOString();
     await auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "time_event", entityId: event.id, description: `Batida desconsiderada (${event.eventType} em ${markedAt}). Motivo: ${input.reason}`, newData: { eventId: event.id, memberAccountId: event.memberAccountId, eventType: event.eventType, markedAt, reason: input.reason, disregarded: true } });
@@ -8221,7 +8325,7 @@ var timeTrackingRouter = router({
     const active = (await activeDisregards(ctx.accountId, [input.eventId])).get(input.eventId);
     if (!active) throw new TRPCError7({ code: "NOT_FOUND", message: "Esta batida n\xE3o est\xE1 desconsiderada." });
     const by = ctx.user?.name || `Administrador #${ctx.memberAccountId ?? "?"}`;
-    await database2.execute(sql9`UPDATE time_event_disregards SET revertedAt = CURRENT_TIMESTAMP, revertedByMemberId = ${ctx.memberAccountId ?? null}, revertedByName = ${by}, revertReason = ${input.reason || null}
+    await database2.execute(sql10`UPDATE time_event_disregards SET revertedAt = CURRENT_TIMESTAMP, revertedByMemberId = ${ctx.memberAccountId ?? null}, revertedByName = ${by}, revertReason = ${input.reason || null}
         WHERE id = ${active.id} AND companyId = ${ctx.accountId} AND revertedAt IS NULL`);
     await auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "time_event", entityId: input.eventId, description: `Batida reconsiderada (volta a contar no espelho)${input.reason ? `. Motivo: ${input.reason}` : ""}`, oldData: { disregardReason: active.reason, disregardedBy: active.decidedByName }, newData: { eventId: input.eventId, disregarded: false, reason: input.reason || null } });
     return { success: true };
@@ -8245,7 +8349,7 @@ var timeTrackingRouter = router({
     const covering = await database2.select({ id: timeCorrectionRequests.id }).from(timeCorrectionRequests).where(and8(
       eq8(timeCorrectionRequests.companyId, ctx.accountId),
       eq8(timeCorrectionRequests.memberAccountId, ctx.memberAccountId),
-      sql9`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+      sql10`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
       gte5(timeCorrectionRequests.requestedTime, dayStart),
       lte2(timeCorrectionRequests.requestedTime, dayEnd)
     )).limit(1);
@@ -8267,7 +8371,7 @@ var timeTrackingRouter = router({
     }).from(timeCorrectionRequests).where(and8(
       eq8(timeCorrectionRequests.companyId, ctx.accountId),
       inArray8(timeCorrectionRequests.memberAccountId, memberIds),
-      sql9`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+      sql10`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
       gte5(timeCorrectionRequests.requestedTime, rangeStart),
       lte2(timeCorrectionRequests.requestedTime, rangeEnd)
     ));
@@ -8317,58 +8421,20 @@ var timeTrackingRouter = router({
     const from = `${today.slice(0, 7)}-01`;
     const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const to = `${today.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
-    const rows4 = await loadMirrorEventRows(companyId, [memberId], from, to);
-    const events = rows4.map((row2) => ({
-      id: row2.id,
-      type: row2.eventType,
-      time: (row2.deviceTime || row2.serverTime).toISOString(),
-      receivedAt: row2.serverTime.toISOString(),
-      synced: row2.synced,
-      notes: row2.notes,
-      timeAlert: readTimeAlert(row2.notes),
-      offline: Boolean(row2.offline),
-      clockAlert: readClockAlert(row2.notes),
-      disregarded: row2.disregard ? { reason: row2.disregard.reason, by: row2.disregard.decidedByName, at: row2.disregard.createdAt } : null
-    }));
-    let labor = null;
-    try {
-      const raw = await getSetting(`labor_profile:${memberId}`, companyId, "");
-      if (raw) labor = JSON.parse(raw);
-    } catch {
-      labor = null;
-    }
-    const excusesByMember = await loadApprovedDayExcuses(companyId, [memberId], from, to);
-    const vacationsByMember = await loadMemberVacations(companyId, [memberId], from, to);
-    const options = await loadMirrorOptions(companyId);
-    const report = buildMirror({ events, from, to, timeZone, labor, excuses: excusesByMember.get(memberId) || [], vacations: vacationsByMember.get(memberId) || [], options });
-    const configured = Boolean(labor?.dailyMinutes && labor.dailyMinutes > 0 && labor.workdays?.length);
-    const openToday = report.days.find((day) => day.date === today && day.issues.some((issue) => issue.startsWith("Jornada incompleta")));
-    let workedMinutes = report.totals.workedMinutes;
-    let expectedMinutes = report.totals.expectedMinutes ?? 0;
-    let overtimeMinutes = report.totals.overtimeMinutes ?? 0;
-    let deficitMinutes = report.totals.deficitMinutes ?? 0;
-    let balanceMinutes = report.totals.balanceMinutes ?? 0;
-    if (openToday) {
-      const todayWorked = openToday.workedMinutes;
-      const todayExpected = openToday.expectedMinutes ?? 0;
-      const todayDiff = openToday.diffMinutes ?? 0;
-      workedMinutes = Math.max(0, workedMinutes - todayWorked);
-      expectedMinutes = Math.max(0, expectedMinutes - todayExpected);
-      if (todayDiff > 0) overtimeMinutes = Math.max(0, overtimeMinutes - todayDiff);
-      if (todayDiff < 0) deficitMinutes = Math.max(0, deficitMinutes + todayDiff);
-      balanceMinutes -= todayDiff;
-    }
+    const reports = await buildMemberReports(companyId, [memberId], from, to, timeZone);
+    const mr = reports.get(memberId);
+    const bal = closedPeriodBalance(mr.report, mr.labor, today);
     const periodLabel = (/* @__PURE__ */ new Date(`${from}T12:00:00Z`)).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone });
     return {
       periodLabel: periodLabel.charAt(0).toUpperCase() + periodLabel.slice(1),
-      daysTracked: report.totals.daysWithMarks,
-      workedMinutes,
-      expectedMinutes: configured ? expectedMinutes : 0,
-      balanceMinutes: configured ? balanceMinutes : 0,
-      overtimeMinutes: configured ? overtimeMinutes : 0,
-      deficitMinutes: configured ? deficitMinutes : 0,
-      openShift: Boolean(openToday),
-      configured
+      daysTracked: bal.daysTracked,
+      workedMinutes: bal.workedMinutes,
+      expectedMinutes: bal.expectedMinutes,
+      balanceMinutes: bal.balanceMinutes,
+      overtimeMinutes: bal.overtimeMinutes,
+      deficitMinutes: bal.deficitMinutes,
+      openShift: bal.openShift,
+      configured: bal.configured
     };
   }),
   myCorrections: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {
@@ -8452,7 +8518,7 @@ var timeTrackingRouter = router({
       }).from(timeCorrectionRequests).where(and8(
         eq8(timeCorrectionRequests.companyId, companyId),
         eq8(timeCorrectionRequests.memberAccountId, memberId),
-        sql9`${timeCorrectionRequests.status} IN ('pending', 'approved')`
+        sql10`${timeCorrectionRequests.status} IN ('pending', 'approved')`
       )).orderBy(desc2(timeCorrectionRequests.createdAt)).limit(100);
       if (input.attachmentBase64) {
         const head = Buffer.from(input.attachmentBase64.replace(/^data:[^;]+;base64,/, "").slice(0, 64), "base64");
@@ -8491,9 +8557,9 @@ var timeTrackingRouter = router({
           attachmentKey = await saveCorrectionAttachment(companyId, inserted.id, input.attachmentBase64);
         }
         if (attachmentKey) {
-          await database2.execute(sql9`UPDATE time_correction_requests SET justificationType = ${jType}, attachmentKey = ${attachmentKey} WHERE id = ${inserted.id}`);
+          await database2.execute(sql10`UPDATE time_correction_requests SET justificationType = ${jType}, attachmentKey = ${attachmentKey} WHERE id = ${inserted.id}`);
         } else {
-          await database2.execute(sql9`UPDATE time_correction_requests SET justificationType = ${jType} WHERE id = ${inserted.id}`);
+          await database2.execute(sql10`UPDATE time_correction_requests SET justificationType = ${jType} WHERE id = ${inserted.id}`);
         }
       } catch (err) {
         console.warn("correction extras persist skipped", err);
@@ -8587,7 +8653,7 @@ init_ledger();
 init_repFormat();
 import { z as z5 } from "zod";
 import { TRPCError as TRPCError8 } from "@trpc/server";
-import { and as and9, asc, desc as desc3, eq as eq9, gte as gte6, inArray as inArray9, lt as lt5, sql as sql11 } from "drizzle-orm";
+import { and as and9, asc, desc as desc3, eq as eq9, gte as gte6, inArray as inArray9, lt as lt5, sql as sql12 } from "drizzle-orm";
 
 // server/ponto/receipt.ts
 init_repFormat();
@@ -8702,7 +8768,7 @@ function receiptEmailHtml(r) {
 init_email();
 init_clock();
 var TZ3 = DEFAULT_TZ;
-var monthStr = z5.string().regex(/^\d{4}-\d{2}$/);
+var monthStr2 = z5.string().regex(/^\d{4}-\d{2}$/);
 var dateStr3 = z5.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 function developerInfo() {
   return {
@@ -8777,8 +8843,8 @@ async function latestAcceptances(companyId, month, memberIds) {
   await ensurePunchLedger();
   const database2 = await getDb();
   if (!database2) return /* @__PURE__ */ new Map();
-  const filter = memberIds?.length ? sql11` AND memberAccountId IN (${sql11.join(memberIds.map((id2) => sql11`${id2}`), sql11`, `)})` : sql11``;
-  const [rows4] = await database2.execute(sql11`SELECT id, memberAccountId, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND month = ${month}${filter} ORDER BY id DESC`);
+  const filter = memberIds?.length ? sql12` AND memberAccountId IN (${sql12.join(memberIds.map((id2) => sql12`${id2}`), sql12`, `)})` : sql12``;
+  const [rows4] = await database2.execute(sql12`SELECT id, memberAccountId, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND month = ${month}${filter} ORDER BY id DESC`);
   const map = /* @__PURE__ */ new Map();
   for (const r of rows4) if (!map.has(Number(r.memberAccountId))) map.set(Number(r.memberAccountId), r);
   return map;
@@ -8876,7 +8942,7 @@ var pontoLegalRouter = router({
     return result.ok ? { sent: true, message: `Comprovante enviado para ${memberEmail}.` } : { sent: false, message: "N\xE3o foi poss\xEDvel enviar o e-mail agora. Baixe o PDF." };
   }),
   // ------------------------------------------------------------------ aceite do espelho
-  myMirror: commercialFeatureProcedure("timeTracking").input(z5.object({ month: monthStr })).query(async ({ ctx, input }) => {
+  myMirror: commercialFeatureProcedure("timeTracking").input(z5.object({ month: monthStr2 })).query(async ({ ctx, input }) => {
     if (!ctx.accountId || !ctx.memberAccountId) throw new TRPCError8({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
     const m = await memberMonthMirror(ctx.accountId, ctx.memberAccountId, input.month);
     const acc = (await latestAcceptances(ctx.accountId, input.month, [ctx.memberAccountId])).get(ctx.memberAccountId) ?? null;
@@ -8894,7 +8960,7 @@ var pontoLegalRouter = router({
       acceptance: acc ? { decision: acc.decision, acceptedAt: acc.acceptedAt, documentHash: acc.documentHash, comment: acc.comment, stillValid: acc.documentHash === m.documentHash } : null
     };
   }),
-  acceptMirror: commercialFeatureProcedure("timeTracking").input(z5.object({ month: monthStr, documentHash: z5.string().regex(/^[a-f0-9]{64}$/), decision: z5.enum(["accepted", "contested"]), comment: z5.string().trim().max(1e3).optional() })).mutation(async ({ ctx, input }) => {
+  acceptMirror: commercialFeatureProcedure("timeTracking").input(z5.object({ month: monthStr2, documentHash: z5.string().regex(/^[a-f0-9]{64}$/), decision: z5.enum(["accepted", "contested"]), comment: z5.string().trim().max(1e3).optional() })).mutation(async ({ ctx, input }) => {
     if (!ctx.accountId || !ctx.memberAccountId) throw new TRPCError8({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
     if (input.decision === "contested" && (input.comment || "").length < 5) throw new TRPCError8({ code: "BAD_REQUEST", message: "Explique o que est\xE1 errado (pelo menos 5 caracteres)." });
     const m = await memberMonthMirror(ctx.accountId, ctx.memberAccountId, input.month);
@@ -8903,12 +8969,12 @@ var pontoLegalRouter = router({
     const database2 = await getDb();
     if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     const summary = JSON.stringify({ totals: m.report.totals, days: m.report.days.length });
-    await database2.execute(sql11`INSERT INTO timesheet_acceptances (companyId, memberAccountId, month, decision, documentHash, summary, comment, ipAddress, userAgent, acceptedAt)
+    await database2.execute(sql12`INSERT INTO timesheet_acceptances (companyId, memberAccountId, month, decision, documentHash, summary, comment, ipAddress, userAgent, acceptedAt)
         VALUES (${ctx.accountId}, ${ctx.memberAccountId}, ${input.month}, ${input.decision}, ${m.documentHash}, ${summary}, ${input.comment || null}, ${meta.ipAddress?.slice(0, 64) ?? null}, ${meta.userAgent?.slice(0, 512) ?? null}, UTC_TIMESTAMP())`);
     void auditFromCtx(ctx, { action: input.decision === "accepted" ? "update" : "security", module: "time_tracking", entityType: "timesheet_acceptance", entityId: ctx.memberAccountId, description: `${input.decision === "accepted" ? "Funcion\xE1rio confirmou" : "Funcion\xE1rio contestou"} o espelho de ${input.month} (hash ${m.documentHash.slice(0, 12)}\u2026)`, newData: { month: input.month, documentHash: m.documentHash, comment: input.comment || null } });
     return { success: true, documentHash: m.documentHash };
   }),
-  mirrorAcceptances: companyAdminFeatureProcedure("timeTracking").input(z5.object({ month: monthStr })).query(async ({ ctx, input }) => {
+  mirrorAcceptances: companyAdminFeatureProcedure("timeTracking").input(z5.object({ month: monthStr2 })).query(async ({ ctx, input }) => {
     const database2 = await getDb();
     if (!database2) return [];
     const members = (await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active }).from(memberAccounts2).where(eq9(memberAccounts2.companyId, ctx.accountId))).filter((m) => m.role !== "company_admin");
@@ -8951,7 +9017,7 @@ var pontoLegalRouter = router({
     if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     const rows4 = await database2.select().from(timeEvents).where(eq9(timeEvents.companyId, ctx.accountId)).orderBy(asc(timeEvents.id));
     const result = verifyLedger(rows4.map(toLedgerRow));
-    const [stateRows] = await database2.execute(sql11`SELECT lastNsr, lastHash, initializedAt FROM rep_ledger_state WHERE companyId = ${ctx.accountId}`);
+    const [stateRows] = await database2.execute(sql12`SELECT lastNsr, lastHash, initializedAt FROM rep_ledger_state WHERE companyId = ${ctx.accountId}`);
     const state = stateRows?.[0] ?? null;
     const stateMismatch = state && Number(state.lastNsr) !== result.lastNsr;
     const legacy = rows4.filter((r) => r.sealedLegacy).length;
@@ -9089,7 +9155,7 @@ init_audit();
 import { randomBytes } from "node:crypto";
 import { z as z6 } from "zod";
 import { TRPCError as TRPCError9 } from "@trpc/server";
-import { and as and10, eq as eq10, inArray as inArray10, sql as sql12 } from "drizzle-orm";
+import { and as and10, eq as eq10, inArray as inArray10, sql as sql13 } from "drizzle-orm";
 import { zipSync, strToU8 } from "fflate";
 
 // shared/privacyNotice.ts
@@ -9117,7 +9183,7 @@ async function ensureLgpdTables() {
   ready4 = (async () => {
     const database2 = await getDb();
     if (!database2 || typeof database2.execute !== "function") return;
-    await database2.execute(sql12.raw(`CREATE TABLE IF NOT EXISTS privacy_acknowledgements (
+    await database2.execute(sql13.raw(`CREATE TABLE IF NOT EXISTS privacy_acknowledgements (
       id INT AUTO_INCREMENT PRIMARY KEY,
       companyId INT NOT NULL,
       memberAccountId INT NOT NULL,
@@ -9128,7 +9194,7 @@ async function ensureLgpdTables() {
       acknowledgedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       INDEX privacy_ack_member_idx (companyId, memberAccountId, noticeVersion)
     )`));
-    await database2.execute(sql12.raw(`CREATE TABLE IF NOT EXISTS lgpd_requests (
+    await database2.execute(sql13.raw(`CREATE TABLE IF NOT EXISTS lgpd_requests (
       id INT AUTO_INCREMENT PRIMARY KEY,
       companyId INT NOT NULL,
       memberAccountId INT NOT NULL,
@@ -9174,16 +9240,16 @@ async function collectSubjectData(companyId, memberId) {
     perfilTrabalhista: laborRaw ? JSON.parse(laborRaw) : null,
     marcacoesDePonto: await database2.select().from(timeEvents).where(and10(eq10(timeEvents.companyId, companyId), eq10(timeEvents.memberAccountId, memberId))),
     pedidosDeCorrecao: await database2.select().from(timeCorrectionRequests).where(and10(eq10(timeCorrectionRequests.companyId, companyId), eq10(timeCorrectionRequests.memberAccountId, memberId))),
-    aceitesDoEspelho: await rows(sql12`SELECT month, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`).catch(() => []),
-    cienciasDoAviso: await rows(sql12`SELECT noticeVersion, textHash, ipAddress, userAgent, acknowledgedAt FROM privacy_acknowledgements WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`),
-    pedidosLgpd: await rows(sql12`SELECT id, kind, message, status, createdAt, resolvedAt, resolution FROM lgpd_requests WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`),
+    aceitesDoEspelho: await rows(sql13`SELECT month, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`).catch(() => []),
+    cienciasDoAviso: await rows(sql13`SELECT noticeVersion, textHash, ipAddress, userAgent, acknowledgedAt FROM privacy_acknowledgements WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`),
+    pedidosLgpd: await rows(sql13`SELECT id, kind, message, status, createdAt, resolvedAt, resolution FROM lgpd_requests WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`),
     ferias: await database2.select().from(vacationSchedules).where(and10(eq10(vacationSchedules.companyId, companyId), eq10(vacationSchedules.memberAccountId, memberId))),
     visitas: myVisits,
     fotosDeVisita: visitIds.length ? await database2.select().from(visitPhotos).where(and10(eq10(visitPhotos.companyId, companyId), inArray10(visitPhotos.visitId, visitIds))) : [],
     fotosDeLoja: await database2.select().from(storePhotos).where(and10(eq10(storePhotos.companyId, companyId), eq10(storePhotos.promoterId, memberId))),
     evidencias: await database2.select().from(evidences).where(and10(eq10(evidences.companyId, companyId), eq10(evidences.promoterId, memberId))),
     checklists: await database2.select().from(checklistResponses).where(and10(eq10(checklistResponses.companyId, companyId), eq10(checklistResponses.promoterId, memberId))),
-    registrosDeAuditoria: await rows(sql12`SELECT action, module, entityType, description, ipAddress, userAgent, createdAt FROM audit_logs WHERE companyId = ${companyId} AND userId = ${memberId} ORDER BY id DESC LIMIT 5000`).catch(() => [])
+    registrosDeAuditoria: await rows(sql13`SELECT action, module, entityType, description, ipAddress, userAgent, createdAt FROM audit_logs WHERE companyId = ${companyId} AND userId = ${memberId} ORDER BY id DESC LIMIT 5000`).catch(() => [])
   };
 }
 function summarizeSubjectData(data) {
@@ -9234,7 +9300,7 @@ async function summaryPdf(data, companyName) {
 async function buildSubjectExportZip(companyId, memberId) {
   const data = await collectSubjectData(companyId, memberId);
   const database2 = await getDb();
-  const [company] = database2 ? await rows(sql12`SELECT name FROM companies WHERE id = ${companyId}`) : [];
+  const [company] = database2 ? await rows(sql13`SELECT name FROM companies WHERE id = ${companyId}`) : [];
   const pdf = await summaryPdf(data, company?.name || "");
   const json2 = JSON.stringify(data, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2);
   const zip = zipSync({
@@ -9284,7 +9350,7 @@ var lgpdRouter = router({
     const base = { version: PRIVACY_NOTICE_VERSION, required: false, acknowledgedAt: null };
     if (ctx.user?.role !== "promoter" || !ctx.memberAccountId || ctx.actingAsPlatform) return base;
     await ensureLgpdTables();
-    const r = await rows(sql12`SELECT acknowledgedAt FROM privacy_acknowledgements WHERE companyId = ${ctx.accountId} AND memberAccountId = ${ctx.memberAccountId} AND noticeVersion = ${PRIVACY_NOTICE_VERSION} ORDER BY id DESC LIMIT 1`);
+    const r = await rows(sql13`SELECT acknowledgedAt FROM privacy_acknowledgements WHERE companyId = ${ctx.accountId} AND memberAccountId = ${ctx.memberAccountId} AND noticeVersion = ${PRIVACY_NOTICE_VERSION} ORDER BY id DESC LIMIT 1`);
     return { ...base, required: !r.length, acknowledgedAt: r[0]?.acknowledgedAt ?? null };
   }),
   acknowledgeNotice: companyBillingProcedure.input(z6.object({ version: z6.string().max(32) })).mutation(async ({ ctx, input }) => {
@@ -9295,7 +9361,7 @@ var lgpdRouter = router({
     const hash = noticeHash();
     const database2 = await getDb();
     if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-    await database2.execute(sql12`INSERT INTO privacy_acknowledgements (companyId, memberAccountId, noticeVersion, textHash, ipAddress, userAgent, acknowledgedAt)
+    await database2.execute(sql13`INSERT INTO privacy_acknowledgements (companyId, memberAccountId, noticeVersion, textHash, ipAddress, userAgent, acknowledgedAt)
       VALUES (${ctx.accountId}, ${ctx.memberAccountId}, ${PRIVACY_NOTICE_VERSION}, ${hash}, ${meta.ipAddress?.slice(0, 64) ?? null}, ${meta.userAgent?.slice(0, 512) ?? null}, UTC_TIMESTAMP())`);
     void auditFromCtx(ctx, { action: "update", module: "lgpd", entityType: "privacy_notice", entityId: ctx.memberAccountId, description: `Ci\xEAncia do aviso de privacidade vers\xE3o ${PRIVACY_NOTICE_VERSION} (hash ${hash.slice(0, 12)}\u2026)`, newData: { version: PRIVACY_NOTICE_VERSION, textHash: hash } });
     return { success: true };
@@ -9307,14 +9373,14 @@ var lgpdRouter = router({
     const meta = requestMeta(ctx);
     const database2 = await getDb();
     if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-    await database2.execute(sql12`INSERT INTO lgpd_requests (companyId, memberAccountId, kind, message, ipAddress, userAgent) VALUES (${ctx.accountId}, ${ctx.memberAccountId}, ${input.kind}, ${input.message || null}, ${meta.ipAddress?.slice(0, 64) ?? null}, ${meta.userAgent?.slice(0, 512) ?? null})`);
+    await database2.execute(sql13`INSERT INTO lgpd_requests (companyId, memberAccountId, kind, message, ipAddress, userAgent) VALUES (${ctx.accountId}, ${ctx.memberAccountId}, ${input.kind}, ${input.message || null}, ${meta.ipAddress?.slice(0, 64) ?? null}, ${meta.userAgent?.slice(0, 512) ?? null})`);
     void auditFromCtx(ctx, { action: "create", module: "lgpd", entityType: "lgpd_request", entityId: ctx.memberAccountId, description: `Pedido do titular (LGPD): ${KIND_LABEL[input.kind]}` });
     return { success: true };
   }),
   myRequests: companyBillingProcedure.query(async ({ ctx }) => {
     if (!ctx.memberAccountId) return [];
     await ensureLgpdTables();
-    return rows(sql12`SELECT id, kind, message, status, createdAt, resolvedAt, resolution FROM lgpd_requests WHERE companyId = ${ctx.accountId} AND memberAccountId = ${ctx.memberAccountId} ORDER BY id DESC LIMIT 50`);
+    return rows(sql13`SELECT id, kind, message, status, createdAt, resolvedAt, resolution FROM lgpd_requests WHERE companyId = ${ctx.accountId} AND memberAccountId = ${ctx.memberAccountId} ORDER BY id DESC LIMIT 50`);
   }),
   /** Titular baixa a própria cópia (mesmo pacote do administrador). */
   exportMine: companyBillingProcedure.mutation(async ({ ctx }) => {
@@ -9327,12 +9393,12 @@ var lgpdRouter = router({
   requests: companyAdminProcedure.input(z6.object({ status: z6.enum(["open", "all"]).default("open") }).optional()).query(async ({ ctx, input }) => {
     await ensureLgpdTables();
     const companyId = Number(ctx.accountId);
-    return rows(sql12`SELECT r.id, r.memberAccountId, m.userName AS name, r.kind, r.message, r.status, r.createdAt, r.resolvedAt, r.resolvedBy, r.resolution
-      FROM lgpd_requests r LEFT JOIN member_accounts m ON m.id = r.memberAccountId WHERE r.companyId = ${companyId} ${input?.status === "all" ? sql12`` : sql12`AND r.status = 'open'`} ORDER BY r.id DESC LIMIT 200`);
+    return rows(sql13`SELECT r.id, r.memberAccountId, m.userName AS name, r.kind, r.message, r.status, r.createdAt, r.resolvedAt, r.resolvedBy, r.resolution
+      FROM lgpd_requests r LEFT JOIN member_accounts m ON m.id = r.memberAccountId WHERE r.companyId = ${companyId} ${input?.status === "all" ? sql13`` : sql13`AND r.status = 'open'`} ORDER BY r.id DESC LIMIT 200`);
   }),
   acknowledgements: companyAdminProcedure.query(async ({ ctx }) => {
     await ensureLgpdTables();
-    return rows(sql12`SELECT m.id AS memberId, m.userName AS name, m.active, MAX(CASE WHEN a.noticeVersion = ${PRIVACY_NOTICE_VERSION} THEN a.acknowledgedAt END) AS acknowledgedAt
+    return rows(sql13`SELECT m.id AS memberId, m.userName AS name, m.active, MAX(CASE WHEN a.noticeVersion = ${PRIVACY_NOTICE_VERSION} THEN a.acknowledgedAt END) AS acknowledgedAt
       FROM member_accounts m LEFT JOIN privacy_acknowledgements a ON a.memberAccountId = m.id AND a.companyId = m.companyId
       WHERE m.companyId = ${Number(ctx.accountId)} AND m.role = 'promoter' GROUP BY m.id, m.userName, m.active ORDER BY m.userName`);
   }),
@@ -9349,7 +9415,7 @@ var lgpdRouter = router({
     const { pseudonym } = await anonymizeSubject(companyId, input.memberId);
     if (input.requestId) {
       const database2 = await getDb();
-      await database2?.execute(sql12`UPDATE lgpd_requests SET status = 'done', resolvedAt = UTC_TIMESTAMP(), resolvedBy = ${ctx.user?.name ?? null}, resolution = ${`Anonimizado: ${input.reason}`} WHERE id = ${input.requestId} AND companyId = ${companyId}`);
+      await database2?.execute(sql13`UPDATE lgpd_requests SET status = 'done', resolvedAt = UTC_TIMESTAMP(), resolvedBy = ${ctx.user?.name ?? null}, resolution = ${`Anonimizado: ${input.reason}`} WHERE id = ${input.requestId} AND companyId = ${companyId}`);
     }
     void auditFromCtx(ctx, { action: "delete", module: "lgpd", entityType: "subject_anonymization", entityId: input.memberId, entityLabel: pseudonym, description: `Anonimizou dados pessoais do titular #${input.memberId} (ponto preservado por obriga\xE7\xE3o legal). Motivo: ${input.reason}`, newData: { plan: ANONYMIZE_PLAN, requestId: input.requestId ?? null } });
     return { success: true, pseudonym };
@@ -9358,7 +9424,7 @@ var lgpdRouter = router({
     await ensureLgpdTables();
     const database2 = await getDb();
     if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-    await database2.execute(sql12`UPDATE lgpd_requests SET status = ${input.status}, resolvedAt = UTC_TIMESTAMP(), resolvedBy = ${ctx.user?.name ?? null}, resolution = ${input.resolution} WHERE id = ${input.id} AND companyId = ${Number(ctx.accountId)}`);
+    await database2.execute(sql13`UPDATE lgpd_requests SET status = ${input.status}, resolvedAt = UTC_TIMESTAMP(), resolvedBy = ${ctx.user?.name ?? null}, resolution = ${input.resolution} WHERE id = ${input.id} AND companyId = ${Number(ctx.accountId)}`);
     void auditFromCtx(ctx, { action: "update", module: "lgpd", entityType: "lgpd_request", entityId: input.id, description: `Pedido LGPD #${input.id} ${input.status === "done" ? "atendido" : "recusado"}: ${input.resolution}` });
     return { success: true };
   })
@@ -9471,11 +9537,11 @@ init_storeAccess();
 init_storeClients();
 import { z as z10 } from "zod";
 import { TRPCError as TRPCError14 } from "@trpc/server";
-import { sql as sql17 } from "drizzle-orm";
+import { sql as sql18 } from "drizzle-orm";
 var rows2 = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
 var text3 = (max) => z10.string().trim().max(max).optional().transform((v) => v ? v : null);
 async function loadClient(db, companyId, storeId, id2) {
-  const r = rows2(await db.execute(sql17`SELECT * FROM store_clients WHERE id = ${id2} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`));
+  const r = rows2(await db.execute(sql18`SELECT * FROM store_clients WHERE id = ${id2} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`));
   if (!r[0]) throw new TRPCError14({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado nesta loja." });
   return r[0];
 }
@@ -9487,13 +9553,13 @@ var storeClientsRouter = router({
     await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const memberId = scopeMemberId(ctx);
-    const own = memberId !== null ? sql17` AND p.promoterId = ${memberId}` : sql17``;
-    const r = rows2(await db.execute(sql17`
+    const own = memberId !== null ? sql18` AND p.promoterId = ${memberId}` : sql18``;
+    const r = rows2(await db.execute(sql18`
         SELECT c.id, c.storeId, c.name, c.contactName, c.phone, c.notes, c.active,
           (SELECT COUNT(*) FROM store_photos p WHERE p.companyId = c.companyId AND p.storeClientId = c.id AND p.uploadStatus = 'uploaded'${own}) AS photoCount,
           (SELECT MAX(p.capturedAt) FROM store_photos p WHERE p.companyId = c.companyId AND p.storeClientId = c.id${own}) AS lastActivity
         FROM store_clients c
-        WHERE c.companyId = ${ctx.accountId} AND c.storeId = ${input.storeId}${input.includeInactive ? sql17`` : sql17` AND c.active = true`}
+        WHERE c.companyId = ${ctx.accountId} AND c.storeId = ${input.storeId}${input.includeInactive ? sql18`` : sql18` AND c.active = true`}
         ORDER BY c.name ASC`));
     return r.map((c) => ({ ...c, active: Boolean(c.active), photoCount: Number(c.photoCount ?? 0) }));
   }),
@@ -9502,9 +9568,9 @@ var storeClientsRouter = router({
     if (!db) throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
-    const dup = rows2(await db.execute(sql17`SELECT id FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true AND LOWER(name) = ${input.name.toLowerCase()} LIMIT 1`));
+    const dup = rows2(await db.execute(sql18`SELECT id FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true AND LOWER(name) = ${input.name.toLowerCase()} LIMIT 1`));
     if (dup[0]) throw new TRPCError14({ code: "CONFLICT", message: "Esta loja j\xE1 tem um cliente com esse nome." });
-    const res = await db.execute(sql17`INSERT INTO store_clients (companyId, storeId, name, contactName, phone, notes) VALUES (${ctx.accountId}, ${input.storeId}, ${input.name}, ${input.contactName}, ${input.phone}, ${input.notes})`);
+    const res = await db.execute(sql18`INSERT INTO store_clients (companyId, storeId, name, contactName, phone, notes) VALUES (${ctx.accountId}, ${input.storeId}, ${input.name}, ${input.contactName}, ${input.phone}, ${input.notes})`);
     const id2 = Number((Array.isArray(res) ? res[0] : res)?.insertId);
     await auditFromCtx(ctx, { action: "create", module: "store_clients", entityType: "store_client", entityId: id2, entityLabel: input.name, description: `Cliente ${input.name} cadastrado na loja ${store.name}`, newData: { storeId: input.storeId, name: input.name } });
     return { id: id2 };
@@ -9515,7 +9581,7 @@ var storeClientsRouter = router({
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const old = await loadClient(db, ctx.accountId, input.storeId, input.id);
-    await db.execute(sql17`UPDATE store_clients SET name = ${input.name}, contactName = ${input.contactName}, phone = ${input.phone}, notes = ${input.notes} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
+    await db.execute(sql18`UPDATE store_clients SET name = ${input.name}, contactName = ${input.contactName}, phone = ${input.phone}, notes = ${input.notes} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
     await auditFromCtx(ctx, { action: "update", module: "store_clients", entityType: "store_client", entityId: input.id, entityLabel: input.name, description: `Cliente ${old.name} atualizado na loja ${store.name}`, oldData: { name: old.name, phone: old.phone }, newData: { name: input.name, phone: input.phone } });
     return { id: input.id };
   }),
@@ -9526,7 +9592,7 @@ var storeClientsRouter = router({
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const old = await loadClient(db, ctx.accountId, input.storeId, input.id);
-    await db.execute(sql17`UPDATE store_clients SET active = ${input.active} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
+    await db.execute(sql18`UPDATE store_clients SET active = ${input.active} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
     await auditFromCtx(ctx, { action: input.active ? "update" : "delete", module: "store_clients", entityType: "store_client", entityId: input.id, entityLabel: old.name, description: `Cliente ${old.name} ${input.active ? "reativado" : "removido"} da loja ${store.name}` });
     return { id: input.id, active: input.active };
   })
@@ -9541,7 +9607,7 @@ import { TRPCError as TRPCError18 } from "@trpc/server";
 
 // server/authThrottle.ts
 import { createHash as createHash3 } from "node:crypto";
-import { sql as sql19 } from "drizzle-orm";
+import { sql as sql20 } from "drizzle-orm";
 var THROTTLE_LIMIT = 5;
 var THROTTLE_WINDOW_MS = 15 * 60 * 1e3;
 var THROTTLE_BLOCK_MS = 15 * 60 * 1e3;
@@ -9565,7 +9631,7 @@ async function table() {
   const db = await dbGetter();
   if (!db) return null;
   if (!ensured2) {
-    ensured2 = db.execute(sql19.raw(`CREATE TABLE IF NOT EXISTS auth_throttle (
+    ensured2 = db.execute(sql20.raw(`CREATE TABLE IF NOT EXISTS auth_throttle (
       keyHash char(64) NOT NULL,
       failures int NOT NULL DEFAULT 0,
       windowStartedAt bigint NOT NULL,
@@ -9586,7 +9652,7 @@ async function isThrottled(key) {
   try {
     const db = await table();
     if (!db) return false;
-    const found = rows3(await db.execute(sql19`SELECT blockedUntil FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)} LIMIT 1`));
+    const found = rows3(await db.execute(sql20`SELECT blockedUntil FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)} LIMIT 1`));
     return Number(found[0]?.blockedUntil ?? 0) > now;
   } catch (err) {
     console.warn("[auth-throttle] banco indispon\xEDvel, usando s\xF3 a mem\xF3ria", err?.message);
@@ -9603,10 +9669,10 @@ async function registerThrottleFailure(key) {
     const db = await table();
     if (!db) return;
     const hash = throttleKeyHash(key);
-    const found = rows3(await db.execute(sql19`SELECT failures, windowStartedAt, blockedUntil FROM auth_throttle WHERE keyHash = ${hash} LIMIT 1`));
+    const found = rows3(await db.execute(sql20`SELECT failures, windowStartedAt, blockedUntil FROM auth_throttle WHERE keyHash = ${hash} LIMIT 1`));
     const current = found[0] ? { failures: Number(found[0].failures), windowStartedAt: Number(found[0].windowStartedAt), blockedUntil: Number(found[0].blockedUntil) } : void 0;
     const next = nextEntryAfterFailure(current, now);
-    await db.execute(sql19`INSERT INTO auth_throttle (keyHash, failures, windowStartedAt, blockedUntil)
+    await db.execute(sql20`INSERT INTO auth_throttle (keyHash, failures, windowStartedAt, blockedUntil)
       VALUES (${hash}, ${next.failures}, ${next.windowStartedAt}, ${next.blockedUntil})
       ON DUPLICATE KEY UPDATE failures = VALUES(failures), windowStartedAt = VALUES(windowStartedAt), blockedUntil = VALUES(blockedUntil)`);
   } catch (err) {
@@ -9617,7 +9683,7 @@ async function clearThrottle(key) {
   memory.delete(key);
   try {
     const db = await table();
-    if (db) await db.execute(sql19`DELETE FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)}`);
+    if (db) await db.execute(sql20`DELETE FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)}`);
   } catch {
   }
 }
@@ -10140,7 +10206,7 @@ async function verifyMemberPassword(memberAccountId, password) {
 init_schema_original();
 init_entitlements();
 init_entitlements2();
-import { sql as sql20, eq as eq16 } from "drizzle-orm";
+import { sql as sql21, eq as eq16 } from "drizzle-orm";
 async function getEffectivePlan(companyId) {
   const base = await getCompanyEntitlementBase(companyId);
   const plan = base.plan;

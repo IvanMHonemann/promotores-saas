@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { listOutbox } from "@/lib/outboxDb";
+import { isStandaloneDisplay } from "@/pwa/hooks";
 
 /** Aplica a versão nova do app (service worker em espera). Não apaga a fila offline nem o cache. */
 export async function applyWaitingUpdate() {
@@ -17,7 +18,8 @@ export function SwUpdatePrompt() {
     window.addEventListener("gondup:sw-update", show);
     return () => window.removeEventListener("gondup:sw-update", show);
   }, []);
-  if (!visible) return null;
+  // Em aba do navegador a atualização roda em silêncio (main.tsx); o aviso fica só no app instalado.
+  if (!visible || !isStandaloneDisplay()) return null;
   return (
     <div role="status" data-testid="sw-update" className="fixed inset-x-3 bottom-14 z-[75] mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-violet-300/40 bg-slate-900/95 p-3 text-sm text-violet-50 shadow-xl print:hidden">
       <RefreshCw className="h-5 w-5 shrink-0 text-violet-300" />

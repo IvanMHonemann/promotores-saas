@@ -103,6 +103,11 @@ export function serveStatic(app: Express) {
     setHeaders: (res, filePath) => {
       if (filePath.endsWith("index.html") || filePath.endsWith("sw.js")) {
         res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      } else if (!filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader("Cache-Control", "public, max-age=3600");
+      }
+      if (filePath.endsWith(`${path.sep}manifest.json`) || filePath.endsWith("/manifest.json")) {
+        res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
       }
     },
   }));

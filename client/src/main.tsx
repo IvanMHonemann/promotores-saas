@@ -17,6 +17,14 @@ if (typeof window !== "undefined" && window.location.pathname === "/plataforma/t
   localStorage.removeItem("promotores-saas-act-as");
   localStorage.removeItem("promotores-saas-auth-user");
 }
+// Captura o evento de instalação o quanto antes (antes do React montar), senão o botão some.
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    (window as any).__gondupDeferredPrompt = event;
+  });
+}
+
 if ("serviceWorker" in navigator) {
   // Na primeira visita não existe service worker controlando a página. Quando o novo SW assume
   // (clients.claim), o evento controllerchange dispara, mas NÃO há versão antiga para trocar: recarregar
@@ -30,12 +38,18 @@ if ("serviceWorker" in navigator) {
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") void registration.update();
       });
-      // Versão nova baixada: NÃO troca sozinha (poderia recarregar no meio de um check-in). Mostra o aviso
-      // "Nova versão disponível — Recarregar" (components/SwUpdatePrompt) e só troca quando o usuário aceitar.
+      // App instalado: avisa e espera o usuário. Aba do navegador: aplica em silêncio (próximo reload/controllerchange).
       const announce = (worker: ServiceWorker | null) => {
         if (!worker || !navigator.serviceWorker.controller) return;
         (window as any).__gondupWaitingSW = worker;
-        window.dispatchEvent(new Event("gondup:sw-update"));
+        const standalone =
+          window.matchMedia("(display-mode: standalone)").matches ||
+          Boolean((window.navigator as any).standalone);
+        if (standalone) {
+          window.dispatchEvent(new Event("gondup:sw-update"));
+        } else {
+          worker.postMessage({ type: "SKIP_WAITING" });
+        }
       };
       if (registration.waiting) announce(registration.waiting);
       registration.addEventListener("updatefound", () => {

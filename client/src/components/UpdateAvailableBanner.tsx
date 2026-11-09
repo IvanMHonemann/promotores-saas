@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { applyWaitingUpdate } from "@/components/SwUpdatePrompt";
+import { isStandaloneDisplay } from "@/pwa/hooks";
 
 const SEEN_KEY = "gondup_app_version";
 
@@ -26,7 +27,7 @@ export default function UpdateAvailableBanner() {
     if (seen !== current) setVisible(true);
   }, []);
 
-  if (!visible) return null;
+  if (!visible || !isStandaloneDisplay()) return null;
 
   return (
     <div className="mb-5 flex items-start gap-3 rounded-2xl border border-violet-400/40 bg-gradient-to-r from-violet-600/25 to-fuchsia-600/20 p-4 shadow-lg shadow-violet-900/30">

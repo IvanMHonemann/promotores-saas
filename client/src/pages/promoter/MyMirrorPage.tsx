@@ -137,7 +137,7 @@ export default function MyMirrorPage() {
                             ))}
                           </td>
                           <td className="p-1">{fmtMinutes(d.workedMinutes)}</td>
-                          <td className="p-1 text-slate-300">{[d.holiday, d.excuse?.label, d.vacation ? "Férias" : null, ...(d.issues || [])].filter(Boolean).join(" · ")}</td>
+                          <td className="p-1 text-slate-300">{[d.holiday, d.excuse?.label, d.vacation ? "Férias" : null, ...(d.issues || []), (d as any).disregarded?.length ? `Desconsiderada(s) pela empresa: ${(d as any).disregarded.map((m: any) => `${hhmm(m.time)} — ${m.reason}`).join(", ")}` : null].filter(Boolean).join(" · ")}</td>
                         </tr>
                       ))}
                     </tbody>

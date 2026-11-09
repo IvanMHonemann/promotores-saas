@@ -32,6 +32,8 @@ export type MirrorEvent = {
   offline?: boolean;
   /** Alerta de possível alteração do relógio do aparelho (ver shared/offlineClock). */
   clockAlert?: string | null;
+  /** Batida DESCONSIDERADA pelo administrador (registro preservado; fora das colunas e do cálculo). */
+  disregarded?: { reason: string; by?: string | null; at?: string | null } | null;
 };
 
 export type LaborProfile = {
@@ -78,6 +80,8 @@ export type DayRow = {
   vacation?: boolean;
   /** Alertas de horário da marcação (aparelho x servidor / offline). */
   timeAlerts?: string[];
+  /** Batidas desconsideradas no dia (não entram nas colunas nem no cálculo; listadas em Ocorrências). */
+  disregarded?: Array<{ type: MarkType; label: string; time: string; reason: string; by?: string | null }>;
 };
 
 export type MirrorTotals = {
@@ -87,6 +91,8 @@ export type MirrorTotals = {
   incompleteDays: number; adjustedMarks: number; automaticMarks: number; pendingSyncMarks: number; daysWithoutMarksOnWorkday: number | null;
   /** Marcações registradas offline. */
   offlineMarks?: number;
+  /** Batidas desconsideradas pelo administrador. */
+  disregardedMarks?: number;
 };
 
 export type MirrorReport = { from: string; to: string; timeZone: string; days: DayRow[]; totals: MirrorTotals; notes: string[] };
@@ -122,7 +128,15 @@ export type MirrorOptions = {
 export function buildMirror(input: { events: MirrorEvent[]; from: string; to: string; timeZone?: string; labor?: LaborProfile | null; excuses?: DayExcuseInput[]; vacations?: VacationRange[]; options?: MirrorOptions }): MirrorReport {
   const tz = input.timeZone || "America/Sao_Paulo";
   const labor = input.labor || null;
-  const events = [...input.events].sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
+  const sorted = [...input.events].sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
+  // Desconsideradas ficam fora dos turnos (colunas, pareamento, horas); só aparecem em Ocorrências do dia.
+  const events = sorted.filter((e) => !e.disregarded);
+  const disregardedByDate = new Map<string, NonNullable<DayRow["disregarded"]>>();
+  for (const e of sorted) {
+    if (!e.disregarded) continue;
+    const date = localParts(e.time, tz).date;
+    disregardedByDate.set(date, [...(disregardedByDate.get(date) || []), { type: e.type, label: MARK_LABEL[e.type], time: e.time, reason: e.disregarded.reason, by: e.disregarded.by ?? null }]);
+  }
   const notes: string[] = [];
   type Shift = { date: string; events: MirrorEvent[] };
   const shifts: Shift[] = [];
@@ -247,6 +261,7 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
       optionalHoliday,
       vacation: onVacation,
       timeAlerts,
+      ...(disregardedByDate.has(d) ? { disregarded: disregardedByDate.get(d) } : {}),
     });
   }
 
@@ -265,6 +280,7 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
     automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
     offlineMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.offline).length, 0),
+    disregardedMarks: days.reduce((a, x) => a + (x.disregarded?.length || 0), 0),
     pendingSyncMarks: marked.reduce((a, x) => a + x.marks.filter((m) => !m.synced).length, 0),
     daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday && !x.excuse && !x.vacation).length : null,
   };
@@ -364,6 +380,18 @@ export function treatmentTexts(marks: DayRow["marks"], tz: string): string[] {
   return out;
 }
 
+/** "Batidas desconsideradas: 12:18, 13:18 — motivo (por Ivan)", agrupado por motivo/responsável. */
+export function disregardedText(list: DayRow["disregarded"], tz: string): string {
+  if (!list?.length) return "";
+  const groups = new Map<string, string[]>();
+  for (const m of list) {
+    const why = `${m.reason.trim() || "sem justificativa"}${m.by ? ` (por ${m.by})` : ""}`;
+    groups.set(why, [...(groups.get(why) || []), localParts(m.time, tz).hm]);
+  }
+  const parts = [...groups.entries()].map(([why, times]) => `${times.sort().join(", ")} — ${why}`);
+  return `${list.length > 1 ? "Batidas desconsideradas" : "Batida desconsiderada"}: ${parts.join("; ")}`;
+}
+
 export const MIRROR_HEADERS = ["Data", "Dia", "Entrada", "Início intervalo", "Retorno intervalo", "Saída", "Trabalhadas", "Intervalo", "Previstas", "Diferença", "Extras", "Adic. noturno", "Ocorrências"];
 export function mirrorRows(report: MirrorReport): string[][] {
   const tz = report.timeZone;
@@ -371,6 +399,8 @@ export function mirrorRows(report: MirrorReport): string[][] {
     const pick = (t: MarkType) => d.marks.filter((m) => m.type === t).map((m) => fmtMark(m, tz)).join(" / ") || "—";
     const has = d.marks.length > 0;
     const adj = treatmentTexts(d.marks, tz);
+    const dis = disregardedText(d.disregarded, tz);
+    if (dis) adj.push(dis);
     const issues = [...d.issues, ...adj].join("; ") || "";
     return [fmtDate(d.date), WEEKDAYS[d.weekday], pick("clock_in"), pick("break_start"), pick("break_end"), pick("clock_out"),
       has ? fmtMinutes(d.workedMinutes) : "—", has ? fmtMinutes(d.breakMinutes) : "—", fmtMinutes(d.expectedMinutes), fmtMinutes(d.diffMinutes, true), fmtMinutes(d.overtimeMinutes), fmtMinutes(d.nightMinutes), issues];
@@ -384,5 +414,6 @@ export function totalsLines(t: MirrorTotals): Array<[string, string]> {
     ["Dias incompletos/inconsistentes", String(t.incompleteDays)], ["Dias úteis sem marcação", t.daysWithoutMarksOnWorkday == null ? "—" : String(t.daysWithoutMarksOnWorkday)],
     ["Marcações ajustadas", String(t.adjustedMarks)], ["Saídas automáticas do sistema", String(t.automaticMarks)], ["Marcações pendentes de sincronização", String(t.pendingSyncMarks)],
     ["Marcações registradas offline", String(t.offlineMarks ?? 0)],
+    ["Batidas desconsideradas", String(t.disregardedMarks ?? 0)],
   ];
 }

@@ -3651,7 +3651,14 @@ function nightOverlap(aMs, bMs, tz, start, end) {
 function buildMirror(input) {
   const tz = input.timeZone || "America/Sao_Paulo";
   const labor = input.labor || null;
-  const events = [...input.events].sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
+  const sorted = [...input.events].sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
+  const events = sorted.filter((e) => !e.disregarded);
+  const disregardedByDate = /* @__PURE__ */ new Map();
+  for (const e of sorted) {
+    if (!e.disregarded) continue;
+    const date3 = localParts(e.time, tz).date;
+    disregardedByDate.set(date3, [...disregardedByDate.get(date3) || [], { type: e.type, label: MARK_LABEL[e.type], time: e.time, reason: e.disregarded.reason, by: e.disregarded.by ?? null }]);
+  }
   const notes = [];
   const shifts = [];
   let cur = null;
@@ -3793,7 +3800,8 @@ function buildMirror(input) {
       excuse,
       optionalHoliday,
       vacation: onVacation,
-      timeAlerts
+      timeAlerts,
+      ...disregardedByDate.has(d) ? { disregarded: disregardedByDate.get(d) } : {}
     });
   }
   const marked = days.filter((x) => x.marks.length);
@@ -3813,6 +3821,7 @@ function buildMirror(input) {
     adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
     automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
     offlineMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.offline).length, 0),
+    disregardedMarks: days.reduce((a, x) => a + (x.disregarded?.length || 0), 0),
     pendingSyncMarks: marked.reduce((a, x) => a + x.marks.filter((m) => !m.synced).length, 0),
     daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday && !x.excuse && !x.vacation).length : null
   };
@@ -3873,12 +3882,24 @@ function treatmentTexts(marks, tz) {
   }
   return out;
 }
+function disregardedText(list, tz) {
+  if (!list?.length) return "";
+  const groups = /* @__PURE__ */ new Map();
+  for (const m of list) {
+    const why = `${m.reason.trim() || "sem justificativa"}${m.by ? ` (por ${m.by})` : ""}`;
+    groups.set(why, [...groups.get(why) || [], localParts(m.time, tz).hm]);
+  }
+  const parts = [...groups.entries()].map(([why, times]) => `${times.sort().join(", ")} \u2014 ${why}`);
+  return `${list.length > 1 ? "Batidas desconsideradas" : "Batida desconsiderada"}: ${parts.join("; ")}`;
+}
 function mirrorRows(report) {
   const tz = report.timeZone;
   return report.days.map((d) => {
     const pick = (t2) => d.marks.filter((m) => m.type === t2).map((m) => fmtMark(m, tz)).join(" / ") || "\u2014";
     const has = d.marks.length > 0;
     const adj = treatmentTexts(d.marks, tz);
+    const dis = disregardedText(d.disregarded, tz);
+    if (dis) adj.push(dis);
     const issues = [...d.issues, ...adj].join("; ") || "";
     return [
       fmtDate(d.date),
@@ -3913,7 +3934,8 @@ function totalsLines(t2) {
     ["Marca\xE7\xF5es ajustadas", String(t2.adjustedMarks)],
     ["Sa\xEDdas autom\xE1ticas do sistema", String(t2.automaticMarks)],
     ["Marca\xE7\xF5es pendentes de sincroniza\xE7\xE3o", String(t2.pendingSyncMarks)],
-    ["Marca\xE7\xF5es registradas offline", String(t2.offlineMarks ?? 0)]
+    ["Marca\xE7\xF5es registradas offline", String(t2.offlineMarks ?? 0)],
+    ["Batidas desconsideradas", String(t2.disregardedMarks ?? 0)]
   ];
 }
 var MARK_LABEL, DAY, dayNum, weekdayOf, addDay, toMin, pad, fmtDate, WEEKDAYS, MIRROR_HEADERS;
@@ -4476,11 +4498,60 @@ async function supersededIds(companyId, ids) {
   }
   return out;
 }
-async function effectiveRows(rows4) {
+async function ensureDisregardsTable() {
+  if (disregardsReady) return disregardsReady;
+  disregardsReady = (async () => {
+    const database2 = await getDb();
+    if (!database2 || typeof database2.execute !== "function") return;
+    await database2.execute(sql4.raw(`CREATE TABLE IF NOT EXISTS time_event_disregards (
+      id INT AUTO_INCREMENT NOT NULL,
+      companyId INT NOT NULL,
+      memberAccountId INT NOT NULL,
+      timeEventId INT NOT NULL,
+      reason TEXT NOT NULL,
+      decidedByMemberId INT NULL,
+      decidedByName VARCHAR(255) NULL,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      revertedAt TIMESTAMP NULL,
+      revertedByMemberId INT NULL,
+      revertedByName VARCHAR(255) NULL,
+      revertReason TEXT NULL,
+      PRIMARY KEY (id),
+      KEY time_event_disregards_event_idx (companyId, timeEventId),
+      KEY time_event_disregards_member_idx (companyId, memberAccountId)
+    )`));
+  })().catch((e) => {
+    disregardsReady = null;
+    throw e;
+  });
+  return disregardsReady;
+}
+async function activeDisregards(companyId, ids) {
+  const out = /* @__PURE__ */ new Map();
+  if (!ids.length) return out;
+  try {
+    const database2 = await getDb();
+    if (!database2 || typeof database2.execute !== "function") return out;
+    await ensureDisregardsTable();
+    for (let i = 0; i < ids.length; i += 1e3) {
+      const chunk = ids.slice(i, i + 1e3);
+      const res = await database2.execute(sql4`SELECT id, timeEventId, reason, decidedByName, createdAt FROM time_event_disregards WHERE companyId = ${companyId} AND revertedAt IS NULL AND timeEventId IN (${sql4.join(chunk.map((id2) => sql4`${id2}`), sql4`, `)}) ORDER BY id`);
+      const rows4 = Array.isArray(res?.[0]) ? res[0] : [];
+      for (const r of rows4) out.set(Number(r.timeEventId), { id: Number(r.id), reason: String(r.reason || ""), decidedByName: r.decidedByName ?? null, createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : "" });
+    }
+  } catch (error) {
+    console.warn("[ponto] desconsidera\xE7\xF5es indispon\xEDveis", error);
+  }
+  return out;
+}
+async function effectiveRows(rows4, opts) {
   if (!rows4.length) return rows4;
   const companyId = rows4[0].companyId;
   const gone = await supersededIds(companyId, rows4.map((r) => r.id));
-  return gone.size ? rows4.filter((r) => !gone.has(r.id)) : rows4;
+  const kept = gone.size ? rows4.filter((r) => !gone.has(r.id)) : rows4;
+  const dis = await activeDisregards(companyId, kept.map((r) => r.id));
+  if (opts?.keepDisregarded) return kept.map((r) => ({ ...r, disregard: dis.get(r.id) ?? null }));
+  return dis.size ? kept.filter((r) => !dis.has(r.id)) : kept;
 }
 function toLedgerRow(r) {
   return {
@@ -4508,7 +4579,7 @@ function toLedgerRow(r) {
     accuracy: r.accuracy == null ? null : Number(r.accuracy)
   };
 }
-var DEFAULT_TZ, NEW_SHIFT_MARKER, truncSec, ready2, ALTERS, LEGACY_INCLUSION;
+var DEFAULT_TZ, NEW_SHIFT_MARKER, truncSec, ready2, ALTERS, LEGACY_INCLUSION, disregardsReady;
 var init_ledger = __esm({
   "server/ponto/ledger.ts"() {
     "use strict";
@@ -4538,6 +4609,7 @@ var init_ledger = __esm({
       "ADD COLUMN IF NOT EXISTS sealedLegacy TINYINT(1) NOT NULL DEFAULT 0"
     ];
     LEGACY_INCLUSION = /^Batida incluída via solicitação aprovada/;
+    disregardsReady = null;
   }
 });
 
@@ -4805,7 +4877,7 @@ async function loadMirrorEventRows(companyId, memberIds, from, to) {
   if (!database2) return [];
   const { start, end } = mirrorWindow(from, to);
   await ensurePunchLedger();
-  return effectiveRows(await database2.select().from(timeEvents).where(and6(eq6(timeEvents.companyId, companyId), inArray5(timeEvents.memberAccountId, memberIds), gte3(effectiveEventTime, start), lt2(effectiveEventTime, end))).orderBy(effectiveEventTime));
+  return effectiveRows(await database2.select().from(timeEvents).where(and6(eq6(timeEvents.companyId, companyId), inArray5(timeEvents.memberAccountId, memberIds), gte3(effectiveEventTime, start), lt2(effectiveEventTime, end))).orderBy(effectiveEventTime), { keepDisregarded: true });
 }
 async function loadMemberVacations(companyId, memberIds, from, to) {
   const map = /* @__PURE__ */ new Map();
@@ -4870,7 +4942,8 @@ function toMirrorEvents(rows4, adjByEvent) {
       legacyAdjustment: !a && r.origin === "original" && /Ajuste aprovado em/.test(notes),
       timeAlert: readTimeAlert(notes),
       offline: Boolean(r.offline),
-      clockAlert: readClockAlert(notes)
+      clockAlert: readClockAlert(notes),
+      disregarded: r.disregard ? { reason: r.disregard.reason, by: r.disregard.decidedByName, at: r.disregard.createdAt } : null
     };
   });
 }
@@ -8084,7 +8157,40 @@ var timeTrackingRouter = router({
     const start = new Date(Date.UTC(year, mon - 1, 1));
     const end = new Date(Date.UTC(year, mon, 1));
     await ensurePunchLedger();
-    return effectiveRows(await database2.select().from(timeEvents).where(and8(eq8(timeEvents.memberAccountId, input.memberId), eq8(timeEvents.companyId, ctx.accountId), gte5(effectiveEventTime, start), lt4(effectiveEventTime, end))).orderBy(effectiveEventTime));
+    return effectiveRows(await database2.select().from(timeEvents).where(and8(eq8(timeEvents.memberAccountId, input.memberId), eq8(timeEvents.companyId, ctx.accountId), gte5(effectiveEventTime, start), lt4(effectiveEventTime, end))).orderBy(effectiveEventTime), { keepDisregarded: true });
+  }),
+  /**
+   * Desconsidera uma batida (ex.: inclusão repetida). Justificativa obrigatória. NÃO apaga nada:
+   * a marcação continua no banco/AFD; só deixa de contar no espelho e no cálculo. Pode ser revertida.
+   */
+  disregardEvent: companyAdminFeatureProcedure("timeTracking").input(z4.object({ eventId: z4.number().int().positive(), reason: z4.string().trim().min(5, "Escreva pelo menos 5 caracteres na justificativa.").max(500) })).mutation(async ({ ctx, input }) => {
+    const database2 = await getDb();
+    if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+    await ensurePunchLedger();
+    await ensureDisregardsTable();
+    const event = (await database2.select().from(timeEvents).where(and8(eq8(timeEvents.id, input.eventId), eq8(timeEvents.companyId, ctx.accountId))).limit(1))[0];
+    if (!event) throw new TRPCError7({ code: "NOT_FOUND", message: "Marca\xE7\xE3o n\xE3o encontrada nesta empresa." });
+    if ((await supersededIds(ctx.accountId, [event.id])).has(event.id)) throw new TRPCError7({ code: "BAD_REQUEST", message: "Esta marca\xE7\xE3o j\xE1 foi substitu\xEDda por um ajuste. Desconsidere a marca\xE7\xE3o atual." });
+    if ((await activeDisregards(ctx.accountId, [event.id])).has(event.id)) throw new TRPCError7({ code: "CONFLICT", message: "Esta batida j\xE1 est\xE1 desconsiderada." });
+    const by = ctx.user?.name || `Administrador #${ctx.memberAccountId ?? "?"}`;
+    await database2.execute(sql9`INSERT INTO time_event_disregards (companyId, memberAccountId, timeEventId, reason, decidedByMemberId, decidedByName)
+        VALUES (${ctx.accountId}, ${event.memberAccountId}, ${event.id}, ${input.reason}, ${ctx.memberAccountId ?? null}, ${by})`);
+    const markedAt = (event.deviceTime || event.serverTime).toISOString();
+    await auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "time_event", entityId: event.id, description: `Batida desconsiderada (${event.eventType} em ${markedAt}). Motivo: ${input.reason}`, newData: { eventId: event.id, memberAccountId: event.memberAccountId, eventType: event.eventType, markedAt, reason: input.reason, disregarded: true } });
+    return { success: true };
+  }),
+  /** Reverte a desconsideração: a batida volta a contar. O registro da desconsideração fica no histórico (revertedAt). */
+  reconsiderEvent: companyAdminFeatureProcedure("timeTracking").input(z4.object({ eventId: z4.number().int().positive(), reason: z4.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
+    const database2 = await getDb();
+    if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+    await ensureDisregardsTable();
+    const active = (await activeDisregards(ctx.accountId, [input.eventId])).get(input.eventId);
+    if (!active) throw new TRPCError7({ code: "NOT_FOUND", message: "Esta batida n\xE3o est\xE1 desconsiderada." });
+    const by = ctx.user?.name || `Administrador #${ctx.memberAccountId ?? "?"}`;
+    await database2.execute(sql9`UPDATE time_event_disregards SET revertedAt = CURRENT_TIMESTAMP, revertedByMemberId = ${ctx.memberAccountId ?? null}, revertedByName = ${by}, revertReason = ${input.reason || null}
+        WHERE id = ${active.id} AND companyId = ${ctx.accountId} AND revertedAt IS NULL`);
+    await auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "time_event", entityId: input.eventId, description: `Batida reconsiderada (volta a contar no espelho)${input.reason ? `. Motivo: ${input.reason}` : ""}`, oldData: { disregardReason: active.reason, disregardedBy: active.decidedByName }, newData: { eventId: input.eventId, disregarded: false, reason: input.reason || null } });
+    return { success: true };
   }),
   companyApprovedExcuses: companyAdminFeatureProcedure("timeTracking").input(z4.object({ memberId: z4.number().int().positive(), month: z4.string().regex(/^\d{4}-\d{2}$/) })).query(async ({ ctx, input }) => {
     const from = `${input.month}-01`;
@@ -8136,7 +8242,7 @@ var timeTrackingRouter = router({
     }
     return found.filter((m) => !covered.has(`${m.memberId}:${m.day}`));
   }),
-  myHistory: commercialFeatureProcedure("timeTracking").input(z4.object({ limit: z4.number().min(1).max(100).default(100), date: z4.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }).optional()).query(async ({ ctx, input }) => {
+  myHistory: commercialFeatureProcedure("timeTracking").input(z4.object({ limit: z4.number().min(1).max(100).default(100), date: z4.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), includeDisregarded: z4.boolean().optional() }).optional()).query(async ({ ctx, input }) => {
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) return [];
@@ -8149,7 +8255,9 @@ var timeTrackingRouter = router({
       conditions.push(gte5(effectiveEventTime, start), lt4(effectiveEventTime, end));
     }
     await ensurePunchLedger();
-    return effectiveRows(await database2.select().from(timeEvents).where(and8(...conditions)).orderBy(desc2(effectiveEventTime)).limit(input?.limit || 100));
+    const rows4 = await database2.select().from(timeEvents).where(and8(...conditions)).orderBy(desc2(effectiveEventTime)).limit(input?.limit || 100);
+    if (input?.includeDisregarded) return effectiveRows(rows4, { keepDisregarded: true });
+    return (await effectiveRows(rows4)).map((r) => ({ ...r, disregard: null }));
   }),
   myTimeSummary: commercialFeatureProcedure("timeTracking").input(z4.object({ timeZone: z4.string().min(1).max(128).optional() }).optional()).query(async ({ ctx, input }) => {
     const empty = {
@@ -8184,7 +8292,8 @@ var timeTrackingRouter = router({
       notes: row2.notes,
       timeAlert: readTimeAlert(row2.notes),
       offline: Boolean(row2.offline),
-      clockAlert: readClockAlert(row2.notes)
+      clockAlert: readClockAlert(row2.notes),
+      disregarded: row2.disregard ? { reason: row2.disregard.reason, by: row2.disregard.decidedByName, at: row2.disregard.createdAt } : null
     }));
     let labor = null;
     try {
@@ -8613,7 +8722,7 @@ async function memberMonthMirror(companyId, memberId, month) {
     month,
     employer: { name: employer.name, document: employer.document },
     worker: { id: member.id, name: member.name, cpf: onlyDigits(labor?.cpf) || null, jobTitle: labor?.jobTitle ?? null, admissionDate: labor?.admissionDate ?? null },
-    days: report.days.map((d) => ({ date: d.date, marks: d.marks.map((m) => [m.type, m.time, m.kind, m.originalTime ?? null]), worked: d.workedMinutes, expected: d.expectedMinutes, issues: d.issues })),
+    days: report.days.map((d) => ({ date: d.date, marks: d.marks.map((m) => [m.type, m.time, m.kind, m.originalTime ?? null]), worked: d.workedMinutes, expected: d.expectedMinutes, issues: d.issues, ...d.disregarded?.length ? { disregarded: d.disregarded.map((m) => [m.type, m.time, m.reason]) } : {} })),
     totals: report.totals
   };
   return { member, employer, labor, report, from, to, documentHash: sha256(JSON.stringify(document)) };
@@ -8861,6 +8970,7 @@ var pontoLegalRouter = router({
     });
     const replacedBy = /* @__PURE__ */ new Map();
     for (const r of all) if (r.replacesEventId) replacedBy.set(r.replacesEventId, r);
+    const disregarded = await activeDisregards(ctx.accountId, inPeriod.map((r) => r.id));
     const workers = [];
     const missingCpf = [];
     const missingSchedule = [];
@@ -8870,7 +8980,7 @@ var pontoLegalRouter = router({
       const labor = await readJson2(`labor_profile:${m.id}`, ctx.accountId);
       const cpf = onlyDigits(labor?.cpf);
       if (cpf.length !== 11) missingCpf.push(m.name);
-      const effective = mine.filter((r) => !replacedBy.has(r.id));
+      const effective = mine.filter((r) => !replacedBy.has(r.id) && !disregarded.has(r.id));
       const byDay = /* @__PURE__ */ new Map();
       for (const r of effective) {
         const d = formatD(r.deviceTime || r.serverTime, TZ3);
@@ -8885,6 +8995,10 @@ var pontoLegalRouter = router({
       for (const r of mine.filter((x) => replacedBy.has(x.id))) {
         const by = replacedBy.get(r.id);
         marks.push({ markedAt: r.deviceTime || r.serverTime, tpMarc: "D", seq: 0, fonte: r.origin === "original" ? "O" : "I", motivo: `Substitu\xEDda por ajuste aprovado por ${by.recordedByName || "administrador"}: ${by.reason || ""}` });
+      }
+      for (const r of mine.filter((x) => !replacedBy.has(x.id) && disregarded.has(x.id))) {
+        const d = disregarded.get(r.id);
+        marks.push({ markedAt: r.deviceTime || r.serverTime, tpMarc: "D", seq: 0, fonte: r.origin === "original" ? "O" : "I", motivo: `Desconsiderada por ${d.decidedByName || "administrador"}: ${d.reason}` });
       }
       marks.sort((a, b) => a.markedAt.getTime() - b.markedAt.getTime());
       const sched = (labor?.schedule || []).filter((p) => Array.isArray(p) && p.length === 2);

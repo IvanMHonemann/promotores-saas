@@ -285,12 +285,76 @@ export async function supersededIds(companyId: number, ids: number[]): Promise<S
   return out;
 }
 
-/** Remove das linhas as marcações substituídas por ajuste (a original continua no banco e no AFD). */
-export async function effectiveRows<T extends { id: number; companyId: number }>(rows: T[]): Promise<T[]> {
+/* ---------- Batida desconsiderada (tratamento sem apagar a original) ---------- */
+/**
+ * O administrador pode DESCONSIDERAR uma batida (ex.: inclusão repetida), com justificativa obrigatória.
+ * Nada é apagado: a marcação continua em time_events (e no AFD, se original); a decisão fica em
+ * time_event_disregards (quem, quando, por quê). "Reconsiderar" preenche revertedAt — o histórico permanece.
+ * Batida desconsiderada não entra em colunas, pareamento nem cálculo do espelho; aparece só em Ocorrências.
+ */
+export type Disregard = { id: number; reason: string; decidedByName: string | null; createdAt: string };
+
+let disregardsReady: Promise<void> | null = null;
+export async function ensureDisregardsTable(): Promise<void> {
+  if (disregardsReady) return disregardsReady;
+  disregardsReady = (async () => {
+    const database = await db.getDb();
+    if (!database || typeof (database as any).execute !== "function") return;
+    await database.execute(sql.raw(`CREATE TABLE IF NOT EXISTS time_event_disregards (
+      id INT AUTO_INCREMENT NOT NULL,
+      companyId INT NOT NULL,
+      memberAccountId INT NOT NULL,
+      timeEventId INT NOT NULL,
+      reason TEXT NOT NULL,
+      decidedByMemberId INT NULL,
+      decidedByName VARCHAR(255) NULL,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      revertedAt TIMESTAMP NULL,
+      revertedByMemberId INT NULL,
+      revertedByName VARCHAR(255) NULL,
+      revertReason TEXT NULL,
+      PRIMARY KEY (id),
+      KEY time_event_disregards_event_idx (companyId, timeEventId),
+      KEY time_event_disregards_member_idx (companyId, memberAccountId)
+    )`));
+  })().catch((e) => { disregardsReady = null; throw e; });
+  return disregardsReady;
+}
+
+/** Desconsiderações ATIVAS (não revertidas) das marcações informadas. Falha na tabela = nenhuma (não derruba telas). */
+export async function activeDisregards(companyId: number, ids: number[]): Promise<Map<number, Disregard>> {
+  const out = new Map<number, Disregard>();
+  if (!ids.length) return out;
+  try {
+    const database = await db.getDb();
+    if (!database || typeof (database as any).execute !== "function") return out;
+    await ensureDisregardsTable();
+    for (let i = 0; i < ids.length; i += 1000) {
+      const chunk = ids.slice(i, i + 1000);
+      const res: any = await database.execute(sql`SELECT id, timeEventId, reason, decidedByName, createdAt FROM time_event_disregards WHERE companyId = ${companyId} AND revertedAt IS NULL AND timeEventId IN (${sql.join(chunk.map((id) => sql`${id}`), sql`, `)}) ORDER BY id`);
+      const rows: any[] = Array.isArray(res?.[0]) ? res[0] : [];
+      for (const r of rows) out.set(Number(r.timeEventId), { id: Number(r.id), reason: String(r.reason || ""), decidedByName: r.decidedByName ?? null, createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : "" });
+    }
+  } catch (error) {
+    console.warn("[ponto] desconsiderações indisponíveis", error);
+  }
+  return out;
+}
+
+/**
+ * Remove das linhas as marcações substituídas por ajuste (a original continua no banco e no AFD) e as desconsideradas.
+ * Com keepDisregarded, as desconsideradas continuam na lista marcadas com `disregard` (telas e espelho as exibem à parte).
+ */
+export async function effectiveRows<T extends { id: number; companyId: number }>(rows: T[]): Promise<T[]>;
+export async function effectiveRows<T extends { id: number; companyId: number }>(rows: T[], opts: { keepDisregarded: true }): Promise<Array<T & { disregard: Disregard | null }>>;
+export async function effectiveRows<T extends { id: number; companyId: number }>(rows: T[], opts?: { keepDisregarded?: boolean }): Promise<any[]> {
   if (!rows.length) return rows;
   const companyId = rows[0].companyId;
   const gone = await supersededIds(companyId, rows.map((r) => r.id));
-  return gone.size ? rows.filter((r) => !gone.has(r.id)) : rows;
+  const kept = gone.size ? rows.filter((r) => !gone.has(r.id)) : rows;
+  const dis = await activeDisregards(companyId, kept.map((r) => r.id));
+  if (opts?.keepDisregarded) return kept.map((r) => ({ ...r, disregard: dis.get(r.id) ?? null }));
+  return dis.size ? kept.filter((r) => !dis.has(r.id)) : kept;
 }
 
 /** Converte linha do banco no formato da verificação de integridade. */

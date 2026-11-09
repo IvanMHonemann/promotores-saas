@@ -8,7 +8,7 @@ import { timeEvents, vacationSchedules } from "../../drizzle/schema";
 import type { MirrorEvent, MirrorOptions, VacationRange } from "../../shared/timesheetMirror";
 import { readTimeAlert } from "../../shared/punchTime";
 import { readClockAlert } from "../../shared/offlineClock";
-import { effectiveRows, ensurePunchLedger } from "../ponto/ledger";
+import { effectiveRows, ensurePunchLedger, type Disregard } from "../ponto/ledger";
 
 /** Horário efetivo da marcação — o MESMO usado no cálculo do espelho (deviceTime, senão serverTime). */
 export const effectiveEventTime = sql`COALESCE(${timeEvents.deviceTime}, ${timeEvents.serverTime})`;
@@ -32,9 +32,10 @@ export async function loadMirrorEventRows(companyId: number, memberIds: number[]
   const { start, end } = mirrorWindow(from, to);
   await ensurePunchLedger();
   // Marcações substituídas por ajuste aprovado ficam no banco (e no AFD), mas não entram no cálculo.
+  // Desconsideradas vêm marcadas (disregard) para o espelho listá-las só em Ocorrências.
   return effectiveRows(await database.select().from(timeEvents)
     .where(and(eq(timeEvents.companyId, companyId), inArray(timeEvents.memberAccountId, memberIds), gte(effectiveEventTime, start), lt(effectiveEventTime, end)))
-    .orderBy(effectiveEventTime));
+    .orderBy(effectiveEventTime), { keepDisregarded: true });
 }
 
 /** Férias programadas (status "scheduled") que tocam o período, por funcionário. Falha na tabela = sem férias (não derruba o espelho). */
@@ -97,7 +98,7 @@ export function cleanReason(reason?: string | null): string {
 }
 
 /** Converte linhas de time_events no formato do espelho (marcação original x tratada). */
-export function toMirrorEvents(rows: Array<typeof timeEvents.$inferSelect>, adjByEvent: Map<number, any>): MirrorEvent[] {
+export function toMirrorEvents(rows: Array<typeof timeEvents.$inferSelect & { disregard?: Disregard | null }>, adjByEvent: Map<number, any>): MirrorEvent[] {
   return rows.map((r) => {
     const a = adjByEvent.get(r.id);
     const notes = r.notes || "";
@@ -114,6 +115,7 @@ export function toMirrorEvents(rows: Array<typeof timeEvents.$inferSelect>, adjB
       timeAlert: readTimeAlert(notes),
       offline: Boolean((r as any).offline),
       clockAlert: readClockAlert(notes),
+      disregarded: r.disregard ? { reason: r.disregard.reason, by: r.disregard.decidedByName, at: r.disregard.createdAt } : null,
     };
   });
 }

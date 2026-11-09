@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Calendar, Check, Clock, Users, X } from "lucide-react";
+import { Ban, Calendar, Check, Clock, RotateCcw, Users, X } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,11 +30,18 @@ export default function TimesheetPage() {
     onError: (e) => toast.error(e.message || "Não foi possível analisar."),
   });
   const selected = promoters.data?.find((p: any) => p.id === selectedId);
+  // Desconsiderar / reconsiderar batida (o registro original nunca é apagado).
+  const [disregardTarget, setDisregardTarget] = useState<{ ev: any; mode: "disregard" | "reconsider" } | null>(null);
+  const [disregardReason, setDisregardReason] = useState("");
+  const afterDisregard = (msg: string) => { toast.success(msg); setDisregardTarget(null); setDisregardReason(""); void history.refetch(); void utils.timesheetMirror.generate.invalidate(); };
+  const disregard = trpc.timeTracking.disregardEvent.useMutation({ onSuccess: () => afterDisregard("Batida desconsiderada. Ela não conta mais no espelho."), onError: (e) => toast.error(e.message || "Não foi possível desconsiderar.") });
+  const reconsider = trpc.timeTracking.reconsiderEvent.useMutation({ onSuccess: () => afterDisregard("Batida reconsiderada. Ela volta a contar no espelho."), onError: (e) => toast.error(e.message || "Não foi possível reconsiderar.") });
+  const fmtTime = (ev: any) => new Date(ev.deviceTime || ev.serverTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
   const byDay = useMemo(() => {
     const map = new Map<string, any[]>();
     for (const ev of history.data || []) {
-      const day = new Date(ev.deviceTime || ev.serverTime).toISOString().slice(0, 10);
+      const day = new Date(ev.deviceTime || ev.serverTime).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
       if (!map.has(day)) map.set(day, []);
       map.get(day)!.push(ev);
     }
@@ -80,6 +88,7 @@ export default function TimesheetPage() {
                   let mins = 0;
                   let start: Date | null = null;
                   for (const ev of events) {
+                    if (ev.disregard) continue;
                     const t = new Date(ev.deviceTime || ev.serverTime);
                     if (ev.eventType === "clock_in" || ev.eventType === "break_end") start = t;
                     if ((ev.eventType === "break_start" || ev.eventType === "clock_out") && start) {
@@ -98,15 +107,29 @@ export default function TimesheetPage() {
                   </div>
                   <div className="space-y-1">
                     {events.map((ev: any) => (
-                      <div key={ev.id} className="flex items-center justify-between text-sm">
-                        <span className="text-slate-200">{labels[ev.eventType] || ev.eventType}</span>
-                        <span className="text-slate-400">
-                          {new Date(ev.deviceTime || ev.serverTime).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                      <div key={ev.id} className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-sm ${ev.disregard ? "opacity-60" : ""}`}>
+                        <span className={ev.disregard ? "text-slate-400 line-through" : "text-slate-200"}>
+                          {labels[ev.eventType] || ev.eventType}
+                          {ev.origin === "inclusion" && <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-xs text-slate-300 no-underline">Incluída</span>}
+                          {ev.disregard && <span className="ml-2 inline-block rounded bg-slate-500/30 px-1.5 py-0.5 text-xs text-slate-200" title={`Motivo: ${ev.disregard.reason}${ev.disregard.decidedByName ? ` (por ${ev.disregard.decidedByName})` : ""}`}>Desconsiderada</span>}
+                        </span>
+                        <span className="flex items-center text-slate-400">
+                          <span className={ev.disregard ? "line-through" : ""}>{fmtTime(ev)}</span>
                           {ev.notes?.includes("automática") && <span className="ml-2 rounded bg-amber-400/20 px-1.5 py-0.5 text-xs text-amber-200">Auto</span>}
                           {(ev.offline || ev.notes?.includes("[MARCACAO-OFFLINE]")) && <span title={`Registrado offline. Recebido pelo servidor às ${new Date(ev.serverTime).toLocaleString("pt-BR")}`} className="ml-2 rounded bg-sky-400/20 px-1.5 py-0.5 text-xs text-sky-200">Registrado offline</span>}
                           {ev.notes?.includes("[ALERTA-RELOGIO]") && <span title="Possível alteração do relógio do aparelho. Confira com o promotor." className="ml-2 rounded bg-rose-400/20 px-1.5 py-0.5 text-xs text-rose-200">Relógio suspeito</span>}
                           {ev.notes?.includes("[SEQUENCIA-OFFLINE]") && <span title="Marcação offline fora da sequência esperada" className="ml-2 rounded bg-amber-400/20 px-1.5 py-0.5 text-xs text-amber-200">Fora de sequência</span>}
+                          {ev.disregard ? (
+                            <button type="button" onClick={() => { setDisregardReason(""); setDisregardTarget({ ev, mode: "reconsider" }); }} className="ml-2 inline-flex min-h-9 items-center gap-1 rounded-lg border border-teal-300/40 px-2 text-xs font-semibold text-teal-200 hover:bg-teal-400/10" aria-label={`Reconsiderar ${labels[ev.eventType] || "batida"} das ${fmtTime(ev)}`}>
+                              <RotateCcw className="h-3.5 w-3.5" /> Reconsiderar
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => { setDisregardReason(""); setDisregardTarget({ ev, mode: "disregard" }); }} className="ml-2 inline-flex min-h-9 items-center gap-1 rounded-lg border border-white/15 px-2 text-xs text-slate-300 hover:bg-white/5" aria-label={`Desconsiderar ${labels[ev.eventType] || "batida"} das ${fmtTime(ev)}`}>
+                              <Ban className="h-3.5 w-3.5" /> Desconsiderar
+                            </button>
+                          )}
                         </span>
+                        {ev.disregard && <p className="w-full text-xs text-slate-400">Motivo: {ev.disregard.reason}{ev.disregard.decidedByName ? ` (por ${ev.disregard.decidedByName})` : ""}</p>}
                       </div>
                     ))}
                   </div>
@@ -168,6 +191,32 @@ export default function TimesheetPage() {
             })()}
           </CardContent>
         </Card>
+        <Dialog open={Boolean(disregardTarget)} onOpenChange={(open) => { if (!open) setDisregardTarget(null); }}>
+          <DialogContent className="max-w-md border-white/10 bg-slate-900 text-white">
+            <DialogHeader>
+              <DialogTitle>{disregardTarget?.mode === "reconsider" ? "Reconsiderar batida" : "Desconsiderar batida"}</DialogTitle>
+              <DialogDescription className="text-slate-300">
+                {disregardTarget && `${labels[disregardTarget.ev.eventType] || "Batida"} das ${fmtTime(disregardTarget.ev)} — ${new Date(disregardTarget.ev.deviceTime || disregardTarget.ev.serverTime).toLocaleDateString("pt-BR")}`}
+              </DialogDescription>
+            </DialogHeader>
+            <p className="text-sm text-slate-300">
+              {disregardTarget?.mode === "reconsider"
+                ? "A batida volta a contar no espelho e no cálculo de horas. O histórico da desconsideração fica guardado."
+                : "A batida não é apagada: o registro original fica guardado. Ela só deixa de contar no espelho e no cálculo de horas, e aparece em Ocorrências com o motivo."}
+            </p>
+            <textarea value={disregardReason} onChange={(e) => setDisregardReason(e.target.value)} maxLength={500} placeholder={disregardTarget?.mode === "reconsider" ? "Motivo (opcional)" : "Justificativa (obrigatória). Ex.: batida incluída em duplicidade"} className="min-h-24 w-full rounded-xl border border-white/15 bg-slate-950/60 p-3 text-sm text-slate-100 placeholder:text-slate-400" />
+            {disregardTarget?.mode === "disregard" && disregardReason.trim().length > 0 && disregardReason.trim().length < 5 && <p className="text-xs text-amber-300">Escreva pelo menos 5 caracteres.</p>}
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" className="h-11 border-white/15" onClick={() => setDisregardTarget(null)}>Cancelar</Button>
+              {disregardTarget?.mode === "reconsider" ? (
+                <Button className="h-11 bg-teal-400 text-slate-950" disabled={reconsider.isPending} onClick={() => reconsider.mutate({ eventId: disregardTarget.ev.id, reason: disregardReason.trim() || undefined })}>Reconsiderar</Button>
+              ) : (
+                <Button className="h-11 bg-rose-500 text-white hover:bg-rose-400" disabled={disregard.isPending || disregardReason.trim().length < 5} onClick={() => disregardTarget && disregard.mutate({ eventId: disregardTarget.ev.id, reason: disregardReason.trim() })}>Desconsiderar</Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Configuração (separada da consulta): horário de aviso de batida faltante. */}
         <details className="group rounded-2xl border border-white/10 bg-slate-900/70 p-5 text-white">
           <summary className="flex cursor-pointer list-none items-center justify-between font-bold">

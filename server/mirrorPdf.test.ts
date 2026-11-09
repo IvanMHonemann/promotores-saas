@@ -50,7 +50,7 @@ describe("PDF do espelho de ponto", () => {
     expect(fmtMark({ ...base, kind: "adjusted", justification: "incluiu" }, "America/Sao_Paulo")).toBe("08:00+");
     expect(fmtMark({ ...base, kind: "automatic" }, "America/Sao_Paulo")).toBe("08:00A");
     expect(fmtMark({ ...base, kind: "legacy_adjusted" }, "America/Sao_Paulo")).toBe("08:00#");
-    expect(fmtMark({ ...base, kind: "original", synced: false }, "America/Sao_Paulo")).toBe("08:00?");
+    expect(fmtMark({ ...base, kind: "original", synced: false }, "America/Sao_Paulo")).toBe("08:00(pendente)");
   });
 
   it("fmtCpf e fmtPis formatam para o espelho da empresa", () => {
@@ -125,7 +125,7 @@ describe("PDF do espelho de ponto", () => {
     expect(documentLegend(r.report)).toBe("");
     const mark = r.report.days.flatMap((d) => d.marks)[0];
     Object.assign(mark, { kind: "adjusted", originalLabel: "Entrada", originalTime: mark.time, offline: true, synced: false });
-    expect(documentLegend(r.report)).toBe("Legenda: * ajustada; (off) registrada sem internet; ? pendente.");
+    expect(documentLegend(r.report)).toBe("Legenda: * ajustada; (off) registrada sem internet; (pendente) ainda não enviada ao servidor.");
     mark.originalLabel = undefined;
     expect(documentLegend(r.report)).toContain("+ incluída manualmente");
     mark.kind = "legacy_adjusted";

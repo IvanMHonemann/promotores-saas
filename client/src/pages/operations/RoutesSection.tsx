@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, CalendarDays, MoreVertical, Pencil, Plus, Share2, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarDays, MoreVertical, Pencil, Plus, Share2, Store as StoreIcon, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { confirmAction } from "@/components/ConfirmDialog";
+import StoreForm from "@/components/StoreForm";
 import { WEEKDAY_ORDER, buildRouteShareText, capitalize, defaultRouteName, duplicateOccurrenceIds, filterAndSortSchedules, findScheduleConflict, moveItem, weekdayLabel } from "@shared/routeSchedule";
 
 const selectCls = "h-11 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-base text-white sm:h-10 sm:text-sm";
@@ -53,6 +54,9 @@ export default function RoutesSection({ isCompanyAdmin, isPromoter, stores = [],
   const [filter, setFilter] = useState<number | "all">("all");
   const [form, setForm] = useState<Form | null>(null);
   const [day, setDay] = useState(today);
+  // Cadastro de loja também aqui (pedido do Ivan, 09/11/2026), com o mesmo formulário de /lojas.
+  const canCreateStore = !isPromoter;
+  const [storeFormOpen, setStoreFormOpen] = useState(false);
 
   const storeName = (id: number) => stores.find((s) => s.id === id)?.name || `Loja #${id}`;
   const promoterName = (id: number) => promoters.find((p) => p.id === id)?.userName || (isPromoter ? "Você" : `Promotor #${id}`);
@@ -119,11 +123,24 @@ export default function RoutesSection({ isCompanyAdmin, isPromoter, stores = [],
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle className="flex items-center gap-2 text-white"><CalendarDays className="h-5 w-5 text-teal-300" />{isPromoter ? "Minha semana" : "Roteiros da semana"}</CardTitle>
-            {isCompanyAdmin && !form && <Button type="button" onClick={() => setForm(emptyForm(filter === "all" ? "" : String(filter)))}><Plus className="mr-1 h-4 w-4" />Novo roteiro</Button>}
+            <div className="flex flex-wrap gap-2">
+              {canCreateStore && !storeFormOpen && <Button type="button" variant="outline" className="border-white/20 text-white" onClick={() => setStoreFormOpen(true)}><StoreIcon className="mr-1 h-4 w-4" />Cadastrar loja</Button>}
+              {isCompanyAdmin && !form && <Button type="button" onClick={() => setForm(emptyForm(filter === "all" ? "" : String(filter)))}><Plus className="mr-1 h-4 w-4" />Novo roteiro</Button>}
+            </div>
           </div>
           <p className="text-sm text-slate-300">{isPromoter ? "As lojas que você visita em cada dia da semana." : "Cada promotor tem um roteiro para cada dia da semana. No dia certo, as lojas aparecem sozinhas na agenda dele."}</p>
         </CardHeader>
         <CardContent className="space-y-4">
+          {canCreateStore && storeFormOpen && (
+            <StoreForm
+              onClose={() => setStoreFormOpen(false)}
+              onSaved={(store) => {
+                setStoreFormOpen(false);
+                // Com um roteiro aberto, a loja nova já entra no fim da lista.
+                if (store.id && form) setForm({ ...form, storeIds: form.storeIds.includes(store.id) ? form.storeIds : [...form.storeIds, store.id] });
+              }}
+            />
+          )}
           {form && (
             <div className="space-y-3 rounded-xl border border-teal-300/30 bg-teal-300/5 p-3 sm:p-4">
               <p className="font-bold text-white">{form.id ? "Editar roteiro" : "Novo roteiro"}</p>
@@ -147,7 +164,8 @@ export default function RoutesSection({ isCompanyAdmin, isPromoter, stores = [],
                   <option value="">+ Adicionar loja</option>
                   {stores.filter((s) => !form.storeIds.includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.name}{s.city ? ` · ${s.city}` : ""}</option>)}
                 </select>
-                {!stores.length && <p className="mt-2 text-sm text-amber-200">Nenhuma loja cadastrada. <a href="/lojas" className="underline">Cadastre em Lojas</a>.</p>}
+                {!stores.length && <p className="mt-2 text-sm text-amber-200">Nenhuma loja cadastrada ainda.</p>}
+                {canCreateStore && !storeFormOpen && <button type="button" onClick={() => { setStoreFormOpen(true); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="mt-2 text-sm font-bold text-teal-300 underline">+ Cadastrar loja nova</button>}
                 <ol className="mt-2 space-y-2">
                   {form.storeIds.map((id, i) => (
                     <li key={id} className="flex items-center gap-2 rounded-lg border border-white/10 bg-slate-950/50 p-2">

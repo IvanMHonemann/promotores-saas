@@ -2,7 +2,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Loader2, Send, User, Sparkles } from "lucide-react";
+import { FileText, ImageIcon, Loader2, Paperclip, Send, User, Sparkles, X } from "lucide-react";
+import { toast } from "sonner";
+import { compressImageFile } from "@/lib/imageCompress";
+import {
+  AI_ACCEPT_ATTR, AI_MAX_ATTACHMENTS, AI_MAX_PDF_BYTES, AI_MAX_PICK_BYTES, AI_MAX_TEXT_CHARS, AI_MAX_TOTAL_CHARS,
+  aiAttachmentsSize, classifyAiFile, type AiAttachment,
+} from "@shared/aiAttachments";
 import { useState, useEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
 
@@ -12,7 +18,41 @@ import { Streamdown } from "streamdown";
 export type Message = {
   role: "system" | "user" | "assistant";
   content: string;
+  /** Nomes dos anexos enviados junto (o conteúdo não fica salvo no histórico). */
+  attachments?: Array<{ name: string; kind: AiAttachment["kind"] }>;
 };
+
+/** Anexo pronto para envio, com miniatura para fotos. */
+export type PendingAttachment = AiAttachment & { previewUrl?: string; sizeLabel: string };
+
+const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
+function readAsBase64(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => { const r = String(reader.result || ""); const i = r.indexOf(","); resolve(i >= 0 ? r.slice(i + 1) : r); };
+    reader.onerror = () => reject(new Error("Não foi possível ler o arquivo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Converte o arquivo escolhido em anexo: foto comprimida, PDF inteiro ou texto (cortado no limite). */
+export async function fileToAttachment(file: File): Promise<PendingAttachment> {
+  const kind = classifyAiFile(file.name, file.type);
+  if (!kind) throw new Error(`Tipo de arquivo não aceito: ${file.name}. Envie fotos, PDF ou arquivos de texto/código.`);
+  if (file.size > AI_MAX_PICK_BYTES) throw new Error(`${file.name} passa de 10 MB.`);
+  if (kind === "image") {
+    const img = await compressImageFile(file);
+    return { name: file.name, mimeType: "image/jpeg", kind, data: img.base64, previewUrl: img.dataUrl, sizeLabel: sizeLabel(img.blob.size) };
+  }
+  if (kind === "pdf") {
+    if (file.size > AI_MAX_PDF_BYTES) throw new Error(`${file.name}: PDFs podem ter no máximo 3 MB.`);
+    return { name: file.name, mimeType: "application/pdf", kind, data: await readAsBase64(file), sizeLabel: sizeLabel(file.size) };
+  }
+  let text = await file.text();
+  if (text.length > AI_MAX_TEXT_CHARS) { text = `${text.slice(0, AI_MAX_TEXT_CHARS)}\n[... arquivo cortado: muito grande ...]`; toast.info(`${file.name} é grande; enviei só o começo do arquivo.`); }
+  return { name: file.name, mimeType: file.type || "text/plain", kind, data: text, sizeLabel: sizeLabel(file.size) };
+}
 
 export type AIChatBoxProps = {
   /**
@@ -25,7 +65,10 @@ export type AIChatBoxProps = {
    * Callback when user sends a message.
    * Typically you'll call a tRPC mutation here to invoke the LLM.
    */
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, attachments?: PendingAttachment[]) => void;
+
+  /** Mostra o botão de anexar fotos e arquivos. */
+  allowAttachments?: boolean;
 
   /**
    * Whether the AI is currently generating a response
@@ -119,8 +162,35 @@ export function AIChatBox({
   height = "600px",
   emptyStateMessage = "Start a conversation with AI",
   suggestedPrompts,
+  allowAttachments = false,
 }: AIChatBoxProps) {
   const [input, setInput] = useState("");
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
+  const [reading, setReading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = async (list: FileList | File[] | null) => {
+    const files = Array.from(list || []);
+    if (!files.length) return;
+    setReading(true);
+    try {
+      let next = [...pending];
+      for (const file of files) {
+        if (next.length >= AI_MAX_ATTACHMENTS) { toast.error(`Máximo de ${AI_MAX_ATTACHMENTS} anexos por mensagem.`); break; }
+        try {
+          const att = await fileToAttachment(file);
+          if (aiAttachmentsSize([...next, att]) > AI_MAX_TOTAL_CHARS) { toast.error(`${file.name} não coube: os anexos passam de ~4 MB no total.`); continue; }
+          next = [...next, att];
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : `Não foi possível anexar ${file.name}.`);
+        }
+      }
+      setPending(next);
+    } finally {
+      setReading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputAreaRef = useRef<HTMLFormElement>(null);
@@ -168,10 +238,12 @@ export function AIChatBox({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedInput = input.trim();
-    if (!trimmedInput || isLoading) return;
+    if ((!trimmedInput && !pending.length) || isLoading || reading) return;
 
-    onSendMessage(trimmedInput);
+    if (pending.length) onSendMessage(trimmedInput || "Veja os anexos.", pending);
+    else onSendMessage(trimmedInput);
     setInput("");
+    setPending([]);
 
     // Scroll immediately after sending
     scrollToBottom();
@@ -254,7 +326,7 @@ export function AIChatBox({
 
                     <div
                       className={cn(
-                        "max-w-[80%] rounded-lg px-4 py-2.5",
+                        "min-w-0 max-w-[80%] rounded-lg px-4 py-2.5",
                         message.role === "user"
                           ? "bg-primary text-primary-foreground"
                           : "bg-muted text-foreground"
@@ -265,9 +337,21 @@ export function AIChatBox({
                           <Streamdown>{message.content}</Streamdown>
                         </div>
                       ) : (
-                        <p className="whitespace-pre-wrap text-sm">
-                          {message.content}
-                        </p>
+                        <>
+                          <p className="whitespace-pre-wrap break-words text-sm">
+                            {message.content}
+                          </p>
+                          {message.attachments?.length ? (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {message.attachments.map((att, i) => (
+                                <span key={i} className="inline-flex max-w-full items-center gap-1 rounded-md bg-black/15 px-2 py-0.5 text-xs">
+                                  {att.kind === "image" ? <ImageIcon className="size-3 shrink-0" /> : <FileText className="size-3 shrink-0" />}
+                                  <span className="truncate">{att.name}</span>
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </>
                       )}
                     </div>
 
@@ -306,13 +390,38 @@ export function AIChatBox({
       <form
         ref={inputAreaRef}
         onSubmit={handleSubmit}
-        className="flex gap-2 p-4 border-t bg-background/50 items-end"
+        className="flex flex-col gap-2 p-3 sm:p-4 border-t bg-background/50"
+        onDragOver={allowAttachments ? (e) => e.preventDefault() : undefined}
+        onDrop={allowAttachments ? (e) => { e.preventDefault(); void addFiles(e.dataTransfer.files); } : undefined}
       >
+        {pending.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {pending.map((att, i) => (
+              <div key={i} className="relative flex max-w-[220px] items-center gap-2 rounded-lg border bg-card p-1.5 pr-7 text-xs">
+                {att.previewUrl
+                  ? <img src={att.previewUrl} alt={att.name} className="size-10 shrink-0 rounded object-cover" />
+                  : <div className="grid size-10 shrink-0 place-items-center rounded bg-muted"><FileText className="size-5" /></div>}
+                <div className="min-w-0"><p className="truncate font-medium">{att.name}</p><p className="text-muted-foreground">{att.sizeLabel}</p></div>
+                <button type="button" aria-label={`Remover ${att.name}`} onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))} className="absolute right-1 top-1 rounded p-0.5 hover:bg-muted"><X className="size-3.5" /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-2">
+        {allowAttachments && (
+          <>
+            <input ref={fileInputRef} type="file" multiple accept={AI_ACCEPT_ATTR} className="hidden" onChange={(e) => void addFiles(e.target.files)} />
+            <Button type="button" variant="outline" size="icon" aria-label="Anexar fotos ou arquivos" title="Anexar fotos ou arquivos (até 5, 10 MB cada)" disabled={isLoading || reading || pending.length >= AI_MAX_ATTACHMENTS} onClick={() => fileInputRef.current?.click()} className="shrink-0 h-[38px] w-[38px]">
+              {reading ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
+            </Button>
+          </>
+        )}
         <Textarea
           ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={allowAttachments ? (e) => { const files = Array.from(e.clipboardData?.files || []); if (files.length) { e.preventDefault(); void addFiles(files); } } : undefined}
           placeholder={placeholder}
           className="flex-1 max-h-32 resize-none min-h-9"
           rows={1}
@@ -320,7 +429,7 @@ export function AIChatBox({
         <Button
           type="submit"
           size="icon"
-          disabled={!input.trim() || isLoading}
+          disabled={(!input.trim() && !pending.length) || isLoading || reading}
           className="shrink-0 h-[38px] w-[38px]"
         >
           {isLoading ? (
@@ -329,6 +438,7 @@ export function AIChatBox({
             <Send className="size-4" />
           )}
         </Button>
+        </div>
       </form>
     </div>
   );

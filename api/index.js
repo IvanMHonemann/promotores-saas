@@ -6399,7 +6399,7 @@ __export(storePhotos_exports, {
 });
 import { z as z9 } from "zod";
 import { and as and13, desc as desc5, eq as eq13, gte as gte8, lte as lte3, sql as sql16 } from "drizzle-orm";
-import { TRPCError as TRPCError12 } from "@trpc/server";
+import { TRPCError as TRPCError13 } from "@trpc/server";
 async function moveStorePhotosToTrash(db, accountId, photos, actor) {
   if (photos.length === 0) return;
   await ensureTrashTable();
@@ -6472,8 +6472,8 @@ async function assertStoreClient(db, companyId, storeId, storeClientId) {
   await ensureStoreClientsSchema(db);
   const res = await db.execute(sql16`SELECT id, active FROM store_clients WHERE id = ${storeClientId} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`);
   const r = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0];
-  if (!r) throw new TRPCError12({ code: "BAD_REQUEST", message: "Cliente n\xE3o encontrado nesta loja." });
-  if (!r.active) throw new TRPCError12({ code: "BAD_REQUEST", message: "Este cliente foi removido da loja." });
+  if (!r) throw new TRPCError13({ code: "BAD_REQUEST", message: "Cliente n\xE3o encontrado nesta loja." });
+  if (!r.active) throw new TRPCError13({ code: "BAD_REQUEST", message: "Este cliente foi removido da loja." });
 }
 async function linkPhotoToClient(db, companyId, photoId, storeClientId) {
   await db.execute(sql16`UPDATE store_photos SET storeClientId = ${storeClientId} WHERE id = ${photoId} AND companyId = ${companyId}`);
@@ -6519,7 +6519,7 @@ var init_storePhotos = __esm({
       /** Lista lojas com contagem de fotos e última atividade. */
       listStoresWithStats: commercialFeatureProcedure("fieldOperations").input(z9.object({ search: z9.string().optional(), city: z9.string().optional() }).optional()).query(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         await ensureStorePhotosTable(db);
         const memberId = scopeMemberId(ctx);
         const conditions = [eq13(stores.companyId, ctx.accountId), eq13(stores.active, true)];
@@ -6574,7 +6574,7 @@ var init_storePhotos = __esm({
         withoutClient: z9.boolean().optional()
       })).query(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         await ensureStorePhotosTable(db);
         await ensureStoreClientsSchema(db);
         const memberId = scopeMemberId(ctx);
@@ -6633,20 +6633,20 @@ var init_storePhotos = __esm({
         const ip = getClientIp(ctx.req);
         const limit = checkRateLimit(`${ctx.accountId}:${ip}`, "upload");
         if (!limit.ok) {
-          throw new TRPCError12({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
+          throw new TRPCError13({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
         }
         if (!isTenantMediaKey(input.fileKey, ctx.accountId) || input.thumbnailKey && !isTenantMediaKey(input.thumbnailKey, ctx.accountId)) {
-          throw new TRPCError12({ code: "BAD_REQUEST", message: "Arquivo da foto inv\xE1lido." });
+          throw new TRPCError13({ code: "BAD_REQUEST", message: "Arquivo da foto inv\xE1lido." });
         }
         const db = await getDb();
-        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         let storeName = "Sem loja vinculada";
         if (input.storeId) {
           const store = await assertStoreAccess(db, ctx, input.storeId);
           storeName = store.name;
           if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
         } else if (input.storeClientId) {
-          throw new TRPCError12({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
+          throw new TRPCError13({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
         }
         const [existing] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.companyId, ctx.accountId), eq13(storePhotos.idempotencyKey, input.idempotencyKey))).limit(1);
         if (existing) return existing;
@@ -6702,24 +6702,24 @@ var init_storePhotos = __esm({
         const ip = getClientIp(ctx.req);
         const limit = checkRateLimit(`${ctx.accountId}:${ip}`, "upload");
         if (!limit.ok) {
-          throw new TRPCError12({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
+          throw new TRPCError13({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
         }
         const db = await getDb();
-        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         let storeName = "Sem loja vinculada";
         if (input.storeId) {
           const store = await assertStoreAccess(db, ctx, input.storeId);
           storeName = store.name;
           if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
         } else if (input.storeClientId) {
-          throw new TRPCError12({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
+          throw new TRPCError13({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
         }
         const [existing] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.companyId, ctx.accountId), eq13(storePhotos.idempotencyKey, input.idempotencyKey))).limit(1);
         if (existing) return { id: existing.id, alreadyExists: true };
         const { storagePut: storagePut2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         const buffer = Buffer.from(input.imageBase64, "base64");
         const detectedMime = detectImageMime(buffer);
-        if (!detectedMime) throw new TRPCError12({ code: "BAD_REQUEST", message: "Arquivo n\xE3o \xE9 uma imagem v\xE1lida (use JPG, PNG ou WebP)." });
+        if (!detectedMime) throw new TRPCError13({ code: "BAD_REQUEST", message: "Arquivo n\xE3o \xE9 uma imagem v\xE1lida (use JPG, PNG ou WebP)." });
         input.mimeType = detectedMime;
         const ext = input.mimeType === "image/png" ? "png" : input.mimeType === "image/webp" ? "webp" : "jpg";
         const relKey = `store-photos/${ctx.accountId}/${safeKeySegment(input.storeId, "sem-loja")}/${safeKeySegment(input.idempotencyKey)}.${ext}`;
@@ -6728,7 +6728,7 @@ var init_storePhotos = __esm({
           const uploaded = await storagePut2(relKey, buffer, input.mimeType);
           fileKey = uploaded.key;
         } catch (err) {
-          throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao salvar a imagem. Verifique a configura\xE7\xE3o de armazenamento." });
+          throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao salvar a imagem. Verifique a configura\xE7\xE3o de armazenamento." });
         }
         const capturedAt = new Date(input.capturedAt);
         const expiresAt = new Date(capturedAt.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1e3);
@@ -6765,11 +6765,11 @@ var init_storePhotos = __esm({
       /** Retorna URL assinada temporária para visualizar uma foto. */
       getImageUrl: commercialFeatureProcedure("fieldOperations").input(z9.object({ photoId: z9.number().int().positive() })).query(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         const [photo] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.id, input.photoId), eq13(storePhotos.companyId, ctx.accountId))).limit(1);
-        if (!photo) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!photo) throw new TRPCError13({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         assertPhotoAccess(ctx, photo);
-        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError13({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         const { storageGetSignedUrl: storageGetSignedUrl2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         const url = await storageGetSignedUrl2(photo.fileKey);
         return { url, expiresIn: 3600 };
@@ -6777,33 +6777,33 @@ var init_storePhotos = __esm({
       /** Retorna a imagem como base64 para compartilhamento sem CORS. */
       getImageData: commercialFeatureProcedure("fieldOperations").input(z9.object({ photoId: z9.number().int().positive() })).query(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         const [photo] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.id, input.photoId), eq13(storePhotos.companyId, ctx.accountId))).limit(1);
-        if (!photo) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!photo) throw new TRPCError13({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         assertPhotoAccess(ctx, photo);
-        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError13({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         const { storageRead: storageRead2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         try {
           const image = await storageRead2(photo.fileKey);
           return { base64: image.data.toString("base64"), mime: image.contentType || photo.mimeType || "image/jpeg" };
         } catch {
-          throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel obter a imagem armazenada." });
+          throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel obter a imagem armazenada." });
         }
       }),
       /** Exclui uma foto (com auditoria). */
       delete: commercialFeatureProcedure("fieldOperations").input(z9.object({ photoId: z9.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         const [photo] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.id, input.photoId), eq13(storePhotos.companyId, ctx.accountId))).limit(1);
-        if (!photo) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!photo) throw new TRPCError13({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         if (scopeMemberId(ctx) !== null && photo.promoterId !== ctx.memberAccountId) {
-          throw new TRPCError12({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
+          throw new TRPCError13({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
         }
         try {
           await moveStorePhotosToTrash(db, ctx.accountId, [photo], { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
         } catch (error) {
           console.error("[storePhotos.delete] falha ao enviar para a lixeira", error);
-          throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar a foto para a lixeira." });
+          throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar a foto para a lixeira." });
         }
         await auditFromCtx(ctx, {
           action: "delete",
@@ -6819,17 +6819,17 @@ var init_storePhotos = __esm({
       /** Exclui várias fotos de uma vez. */
       bulkDelete: commercialFeatureProcedure("fieldOperations").input(z9.object({ photoIds: z9.array(z9.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         const photos = await db.select().from(storePhotos).where(and13(eq13(storePhotos.companyId, ctx.accountId), sql16`${storePhotos.id} IN (${sql16.join(input.photoIds.map((id2) => sql16`${id2}`), sql16`, `)})`));
         if (photos.length === 0) return { deleted: 0 };
         const memberId = scopeMemberId(ctx);
         const allowed = photos.filter((photo) => memberId === null || photo.promoterId === memberId);
-        if (allowed.length === 0) throw new TRPCError12({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
+        if (allowed.length === 0) throw new TRPCError13({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
         try {
           await moveStorePhotosToTrash(db, ctx.accountId, allowed, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
         } catch (error) {
           console.error("[storePhotos.bulkDelete] falha ao enviar para a lixeira", error);
-          throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar as fotos para a lixeira." });
+          throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar as fotos para a lixeira." });
         }
         const deleted = allowed.length;
         await auditFromCtx(ctx, {
@@ -6848,7 +6848,7 @@ var init_storePhotos = __esm({
         storeClientId: z9.number().int().positive().nullable()
       })).mutation(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         const store = input.storeId != null ? await assertStoreAccess(db, ctx, input.storeId) : null;
         await ensureStorePhotosTable(db);
         await ensureStoreClientsSchema(db);
@@ -6863,7 +6863,7 @@ var init_storePhotos = __esm({
         const ids = sql16.join(input.photoIds.map((id2) => sql16`${id2}`), sql16`, `);
         const res = await db.execute(sql16`UPDATE store_photos SET storeClientId = ${input.storeClientId} WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND id IN (${ids})${owner}`);
         const moved = Number((Array.isArray(res) ? res[0] : res)?.affectedRows ?? 0);
-        if (moved === 0) throw new TRPCError12({ code: "FORBIDDEN", message: "Nenhuma das fotos selecionadas p\xF4de ser movida (s\xF3 \xE9 poss\xEDvel mover as suas pr\xF3prias fotos desta loja)." });
+        if (moved === 0) throw new TRPCError13({ code: "FORBIDDEN", message: "Nenhuma das fotos selecionadas p\xF4de ser movida (s\xF3 \xE9 poss\xEDvel mover as suas pr\xF3prias fotos desta loja)." });
         await auditFromCtx(ctx, {
           action: "update",
           module: "store_photos",
@@ -7038,11 +7038,11 @@ __export(products_exports, {
   queryProducts: () => queryProducts
 });
 import { z as z11 } from "zod";
-import { TRPCError as TRPCError14 } from "@trpc/server";
+import { TRPCError as TRPCError15 } from "@trpc/server";
 import { sql as sql18 } from "drizzle-orm";
 async function ready6() {
   const database2 = await getDb();
-  if (!database2) throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+  if (!database2) throw new TRPCError15({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
   await ensureInventoryProductsSchema();
   await ensureStoreClientsSchema(database2);
   await ensurePromoterStoreAssignmentsTable(database2);
@@ -7107,35 +7107,35 @@ async function loadOne(ctx, id2) {
 }
 async function loadManageable(ctx, id2) {
   const row2 = await loadOne(ctx, id2);
-  if (!row2) throw new TRPCError14({ code: "NOT_FOUND", message: "Produto n\xE3o encontrado." });
-  if (!row2.canManage) throw new TRPCError14({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode alterar ou excluir produtos que voc\xEA mesmo cadastrou." });
+  if (!row2) throw new TRPCError15({ code: "NOT_FOUND", message: "Produto n\xE3o encontrado." });
+  if (!row2.canManage) throw new TRPCError15({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode alterar ou excluir produtos que voc\xEA mesmo cadastrou." });
   return row2;
 }
 async function validatePlace(ctx, storeId, storeClientId) {
   const database2 = await ready6();
   if (!storeId) {
-    if (storeClientId) throw new TRPCError14({ code: "BAD_REQUEST", message: "Escolha a loja antes da ind\xFAstria." });
+    if (storeClientId) throw new TRPCError15({ code: "BAD_REQUEST", message: "Escolha a loja antes da ind\xFAstria." });
     return { storeId: null, storeClientId: null };
   }
   const store = await assertStoreAccess(database2, ctx, storeId);
-  if (!store.active) throw new TRPCError14({ code: "BAD_REQUEST", message: "Essa loja foi removida. Escolha outra loja." });
+  if (!store.active) throw new TRPCError15({ code: "BAD_REQUEST", message: "Essa loja foi removida. Escolha outra loja." });
   if (storeClientId) {
     const c = rowsOf(await database2.execute(sql18`SELECT id FROM store_clients WHERE id = ${storeClientId} AND companyId = ${ctx.accountId} AND storeId = ${storeId} AND active = true LIMIT 1`))[0];
-    if (!c) throw new TRPCError14({ code: "BAD_REQUEST", message: "Ind\xFAstria n\xE3o encontrada nesta loja." });
+    if (!c) throw new TRPCError15({ code: "BAD_REQUEST", message: "Ind\xFAstria n\xE3o encontrada nesta loja." });
   }
   return { storeId, storeClientId: storeClientId ?? null };
 }
 async function uploadLabelPhoto(companyId, base64, requestId) {
   const buffer = Buffer.from(base64, "base64");
   const mime = detectImageMime(buffer);
-  if (!mime) throw new TRPCError14({ code: "BAD_REQUEST", message: "A foto precisa ser uma imagem (JPG, PNG ou WebP)." });
+  if (!mime) throw new TRPCError15({ code: "BAD_REQUEST", message: "A foto precisa ser uma imagem (JPG, PNG ou WebP)." });
   const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
   const { storagePut: storagePut2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
   try {
     const { key } = await storagePut2(`product-photos/${companyId}/${safeKeySegment(requestId)}.${ext}`, buffer, mime);
     return key;
   } catch {
-    throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel salvar a foto da etiqueta agora. Tente sem a foto ou mais tarde." });
+    throw new TRPCError15({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel salvar a foto da etiqueta agora. Tente sem a foto ou mais tarde." });
   }
 }
 async function deleteLabelPhoto(companyId, key) {
@@ -7201,7 +7201,7 @@ var init_products2 = __esm({
     productsRouter = router({
       settings: commercialFeatureProcedure("products").query(async ({ ctx }) => ({ alertDays: await getProductsAlertDays(ctx.accountId) })),
       setAlertDays: commercialFeatureProcedure("products").input(z11.object({ days: z11.number().int().min(1).max(180) })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role !== "company_admin") throw new TRPCError14({ code: "FORBIDDEN", message: "Somente o administrador pode mudar o prazo de alerta." });
+        if (ctx.user.role !== "company_admin") throw new TRPCError15({ code: "FORBIDDEN", message: "Somente o administrador pode mudar o prazo de alerta." });
         await setSetting(PRODUCTS_ALERT_DAYS_KEY, String(input.days), ctx.accountId);
         void auditFromCtx(ctx, { action: "update", module: "products", entityType: "settings", description: `Alerta de validade: ${input.days} dias antes`, newData: input });
         return { alertDays: input.days };
@@ -7263,7 +7263,7 @@ var init_products2 = __esm({
         const database2 = await ready6();
         const where = buildWhere(ctx, {}, todayInZone(), 30);
         const row2 = rowsOf(await database2.execute(sql18`SELECT ip.photoKey ${FROM} WHERE ${where} AND ip.id = ${input.id} LIMIT 1`))[0];
-        if (!row2?.photoKey || !isTenantMediaKey(row2.photoKey, ctx.accountId, ["product-photos"])) throw new TRPCError14({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!row2?.photoKey || !isTenantMediaKey(row2.photoKey, ctx.accountId, ["product-photos"])) throw new TRPCError15({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         const { storageGetSignedUrl: storageGetSignedUrl2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         return { url: await storageGetSignedUrl2(String(row2.photoKey)) };
       }),
@@ -9122,12 +9122,20 @@ init_db();
 init_audit();
 init_platformCompanies();
 import { z as z8 } from "zod";
+import { TRPCError as TRPCError12 } from "@trpc/server";
 var dateStr4 = z8.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 var status = z8.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]);
 var id = z8.number().int().positive();
 var log = (ctx, companyId, action, description, data) => void auditFromCtx(ctx, { action, module: "platform", entityType: "company", entityId: companyId, entityLabel: String(companyId), description, newData: data, companyId: null });
 var platformCompaniesRouter = router({
   overview: platformProcedure.query(() => listCompaniesOverview()),
+  /** Registra na auditoria (da plataforma e da própria empresa) que o administrador geral entrou como esta empresa. */
+  enterAs: platformProcedure.input(z8.object({ companyId: id })).mutation(async ({ ctx, input }) => {
+    const company = await getCompanyById(input.companyId);
+    if (!company) throw new TRPCError12({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+    void auditFromCtx(ctx, { action: "security", module: "platform", entityType: "company", entityId: company.id, entityLabel: company.name, description: `Administrador da plataforma acessou a empresa ${company.name}`, companyId: company.id });
+    return { success: true };
+  }),
   rename: platformProcedure.input(z8.object({ companyId: id, name: z8.string().trim().min(2).max(255) })).mutation(async ({ ctx, input }) => {
     await updateCompany(input.companyId, { name: input.name });
     log(ctx, input.companyId, "update", `Renomeou empresa #${input.companyId} para ${input.name}`);
@@ -9210,20 +9218,20 @@ init_audit();
 init_storeAccess();
 init_storeClients();
 import { z as z10 } from "zod";
-import { TRPCError as TRPCError13 } from "@trpc/server";
+import { TRPCError as TRPCError14 } from "@trpc/server";
 import { sql as sql17 } from "drizzle-orm";
 var rows2 = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
 var text3 = (max) => z10.string().trim().max(max).optional().transform((v) => v ? v : null);
 async function loadClient(db, companyId, storeId, id2) {
   const r = rows2(await db.execute(sql17`SELECT * FROM store_clients WHERE id = ${id2} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`));
-  if (!r[0]) throw new TRPCError13({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado nesta loja." });
+  if (!r[0]) throw new TRPCError14({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado nesta loja." });
   return r[0];
 }
 var storeClientsRouter = router({
   /** Clientes de uma loja, com a quantidade de fotos (o promotor conta só as próprias). */
   list: commercialFeatureProcedure("fieldOperations").input(z10.object({ storeId: z10.number().int().positive(), includeInactive: z10.boolean().optional() })).query(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    if (!db) throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const memberId = scopeMemberId(ctx);
@@ -9239,11 +9247,11 @@ var storeClientsRouter = router({
   }),
   create: commercialFeatureProcedure("fieldOperations").input(z10.object({ storeId: z10.number().int().positive(), name: z10.string().trim().min(2, "Informe o nome do cliente.").max(255), contactName: text3(255), phone: text3(50), notes: text3(2e3) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    if (!db) throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const dup = rows2(await db.execute(sql17`SELECT id FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true AND LOWER(name) = ${input.name.toLowerCase()} LIMIT 1`));
-    if (dup[0]) throw new TRPCError13({ code: "CONFLICT", message: "Esta loja j\xE1 tem um cliente com esse nome." });
+    if (dup[0]) throw new TRPCError14({ code: "CONFLICT", message: "Esta loja j\xE1 tem um cliente com esse nome." });
     const res = await db.execute(sql17`INSERT INTO store_clients (companyId, storeId, name, contactName, phone, notes) VALUES (${ctx.accountId}, ${input.storeId}, ${input.name}, ${input.contactName}, ${input.phone}, ${input.notes})`);
     const id2 = Number((Array.isArray(res) ? res[0] : res)?.insertId);
     await auditFromCtx(ctx, { action: "create", module: "store_clients", entityType: "store_client", entityId: id2, entityLabel: input.name, description: `Cliente ${input.name} cadastrado na loja ${store.name}`, newData: { storeId: input.storeId, name: input.name } });
@@ -9251,7 +9259,7 @@ var storeClientsRouter = router({
   }),
   update: commercialFeatureProcedure("fieldOperations").input(z10.object({ storeId: z10.number().int().positive(), id: z10.number().int().positive(), name: z10.string().trim().min(2).max(255), contactName: text3(255), phone: text3(50), notes: text3(2e3) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    if (!db) throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const old = await loadClient(db, ctx.accountId, input.storeId, input.id);
@@ -9262,7 +9270,7 @@ var storeClientsRouter = router({
   /** Remover = desativar: as fotos já tiradas continuam ligadas ao cliente na galeria. */
   setActive: commercialFeatureProcedure("fieldOperations").input(z10.object({ storeId: z10.number().int().positive(), id: z10.number().int().positive(), active: z10.boolean() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    if (!db) throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const old = await loadClient(db, ctx.accountId, input.storeId, input.id);
@@ -9277,7 +9285,7 @@ init_products2();
 init_rateLimit();
 import { z as z13 } from "zod";
 import { parse as parseCookie } from "cookie";
-import { TRPCError as TRPCError17 } from "@trpc/server";
+import { TRPCError as TRPCError18 } from "@trpc/server";
 
 // server/authThrottle.ts
 import { createHash as createHash3 } from "node:crypto";
@@ -9385,20 +9393,20 @@ function getSessionCookieOptions(req, allowCrossSite = false) {
 import { z as z12 } from "zod";
 
 // server/_core/notification.ts
-import { TRPCError as TRPCError15 } from "@trpc/server";
+import { TRPCError as TRPCError16 } from "@trpc/server";
 var TITLE_MAX_LENGTH = 1200;
 var CONTENT_MAX_LENGTH = 2e4;
 var trimValue = (value) => value.trim();
 var isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
 var validatePayload = (input) => {
   if (!isNonEmptyString(input.title)) {
-    throw new TRPCError15({
+    throw new TRPCError16({
       code: "BAD_REQUEST",
       message: "Notification title is required."
     });
   }
   if (!isNonEmptyString(input.content)) {
-    throw new TRPCError15({
+    throw new TRPCError16({
       code: "BAD_REQUEST",
       message: "Notification content is required."
     });
@@ -9406,13 +9414,13 @@ var validatePayload = (input) => {
   const title = trimValue(input.title);
   const content = trimValue(input.content);
   if (title.length > TITLE_MAX_LENGTH) {
-    throw new TRPCError15({
+    throw new TRPCError16({
       code: "BAD_REQUEST",
       message: `Notification title must be at most ${TITLE_MAX_LENGTH} characters.`
     });
   }
   if (content.length > CONTENT_MAX_LENGTH) {
-    throw new TRPCError15({
+    throw new TRPCError16({
       code: "BAD_REQUEST",
       message: `Notification content must be at most ${CONTENT_MAX_LENGTH} characters.`
     });
@@ -9475,7 +9483,7 @@ init_subscriptionAccess();
 
 // server/planLimits.ts
 init_db();
-import { TRPCError as TRPCError16 } from "@trpc/server";
+import { TRPCError as TRPCError17 } from "@trpc/server";
 
 // server/memberAuth.ts
 init_ttlCache();
@@ -9904,7 +9912,7 @@ async function assertUserLimit(companyId) {
   if (plan.maxUsers == null) return plan;
   const current = await countUsers(companyId);
   if (current >= plan.maxUsers) {
-    throw new TRPCError16({
+    throw new TRPCError17({
       code: "FORBIDDEN",
       message: `Limite de usu\xE1rios do plano ${plan.name} atingido (${plan.maxUsers}). Fa\xE7a upgrade para adicionar outro usu\xE1rio.`,
       cause: { code: "PLAN_LIMIT", resource: "users", limit: plan.maxUsers, current }
@@ -10260,22 +10268,39 @@ var GITHUB_API = "https://api.github.com";
 var OWNER = process.env.GITHUB_REPO_OWNER || "IvanMHonemann";
 var REPO = process.env.GITHUB_REPO_NAME || "promotores-saas";
 var BRANCH = process.env.GITHUB_REPO_BRANCH || "main";
-var editableFiles = [
-  "client/src/pages/platform/PlatformDashboard.tsx",
+var REPO_LABEL = `${OWNER}/${REPO}`;
+var baseFiles = [
   "client/src/App.tsx",
-  "client/src/index.css",
-  "client/src/components/AIChatBox.tsx",
-  "package.json",
-  "vercel.json"
+  "client/src/index.css"
 ];
-async function github(path2, init2 = {}) {
+var extraEditableFiles = ["package.json", "vercel.json", "client/src/components/AIChatBox.tsx"];
+var MAX_SELECTED_FILES = 6;
+var MAX_FILE_CHARS = 15e4;
+var MAX_CONTEXT_CHARS = 6e5;
+var GithubSetupError = class extends Error {
+};
+function explainGithubError(status2, message) {
+  const msg = (message || "").toLowerCase();
+  if (status2 === 401) return `O GitHub recusou a chave de acesso (GITHUB_TOKEN inv\xE1lido, apagado ou vencido). Gere um novo token no GitHub e atualize a vari\xE1vel GITHUB_TOKEN na Vercel.`;
+  if (status2 === 403 && msg.includes("rate limit")) return `O GitHub limitou as consultas sem chave de acesso. Configure a vari\xE1vel GITHUB_TOKEN na Vercel ou tente de novo em 1 hora.`;
+  if (status2 === 403) return `A chave do GitHub (GITHUB_TOKEN) n\xE3o tem permiss\xE3o suficiente. Ela precisa de acesso ao reposit\xF3rio ${REPO_LABEL} com "Contents: Read and write" e "Pull requests: Read and write".`;
+  if (status2 === 404) return `O GitHub n\xE3o encontrou o reposit\xF3rio ${REPO_LABEL} com essa chave. Confira se o token d\xE1 acesso a esse reposit\xF3rio (em "Repository access").`;
+  if (status2 === 422) return `O GitHub n\xE3o aceitou a altera\xE7\xE3o (${message || "dados inv\xE1lidos"}).`;
+  return `O GitHub respondeu com erro ${status2}: ${message || "erro desconhecido"}.`;
+}
+function hasGithubToken() {
+  return Boolean(process.env.GITHUB_TOKEN);
+}
+async function github(path2, init2 = {}, { requireToken = true } = {}) {
   const token = process.env.GITHUB_TOKEN;
-  if (!token) throw new Error("GITHUB_TOKEN n\xE3o est\xE1 configurado na Vercel.");
+  if (!token && requireToken) {
+    throw new GithubSetupError(`A IA ainda n\xE3o est\xE1 conectada ao GitHub: falta a vari\xE1vel GITHUB_TOKEN na Vercel. Sem ela eu consigo conversar e analisar, mas n\xE3o consigo abrir a corre\xE7\xE3o (Pull Request) no reposit\xF3rio ${REPO_LABEL}.`);
+  }
   const response = await fetch(`${GITHUB_API}${path2}`, {
     ...init2,
     headers: {
       Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
+      ...token ? { Authorization: `Bearer ${token}` } : {},
       "X-GitHub-Api-Version": "2022-11-28",
       "Content-Type": "application/json",
       ...init2.headers || {}
@@ -10288,69 +10313,62 @@ async function github(path2, init2 = {}) {
   } catch {
     parsed = { message: body.slice(0, 500) };
   }
-  if (!response.ok) throw new Error(`GitHub ${response.status}: ${parsed.message || "erro desconhecido"}`);
+  if (!response.ok) throw new GithubSetupError(explainGithubError(response.status, parsed?.message || ""));
   return parsed;
 }
 function buildAiBranchName(now = /* @__PURE__ */ new Date()) {
   const stamp = now.toISOString().replace(/[-:T]/g, "").slice(0, 14);
   return `ai/suporte-${stamp}-${Math.random().toString(36).slice(2, 7)}`;
 }
+function isAiEditablePath(path2) {
+  if (extraEditableFiles.includes(path2)) return true;
+  if (!/^(client\/src|server|shared)\//.test(path2)) return false;
+  if (!/\.(tsx?|css)$/.test(path2)) return false;
+  if (/\.test\.tsx?$/.test(path2)) return false;
+  if (/^server\/_core\//.test(path2)) return false;
+  if (/(^|\/)\.env/i.test(path2) || /secret|credential/i.test(path2)) return false;
+  if (/\/_archived\//.test(path2)) return false;
+  return true;
+}
+function asksForChange(prompt) {
+  if (/\bn[ãa]o\s+(altere|mude|modifique|mexa|aplique|fa[çc]a\s+altera)/i.test(prompt)) return false;
+  return /\b(altere|alterar|mude|mudar|modifique|modificar|adicione|adicionar|remova|remover|crie|criar|corrija|corrigir|conserte|consertar|arrume|arrumar|implemente|implementar|troque|trocar|aplique|aplicar|fa[çc]a|fazer|coloque|colocar|insira|inserir|inclua|incluir|disponibilize|disponibilizar|reative|reativar|restaure|restaurar|atualize|atualizar)\b/i.test(prompt);
+}
+function needsCode(prompt, hasAttachments) {
+  return hasAttachments || asksForChange(prompt) || /\b(erros?|bugs?|c[oó]digo|varredura|escane|scan|analis|revis|layout|design|tela|p[aá]gina|arquivo|obsolet|quebrad|funcion)/i.test(prompt);
+}
 async function readFile(path2, ref) {
-  const file = await github(`/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(path2)}?ref=${encodeURIComponent(ref)}`);
+  const file = await github(`/repos/${OWNER}/${REPO}/contents/${path2.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`, {}, { requireToken: false });
   return { path: path2, sha: file.sha, content: Buffer.from(file.content.replace(/\n/g, ""), "base64").toString("utf8") };
 }
-async function askGemini(prompt, files, history = []) {
+async function listRepoFiles(commitSha) {
+  const commit = await github(`/repos/${OWNER}/${REPO}/git/commits/${commitSha}`, {}, { requireToken: false });
+  const tree = await github(`/repos/${OWNER}/${REPO}/git/trees/${commit.tree.sha}?recursive=1`, {}, { requireToken: false });
+  return tree.tree.filter((item) => item.type === "blob" && isAiEditablePath(item.path) && (item.size ?? 0) <= MAX_FILE_CHARS).map((item) => item.path);
+}
+function geminiKey() {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY n\xE3o est\xE1 configurada na Vercel.");
-  const context = files.length ? files.map((file) => `
---- ${file.path} ---
-${file.content}`).join("\n") : "(nenhum arquivo precisa ser consultado para esta conversa)";
-  const conversation = history.slice(-12).map((message) => `${message.role === "user" ? "Usu\xE1rio" : "Assistente"}: ${message.content}`).join("\n");
-  const system = `Voc\xEA \xE9 o assistente de IA e engenheiro de software do GondUp. Converse naturalmente e responda em portugu\xEAs brasileiro, sempre levando em conta exatamente o que o usu\xE1rio escreveu e o hist\xF3rico fornecido. Voc\xEA deve responder perguntas, explicar conceitos, sugerir ideias e ajudar o usu\xE1rio mesmo quando ele n\xE3o pedir nenhuma altera\xE7\xE3o no c\xF3digo.
-
-Voc\xEA pode alterar SOMENTE estes arquivos: ${editableFiles.join(", ")}.
-Se o usu\xE1rio estiver apenas conversando ou fazendo uma pergunta, retorne changes vazio e responda diretamente, sem dizer que alguma altera\xE7\xE3o foi feita. S\xF3 inclua changes quando o usu\xE1rio pedir explicitamente uma altera\xE7\xE3o no site ou no c\xF3digo. Quando for solicitada uma altera\xE7\xE3o, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conte\xFAdo parcial. N\xE3o invente arquivos nem diga que publicou algo: o servidor abrir\xE1 um Pull Request para revis\xE3o humana depois de validar sua resposta; nada \xE9 publicado sem o merge de uma pessoa. Preserve o funcionamento existente e n\xE3o remova recursos sem pedido expl\xEDcito.
-
-Retorne SOMENTE JSON v\xE1lido no formato:
-{"reply":"resposta objetiva","changes":[{"path":"arquivo permitido","content":"conte\xFAdo completo","reason":"motivo"}]}
-
-Hist\xF3rico recente da conversa:
-${conversation || "(primeira mensagem)"}
-
-C\xF3digo atual:${context}`;
-  const responseSchema = {
-    type: "OBJECT",
-    properties: {
-      reply: { type: "STRING" },
-      changes: {
-        type: "ARRAY",
-        items: {
-          type: "OBJECT",
-          properties: {
-            path: { type: "STRING" },
-            content: { type: "STRING" },
-            reason: { type: "STRING" }
-          },
-          required: ["path", "content"]
-        }
-      }
-    },
-    required: ["reply", "changes"]
-  };
-  const requestBody = {
-    systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: "application/json", responseSchema }
-  };
-  let response = null;
-  let body = null;
-  let lastError = "resposta inv\xE1lida";
+  return apiKey;
+}
+var cachedModels = null;
+async function geminiModels(apiKey) {
+  if (cachedModels && Date.now() - cachedModels.at < 10 * 6e4) return cachedModels.models;
   const modelListResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
   const modelList = modelListResponse.ok ? await modelListResponse.json() : null;
   const preferredModels = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
   const availableModels = (modelList?.models || []).filter((model) => model.supportedGenerationMethods?.includes("generateContent")).map((model) => String(model.name || "").replace(/^models\//, ""));
   const models = preferredModels.filter((model) => availableModels.length === 0 || availableModels.includes(model));
-  for (const model of models.length ? models : ["gemini-3.8-flash"]) {
+  const result = models.length ? models : ["gemini-3.8-flash"];
+  cachedModels = { at: Date.now(), models: result };
+  return result;
+}
+async function callGemini(requestBody) {
+  const apiKey = geminiKey();
+  let response = null;
+  let body = null;
+  let lastError = "resposta inv\xE1lida";
+  for (const model of await geminiModels(apiKey)) {
     response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -10361,7 +10379,74 @@ C\xF3digo atual:${context}`;
     lastError = `${model}: ${body.error?.message || `HTTP ${response.status}`}`;
   }
   if (!response?.ok) throw new Error(`Gemini indispon\xEDvel: ${lastError}`);
-  const text4 = body.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
+  return body.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
+}
+function buildUserParts(prompt, attachments = []) {
+  const parts = [{ text: prompt }];
+  for (const file of attachments) {
+    if (file.kind === "text") parts.push({ text: `
+--- Arquivo anexado pelo usu\xE1rio: ${file.name} ---
+${file.data}` });
+    else parts.push({ text: `
+(Anexo: ${file.name})` }, { inlineData: { mimeType: file.kind === "pdf" ? "application/pdf" : file.mimeType, data: file.data } });
+  }
+  return parts;
+}
+function historyText(history) {
+  return history.slice(-12).map((message) => `${message.role === "user" ? "Usu\xE1rio" : "Assistente"}: ${message.content}`).join("\n");
+}
+async function pickFiles(prompt, attachments, history, repoFiles) {
+  const system = `Voc\xEA ajuda a escolher arquivos de c\xF3digo do sistema GondUp (React + tRPC). Com base no pedido do usu\xE1rio, no hist\xF3rico e nos anexos (prints de tela, arquivos), escolha no m\xE1ximo ${MAX_SELECTED_FILES} arquivos da lista que precisam ser lidos para entender ou corrigir o problema. Prefira as p\xE1ginas em client/src/pages e componentes citados. Responda s\xF3 JSON {"paths":["..."]}.
+
+Hist\xF3rico:
+${historyText(history) || "(primeira mensagem)"}
+
+Arquivos dispon\xEDveis:
+${repoFiles.join("\n")}`;
+  const text4 = await callGemini({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: buildUserParts(prompt, attachments) }],
+    generationConfig: { temperature: 0, maxOutputTokens: 1024, responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { paths: { type: "ARRAY", items: { type: "STRING" } } }, required: ["paths"] } }
+  });
+  try {
+    const parsed = JSON.parse(text4.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim());
+    const set = new Set(repoFiles);
+    return (Array.isArray(parsed.paths) ? parsed.paths : []).filter((p) => typeof p === "string" && set.has(p)).slice(0, MAX_SELECTED_FILES);
+  } catch {
+    return [];
+  }
+}
+async function askGemini(prompt, files, history, attachments, canOpenPr, codeNote) {
+  const editable = files.map((file) => file.path);
+  const context = files.length ? files.map((file) => `
+--- ${file.path} ---
+${file.content}`).join("\n") : `(${codeNote || "nenhum arquivo precisa ser consultado para esta conversa"})`;
+  const changeRules = canOpenPr && editable.length ? `Voc\xEA pode propor altera\xE7\xF5es SOMENTE nestes arquivos (os que foram carregados abaixo): ${editable.join(", ")}.
+S\xF3 inclua changes quando o usu\xE1rio pedir explicitamente uma altera\xE7\xE3o. Quando for solicitada uma altera\xE7\xE3o, devolva o arquivo COMPLETO em changes, nunca um diff e nunca conte\xFAdo parcial. No m\xE1ximo 4 arquivos por vez. N\xE3o invente arquivos nem diga que publicou algo: o servidor abrir\xE1 um Pull Request para revis\xE3o humana; nada \xE9 publicado sem o merge de uma pessoa. Preserve o funcionamento existente, n\xE3o remova recursos sem pedido expl\xEDcito e mantenha o layout funcionando no celular (telas de 360 px).` : `Nesta conversa voc\xEA N\xC3O pode alterar arquivos: retorne changes vazio. Se o usu\xE1rio pedir uma altera\xE7\xE3o, explique o que mudaria e em quais arquivos.`;
+  const system = `Voc\xEA \xE9 o assistente de IA e engenheiro de software do GondUp. Converse naturalmente e responda em portugu\xEAs brasileiro, sempre levando em conta exatamente o que o usu\xE1rio escreveu, os anexos (prints de tela, fotos, PDFs e arquivos) e o hist\xF3rico fornecido. Quando houver print de tela, descreva o que v\xEA e relacione com o c\xF3digo. Voc\xEA deve responder perguntas, explicar conceitos, procurar bugs, sugerir melhorias de layout e ajudar a atualizar c\xF3digo obsoleto.
+
+${changeRules}
+
+Retorne SOMENTE JSON v\xE1lido no formato:
+{"reply":"resposta objetiva","changes":[{"path":"arquivo permitido","content":"conte\xFAdo completo","reason":"motivo"}]}
+
+Hist\xF3rico recente da conversa:
+${historyText(history) || "(primeira mensagem)"}
+
+C\xF3digo atual:${context}`;
+  const responseSchema = {
+    type: "OBJECT",
+    properties: {
+      reply: { type: "STRING" },
+      changes: { type: "ARRAY", items: { type: "OBJECT", properties: { path: { type: "STRING" }, content: { type: "STRING" }, reason: { type: "STRING" } }, required: ["path", "content"] } }
+    },
+    required: ["reply", "changes"]
+  };
+  const text4 = await callGemini({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: buildUserParts(prompt, attachments) }],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 32768, responseMimeType: "application/json", responseSchema }
+  });
   const cleaned = text4.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   try {
     return JSON.parse(cleaned);
@@ -10381,58 +10466,113 @@ C\xF3digo atual:${context}`;
     return { reply: "N\xE3o consegui interpretar a resposta do Gemini. Tente enviar a mensagem novamente.", changes: [] };
   }
 }
-async function runPersistentGemini(prompt, history = []) {
-  const asksForChange = /\b(altere|alterar|mude|mudar|modifique|modificar|adicione|adicionar|remova|remover|crie|criar|corrija|corrigir|implemente|implementar|troque|trocar|aplique|aplicar|faça|fazer|coloque|colocar|insira|inserir|inclua|incluir|disponibilize|disponibilizar|leve|levar|reative|reativar|restaure|restaurar)\b/i.test(prompt);
-  const ref = asksForChange ? await github(`/repos/${OWNER}/${REPO}/git/ref/heads/${encodeURIComponent(BRANCH)}`) : null;
-  const files = asksForChange ? await Promise.all(editableFiles.map((path2) => readFile(path2, BRANCH))) : [];
-  const result = await askGemini(prompt, files, history);
-  const changes = (result.changes || []).filter((change) => editableFiles.includes(change.path) && typeof change.content === "string");
-  if (!changes.length) return { reply: result.reply || "Estou aqui para responder sua mensagem. O que voc\xEA gostaria de saber?", changed: false };
-  if (changes.length > 4) throw new Error("A solicita\xE7\xE3o gerou arquivos demais para uma \xFAnica altera\xE7\xE3o segura.");
-  for (const change of changes) {
-    if (change.content.length > 3e5) throw new Error(`O arquivo ${change.path} excede o limite seguro.`);
+async function loadCode(prompt, attachments, history) {
+  const ref = await github(`/repos/${OWNER}/${REPO}/git/ref/heads/${encodeURIComponent(BRANCH)}`, {}, { requireToken: false });
+  const repoFiles = await listRepoFiles(ref.object.sha);
+  const picked = await pickFiles(prompt, attachments, history, repoFiles).catch(() => []);
+  const paths = Array.from(/* @__PURE__ */ new Set([...picked, ...baseFiles])).filter((p) => repoFiles.includes(p) || extraEditableFiles.includes(p));
+  const files = [];
+  let total = 0;
+  for (const file of await Promise.all(paths.map((path2) => readFile(path2, ref.object.sha).catch(() => null)))) {
+    if (!file || file.content.length > MAX_FILE_CHARS || total + file.content.length > MAX_CONTEXT_CHARS) continue;
+    total += file.content.length;
+    files.push({ path: file.path, content: file.content });
   }
-  if (!ref) throw new Error("N\xE3o foi poss\xEDvel preparar a altera\xE7\xE3o. Envie o pedido de mudan\xE7a novamente.");
-  const baseCommitSha = ref.object.sha;
-  const baseCommit = await github(`/repos/${OWNER}/${REPO}/git/commits/${baseCommitSha}`);
-  const treeEntries = [];
-  for (const change of changes) {
-    const blob = await github(`/repos/${OWNER}/${REPO}/git/blobs`, { method: "POST", body: JSON.stringify({ content: change.content, encoding: "utf-8" }) });
-    treeEntries.push({ path: change.path, mode: "100644", type: "blob", sha: blob.sha });
+  return { baseSha: ref.object.sha, files };
+}
+async function runPersistentGemini(prompt, history = [], attachments = []) {
+  const wantsChange = asksForChange(prompt);
+  const canOpenPr = hasGithubToken();
+  let code = null;
+  let codeNote = "";
+  let setupNotice = "";
+  if (needsCode(prompt, attachments.length > 0)) {
+    try {
+      code = await loadCode(prompt, attachments, history);
+    } catch (error) {
+      if (!(error instanceof GithubSetupError)) throw error;
+      codeNote = "n\xE3o foi poss\xEDvel ler o c\xF3digo no GitHub agora";
+      setupNotice = error.message;
+    }
   }
-  const tree = await github(`/repos/${OWNER}/${REPO}/git/trees`, { method: "POST", body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: treeEntries }) });
-  const summary = prompt.slice(0, 72).replace(/\n/g, " ").trim();
-  const commit = await github(`/repos/${OWNER}/${REPO}/git/commits`, { method: "POST", body: JSON.stringify({ message: `feat(ai): ${summary}`, tree: tree.sha, parents: [baseCommitSha] }) });
-  const aiBranch = buildAiBranchName();
-  if (aiBranch === BRANCH) throw new Error("Nome de branch inv\xE1lido para a altera\xE7\xE3o da IA.");
-  await github(`/repos/${OWNER}/${REPO}/git/refs`, { method: "POST", body: JSON.stringify({ ref: `refs/heads/${aiBranch}`, sha: commit.sha }) });
-  const pr = await github(`/repos/${OWNER}/${REPO}/pulls`, {
-    method: "POST",
-    body: JSON.stringify({
-      title: `feat(ai): ${summary}`,
-      head: aiBranch,
-      base: BRANCH,
-      body: `Altera\xE7\xE3o proposta pelo assistente de IA (suporte inteligente).
+  if (wantsChange && !canOpenPr && !setupNotice) {
+    setupNotice = `Para eu abrir a corre\xE7\xE3o como Pull Request, falta conectar o GitHub: configure a vari\xE1vel GITHUB_TOKEN na Vercel (token com acesso ao reposit\xF3rio ${REPO_LABEL}, "Contents" e "Pull requests" com leitura e escrita).`;
+  }
+  const result = await askGemini(prompt, code?.files ?? [], history, attachments, canOpenPr && Boolean(code), codeNote);
+  const allowed = new Set((code?.files ?? []).map((file) => file.path));
+  const changes = wantsChange ? (result.changes || []).filter((change) => allowed.has(change.path) && isAiEditablePath(change.path) && typeof change.content === "string") : [];
+  const withNotice = (text4) => setupNotice ? `${text4}
 
-**Pedido:** ${prompt.slice(0, 1e3)}
+\u26A0\uFE0F ${setupNotice}` : text4;
+  if (!changes.length || !code || !canOpenPr) return { reply: withNotice(result.reply || "Estou aqui para responder sua mensagem. O que voc\xEA gostaria de saber?"), changed: false };
+  if (changes.length > 4) return { reply: `${result.reply}
+
+\u26A0\uFE0F A solicita\xE7\xE3o gerou arquivos demais para uma \xFAnica altera\xE7\xE3o segura. Pe\xE7a uma parte de cada vez.`, changed: false };
+  for (const change of changes) {
+    if (change.content.length > 3e5) return { reply: `${result.reply}
+
+\u26A0\uFE0F O arquivo ${change.path} ficou grande demais para uma altera\xE7\xE3o segura.`, changed: false };
+  }
+  try {
+    const baseCommitSha = code.baseSha;
+    const baseCommit = await github(`/repos/${OWNER}/${REPO}/git/commits/${baseCommitSha}`);
+    const treeEntries = [];
+    for (const change of changes) {
+      const blob = await github(`/repos/${OWNER}/${REPO}/git/blobs`, { method: "POST", body: JSON.stringify({ content: change.content, encoding: "utf-8" }) });
+      treeEntries.push({ path: change.path, mode: "100644", type: "blob", sha: blob.sha });
+    }
+    const tree = await github(`/repos/${OWNER}/${REPO}/git/trees`, { method: "POST", body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: treeEntries }) });
+    const summary = prompt.slice(0, 72).replace(/\n/g, " ").trim();
+    const commit = await github(`/repos/${OWNER}/${REPO}/git/commits`, { method: "POST", body: JSON.stringify({ message: `feat(ai): ${summary}`, tree: tree.sha, parents: [baseCommitSha] }) });
+    const aiBranch = buildAiBranchName();
+    if (aiBranch === BRANCH) throw new Error("Nome de branch inv\xE1lido para a altera\xE7\xE3o da IA.");
+    await github(`/repos/${OWNER}/${REPO}/git/refs`, { method: "POST", body: JSON.stringify({ ref: `refs/heads/${aiBranch}`, sha: commit.sha }) });
+    const pr = await github(`/repos/${OWNER}/${REPO}/pulls`, {
+      method: "POST",
+      body: JSON.stringify({
+        title: `feat(ai): ${summary}`,
+        head: aiBranch,
+        base: BRANCH,
+        body: `Altera\xE7\xE3o proposta pelo assistente de IA (suporte inteligente).
+
+**Pedido:** ${prompt.slice(0, 1e3)}${attachments.length ? `
+
+**Anexos:** ${attachments.map((a) => a.name).join(", ")}` : ""}
 
 **Arquivos alterados:**
 ${changes.map((change) => `- \`${change.path}\`${change.reason ? `: ${change.reason}` : ""}`).join("\n")}
 
 \u26A0\uFE0F Revise o c\xF3digo antes do merge. Nada \xE9 publicado at\xE9 que uma pessoa fa\xE7a o merge deste PR.`
-    })
-  });
-  return {
-    reply: `${result.reply || "Altera\xE7\xE3o preparada."}
+      })
+    });
+    return {
+      reply: `${result.reply || "Altera\xE7\xE3o preparada."}
 
 Abri um Pull Request para revis\xE3o: ${pr.html_url}. Nada foi publicado ainda; uma pessoa precisa revisar e fazer o merge.`,
-    changed: true,
-    commitSha: commit.sha,
-    commitUrl: `https://github.com/${OWNER}/${REPO}/commit/${commit.sha}`,
-    pullRequestUrl: pr.html_url,
-    branch: aiBranch,
-    files: changes.map((change) => change.path)
-  };
+      changed: true,
+      commitSha: commit.sha,
+      commitUrl: `https://github.com/${OWNER}/${REPO}/commit/${commit.sha}`,
+      pullRequestUrl: pr.html_url,
+      branch: aiBranch,
+      files: changes.map((change) => change.path)
+    };
+  } catch (error) {
+    if (error instanceof GithubSetupError) return { reply: `${result.reply}
+
+\u26A0\uFE0F N\xE3o consegui abrir o Pull Request: ${error.message}`, changed: false };
+    throw error;
+  }
+}
+
+// shared/aiAttachments.ts
+var AI_MAX_ATTACHMENTS = 5;
+var AI_MAX_PICK_BYTES = 10 * 1024 * 1024;
+var AI_MAX_PDF_BYTES = 3 * 1024 * 1024;
+var AI_MAX_TEXT_CHARS = 2e5;
+var AI_MAX_TOTAL_CHARS = 4e6;
+var AI_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif"];
+function aiAttachmentsSize(list) {
+  return list.reduce((sum, item) => sum + item.data.length, 0);
 }
 
 // server/routers.ts
@@ -10469,7 +10609,7 @@ var appRouter = router({
           effectiveFeatureKeys: [...ENTITLEMENT_KEYS]
         };
       }
-      if (!ctx.memberAccountId) throw new TRPCError17({ code: "FORBIDDEN", message: "Usu\xE1rio da empresa n\xE3o encontrado." });
+      if (!ctx.memberAccountId) throw new TRPCError18({ code: "FORBIDDEN", message: "Usu\xE1rio da empresa n\xE3o encontrado." });
       return getMemberEntitlementSnapshot(ctx.accountId, ctx.memberAccountId, ctx.user.role);
     })
   }),
@@ -10486,7 +10626,7 @@ var appRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const signupKey = `signup:${getClientIp(ctx.req)}`;
       if (await isThrottled(signupKey)) {
-        throw new TRPCError17({ code: "TOO_MANY_REQUESTS", message: "Muitos cadastros deste endere\xE7o. Tente novamente em alguns minutos." });
+        throw new TRPCError18({ code: "TOO_MANY_REQUESTS", message: "Muitos cadastros deste endere\xE7o. Tente novamente em alguns minutos." });
       }
       await registerThrottleFailure(signupKey);
       try {
@@ -10532,7 +10672,7 @@ var appRouter = router({
         return { success: true, ...created };
       } catch (error) {
         if (error?.code === "ER_DUP_ENTRY") {
-          throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
         }
         throw error;
       }
@@ -10541,18 +10681,18 @@ var appRouter = router({
       const ip = getClientIp(ctx.req);
       const limit = checkRateLimit(ip, "login");
       if (!limit.ok) {
-        throw new TRPCError17({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde um minuto." });
+        throw new TRPCError18({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde um minuto." });
       }
       const principal = await authenticateMember(input.email, input.password);
       if (!principal) {
         void auditFromCtx(ctx, { action: "login_failed", module: "auth", entityType: "session", description: `Tentativa de login falhou para ${input.email}`, newData: { email: input.email } });
-        throw new TRPCError17({ code: "UNAUTHORIZED", message: "E-mail ou senha inv\xE1lidos." });
+        throw new TRPCError18({ code: "UNAUTHORIZED", message: "E-mail ou senha inv\xE1lidos." });
       }
       if (principal.kind === "company") {
         const company = await getCompanyById(principal.account.companyId);
         if (!company || company.active === false) {
           const reason = company ? await getSetting("blocked_reason", company.id, "") : "";
-          throw new TRPCError17({ code: "FORBIDDEN", message: reason || "Acesso da empresa bloqueado. Entre em contato com o suporte." });
+          throw new TRPCError18({ code: "FORBIDDEN", message: reason || "Acesso da empresa bloqueado. Entre em contato com o suporte." });
         }
       }
       const session = await createSession(principal);
@@ -10591,7 +10731,7 @@ var appRouter = router({
     }),
     recoverPassword: publicProcedure.input(z13.object({ email: z13.string().email(), recoveryCode: z13.string().min(1), newPassword: z13.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ input }) => {
       const recovered = await recoverPassword(input.email, input.recoveryCode, input.newPassword);
-      if (!recovered) throw new TRPCError17({ code: "UNAUTHORIZED", message: "E-mail ou c\xF3digo de recupera\xE7\xE3o inv\xE1lido." });
+      if (!recovered) throw new TRPCError18({ code: "UNAUTHORIZED", message: "E-mail ou c\xF3digo de recupera\xE7\xE3o inv\xE1lido." });
       return { success: true, recoveryCode: recovered.recoveryCode };
     }),
     /** "Esqueci minha senha": resposta sempre igual (não revela se o e-mail existe). */
@@ -10608,30 +10748,30 @@ var appRouter = router({
     }),
     resetPasswordWithToken: publicProcedure.input(z13.object({ token: z13.string().min(10).max(2e3), newPassword: z13.string().min(8, "A nova senha deve ter pelo menos 8 caracteres").max(200) })).mutation(async ({ input }) => {
       const ok = await resetPasswordWithToken(input.token, input.newPassword);
-      if (!ok) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Link inv\xE1lido ou expirado. Pe\xE7a um novo link." });
+      if (!ok) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Link inv\xE1lido ou expirado. Pe\xE7a um novo link." });
       return { success: true };
     }),
     changePassword: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).input(z13.object({ currentPassword: z13.string().min(1), newPassword: z13.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ ctx, input }) => {
       const changed = ctx.user.role === "platform_admin" ? await changePlatformPassword(ctx.platformAdminId ?? ctx.user.id, input.currentPassword, input.newPassword) : await changeMemberPassword(ctx.memberAccountId ?? Math.abs(ctx.user.id), input.currentPassword, input.newPassword);
-      if (!changed) throw new TRPCError17({ code: "UNAUTHORIZED", message: "A senha atual est\xE1 incorreta." });
+      if (!changed) throw new TRPCError18({ code: "UNAUTHORIZED", message: "A senha atual est\xE1 incorreta." });
       return { success: true };
     }),
     updateProfile: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).input(z13.object({
       userName: z13.string().min(2).optional(),
       avatarDataUrl: z13.string().max(4e5).optional().nullable()
     })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role === "platform_admin") {
-        throw new TRPCError17({ code: "BAD_REQUEST", message: "Perfil de plataforma n\xE3o usa esta rota." });
+        throw new TRPCError18({ code: "BAD_REQUEST", message: "Perfil de plataforma n\xE3o usa esta rota." });
       }
       const memberId = ctx.memberAccountId ?? Math.abs(ctx.user.id);
       const companyId = ctx.accountId;
-      if (!companyId) throw new TRPCError17({ code: "FORBIDDEN", message: "Empresa n\xE3o identificada." });
+      if (!companyId) throw new TRPCError18({ code: "FORBIDDEN", message: "Empresa n\xE3o identificada." });
       let userName = ctx.user.name || "";
       if (input.userName) {
         const updated = await updateMemberProfile(memberId, { userName: input.userName });
@@ -10643,7 +10783,7 @@ var appRouter = router({
           await setSetting(key, "", companyId);
         } else {
           if (!input.avatarDataUrl.startsWith("data:image/")) {
-            throw new TRPCError17({ code: "BAD_REQUEST", message: "Imagem de perfil inv\xE1lida." });
+            throw new TRPCError18({ code: "BAD_REQUEST", message: "Imagem de perfil inv\xE1lida." });
           }
           await setSetting(key, input.avatarDataUrl, companyId);
         }
@@ -10651,7 +10791,7 @@ var appRouter = router({
       return { success: true, userName };
     }),
     profileExtras: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).query(async ({ ctx }) => {
       if (ctx.user.role === "platform_admin" || !ctx.accountId) {
@@ -10663,20 +10803,20 @@ var appRouter = router({
       return { avatarDataUrl: avatar || null, alertDays };
     }),
     regenerateRecoveryCode: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).input(z13.object({ currentPassword: z13.string().min(1) })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role === "platform_admin") {
-        throw new TRPCError17({ code: "BAD_REQUEST", message: "Indispon\xEDvel para admin da plataforma nesta tela." });
+        throw new TRPCError18({ code: "BAD_REQUEST", message: "Indispon\xEDvel para admin da plataforma nesta tela." });
       }
       const memberId = ctx.memberAccountId ?? Math.abs(ctx.user.id);
       const ok = await verifyMemberPassword(memberId, input.currentPassword);
-      if (!ok) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Senha atual incorreta." });
+      if (!ok) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Senha atual incorreta." });
       const result = await regenerateMemberRecoveryCode(memberId);
       return { success: true, recoveryCode: result.recoveryCode };
     }),
     logoutAllSessions: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).mutation(async ({ ctx }) => {
       if (ctx.user.role === "platform_admin") return { success: true };
@@ -10698,8 +10838,22 @@ var appRouter = router({
     aiSupport: router({
       chat: platformProcedure.input(z13.object({
         prompt: z13.string().trim().min(1).max(12e3),
-        history: z13.array(z13.object({ role: z13.enum(["user", "assistant"]), content: z13.string().max(12e3) })).max(30).optional()
-      })).mutation(async ({ input }) => runPersistentGemini(input.prompt, input.history ?? []))
+        history: z13.array(z13.object({ role: z13.enum(["user", "assistant"]), content: z13.string().max(12e3) })).max(30).optional(),
+        attachments: z13.array(z13.object({
+          name: z13.string().trim().min(1).max(200),
+          mimeType: z13.string().max(100),
+          kind: z13.enum(["image", "pdf", "text"]),
+          data: z13.string().min(1).max(AI_MAX_TOTAL_CHARS)
+        })).max(AI_MAX_ATTACHMENTS).optional()
+      })).mutation(async ({ input }) => {
+        const attachments = input.attachments ?? [];
+        if (aiAttachmentsSize(attachments) > AI_MAX_TOTAL_CHARS) throw new TRPCError18({ code: "PAYLOAD_TOO_LARGE", message: "Os anexos passaram do limite de envio (cerca de 4 MB no total). Envie menos arquivos ou arquivos menores." });
+        for (const file of attachments) {
+          if (file.kind === "image" && !AI_IMAGE_TYPES.includes(file.mimeType)) throw new TRPCError18({ code: "BAD_REQUEST", message: `Formato de imagem n\xE3o aceito: ${file.name}.` });
+          if (file.kind === "text" && file.data.length > AI_MAX_TEXT_CHARS) throw new TRPCError18({ code: "BAD_REQUEST", message: `O arquivo ${file.name} \xE9 grande demais.` });
+        }
+        return runPersistentGemini(input.prompt, input.history ?? [], attachments);
+      })
     }),
     plans: router({
       list: platformProcedure.query(() => listSubscriptionPlans()),
@@ -10789,10 +10943,10 @@ var appRouter = router({
         return { success: true };
       }),
       start: platformProcedure.input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional() })).mutation(({ ctx, input }) => {
-        if (input.id !== 1) throw new TRPCError17({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
+        if (input.id !== 1) throw new TRPCError18({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
         const session = getPlatformTestSession(key);
-        if (session.status === "completed") throw new TRPCError17({ code: "BAD_REQUEST", message: "Reinicie a sess\xE3o de sandbox para testar novamente." });
+        if (session.status === "completed") throw new TRPCError18({ code: "BAD_REQUEST", message: "Reinicie a sess\xE3o de sandbox para testar novamente." });
         session.status = "in_progress";
         session.lastLatitude = input.latitude ?? null;
         session.lastLongitude = input.longitude ?? null;
@@ -10800,10 +10954,10 @@ var appRouter = router({
         return { visitId: 1, storeId: 1, storeName: "Loja de teste do administrador geral", ...session };
       }),
       complete: platformProcedure.input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional() })).mutation(({ ctx, input }) => {
-        if (input.id !== 1) throw new TRPCError17({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
+        if (input.id !== 1) throw new TRPCError18({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
         const session = getPlatformTestSession(key);
-        if (session.status !== "in_progress") throw new TRPCError17({ code: "BAD_REQUEST", message: "Fa\xE7a o check-in antes do check-out." });
+        if (session.status !== "in_progress") throw new TRPCError18({ code: "BAD_REQUEST", message: "Fa\xE7a o check-in antes do check-out." });
         session.status = "completed";
         session.lastLatitude = input.latitude ?? null;
         session.lastLongitude = input.longitude ?? null;
@@ -10811,7 +10965,7 @@ var appRouter = router({
         return { visitId: 1, storeId: 1, storeName: "Loja de teste do administrador geral", ...session };
       }),
       uploadPhoto: platformProcedure.input(z13.object({ storeId: z13.number().int().positive().optional().nullable(), visitId: z13.number().int().positive().optional(), capturedAt: z13.string(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional(), imageBase64: z13.string().min(100).max(6e6), mimeType: z13.string().default("image/jpeg"), idempotencyKey: z13.string().min(8).max(64) })).mutation(({ ctx, input }) => {
-        if (input.visitId !== void 0 && input.visitId !== 1) throw new TRPCError17({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
+        if (input.visitId !== void 0 && input.visitId !== 1) throw new TRPCError18({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
         const session = getPlatformTestSession(key);
         session.photoCount += 1;
@@ -10832,7 +10986,7 @@ var appRouter = router({
           await replaceCompanyFeatureOverrides({ companyId: created.companyId, overrides, updatedByPlatformAdminId: ctx.platformAdminId ?? null, reason: "Definido na cria\xE7\xE3o da empresa" });
           return created;
         } catch (error) {
-          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
           throw error;
         }
       }),
@@ -10845,14 +10999,14 @@ var appRouter = router({
       list: platformProcedure.query(() => listMemberAccounts()),
       create: platformProcedure.input(z13.object({ companyId: z13.number().int().positive(), userName: z13.string().min(2), email: z13.string().email(), password: z13.string().min(8), role: companyUserRole })).mutation(async ({ input, ctx }) => {
         const company = await getCompanyById(input.companyId);
-        if (!company) throw new TRPCError17({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-        if (!company.active) throw new TRPCError17({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
+        if (!company) throw new TRPCError18({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+        if (!company.active) throw new TRPCError18({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
         try {
           const created = await createCompanyUser(input);
           void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usu\xE1rio criado pelo administrador geral: ${input.userName}`, newData: { companyId: input.companyId, email: input.email, role: input.role } });
           return created;
         } catch (error) {
-          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
           throw error;
         }
       })
@@ -10887,8 +11041,9 @@ var appRouter = router({
       })();
       return created;
     }),
-    setActive: platformProcedure.input(z13.object({ id: z13.number().int().positive(), active: z13.boolean() })).mutation(async ({ input }) => {
+    setActive: platformProcedure.input(z13.object({ id: z13.number().int().positive(), active: z13.boolean() })).mutation(async ({ ctx, input }) => {
       await setMemberActive(input.id, input.active);
+      void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Administrador geral ${input.active ? "liberou" : "bloqueou"} o usu\xE1rio #${input.id}` });
       return { success: true };
     }),
     resetPassword: platformProcedure.input(z13.object({ id: z13.number().int().positive(), newPassword: z13.string().min(8) })).mutation(async ({ input }) => {
@@ -10901,7 +11056,7 @@ var appRouter = router({
     permissions: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive() })).query(async ({ ctx, input }) => {
       const members = await listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
-      if (!target) throw new TRPCError17({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!target) throw new TRPCError18({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
       return getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role);
     }),
     setPermissions: companyAdminFeatureProcedure("teamManagement").input(z13.object({
@@ -10910,18 +11065,18 @@ var appRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const members = await listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
-      if (!target) throw new TRPCError17({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!target) throw new TRPCError18({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
       const modes = Object.fromEntries(input.permissions.map(({ featureKey, mode }) => [featureKey, mode]));
       if (target.role === "company_admin" && modes.teamManagement === "deny") {
-        throw new TRPCError17({ code: "BAD_REQUEST", message: "A permiss\xE3o de gest\xE3o da equipe n\xE3o pode ser bloqueada individualmente para um administrador da empresa." });
+        throw new TRPCError18({ code: "BAD_REQUEST", message: "A permiss\xE3o de gest\xE3o da equipe n\xE3o pode ser bloqueada individualmente para um administrador da empresa." });
       }
       const base = await getCompanyEntitlementBase(ctx.accountId);
       for (const [featureKey, mode] of Object.entries(modes)) {
         if (mode === "allow" && !base.companyFeatures[featureKey]) {
-          throw new TRPCError17({ code: "BAD_REQUEST", message: `O m\xF3dulo ${featureKey} n\xE3o est\xE1 liberado para esta empresa.` });
+          throw new TRPCError18({ code: "BAD_REQUEST", message: `O m\xF3dulo ${featureKey} n\xE3o est\xE1 liberado para esta empresa.` });
         }
         if (mode === "allow" && !ROLE_FEATURE_CEILING[target.role].includes(featureKey)) {
-          throw new TRPCError17({ code: "BAD_REQUEST", message: `O papel ${target.role} n\xE3o permite liberar o m\xF3dulo ${featureKey}.` });
+          throw new TRPCError18({ code: "BAD_REQUEST", message: `O papel ${target.role} n\xE3o permite liberar o m\xF3dulo ${featureKey}.` });
         }
       }
       const before = await getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role);
@@ -10959,21 +11114,21 @@ var appRouter = router({
         })();
         return created;
       } catch (error) {
-        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
         console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message });
-        if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError17({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
-        if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError17({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados est\xE1 com a estrutura de usu\xE1rios desatualizada. A implanta\xE7\xE3o precisa concluir a migra\xE7\xE3o." });
-        throw new TRPCError17({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar o usu\xE1rio. Verifique os dados e tente novamente." });
+        if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError18({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
+        if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError18({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados est\xE1 com a estrutura de usu\xE1rios desatualizada. A implanta\xE7\xE3o precisa concluir a migra\xE7\xE3o." });
+        throw new TRPCError18({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar o usu\xE1rio. Verifique os dados e tente novamente." });
       }
     }),
     update: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), userName: z13.string().min(2).optional(), email: z13.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
-      if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError17({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode remover o pr\xF3prio n\xEDvel administrativo." });
+      if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError18({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode remover o pr\xF3prio n\xEDvel administrativo." });
       const usersBefore = await listMemberAccounts(ctx.accountId);
       const beforeUser = usersBefore.find((u) => u.id === input.id) || null;
       try {
         await updateCompanyUser(input.id, ctx.accountId, { userName: input.userName, email: input.email, role: input.role });
       } catch (error) {
-        if (error?.message === "A empresa precisa manter pelo menos um administrador ativo.") throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
+        if (error?.message === "A empresa precisa manter pelo menos um administrador ativo.") throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
         throw error;
       }
       const usersAfter = await listMemberAccounts(ctx.accountId);
@@ -10997,11 +11152,11 @@ var appRouter = router({
       storeIds: z13.array(z13.number().int().positive()).optional()
     })).mutation(async ({ ctx, input }) => {
       if (input.workStartTime && input.workEndTime && input.workEndTime <= input.workStartTime) {
-        throw new TRPCError17({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao in\xEDcio." });
+        throw new TRPCError18({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao in\xEDcio." });
       }
       const usersBefore = await listMemberAccounts(ctx.accountId);
       const before = usersBefore.find((member) => member.id === input.id);
-      if (!before || before.role !== "promoter") throw new TRPCError17({ code: "NOT_FOUND", message: "Promotor n\xE3o encontrado nesta empresa." });
+      if (!before || before.role !== "promoter") throw new TRPCError18({ code: "NOT_FOUND", message: "Promotor n\xE3o encontrado nesta empresa." });
       try {
         await updatePromoterManagement({
           companyId: ctx.accountId,
@@ -11018,9 +11173,9 @@ var appRouter = router({
           await setPromoterStoreAssignments(database2, ctx.accountId, input.id, input.storeIds);
         }
       } catch (error) {
-        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail ou matr\xEDcula j\xE1 est\xE1 em uso." });
+        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail ou matr\xEDcula j\xE1 est\xE1 em uso." });
         if (error?.message?.includes("n\xE3o pertence") || error?.message?.includes("inativas") || error?.message?.includes("programa\xE7\xE3o") || error?.message?.includes("dia programado")) {
-          throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
+          throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
         }
         throw error;
       }
@@ -11030,14 +11185,14 @@ var appRouter = router({
       return { success: true };
     }),
     setActive: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), active: z13.boolean() })).mutation(async ({ ctx, input }) => {
-      if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError17({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode desativar a pr\xF3pria sess\xE3o." });
+      if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError18({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode desativar a pr\xF3pria sess\xE3o." });
       await setMemberActive(input.id, input.active, ctx.accountId);
       void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Usu\xE1rio ${input.active ? "ativado" : "desativado"} #${input.id}`, newData: { active: input.active } });
       return { success: true };
     }),
     resetPassword: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), newPassword: z13.string().min(8) })).mutation(async ({ ctx, input }) => {
       const users3 = await listMemberAccounts(ctx.accountId);
-      if (!users3.some((account) => account.id === input.id)) throw new TRPCError17({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!users3.some((account) => account.id === input.id)) throw new TRPCError18({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
       await resetMemberPassword(input.id, input.newPassword);
       return { success: true };
     })
@@ -11080,7 +11235,7 @@ var appRouter = router({
       return await inventoryAlertsFor2(ctx);
     } catch (error) {
       console.error("[inventoryAlerts] falha ao consultar validades", error);
-      throw new TRPCError17({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel consultar as validades." });
+      throw new TRPCError18({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel consultar as validades." });
     }
   }),
   // Endereço para carimbo de foto/ponto (qualquer membro da empresa). Feito no servidor com cache.
@@ -11139,27 +11294,27 @@ var appRouter = router({
   operations: router({
     promoters: router({
       list: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError17({ code: "FORBIDDEN", message: "Promotores n\xE3o podem consultar a lista da equipe." });
+        if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Promotores n\xE3o podem consultar a lista da equipe." });
         return (await listMemberAccounts(ctx.accountId)).filter((member) => member.role === "promoter" && member.active).map(({ id: id2, userName, role, active }) => ({ id: id2, userName, role, active }));
       })
     }),
     stores: router({
       list: commercialFeatureProcedure("fieldOperations").input(z13.object({ search: z13.string().optional() }).optional()).query(({ ctx, input }) => listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
       create: commercialFeatureProcedure("fieldOperations").input(z13.object({ name: z13.string().min(2), city: z13.string().min(2), address: z13.string().optional(), state: z13.string().length(2).optional(), cep: z13.string().optional(), code: z13.string().optional(), latitude: z13.number().optional(), longitude: z13.number().optional(), notes: z13.string().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError17({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
+        if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
         return createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
       }),
       update: commercialFeatureProcedure("fieldOperations").input(z13.object({ id: z13.number().int().positive(), name: z13.string().trim().min(2).max(255).optional(), city: z13.string().trim().min(2).max(255).optional(), state: z13.string().trim().length(2).optional().or(z13.literal("")), address: z13.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError17({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem editar lojas." });
+        if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem editar lojas." });
         const { id: id2, ...patch } = input;
         const ok = await updateOperationalStore(ctx.accountId, id2, { ...patch, state: patch.state === void 0 ? void 0 : patch.state ? patch.state.toUpperCase() : null });
-        if (!ok) throw new TRPCError17({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+        if (!ok) throw new TRPCError18({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
         await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", entityId: id2, description: `Loja editada: ${patch.name ?? `#${id2}`}`, newData: patch });
         return { success: true };
       }),
       archive: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const store = await archiveOperationalStore(ctx.accountId, input.id);
-        if (!store) throw new TRPCError17({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+        if (!store) throw new TRPCError18({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
         await auditFromCtx(ctx, { action: "delete", module: "stores", entityType: "store", entityId: input.id, description: `Loja removida da lista: ${store.name}` });
         return { success: true };
       })
@@ -11189,28 +11344,28 @@ var appRouter = router({
       saveWeekly: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive().optional(), name: z13.string().trim().min(2).max(255), weekday: z13.number().int().min(0).max(6), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
         const members = await listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
-        if (!promoter) throw new TRPCError17({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        if (!promoter) throw new TRPCError18({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         try {
           const saved = await saveWeeklyRouteSchedule({ ...input, companyId: ctx.accountId });
           void auditFromCtx(ctx, { action: input.id ? "update" : "create", module: "routes", entityType: "weekly_route", entityId: saved?.id, entityLabel: input.name, description: `Roteiro semanal salvo: ${input.name} (${promoter.userName})`, newData: input });
           return saved;
         } catch (error) {
-          if (error instanceof WeeklyRouteConflictError) throw new TRPCError17({ code: "CONFLICT", message: error.message });
-          if (error?.message?.includes("n\xE3o pertencem") || error?.message?.includes("ao menos uma loja")) throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
+          if (error instanceof WeeklyRouteConflictError) throw new TRPCError18({ code: "CONFLICT", message: error.message });
+          if (error?.message?.includes("n\xE3o pertencem") || error?.message?.includes("ao menos uma loja")) throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
           throw error;
         }
       }),
       deleteWeekly: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const result = await deleteWeeklyRouteSchedule(ctx.accountId, input.id);
-        if (!result.success) throw new TRPCError17({ code: "NOT_FOUND", message: "Roteiro n\xE3o encontrado." });
+        if (!result.success) throw new TRPCError18({ code: "NOT_FOUND", message: "Roteiro n\xE3o encontrado." });
         void auditFromCtx(ctx, { action: "delete", module: "routes", entityType: "weekly_route", entityId: input.id, description: `Roteiro semanal exclu\xEDdo: #${input.id}` });
         return result;
       }),
       create: commercialFeatureProcedure("fieldOperations").input(z13.object({ name: z13.string().min(2), date: z13.string().min(8), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1), teamId: z13.number().int().positive().optional(), notes: z13.string().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError17({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
+        if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
         const members = await listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
-        if (!promoter) throw new TRPCError17({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        if (!promoter) throw new TRPCError18({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         const { storeIds, ...route } = input;
         return createOperationalRouteWithVisits({ route: { ...route, date: /* @__PURE__ */ new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" }, storeIds });
       }),
@@ -11219,12 +11374,12 @@ var appRouter = router({
         if (data.promoterId) {
           const members = await listMemberAccounts(ctx.accountId);
           const promoter = members.find((member) => member.id === data.promoterId && member.role === "promoter" && member.active);
-          if (!promoter) throw new TRPCError17({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+          if (!promoter) throw new TRPCError18({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         }
         try {
           return await updateOperationalRoute(ctx.accountId, id2, data);
         } catch (error) {
-          if (error instanceof RouteValidationError) throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
+          if (error instanceof RouteValidationError) throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
           throw error;
         }
       }),
@@ -11232,7 +11387,7 @@ var appRouter = router({
         try {
           return await deleteOperationalRoute(ctx.accountId, input.id);
         } catch (error) {
-          if (error instanceof RouteValidationError) throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
+          if (error instanceof RouteValidationError) throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
           throw error;
         }
       })
@@ -11263,7 +11418,7 @@ var appRouter = router({
         if (input.clientId) {
           const prior = await findSubmission(ctx.accountId, input.clientId);
           if (prior) {
-            if (prior.kind !== "visit_start" || prior.entityId !== input.id) throw new TRPCError17({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
+            if (prior.kind !== "visit_start" || prior.entityId !== input.id) throw new TRPCError18({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
             const [again] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: promoterId ?? void 0 });
             if (again) return again;
           }
@@ -11274,15 +11429,15 @@ var appRouter = router({
           await autoCloseStaleVisits(ctx.accountId, promoterId, today);
         }
         const [owned] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: promoterId ?? void 0 });
-        if (!owned) throw new TRPCError17({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
-        if (promoterId !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError17({ code: "FORBIDDEN", message: "Visita n\xE3o pertence ao promotor autenticado." });
+        if (!owned) throw new TRPCError18({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        if (promoterId !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError18({ code: "FORBIDDEN", message: "Visita n\xE3o pertence ao promotor autenticado." });
         if (owned.visit.status !== "pending") return owned;
         if (promoterId != null) {
           const todayVisits = await listOperationalVisits(ctx.accountId, { promoterId, date: today });
           const openVisit = todayVisits.find((v) => v.visit.status === "in_progress" && v.visit.id !== input.id);
           if (openVisit) {
             const storeName = openVisit.store?.name || "a loja atual";
-            throw new TRPCError17({
+            throw new TRPCError18({
               code: "CONFLICT",
               message: `N\xE3o \xE9 poss\xEDvel fazer check-in em outra loja. Realize o check-out em "${storeName}" primeiro.`
             });
@@ -11294,10 +11449,10 @@ var appRouter = router({
       }),
       complete: commercialFeatureProcedure("visitCheckIn").input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional(), notes: z13.string().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
         const [owned] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? void 0 });
-        if (!owned) throw new TRPCError17({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        if (!owned) throw new TRPCError18({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
         if (input.clientId) {
           const prior = await findSubmission(ctx.accountId, input.clientId);
-          if (prior && (prior.kind !== "visit_complete" || prior.entityId !== input.id)) throw new TRPCError17({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
+          if (prior && (prior.kind !== "visit_complete" || prior.entityId !== input.id)) throw new TRPCError18({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
           if (prior) return owned;
         }
         if (owned.visit.status === "completed") return owned;
@@ -11377,7 +11532,7 @@ var appRouter = router({
     }),
     byId: companyAdminFeatureProcedure("reports").input(z13.object({ id: z13.number().int().positive() })).query(async ({ ctx, input }) => {
       const row2 = await getAuditLogById(input.id, ctx.accountId);
-      if (!row2) throw new TRPCError17({ code: "NOT_FOUND", message: "Registro de auditoria n\xE3o encontrado." });
+      if (!row2) throw new TRPCError18({ code: "NOT_FOUND", message: "Registro de auditoria n\xE3o encontrado." });
       return row2;
     }),
     entityHistory: commercialFeatureProcedure("reports").input(z13.object({

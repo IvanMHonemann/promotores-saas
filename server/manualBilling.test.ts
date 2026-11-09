@@ -49,6 +49,7 @@ describe("IA de suporte nunca grava na branch principal", () => {
       }
       if (url.includes("generativelanguage.googleapis.com")) return json({ models: [] });
       if (url.includes("/git/ref/heads/")) return json({ object: { sha: "base" } });
+      if (url.includes("/git/trees/tree0")) return json({ tree: [{ path: "client/src/index.css", type: "blob", size: 10 }, { path: "client/src/App.tsx", type: "blob", size: 10 }] });
       if (url.includes("/contents/")) return json({ sha: "s", content: Buffer.from("x").toString("base64"), encoding: "base64" });
       if (url.includes("/git/commits/base")) return json({ tree: { sha: "tree0" } });
       if (url.endsWith("/git/blobs")) return json({ sha: "blob" });

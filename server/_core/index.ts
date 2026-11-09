@@ -7,7 +7,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
-import { serveStatic, setupVite } from "./vite";
+import { setupVite } from "./vite";
 import { runScheduledMaintenance } from "../scheduledMaintenance";
 import { notifyOwner } from "./notification";
 import { isScheduleRequestAuthorized } from "../scheduleAuth";
@@ -182,13 +182,14 @@ app.all("/api/scheduled/database-maintenance", async (req, res) => {
 }
 
 async function startServer() {
-  const app = await createApp();
+  const useViteDevServer = process.env.NODE_ENV === "development" && process.env.VITE_DEV_SERVER === "true";
+  // Produção em servidor próprio (VPS/Docker): usa o MESMO app da Vercel (server/vercel-entry.ts), com todas as
+  // rotas agendadas (manutenção completa, backup, arquivamento de espelhos) — evita divergência entre os dois.
+  const app = useViteDevServer ? await createApp() : await (await import("../vercel-entry")).createApp();
   const server = createServer(app);
 
-  if (process.env.NODE_ENV === "development" && process.env.VITE_DEV_SERVER === "true") {
+  if (useViteDevServer) {
     await setupVite(app, server);
-  } else {
-    serveStatic(app);
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");

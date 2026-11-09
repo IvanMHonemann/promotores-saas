@@ -31,7 +31,8 @@ function securityHeaders(_req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-async function createApp() {
+/** App de produção (Vercel e servidor próprio/VPS usam exatamente as mesmas rotas). */
+export async function createApp() {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -150,11 +151,15 @@ async function createApp() {
   const distPath = path.resolve(process.cwd(), "dist", "public");
   if (fs.existsSync(distPath)) {
     app.use(express.static(distPath, {
-      maxAge: "1y",
-      immutable: true,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith("index.html") || filePath.endsWith("sw.js")) {
           res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          // Arquivos com hash no nome (assets/*): imutáveis, cache longo.
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+          // Ícones, manifest, imagens da landing etc. (sem hash): cache curto.
+          res.setHeader("Cache-Control", "public, max-age=3600");
         }
       },
     }));

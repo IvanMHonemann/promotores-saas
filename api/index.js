@@ -12275,11 +12275,13 @@ async function createApp() {
   const distPath = path.resolve(process.cwd(), "dist", "public");
   if (fs.existsSync(distPath)) {
     app.use(express.static(distPath, {
-      maxAge: "1y",
-      immutable: true,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith("index.html") || filePath.endsWith("sw.js")) {
           res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=3600");
         }
       }
     }));
@@ -12295,5 +12297,6 @@ async function handler(req, res) {
   return app(req, res);
 }
 export {
+  createApp,
   handler as default
 };

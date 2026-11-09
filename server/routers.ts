@@ -815,7 +815,7 @@ export const appRouter = router({
     }),
     routes: router({
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ date: z.string().optional(), promoterId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
-        const date = input?.date || new Date().toISOString().slice(0, 10);
+        const date = input?.date || todayInZone();
         const ownerId = scopeMemberId(ctx); // null = administrador (vê tudo)
         if (ownerId !== null) {
           await db.materializeWeeklyRoutes(ctx.accountId, ownerId, date);
@@ -831,12 +831,31 @@ export const appRouter = router({
         const filterDate = ownerId === null && !input?.date ? undefined : (input?.date || date);
         return db.listOperationalRoutes(ctx.accountId, { date: filterDate, promoterId: ownerId ?? input?.promoterId });
       }),
-      weekly: commercialFeatureProcedure("fieldOperations").query(({ ctx }) => db.listWeeklyRouteSchedules(ctx.accountId)),
-      saveWeekly: companyAdminProcedure.input(z.object({ name: z.string().min(2).max(255), weekday: z.number().int().min(0).max(6), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1) })).mutation(async ({ ctx, input }) => {
+      // Promotor vê só os próprios roteiros semanais; administrador e supervisor veem todos.
+      weekly: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
+        const ownerId = scopeMemberId(ctx);
+        const rows = await db.listWeeklyRouteSchedules(ctx.accountId);
+        return ownerId === null ? rows : rows.filter((row) => row.promoterId === ownerId);
+      }),
+      saveWeekly: companyAdminProcedure.input(z.object({ id: z.number().int().positive().optional(), name: z.string().trim().min(2).max(255), weekday: z.number().int().min(0).max(6), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
         const members = await memberAuth.listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
         if (!promoter) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
-        return db.saveWeeklyRouteSchedule({ ...input, companyId: ctx.accountId });
+        try {
+          const saved = await db.saveWeeklyRouteSchedule({ ...input, companyId: ctx.accountId });
+          void auditFromCtx(ctx, { action: input.id ? "update" : "create", module: "routes", entityType: "weekly_route", entityId: saved?.id, entityLabel: input.name, description: `Roteiro semanal salvo: ${input.name} (${promoter.userName})`, newData: input });
+          return saved;
+        } catch (error: any) {
+          if (error instanceof db.WeeklyRouteConflictError) throw new TRPCError({ code: "CONFLICT", message: error.message });
+          if (error?.message?.includes("não pertencem") || error?.message?.includes("ao menos uma loja")) throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+          throw error;
+        }
+      }),
+      deleteWeekly: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        const result = await db.deleteWeeklyRouteSchedule(ctx.accountId, input.id);
+        if (!result.success) throw new TRPCError({ code: "NOT_FOUND", message: "Roteiro não encontrado." });
+        void auditFromCtx(ctx, { action: "delete", module: "routes", entityType: "weekly_route", entityId: input.id, description: `Roteiro semanal excluído: #${input.id}` });
+        return result;
       }),
       create: commercialFeatureProcedure("fieldOperations").input(z.object({ name: z.string().min(2), date: z.string().min(8), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1), teamId: z.number().int().positive().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Promotores não podem criar roteiros." });

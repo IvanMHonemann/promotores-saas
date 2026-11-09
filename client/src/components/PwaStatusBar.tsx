@@ -53,23 +53,27 @@ export function PwaStatusBar() {
   return (
     <>
       <div
-        className={`pwa-online-pill fixed bottom-3 left-3 z-30 flex max-w-[min(100vw-1.5rem,22rem)] flex-wrap items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow backdrop-blur print:hidden ${
+        className={`pwa-online-pill fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow backdrop-blur print:hidden ${
           isOnline ? "border-emerald-400/40 bg-emerald-500/90 text-white" : "border-rose-300/40 bg-rose-500/90 text-white"
         }`}
       >
         {isOnline ? <Wifi className="h-3.5 w-3.5 shrink-0" /> : <WifiOff className="h-3.5 w-3.5 shrink-0" />}
         <span>{isOnline ? "Online" : "Offline — dados locais"}</span>
-        {showInstallOffer && !isInstalling && (
+      </div>
+
+      {/* Fora do .pwa-online-pill: aquele indicador fica escondido na landing e no app (CSS). */}
+      {showInstallOffer && !isInstalling && (
+        <div className="pwa-install-cta fixed bottom-3 left-3 z-40 print:hidden">
           <Button
             size="sm"
             data-testid="pwa-install-button"
-            className="ml-1 h-7 gap-1 rounded-full bg-teal-400 px-2.5 text-[10px] font-bold text-slate-950 hover:bg-teal-300"
+            className="h-9 gap-1.5 rounded-full bg-teal-400 px-3.5 text-xs font-bold text-slate-950 shadow-lg shadow-teal-900/30 hover:bg-teal-300"
             onClick={onInstallClick}
           >
-            <Download className="h-3.5 w-3.5" /> Baixar aplicativo
+            <Download className="h-4 w-4" /> Baixar aplicativo
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Overlay de instalação com barra real de progresso */}
       {isInstalling && (

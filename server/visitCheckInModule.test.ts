@@ -64,6 +64,7 @@ describe("módulo visitCheckIn", () => {
     expect(src("drizzle/0030_visit_checkin_module.sql")).toContain("visitCheckIn");
     expect(src("drizzle/0030_visit_checkin_module.sql")).toContain("fieldOperations");
     expect(src("server/db.ts")).toContain("ensureVisitCheckInFeature");
+    expect(src("server/entitlements.ts")).toContain("ensureVisitCheckInFeature");
     expect(src("docs/visit-checkin-module.md")).toContain("visitCheckIn");
   });
 });

@@ -908,6 +908,16 @@ export async function ensureVisitCheckInFeature() {
           WHERE x.planId = spf.planId AND x.featureKey = 'visitCheckIn'
         )
     `);
+    // Planos que ganharam fieldOperations depois do backfill inicial: liga visitCheckIn junto.
+    await database.execute(sql`
+      UPDATE subscription_plan_features v
+      INNER JOIN subscription_plan_features f
+        ON f.planId = v.planId AND f.featureKey = 'fieldOperations'
+      SET v.enabled = 1
+      WHERE v.featureKey = 'visitCheckIn'
+        AND f.enabled = 1
+        AND v.enabled = 0
+    `);
     await database.execute(sql`
       INSERT INTO subscription_plan_features (planId, featureKey, enabled)
       SELECT p.id, 'visitCheckIn', 0 FROM subscription_plans p

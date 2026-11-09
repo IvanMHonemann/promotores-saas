@@ -26,13 +26,22 @@ export function getCompanyEntitlementBase(companyId: number): Promise<CompanyEnt
   return entitlementBaseCache.get(String(companyId), () => loadCompanyEntitlementBase(companyId));
 }
 
-let productsFeatureReady: Promise<void> | null = null;
+let commercialModulesReady: Promise<void> | null = null;
 async function loadCompanyEntitlementBase(companyId: number): Promise<CompanyEntitlementBase> {
-  // 0031: garante (uma vez por instância) que todo plano tenha o módulo "products" — default ON para clientes atuais.
-  if (!productsFeatureReady) {
-    productsFeatureReady = (async () => { try { await db.ensureProductsFeature(); } catch (error) { productsFeatureReady = null; console.warn("[entitlements] ensureProductsFeature", error); } })();
+  // Garante (uma vez por instância) módulos backfillados em planos antigos:
+  // visitCheckIn (alinha a fieldOperations) e products (default ON).
+  if (!commercialModulesReady) {
+    commercialModulesReady = (async () => {
+      try {
+        await db.ensureVisitCheckInFeature();
+        await db.ensureProductsFeature();
+      } catch (error) {
+        commercialModulesReady = null;
+        console.warn("[entitlements] ensure commercial modules", error);
+      }
+    })();
   }
-  await productsFeatureReady;
+  await commercialModulesReady;
   const resolved = await db.resolveCompanyPlan(companyId);
   const plan = (resolved.plan as Record<string, unknown> | null) ?? null;
   const rawKeys = Array.isArray(plan?.featureKeys)

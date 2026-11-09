@@ -4084,7 +4084,7 @@ function readTimeAlert(notes) {
   }
   return null;
 }
-var PUNCH_TOLERANCE_MS, PUNCH_OFFLINE_MAX_AGE_MS, TIME_ALERT_MARKER, OFFLINE_MARKER, fmt, JORNADA_ENCERRADA_MESSAGE;
+var PUNCH_TOLERANCE_MS, PUNCH_OFFLINE_MAX_AGE_MS, TIME_ALERT_MARKER, OFFLINE_MARKER, fmt;
 var init_punchTime = __esm({
   "shared/punchTime.ts"() {
     "use strict";
@@ -4093,7 +4093,6 @@ var init_punchTime = __esm({
     TIME_ALERT_MARKER = "[ALERTA-HORARIO]";
     OFFLINE_MARKER = "[MARCACAO-OFFLINE]";
     fmt = (d) => d.toISOString();
-    JORNADA_ENCERRADA_MESSAGE = "A jornada de hoje j\xE1 foi encerrada. Uma nova entrada s\xF3 \xE9 liberada no pr\xF3ximo dia. Se trabalhou depois da sa\xEDda, pe\xE7a uma inclus\xE3o de marca\xE7\xE3o no Cart\xE3o ponto.";
   }
 });
 
@@ -8138,7 +8137,6 @@ var timeTrackingRouter = router({
     const isOfflinePunch = punchTime.alert === "offline";
     const clockNote = isOfflinePunch && input.deviceTime ? clockAlertNote(new Date(input.deviceTime), assessDeviceClock(new Date(input.deviceTime), input.clock, /* @__PURE__ */ new Date())) : null;
     const newShiftSameDay = input.eventType === "clock_in" && lastToday === "clock_out";
-    if (newShiftSameDay && !isOfflinePunch) throw new TRPCError7({ code: "BAD_REQUEST", message: JORNADA_ENCERRADA_MESSAGE });
     const sequenceOk = !(input.eventType !== "clock_in" && (!lastToday || lastToday === "clock_out")) && isValidTransition(lastToday, input.eventType);
     const offlineSequenceNote = !sequenceOk && isOfflinePunch ? `${OFFLINE_SEQUENCE_MARKER} Marca\xE7\xE3o offline fora da sequ\xEAncia esperada (anterior: ${lastToday ?? "nenhuma"}). Conferir com o funcion\xE1rio.` : null;
     const notesWithAlert = [input.notes, punchTime.note, clockNote, offlineSequenceNote, newShiftSameDay ? `${NEW_SHIFT_MARKER} Nova entrada registrada depois da sa\xEDda no mesmo dia.` : null].filter(Boolean).join("\n") || void 0;

@@ -3,7 +3,6 @@ import { appRouter } from "./routers";
 import * as db from "./db";
 import * as ledger from "./ponto/ledger";
 import { PLAN_FEATURES } from "../shared/entitlements";
-import { JORNADA_ENCERRADA_MESSAGE } from "./modules/timeTracking";
 
 // 15:00 em São Paulo: longe da virada do dia.
 const NOW = new Date("2026-11-09T18:00:00.000Z");
@@ -39,19 +38,21 @@ const base = { latitude: -23.5, longitude: -46.6, accuracy: 10, locationStatus: 
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
-describe("jornada encerrada: nova entrada depois da saída no mesmo dia", () => {
+describe("nova entrada depois da saída no mesmo dia (sem restrição, sinalizada)", () => {
   const closedDay = [event(2, "clock_out", "2026-11-09T17:00:00.000Z"), event(1, "clock_in", "2026-11-09T12:00:00.000Z")];
 
-  it("recusa nova entrada online depois da saída do dia", async () => {
+  it("aceita nova entrada online depois da saída do dia e sinaliza para o gestor (Portaria 671, art. 74 I)", async () => {
     const append = setup(closedDay);
-    await expect(caller().timeTracking.registerEvent({ ...base, eventType: "clock_in" })).rejects.toMatchObject({ code: "BAD_REQUEST", message: JORNADA_ENCERRADA_MESSAGE });
-    expect(append).not.toHaveBeenCalled();
+    await expect(caller().timeTracking.registerEvent({ ...base, eventType: "clock_in" })).rejects.toThrow("stop-after-append");
+    expect(append).toHaveBeenCalledOnce();
+    expect(append.mock.calls[0][0].notes).toContain(ledger.NEW_SHIFT_MARKER);
   });
 
   it("libera a entrada no dia seguinte", async () => {
     const append = setup([event(2, "clock_out", "2026-11-08T21:00:00.000Z"), event(1, "clock_in", "2026-11-08T12:00:00.000Z")]);
     await expect(caller().timeTracking.registerEvent({ ...base, eventType: "clock_in" })).rejects.toThrow("stop-after-append");
     expect(append).toHaveBeenCalledOnce();
+    expect(String(append.mock.calls[0][0].notes ?? "")).not.toContain(ledger.NEW_SHIFT_MARKER);
   });
 
   it("não perde batida offline já feita no aparelho: aceita e sinaliza", async () => {

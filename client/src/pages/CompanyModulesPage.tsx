@@ -2,12 +2,12 @@ import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
-import { ENTITLEMENT_CATALOG } from "@shared/entitlements";
+import { ENTITLEMENT_CATALOG, type EntitlementKey } from "@shared/entitlements";
 
 /** Visão somente leitura dos módulos liberados para a empresa do usuário. */
 export default function CompanyModulesPage() {
   const entitlements = trpc.entitlements.mine.useQuery(undefined, { staleTime: 60_000 });
-  const effective = entitlements.data?.effective ?? {};
+  const effective: Partial<Record<EntitlementKey, boolean>> = entitlements.data?.effective ?? {};
   const enabled = ENTITLEMENT_CATALOG.filter((item) => effective[item.key]);
   // Enquanto os módulos não carregam, não mostramos "não liberados" (evita a mensagem errada no primeiro acesso).
   const disabled = entitlements.data ? ENTITLEMENT_CATALOG.filter((item) => !effective[item.key]) : [];

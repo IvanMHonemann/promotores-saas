@@ -19,6 +19,15 @@ function asDateStr(value: unknown): string {
   return String(value).slice(0, 10);
 }
 
+/**
+ * As colunas `date` do schema são tipadas como Date, mas o MySQL aceita a data
+ * no formato "AAAA-MM-DD" e o código sempre enviou texto. Este helper só ajusta
+ * o tipo para o TypeScript; o valor enviado ao banco continua exatamente igual.
+ */
+function dbDate(value: string): Date {
+  return value as unknown as Date;
+}
+
 let tableReady: Promise<void> | null = null;
 
 export async function ensureVacationSchedulesTable(): Promise<void> {
@@ -67,7 +76,7 @@ async function assertNoOverlap(tx: any, companyId: number, memberAccountId: numb
     eq(vacationSchedules.companyId, companyId),
     eq(vacationSchedules.memberAccountId, memberAccountId),
     eq(vacationSchedules.status, "scheduled"),
-    and(lte(vacationSchedules.startDate, endDate), gte(vacationSchedules.endDate, startDate)),
+    and(lte(vacationSchedules.startDate, dbDate(endDate)), gte(vacationSchedules.endDate, dbDate(startDate))),
   ];
   if (excludeId) conditions.push(ne(vacationSchedules.id, excludeId));
   const existing = await tx.select({ id: vacationSchedules.id }).from(vacationSchedules).where(and(...conditions)).limit(1);
@@ -82,7 +91,7 @@ async function teamOverlapWarning(database: any, companyId: number, memberAccoun
     .from(memberAccounts)
     .where(and(eq(memberAccounts.companyId, companyId), eq(memberAccounts.supervisorId, me.supervisorId), ne(memberAccounts.id, memberAccountId), eq(memberAccounts.active, true)));
   if (!teammates.length) return null;
-  const ids = teammates.map((t) => t.id);
+  const ids = teammates.map((t: { id: number }) => t.id);
   const overlaps = await database
     .select({ memberAccountId: vacationSchedules.memberAccountId })
     .from(vacationSchedules)
@@ -90,10 +99,12 @@ async function teamOverlapWarning(database: any, companyId: number, memberAccoun
       eq(vacationSchedules.companyId, companyId),
       eq(vacationSchedules.status, "scheduled"),
       inArray(vacationSchedules.memberAccountId, ids),
-      and(lte(vacationSchedules.startDate, endDate), gte(vacationSchedules.endDate, startDate)),
+      and(lte(vacationSchedules.startDate, dbDate(endDate)), gte(vacationSchedules.endDate, dbDate(startDate))),
     ));
   if (!overlaps.length) return null;
-  const names = teammates.filter((t) => overlaps.some((o) => o.memberAccountId === t.id)).map((t) => t.userName);
+  const names = teammates
+    .filter((t: { id: number }) => overlaps.some((o: { memberAccountId: number }) => o.memberAccountId === t.id))
+    .map((t: { userName: string }) => t.userName);
   return names.length ? `Atenção: ${names.join(", ")} da mesma equipe também estarão de férias neste período.` : null;
 }
 
@@ -122,8 +133,8 @@ export const vacationsRouter = router({
       const conds = [eq(vacationSchedules.companyId, ctx.accountId)];
       if (input?.memberAccountId) conds.push(eq(vacationSchedules.memberAccountId, input.memberAccountId));
       if (input?.status && input.status !== "all") conds.push(eq(vacationSchedules.status, input.status));
-      if (input?.from) conds.push(gte(vacationSchedules.endDate, input.from));
-      if (input?.to) conds.push(lte(vacationSchedules.startDate, input.to));
+      if (input?.from) conds.push(gte(vacationSchedules.endDate, dbDate(input.from)));
+      if (input?.to) conds.push(lte(vacationSchedules.startDate, dbDate(input.to)));
       const rows = await database
         .select({
           id: vacationSchedules.id,
@@ -148,7 +159,7 @@ export const vacationsRouter = router({
     }),
 
   mine: protectedProcedure.query(async ({ ctx }) => {
-    if (!ctx.memberAccountId) throw new TRPCError({ code: "FORBIDDEN" });
+    if (!ctx.memberAccountId || !ctx.accountId) throw new TRPCError({ code: "FORBIDDEN" });
     await ensureVacationSchedulesTable();
     const database = await requireDb();
     const rows = await database
@@ -182,8 +193,8 @@ export const vacationsRouter = router({
         await tx.insert(vacationSchedules).values({
           companyId: ctx.accountId,
           memberAccountId: input.memberAccountId,
-          startDate: input.startDate,
-          endDate: input.endDate,
+          startDate: dbDate(input.startDate),
+          endDate: dbDate(input.endDate),
           days,
           notes: input.notes || null,
           createdByMemberAccountId: ctx.memberAccountId!,
@@ -213,8 +224,8 @@ export const vacationsRouter = router({
         await assertNoOverlap(tx, ctx.accountId, row.memberAccountId, input.startDate, input.endDate, input.id);
         warning = await teamOverlapWarning(tx, ctx.accountId, row.memberAccountId, input.startDate, input.endDate);
         await tx.update(vacationSchedules).set({
-          startDate: input.startDate,
-          endDate: input.endDate,
+          startDate: dbDate(input.startDate),
+          endDate: dbDate(input.endDate),
           days,
           notes: input.notes ?? row.notes,
           updatedByMemberAccountId: ctx.memberAccountId!,
@@ -252,7 +263,7 @@ export const vacationsRouter = router({
       const from = input.month
         ? `${input.year}-${String(input.month).padStart(2, "0")}-01`
         : `${input.year}-01-01`;
-      const last = new Date(input.year, input.month, 0).getDate();
+      const last = new Date(input.year, input.month ?? 12, 0).getDate();
       const to = input.month
         ? `${input.year}-${String(input.month).padStart(2, "0")}-${String(last).padStart(2, "0")}`
         : `${input.year}-12-31`;
@@ -273,8 +284,8 @@ export const vacationsRouter = router({
         .where(and(
           eq(vacationSchedules.companyId, ctx.accountId),
           eq(vacationSchedules.status, "scheduled"),
-          lte(vacationSchedules.startDate, to),
-          gte(vacationSchedules.endDate, from),
+          lte(vacationSchedules.startDate, dbDate(to)),
+          gte(vacationSchedules.endDate, dbDate(from)),
         ));
       return rows.map((row) => ({ ...row, startDate: asDateStr(row.startDate), endDate: asDateStr(row.endDate) }));
     }),

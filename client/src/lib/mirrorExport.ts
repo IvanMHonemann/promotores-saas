@@ -57,6 +57,7 @@ export function memberLines(r: MirrorResult, opts?: { maskCpf?: boolean }): Arra
     ["Cargo/função", lab?.jobTitle || roleLabel(r.member.role)],
     ["Admissão", lab?.admissionDate ? fmtDate(lab.admissionDate) : NOT_INFORMED],
     ["Jornada contratada", `${jornada}${intervalo}`],
+    ["Horário contratual", lab?.schedule?.length ? lab.schedule.map(([a, b]) => `${a}–${b}`).join(", ") : NOT_INFORMED],
   ];
 }
 /** Campos obrigatórios para uso do espelho em RH/processo que ainda estão em branco. */

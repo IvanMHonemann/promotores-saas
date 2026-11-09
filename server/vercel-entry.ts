@@ -57,7 +57,9 @@ async function createApp() {
       try { missingPunch = await runMissingPunchAlerts(); } catch (e) { console.warn("[missing-punch]", e); }
       let photos = null;
       try { photos = await runPhotoMaintenance(); } catch (e) { console.warn("[photos]", e); }
-      return res.json({ ok: true, result, missingPunch, photos });
+      let clock = null;
+      try { const { runClockCheck } = await import("./ponto/clock"); clock = await runClockCheck("agendado"); } catch (e) { console.warn("[clock]", e); }
+      return res.json({ ok: true, result, missingPunch, photos, clock });
     } catch (error) {
       console.error("[Maintenance] failed:", error);
       await notifyOwner({ title: "Falha no backup diário", content: "O backup automático falhou." }).catch(() => undefined);

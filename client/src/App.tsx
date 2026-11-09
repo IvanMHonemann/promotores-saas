@@ -31,6 +31,8 @@ const VacationsPage = lazy(() => import("./pages/admin/VacationsPage"));
 const MyVacationsPage = lazy(() => import("./pages/promoter/MyVacationsPage"));
 const MyReceiptsPage = lazy(() => import("./pages/promoter/MyReceiptsPage"));
 const MyMirrorPage = lazy(() => import("./pages/promoter/MyMirrorPage"));
+const MyDataPage = lazy(() => import("./pages/promoter/MyDataPage"));
+const LgpdPage = lazy(() => import("./pages/admin/LgpdPage"));
 const PontoLegalPage = lazy(() => import("./pages/admin/PontoLegalPage"));
 const PlatformPontoLegalPage = lazy(() => import("./pages/platform/PlatformPontoLegalPage"));
 const TimesheetMirrorPage = lazy(() => import("./pages/admin/TimesheetMirrorPage"));
@@ -278,6 +280,8 @@ function Router() {
       <Route path="/ferias"><AdminProtected><FeatureProtected featureKey="timeTracking"><VacationsPage /></FeatureProtected></AdminProtected></Route>
       <Route path="/meus-comprovantes"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyReceiptsPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/meu-espelho"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyMirrorPage /></FeatureProtected></PromoterProtected></Route>
+      <Route path="/meus-dados"><PromoterProtected><MyDataPage /></PromoterProtected></Route>
+      <Route path="/lgpd"><CompanyAdminProtected><LgpdPage /></CompanyAdminProtected></Route>
       <Route path="/ponto-legal"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><PontoLegalPage /></FeatureProtected></CompanyAdminProtected></Route>
       <Route path="/minhas-ferias"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyVacationsPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/"><RootRoute /></Route>

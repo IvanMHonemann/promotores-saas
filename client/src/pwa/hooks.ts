@@ -1,13 +1,25 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+export type PwaDebugInfo = {
+  hasDeferredPrompt: boolean;
+  standalone: boolean;
+  userAgent: string;
+  lastOutcome: string;
+  lastError: string;
+  isInstalling: boolean;
+  justInstalled: boolean;
+  swControlled: boolean;
+};
+
 declare global {
   interface Window {
     __gondupDeferredPrompt?: BeforeInstallPromptEvent | null;
+    __gondupPwaDebug?: PwaDebugInfo;
   }
 }
 
@@ -21,18 +33,19 @@ export function isStandaloneDisplay(): boolean {
 }
 
 export function useOnlineStatus() {
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
-  useEffect(() => {
-    const online = () => setIsOnline(true);
-    const offline = () => setIsOnline(false);
-    window.addEventListener("online", online);
-    window.addEventListener("offline", offline);
-    return () => {
-      window.removeEventListener("online", online);
-      window.removeEventListener("offline", offline);
-    };
-  }, []);
-  return isOnline;
+  const get = () => (typeof navigator === "undefined" ? true : navigator.onLine);
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      window.addEventListener("online", onStoreChange);
+      window.addEventListener("offline", onStoreChange);
+      return () => {
+        window.removeEventListener("online", onStoreChange);
+        window.removeEventListener("offline", onStoreChange);
+      };
+    },
+    get,
+    () => true,
+  );
 }
 
 type InstallStore = {
@@ -40,15 +53,15 @@ type InstallStore = {
   isInstalling: boolean;
   installProgress: number;
   installStep: string;
-  /** Instalação acabou mas o PWA pode não ter aberto sozinho. */
   showOpenFallback: boolean;
-  /** appinstalled já disparou nesta sessão (esconde o botão Baixar). */
   justInstalled: boolean;
   isIosDevice: boolean;
   isStandalone: boolean;
+  lastOutcome: string;
+  lastError: string;
 };
 
-const INSTALL_TIMEOUT_MS = 20_000;
+const INSTALL_TIMEOUT_MS = 25_000;
 
 const listeners = new Set<() => void>();
 let store: InstallStore = {
@@ -60,6 +73,8 @@ let store: InstallStore = {
   justInstalled: false,
   isIosDevice: false,
   isStandalone: typeof window === "undefined" ? false : isStandaloneDisplay(),
+  lastOutcome: "",
+  lastError: "",
 };
 
 function emit() {
@@ -68,6 +83,7 @@ function emit() {
 
 function patch(partial: Partial<InstallStore>) {
   store = { ...store, ...partial };
+  syncDebug();
   emit();
 }
 
@@ -80,73 +96,198 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
+function logPwa(...args: unknown[]) {
+  try {
+    console.info("[gondup-pwa]", ...args);
+  } catch {
+    /* ignore */
+  }
+}
+
+function syncDebug() {
+  if (typeof window === "undefined") return;
+  window.__gondupPwaDebug = {
+    hasDeferredPrompt: Boolean(store.deferredPrompt || window.__gondupDeferredPrompt),
+    standalone: store.isStandalone || isStandaloneDisplay(),
+    userAgent: navigator.userAgent || "",
+    lastOutcome: store.lastOutcome,
+    lastError: store.lastError,
+    isInstalling: store.isInstalling,
+    justInstalled: store.justInstalled,
+    swControlled: Boolean(navigator.serviceWorker?.controller),
+  };
+}
+
 let launchStarted = false;
-let waitingForInstalled: { resolve: () => void; timer: ReturnType<typeof setTimeout> } | null = null;
+let waitingForInstalled: { resolve: (v: "installed" | "timeout") => void; timer: ReturnType<typeof setTimeout> } | null =
+  null;
 let bootstrapped = false;
+let progressTicker: ReturnType<typeof setInterval> | null = null;
+
+function clearProgressTicker() {
+  if (progressTicker) {
+    clearInterval(progressTicker);
+    progressTicker = null;
+  }
+}
 
 function openInstalledApp() {
   if (launchStarted) return;
   launchStarted = true;
   const appUrl = `${window.location.origin}/?installed=1`;
+  logPwa("openInstalledApp", appUrl);
   try {
     window.open(appUrl, "_blank")?.focus();
   } catch {
     /* ignore */
   }
   window.setTimeout(() => {
-    // No Android/Chrome, navegar para a start_url costuma disparar "Abrir no app".
-    if (!isStandaloneDisplay()) {
-      window.location.assign(appUrl);
-    }
+    if (!isStandaloneDisplay()) window.location.assign(appUrl);
   }, 450);
 }
 
-function finishInstalled(opened: boolean) {
-  if (waitingForInstalled) {
-    clearTimeout(waitingForInstalled.timer);
-    waitingForInstalled.resolve();
-    waitingForInstalled = null;
-  }
-  patch({
-    installProgress: 100,
-    installStep: opened ? "Instalação concluída — abrindo…" : "Instalação concluída",
-    deferredPrompt: null,
-    justInstalled: true,
-    showOpenFallback: !opened,
-  });
-  window.__gondupDeferredPrompt = null;
-  if (opened) {
-    window.setTimeout(() => {
-      openInstalledApp();
-      // Se ainda estivermos na aba do navegador depois de um tempo, oferece Abrir.
-      window.setTimeout(() => {
-        if (!isStandaloneDisplay()) {
-          patch({ isInstalling: false, showOpenFallback: true, installStep: "Toque para abrir o aplicativo instalado." });
-        } else {
-          patch({ isInstalling: false, installStep: "", showOpenFallback: false });
-        }
-      }, 1200);
-    }, 350);
-  } else {
-    patch({ isInstalling: false, showOpenFallback: true, installStep: "Toque para abrir o aplicativo instalado." });
-  }
+function resolveWait(result: "installed" | "timeout") {
+  if (!waitingForInstalled) return;
+  clearTimeout(waitingForInstalled.timer);
+  const { resolve } = waitingForInstalled;
+  waitingForInstalled = null;
+  resolve(result);
 }
 
 function waitForAppInstalled(): Promise<"installed" | "timeout"> {
   return new Promise((resolve) => {
     if (waitingForInstalled) {
       clearTimeout(waitingForInstalled.timer);
-      waitingForInstalled.resolve();
+      waitingForInstalled.resolve("timeout");
     }
     const timer = setTimeout(() => {
       waitingForInstalled = null;
       resolve("timeout");
     }, INSTALL_TIMEOUT_MS);
-    waitingForInstalled = {
-      timer,
-      resolve: () => resolve("installed"),
-    };
+    waitingForInstalled = { timer, resolve };
   });
+}
+
+function finishInstalled() {
+  clearProgressTicker();
+  resolveWait("installed");
+  logPwa("appinstalled / finishInstalled");
+  patch({
+    installProgress: 100,
+    installStep: "Instalação concluída — abrindo…",
+    deferredPrompt: null,
+    justInstalled: true,
+    lastOutcome: "installed",
+    isInstalling: true,
+  });
+  window.__gondupDeferredPrompt = null;
+  window.setTimeout(() => {
+    openInstalledApp();
+    window.setTimeout(() => {
+      if (!isStandaloneDisplay()) {
+        patch({
+          isInstalling: false,
+          showOpenFallback: true,
+          installStep: "Toque para abrir o aplicativo instalado.",
+        });
+      } else {
+        patch({ isInstalling: false, installStep: "", showOpenFallback: false });
+      }
+    }, 1200);
+  }, 350);
+}
+
+function startDownloadProgress() {
+  clearProgressTicker();
+  patch({
+    isInstalling: true,
+    showOpenFallback: false,
+    installStep: "Baixando aplicativo…",
+    installProgress: Math.max(store.installProgress, 55),
+  });
+  progressTicker = setInterval(() => {
+    if (!store.isInstalling || store.installProgress >= 92 || store.justInstalled) {
+      clearProgressTicker();
+      return;
+    }
+    patch({ installProgress: Math.min(92, store.installProgress + 2) });
+  }, 500);
+}
+
+/**
+ * Deve ser chamado de forma SÍNCRONA no handler de clique.
+ * Qualquer await antes de prompt() perde o user-gesture e o Chrome fecha o diálogo na hora.
+ * Retorna: "prompting" | "no-prompt" | "busy"
+ */
+export function beginNativeInstallFromGesture(): "prompting" | "no-prompt" | "busy" {
+  if (store.isInstalling) {
+    logPwa("beginNativeInstall: busy");
+    return "busy";
+  }
+  const promptEvent = store.deferredPrompt || window.__gondupDeferredPrompt || null;
+  if (!promptEvent) {
+    logPwa("beginNativeInstall: no deferred prompt");
+    patch({ lastOutcome: "no-prompt", lastError: "" });
+    return "no-prompt";
+  }
+
+  launchStarted = false;
+  // Consumir o evento já: BIP só pode ser usado uma vez.
+  patch({ deferredPrompt: null, lastError: "", lastOutcome: "prompting" });
+  window.__gondupDeferredPrompt = null;
+
+  let promptPromise: Promise<void>;
+  try {
+    // SÍNCRONO no gesto do usuário — não await antes disto.
+    promptPromise = promptEvent.prompt();
+    logPwa("prompt() called synchronously");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logPwa("prompt() threw", msg);
+    patch({ lastOutcome: "prompt-error", lastError: msg, isInstalling: false, installProgress: 0 });
+    return "no-prompt";
+  }
+
+  void (async () => {
+    try {
+      await promptPromise;
+      const choice = await promptEvent.userChoice;
+      logPwa("userChoice", choice.outcome);
+      patch({ lastOutcome: choice.outcome });
+      if (choice.outcome !== "accepted") {
+        // Fecha quieto — sem barra falsa.
+        clearProgressTicker();
+        patch({ isInstalling: false, installProgress: 0, installStep: "" });
+        return;
+      }
+      startDownloadProgress();
+      const result = await waitForAppInstalled();
+      clearProgressTicker();
+      if (result === "installed" || store.justInstalled || launchStarted) return;
+      logPwa("appinstalled timeout — showing open fallback");
+      patch({
+        installProgress: 100,
+        installStep: "A instalação pode continuar em segundo plano.",
+        isInstalling: false,
+        justInstalled: true,
+        showOpenFallback: true,
+        lastOutcome: "timeout",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logPwa("install flow error", msg);
+      clearProgressTicker();
+      patch({
+        isInstalling: false,
+        installProgress: 0,
+        installStep: "",
+        lastOutcome: "error",
+        lastError: msg,
+      });
+    }
+  })();
+
+  return "prompting";
 }
 
 function bootstrapInstallListeners() {
@@ -159,103 +300,30 @@ function bootstrapInstallListeners() {
     isStandalone: isStandaloneDisplay(),
     deferredPrompt: window.__gondupDeferredPrompt || null,
   });
+  logPwa("bootstrap", { hasPrompt: Boolean(store.deferredPrompt), standalone: store.isStandalone, ua: ua.slice(0, 80) });
 
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
     const bip = event as BeforeInstallPromptEvent;
     window.__gondupDeferredPrompt = bip;
-    patch({ deferredPrompt: bip });
+    patch({ deferredPrompt: bip, lastOutcome: store.lastOutcome || "bip-captured" });
+    logPwa("beforeinstallprompt captured");
   });
 
   window.addEventListener("appinstalled", () => {
-    // Se o fluxo de install() já está esperando, ele resolve e abre.
-    if (waitingForInstalled) {
-      finishInstalled(true);
+    logPwa("appinstalled event");
+    if (waitingForInstalled || store.isInstalling) {
+      finishInstalled();
       return;
     }
-    // Instalação pelo menu do Chrome (sem nosso botão): ainda assim esconde o CTA e tenta abrir.
+    // Instalação pelo menu do navegador (sem nosso botão).
     launchStarted = false;
-    patch({ justInstalled: true, deferredPrompt: null, isInstalling: true, installProgress: 100, installStep: "Instalação concluída — abrindo…" });
+    patch({ justInstalled: true, deferredPrompt: null, lastOutcome: "installed-via-browser" });
     window.__gondupDeferredPrompt = null;
-    window.setTimeout(() => finishInstalled(true), 200);
+    finishInstalled();
   });
-}
 
-async function runNativeInstall(): Promise<boolean> {
-  const promptEvent = store.deferredPrompt;
-  if (!promptEvent || store.isInstalling) return false;
-  launchStarted = false;
-  patch({
-    isInstalling: true,
-    showOpenFallback: false,
-    installStep: "Preparando instalação…",
-    installProgress: 8,
-  });
-  await new Promise((r) => setTimeout(r, 220));
-
-  try {
-    await promptEvent.prompt();
-  } catch {
-    patch({
-      installStep: "Não foi possível abrir o instalador.",
-      installProgress: 0,
-      isInstalling: false,
-    });
-    return false;
-  }
-
-  patch({ installProgress: 40, installStep: "Aguardando sua confirmação…" });
-  const choice = await promptEvent.userChoice;
-  if (choice.outcome !== "accepted") {
-    patch({
-      installStep: "Instalação cancelada.",
-      installProgress: 0,
-      isInstalling: false,
-      deferredPrompt: null,
-    });
-    window.__gondupDeferredPrompt = null;
-    return false;
-  }
-
-  patch({
-    deferredPrompt: null,
-    installStep: "Baixando aplicativo…",
-    installProgress: 55,
-  });
-  window.__gondupDeferredPrompt = null;
-
-  // Progresso visual enquanto espera o evento real appinstalled.
-  const tick = window.setInterval(() => {
-    if (!store.isInstalling || store.installProgress >= 92 || store.justInstalled) {
-      window.clearInterval(tick);
-      return;
-    }
-    patch({ installProgress: Math.min(92, store.installProgress + 3) });
-  }, 400);
-
-  const result = await waitForAppInstalled();
-  window.clearInterval(tick);
-
-  if (result === "installed" || store.justInstalled || launchStarted) {
-    // finishInstalled já tratou abertura / fallback
-    return true;
-  }
-
-  // Timeout: Chrome às vezes atrasa/omite appinstalled. Oferece abrir e esconde o baixar.
-  patch({
-    installProgress: 100,
-    installStep: "Se o download terminou, abra o aplicativo.",
-    isInstalling: false,
-    justInstalled: true,
-    showOpenFallback: true,
-  });
-  // Melhor esforço: tenta abrir mesmo assim (Android costuma aceitar).
-  try {
-    openInstalledApp();
-  } catch {
-    /* ignore */
-  }
-  return true;
+  syncDebug();
 }
 
 export function useInstallPrompt() {
@@ -265,7 +333,11 @@ export function useInstallPrompt() {
     bootstrapInstallListeners();
   }, []);
 
-  const install = useCallback(async () => runNativeInstall(), []);
+  /** Preferir beginNativeInstallFromGesture no onClick; este alias mantém compat. */
+  const install = useCallback(() => {
+    const result = beginNativeInstallFromGesture();
+    return result === "prompting";
+  }, []);
 
   const openApp = useCallback(() => {
     launchStarted = false;
@@ -285,11 +357,13 @@ export function useInstallPrompt() {
     isIosInstallable: snap.isIosDevice && !snap.isStandalone && !snap.justInstalled,
     isStandalone: snap.isStandalone,
     install,
+    beginNativeInstallFromGesture,
     openApp,
     dismissOpenFallback,
     isInstalling: snap.isInstalling,
     installProgress: snap.installProgress,
     installStep: snap.installStep,
     showOpenFallback: snap.showOpenFallback,
+    lastOutcome: snap.lastOutcome,
   };
 }

@@ -1,16 +1,46 @@
 import { useEffect, useState } from "react";
 import { Download, Loader2, Share, Wifi, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useInstallPrompt, useOnlineStatus } from "@/pwa/hooks";
+import { beginNativeInstallFromGesture, useInstallPrompt, useOnlineStatus, type PwaDebugInfo } from "@/pwa/hooks";
 
 const IOS_HINT_KEY = "promotores_saas_ios_install_hint_dismissed";
+
+function PwaDebugPanel() {
+  const [info, setInfo] = useState<PwaDebugInfo | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("pwadebug") !== "1") return;
+    setEnabled(true);
+    const tick = () => setInfo(window.__gondupPwaDebug || null);
+    tick();
+    const id = window.setInterval(tick, 500);
+    return () => window.clearInterval(id);
+  }, []);
+  if (!enabled || !info) return null;
+  return (
+    <div
+      data-testid="pwa-debug-panel"
+      className="fixed right-2 top-2 z-[100] max-w-[min(100vw-1rem,22rem)] rounded-xl border border-amber-300/50 bg-slate-950/95 p-3 font-mono text-[10px] leading-relaxed text-amber-100 shadow-xl print:hidden"
+    >
+      <p className="mb-1 font-bold text-amber-300">PWA debug (?pwadebug=1)</p>
+      <p>BIP: {info.hasDeferredPrompt ? "sim" : "não"}</p>
+      <p>standalone: {info.standalone ? "sim" : "não"}</p>
+      <p>SW controla: {info.swControlled ? "sim" : "não"}</p>
+      <p>instalando: {info.isInstalling ? "sim" : "não"}</p>
+      <p>já instalou: {info.justInstalled ? "sim" : "não"}</p>
+      <p>último outcome: {info.lastOutcome || "—"}</p>
+      <p>erro: {info.lastError || "—"}</p>
+      <p className="mt-1 break-all text-amber-200/80">{info.userAgent}</p>
+    </div>
+  );
+}
 
 export function PwaStatusBar() {
   const isOnline = useOnlineStatus();
   const {
-    canInstall,
     showInstallOffer,
-    install,
     isInstalling,
     installProgress,
     installStep,
@@ -41,11 +71,10 @@ export function PwaStatusBar() {
     }
   };
 
+  /** Chamada síncrona no clique: prompt() precisa do user-gesture do Chrome Android. */
   const onInstallClick = () => {
-    if (canInstall) {
-      void install();
-      return;
-    }
+    const result = beginNativeInstallFromGesture();
+    if (result === "prompting" || result === "busy") return;
     if (isIosInstallable) {
       setShowIosGuide(true);
       return;
@@ -55,6 +84,8 @@ export function PwaStatusBar() {
 
   return (
     <>
+      <PwaDebugPanel />
+
       <div
         className={`pwa-online-pill fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow backdrop-blur print:hidden ${
           isOnline ? "border-emerald-400/40 bg-emerald-500/90 text-white" : "border-rose-300/40 bg-rose-500/90 text-white"
@@ -64,8 +95,7 @@ export function PwaStatusBar() {
         <span>{isOnline ? "Online" : "Offline — dados locais"}</span>
       </div>
 
-      {/* Fora do .pwa-online-pill: aquele indicador fica escondido na landing e no app (CSS). */}
-      {showInstallOffer && !isInstalling && (
+      {showInstallOffer && !isInstalling && !showOpenFallback && (
         <div className="pwa-install-cta fixed bottom-3 left-3 z-40 print:hidden">
           <Button
             size="sm"
@@ -78,7 +108,7 @@ export function PwaStatusBar() {
         </div>
       )}
 
-      {/* Overlay de download/instalação — estado compartilhado (sidebar e botão flutuante) */}
+      {/* Só aparece DEPOIS que o usuário aceitou o diálogo nativo do Chrome. */}
       {isInstalling && (
         <div data-testid="pwa-install-progress" className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-4 print:hidden">
           <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 text-white shadow-2xl">
@@ -86,7 +116,7 @@ export function PwaStatusBar() {
               <Loader2 className="h-6 w-6 animate-spin text-teal-400" />
               <div>
                 <p className="text-base font-bold">Baixando aplicativo…</p>
-                <p className="text-xs text-slate-400">{installStep || "Processando…"}</p>
+                <p className="text-xs text-slate-400">{installStep || "Aguarde…"}</p>
               </div>
             </div>
             <div className="mb-2 h-3 overflow-hidden rounded-full bg-slate-800">
@@ -97,10 +127,8 @@ export function PwaStatusBar() {
             </div>
             <p className="text-right text-sm font-semibold text-slate-200">{installProgress}%</p>
             <ol className="mt-4 space-y-1.5 text-xs text-slate-400">
-              <li className={installProgress >= 8 ? "text-emerald-400" : ""}>1. Preparar download</li>
-              <li className={installProgress >= 40 ? "text-emerald-400" : ""}>2. Confirmar no sistema</li>
-              <li className={installProgress >= 55 ? "text-emerald-400" : ""}>3. Baixar aplicativo</li>
-              <li className={installProgress >= 100 ? "text-emerald-400" : ""}>4. Abrir automaticamente</li>
+              <li className={installProgress >= 55 ? "text-emerald-400" : ""}>1. Baixar aplicativo</li>
+              <li className={installProgress >= 100 ? "text-emerald-400" : ""}>2. Abrir automaticamente</li>
             </ol>
           </div>
         </div>
@@ -113,18 +141,10 @@ export function PwaStatusBar() {
             <p className="mt-1 text-sm text-slate-300">
               {installStep || "O GondUp foi instalado. Toque para abrir fora do navegador."}
             </p>
-            <Button
-              data-testid="pwa-open-app"
-              className="mt-4 w-full bg-teal-400 text-slate-950 hover:bg-teal-300"
-              onClick={() => openApp()}
-            >
+            <Button data-testid="pwa-open-app" className="mt-4 w-full bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={() => openApp()}>
               Abrir aplicativo
             </Button>
-            <button
-              type="button"
-              className="mt-2 w-full rounded-lg py-2 text-sm text-slate-400 hover:bg-white/5"
-              onClick={() => dismissOpenFallback()}
-            >
+            <button type="button" className="mt-2 w-full rounded-lg py-2 text-sm text-slate-400 hover:bg-white/5" onClick={() => dismissOpenFallback()}>
               Agora não
             </button>
           </div>
@@ -158,10 +178,7 @@ export function PwaStatusBar() {
       )}
 
       {showIosGuide && (
-        <div
-          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-4 sm:items-center print:hidden"
-          onClick={() => setShowIosGuide(false)}
-        >
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-4 sm:items-center print:hidden" onClick={() => setShowIosGuide(false)}>
           <div className="w-full max-w-md rounded-2xl bg-white p-5 text-slate-900 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-lg font-bold">Como instalar no iPhone</h2>
@@ -210,7 +227,7 @@ export function PwaStatusBar() {
         >
           <div className="w-full max-w-md rounded-2xl bg-white p-5 text-slate-900 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-bold">Como baixar o aplicativo</h2>
+              <h2 className="text-lg font-bold">Como baixar no Chrome</h2>
               <button type="button" className="rounded-full p-1 text-slate-400 hover:bg-slate-100" onClick={() => setShowAndroidGuide(false)} aria-label="Fechar">
                 <X className="h-5 w-5" />
               </button>
@@ -219,21 +236,22 @@ export function PwaStatusBar() {
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">1</span>
                 <span>
-                  No <strong>Chrome</strong> ou <strong>Edge</strong>, toque no menu <strong>⋮</strong>.
+                  No <strong>Chrome</strong>, toque no menu <strong>⋮</strong> (canto superior direito).
                 </span>
               </li>
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">2</span>
                 <span>
-                  Escolha <strong>Instalar aplicativo</strong> ou <strong>Adicionar à tela inicial</strong>.
+                  Escolha <strong>Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>.
                 </span>
               </li>
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">3</span>
-                <span>Confirme a instalação e abra o GondUp pelo ícone na tela inicial.</span>
+                <span>Confirme e abra o GondUp pelo ícone na tela inicial.</span>
               </li>
             </ol>
-            <Button className="mt-5 w-full bg-teal-600 text-white hover:bg-teal-700" onClick={() => setShowAndroidGuide(false)}>
+            <p className="mt-3 text-xs text-slate-500">Se o botão Baixar não abrir o instalador, use este caminho pelo menu do Chrome.</p>
+            <Button className="mt-4 w-full bg-teal-600 text-white hover:bg-teal-700" onClick={() => setShowAndroidGuide(false)}>
               Entendi
             </Button>
           </div>

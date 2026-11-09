@@ -1,3 +1,4 @@
+import "./_core/forceUtc";
 import { originGuard } from "./_core/originGuard";
 import express, { type Request, type Response, type NextFunction } from "express";
 import compression from "compression";

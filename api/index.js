@@ -2156,6 +2156,15 @@ async function ensureVisitCheckInFeature() {
         )
     `);
     await database2.execute(sql2`
+      UPDATE subscription_plan_features v
+      INNER JOIN subscription_plan_features f
+        ON f.planId = v.planId AND f.featureKey = 'fieldOperations'
+      SET v.enabled = 1
+      WHERE v.featureKey = 'visitCheckIn'
+        AND f.enabled = 1
+        AND v.enabled = 0
+    `);
+    await database2.execute(sql2`
       INSERT INTO subscription_plan_features (planId, featureKey, enabled)
       SELECT p.id, 'visitCheckIn', 0 FROM subscription_plans p
       WHERE NOT EXISTS (
@@ -2879,17 +2888,18 @@ function getCompanyEntitlementBase(companyId) {
   return entitlementBaseCache.get(String(companyId), () => loadCompanyEntitlementBase(companyId));
 }
 async function loadCompanyEntitlementBase(companyId) {
-  if (!productsFeatureReady) {
-    productsFeatureReady = (async () => {
+  if (!commercialModulesReady) {
+    commercialModulesReady = (async () => {
       try {
+        await ensureVisitCheckInFeature();
         await ensureProductsFeature();
       } catch (error) {
-        productsFeatureReady = null;
-        console.warn("[entitlements] ensureProductsFeature", error);
+        commercialModulesReady = null;
+        console.warn("[entitlements] ensure commercial modules", error);
       }
     })();
   }
-  await productsFeatureReady;
+  await commercialModulesReady;
   const resolved = await resolveCompanyPlan(companyId);
   const plan = resolved.plan ?? null;
   const rawKeys = Array.isArray(plan?.featureKeys) ? plan.featureKeys.filter((key) => ENTITLEMENT_KEYS.includes(key)) : [];
@@ -2969,7 +2979,7 @@ async function assertMemberFeatureAccess(input) {
   }
   return { ...base, memberOverrides, effective };
 }
-var entitlementBaseCache, productsFeatureReady;
+var entitlementBaseCache, commercialModulesReady;
 var init_entitlements2 = __esm({
   "server/entitlements.ts"() {
     "use strict";
@@ -2977,7 +2987,7 @@ var init_entitlements2 = __esm({
     init_db();
     init_entitlements();
     entitlementBaseCache = createTtlCache(3e4);
-    productsFeatureReady = null;
+    commercialModulesReady = null;
   }
 });
 
@@ -7082,10 +7092,10 @@ function storeLabel(row2) {
   return row2.storeName;
 }
 function productsCsv(rows4, today, alertDays) {
-  const header = ["Ind\xFAstria", "Loja", "C\xF3digo", "Descri\xE7\xE3o", "Lote", "Quantidade", "Validade", "Situa\xE7\xE3o", "Pre\xE7o (R$)", "Cadastrado por"];
+  const header = ["Marca/Cliente", "Loja", "C\xF3digo", "Descri\xE7\xE3o", "Lote", "Quantidade", "Validade", "Situa\xE7\xE3o", "Pre\xE7o (R$)", "Cadastrado por"];
   const lines = rows4.map((p) => {
     const iso = String(p.expirationDate).slice(0, 10);
-    return [p.clientName || "Sem ind\xFAstria", storeLabel(p), p.productCode, p.description, p.lot || "", String(p.quantity), formatDateBR(iso), situationLabel(iso, today, alertDays), Number(p.price).toFixed(2).replace(".", ","), p.createdByName || ""];
+    return [p.clientName || "Sem marca/cliente", storeLabel(p), p.productCode, p.description, p.lot || "", String(p.quantity), formatDateBR(iso), situationLabel(iso, today, alertDays), Number(p.price).toFixed(2).replace(".", ","), p.createdByName || ""];
   });
   return "\uFEFF" + [header, ...lines].map((r) => r.map(cell).join(";")).join("\r\n");
 }
@@ -7279,14 +7289,14 @@ async function loadManageable(ctx, id2) {
 async function validatePlace(ctx, storeId, storeClientId) {
   const database2 = await ready6();
   if (!storeId) {
-    if (storeClientId) throw new TRPCError15({ code: "BAD_REQUEST", message: "Escolha a loja antes da ind\xFAstria." });
+    if (storeClientId) throw new TRPCError15({ code: "BAD_REQUEST", message: "Escolha a loja antes da marca/cliente." });
     return { storeId: null, storeClientId: null };
   }
   const store = await assertStoreAccess(database2, ctx, storeId);
   if (!store.active) throw new TRPCError15({ code: "BAD_REQUEST", message: "Essa loja foi removida. Escolha outra loja." });
   if (storeClientId) {
     const c = rowsOf(await database2.execute(sql18`SELECT id FROM store_clients WHERE id = ${storeClientId} AND companyId = ${ctx.accountId} AND storeId = ${storeId} AND active = true LIMIT 1`))[0];
-    if (!c) throw new TRPCError15({ code: "BAD_REQUEST", message: "Ind\xFAstria n\xE3o encontrada nesta loja." });
+    if (!c) throw new TRPCError15({ code: "BAD_REQUEST", message: "Marca/cliente n\xE3o encontrada nesta loja." });
   }
   return { storeId, storeClientId: storeClientId ?? null };
 }
@@ -7716,6 +7726,17 @@ var init_backup = __esm({
   }
 });
 
+// server/_core/forceUtc.ts
+function forceUtc(env2 = process.env) {
+  const previous = env2.TZ;
+  if (previous !== "UTC") {
+    env2.TZ = "UTC";
+    if (previous) console.warn(`[tz] TZ=${previous} ignorado; o servidor roda em UTC.`);
+  }
+  return previous;
+}
+forceUtc();
+
 // server/_core/originGuard.ts
 var SAFE_METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "OPTIONS"]);
 function firstHeader(value) {
@@ -7783,6 +7804,19 @@ init_correctionExcuse();
 import { z as z4 } from "zod";
 import { TRPCError as TRPCError7 } from "@trpc/server";
 import { eq as eq8, and as and8, desc as desc2, gte as gte5, lt as lt4, lte as lte2, inArray as inArray8, sql as sql9 } from "drizzle-orm";
+
+// shared/correctionGroups.ts
+function defaultCorrectionJustification(input) {
+  if (input.fullDay) return input.fullDayLabel || "Abono";
+  if (input.justificationType === "other") return "";
+  if (input.justificationType === "holiday") return "Feriado";
+  if (input.justificationType === "day_off") return "Folga";
+  if (input.justificationType === "medical_certificate") return "Atestado m\xE9dico";
+  return input.timeEventId ? "Hor\xE1rio incorreto" : "Esquecimento";
+}
+function justificationRequiresText(justificationType) {
+  return (justificationType || "normal") === "other";
+}
 
 // shared/punchOrder.ts
 var PUNCH_ORDER = ["clock_in", "break_start", "break_end", "clock_out"];
@@ -8360,8 +8394,19 @@ var timeTrackingRouter = router({
     if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     const jType = input.justificationType || "normal";
     const fullDay = isFullDayExcuseType(jType);
-    const reason = (input.justification || "").trim() || (fullDay ? fullDayExcuseLabel(jType) : "");
-    if (!fullDay && reason.length < 5) throw new TRPCError7({ code: "BAD_REQUEST", message: "Escreva pelo menos 5 caracteres na justificativa." });
+    let reason = (input.justification || "").trim();
+    if (!reason) {
+      reason = defaultCorrectionJustification({
+        justificationType: jType,
+        timeEventId: input.timeEventId ?? null,
+        fullDay,
+        fullDayLabel: fullDay ? fullDayExcuseLabel(jType) : void 0
+      });
+    }
+    if (justificationRequiresText(jType) && reason.length < 5) {
+      throw new TRPCError7({ code: "BAD_REQUEST", message: "Descreva o que aconteceu (m\xEDnimo 5 caracteres)." });
+    }
+    if (!reason) throw new TRPCError7({ code: "BAD_REQUEST", message: "Informe a justificativa." });
     if (!fullDay && !input.requestedType) throw new TRPCError7({ code: "BAD_REQUEST", message: "Informe o tipo de marca\xE7\xE3o." });
     await ensureCorrectionExtras();
     let timeEventId = null;

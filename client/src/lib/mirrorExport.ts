@@ -1,6 +1,7 @@
 /** Saídas do Espelho de Ponto (PDF, Excel, HTML de impressão). Todas usam mirrorRows/totalsLines: mesmos valores da tela. */
 import { MIRROR_HEADERS, fmtDate, fmtCpf, fmtPis, mirrorRows, totalsLines, localParts, type MirrorReport, type LaborProfile } from "@shared/timesheetMirror";
 import { buildXlsx, type Cell } from "./xlsx";
+import type { jsPDF } from "jspdf";
 
 export type MirrorAcceptance = {
   decision: "accepted" | "contested";
@@ -28,7 +29,7 @@ export type MirrorData = {
 export const NOT_INFORMED = "Não informado";
 const roleLabel = (r: string) => (r === "promoter" ? "Promotor" : r === "supervisor" ? "Supervisor" : r);
 export const stamp = (data: MirrorData) => {
-  const p = localParts(data.generatedAt, data.timeZone);
+  const p = localParts(data.generatedAt, "America/Sao_Paulo");
   return `${fmtDate(p.date)} ${p.hm}`;
 };
 export function companyLines(data: MirrorData): Array<[string, string]> {
@@ -75,8 +76,35 @@ export function missingLegalFields(data: MirrorData, r: MirrorResult): string[] 
   return miss;
 }
 export const periodLabel = (r: MirrorReport) => `${fmtDate(r.from)} a ${fmtDate(r.to)}`;
-export const LEGEND = "Legenda (horário de Brasília, America/Sao_Paulo): * = marcação ajustada por correção aprovada (original e justificativa em Ocorrências); + = batida incluída manualmente; # = ajuste antigo sem original estruturado; A = saída automática do sistema; ? = sincronização pendente; o = registrada offline (sem internet; horário do aparelho, recebida depois pelo servidor). — = não aplicável/não configurado. DSR = descanso semanal remunerado.";
+export const LEGEND = "Legenda (horário de Brasília, America/Sao_Paulo): * = marcação ajustada por correção aprovada (original e justificativa em Ocorrências); + = batida incluída manualmente; # = ajuste antigo sem original estruturado; A = saída automática do sistema; (pendente) = sincronização pendente; (off) = registrada offline (sem internet; horário do aparelho, recebida depois pelo servidor). — = não aplicável/não configurado. DSR = descanso semanal remunerado.";
 export const DISCLAIMER = "Documento gerado pelo GondUp a partir das batidas registradas. A batida original é preservada; correções viram registros à parte. Serve para conferência e arquivo da empresa.";
+
+/** Resumo do documento; a planilha e a tela continuam com os indicadores completos. */
+export function documentTotals(r: MirrorResult): Array<[string, string]> {
+  const t = r.report.totals;
+  const all = totalsLines(t);
+  return [
+    ...all.slice(0, 7),
+    ...(r.labor?.nightEnabled || t.nightMinutes != null || t.nightReducedMinutes != null ? all.slice(7, 9) : []),
+    ...(t.adjustedMarks ? [all[11]] : []),
+    ...(t.pendingSyncMarks ? [all[13]] : []),
+    ...(t.offlineMarks ? [all[14]] : []),
+  ];
+}
+
+/** Só explica símbolos presentes, sem esconder os tipos antigos de marcação. */
+export function documentLegend(report: MirrorReport): string {
+  const marks = report.days.flatMap((d) => d.marks);
+  const items = [
+    marks.some((m) => m.kind === "adjusted" && m.originalLabel) && "* ajustada",
+    marks.some((m) => m.kind === "adjusted" && !m.originalLabel) && "+ incluída manualmente",
+    marks.some((m) => m.kind === "legacy_adjusted") && "# ajuste antigo",
+    marks.some((m) => m.kind === "automatic") && "A saída automática",
+    marks.some((m) => m.offline) && "(off) registrada sem internet",
+    marks.some((m) => !m.synced) && "(pendente) ainda não enviada ao servidor",
+  ].filter(Boolean);
+  return items.length ? `Legenda: ${items.join("; ")}.` : "";
+}
 
 const safe = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "arquivo";
 export const fileBase = (data: MirrorData, r?: MirrorResult) =>
@@ -135,12 +163,12 @@ function htmlFor(data: MirrorData, r: MirrorResult) {
 <p class="meta"><b>Período:</b> ${periodLabel(r.report)} &nbsp;·&nbsp; <b>Emitido em:</b> ${stamp(data)} (horário de Brasília) &nbsp;·&nbsp; <b>Fuso:</b> ${esc(data.timeZone)}</p>
 ${acceptanceHtml(r)}
 <table class="main"><thead><tr>${MIRROR_HEADERS.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>
-<h2>Totais do período</h2><table class="kv totals">${totalsLines(r.report.totals).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>
-<div class="notes">${r.report.notes.map((n) => `<p>• ${esc(n)}</p>`).join("")}<p>${esc(LEGEND)}</p><p><i>${esc(DISCLAIMER)}</i></p></div>
-<div class="sign"><div>______________________________<br>Assinatura do funcionário<br>Data: ____/____/________</div><div>______________________________<br>Responsável pela empresa<br>Data: ____/____/________</div></div></section>`;
+<h2>Totais do período</h2><table class="kv totals">${documentTotals(r).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("")}</table>
+${documentLegend(r.report) ? `<p class="notes">${esc(documentLegend(r.report))}</p>` : ""}
+<div class="sign"><div>______________________________<br>Assinatura do funcionário<br>Data: ____/____/________</div></div></section>`;
 }
 export function buildMirrorHtml(data: MirrorData, autoPrint = true): string {
-  const css = `*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#111;margin:0}.page{page-break-after:always;padding:0}.page:last-child{page-break-after:auto}h1{font-size:18px;margin:0 0 8px}h2{font-size:12px;margin:10px 0 4px;color:#0f3d3a}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}table{border-collapse:collapse;width:100%}.kv th{text-align:left;width:34%;padding:2px 6px 2px 0;color:#444;font-weight:600}.kv td{padding:2px 0}.main th,.main td{border:1px solid #999;padding:3px 4px;vertical-align:top;font-size:9.5px}.main th{background:#e2e8f0}.main thead{display:table-header-group}.main tr,.totals tr{break-inside:avoid}.main td.obs{width:26%}.meta{margin:8px 0}.totals{width:60%}.totals th,.totals td{border-bottom:1px solid #ddd}.notes{margin-top:8px;font-size:9.5px;color:#333}.notes p{margin:2px 0}.sign{display:flex;justify-content:space-around;margin-top:36px;font-size:10px;text-align:center;break-inside:avoid}.warn{background:#fff3cd;border:1px solid #f0c36d;padding:6px 8px;margin:0 0 8px;font-size:10px}.accept{background:#e8f5f3;border:1px solid #9ad5cb;padding:6px 8px;margin:0 0 8px;font-size:10px}.accept .hash,code{font-family:ui-monospace,monospace;font-size:9px;word-break:break-all}@media print{@page{size:A4 landscape;margin:10mm}}`;
+  const css = `*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#111;margin:0}.page{page-break-after:always;padding:0}.page:last-child{page-break-after:auto}h1{font-size:18px;margin:0 0 8px}h2{font-size:12px;margin:10px 0 4px;color:#0f3d3a}.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}table{border-collapse:collapse;width:100%;table-layout:fixed}th,td,p{overflow-wrap:anywhere}.grid>div{min-width:0}.kv th{text-align:left;width:34%;padding:2px 6px 2px 0;color:#444;font-weight:600}.kv td{padding:2px 0}.main th,.main td{border:1px solid #999;padding:3px 4px;vertical-align:top;font-size:9.5px}.main th{background:#e2e8f0}.main thead{display:table-header-group}.main tr,.totals tr{break-inside:avoid}.main td.obs{width:26%}.meta{margin:8px 0}.totals{width:60%}.totals th{width:75%}.totals th,.totals td{border-bottom:1px solid #ddd}.notes{margin-top:8px;font-size:9.5px;color:#333}.notes p{margin:2px 0}.sign{display:flex;justify-content:space-around;margin-top:36px;font-size:10px;text-align:center;break-inside:avoid}.warn{background:#fff3cd;border:1px solid #f0c36d;padding:6px 8px;margin:0 0 8px;font-size:10px}.accept{background:#e8f5f3;border:1px solid #9ad5cb;padding:6px 8px;margin:0 0 8px;font-size:10px}.accept .hash,code{font-family:ui-monospace,monospace;font-size:9px;word-break:break-all}@media print{@page{size:A4 landscape;margin:10mm}}`;
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Espelho de ponto</title><style>${css}</style></head><body>${data.results.map((r) => htmlFor(data, r)).join("")}${autoPrint ? `<script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script>` : ""}</body></html>`;
 }
 
@@ -174,179 +202,177 @@ const PDF_HEADERS = ["Data", "Dia", "Entrada", "Iníc. int.", "Ret. int.", "Saí
 
 type PageMeta = { memberName: string; companyName: string; stamp: string; hash?: string | null };
 
-async function pdfFor(data: MirrorData, r: MirrorResult, doc: any, first: boolean, pageMeta: PageMeta[]) {
-  const W = 297, H = 210, M = 10;
+/** Divide também palavras longas (nomes, códigos e comentários) dentro da largura real. */
+function pdfWrap(doc: jsPDF, text: string, width: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of pdfSafe(text).split(/\s+/)) {
+    if (!word) continue;
+    if (line && doc.getTextWidth(`${line} ${word}`) <= width) { line += ` ${word}`; continue; }
+    if (line) { lines.push(line); line = ""; }
+    for (const char of word) {
+      if (line && doc.getTextWidth(line + char) > width) { lines.push(line); line = ""; }
+      line += char;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+async function pdfFor(data: MirrorData, r: MirrorResult, doc: jsPDF, first: boolean, pageMeta: PageMeta[]) {
   if (!first) doc.addPage("a4", "landscape");
-
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10;
+  const contentW = W - 2 * M;
+  const bottom = H - 20; // espaço reservado ao rodapé, inclusive nomes longos
   const widths = [19, 8, 18, 20, 20, 18, 15, 13, 13, 13, 13, 15];
-  const obsW = W - 2 * M - widths.reduce((a, b) => a + b, 0);
-  const cols = [...widths, obsW];
-
+  const cols = [...widths, contentW - widths.reduce((a, b) => a + b, 0)];
   let y = M;
-  let inTable = false;
   const hashShort = (r.documentHash || r.acceptance?.documentHash || "").slice(0, 12);
-
   const registerPage = () => {
     pageMeta[doc.getNumberOfPages() - 1] = {
       memberName: r.member.name,
-      companyName: data.company.name || data.company.legal?.legalName || "Empresa",
-      stamp: stamp(data),
-      hash: hashShort || null,
+      companyName: data.company.legal?.legalName || data.company.name || "Empresa",
+      stamp: stamp(data), hash: hashShort || null,
     };
   };
   registerPage();
 
-  const ensurePlain = (h: number) => {
-    if (y + h > H - 14) {
-      doc.addPage("a4", "landscape");
-      registerPage();
-      y = M;
-      // Mini-cabeçalho nas páginas de continuação (totais/notas)
-      doc.setFontSize(8).setFont("helvetica", "bold").setTextColor(60);
-      doc.text(pdfSafe(`Espelho de ponto (cont.) — ${r.member.name} — ${periodLabel(r.report)}`), M, y + 3);
-      doc.setTextColor(0);
-      y += 7;
+  const newPage = () => {
+    doc.addPage("a4", "landscape");
+    registerPage();
+    y = M;
+    const font = doc.getFont(), size = doc.getFontSize();
+    doc.setFontSize(8).setFont("helvetica", "bold").setTextColor(60);
+    const lines = pdfWrap(doc, `Espelho de ponto (cont.) — ${r.member.name} — ${periodLabel(r.report)}`, contentW);
+    doc.text(lines, M, y + 3, { lineHeightFactor: 1.2 });
+    y += lines.length * 3.4 + 4;
+    doc.setFont(font.fontName, font.fontStyle).setFontSize(size).setTextColor(0);
+  };
+  const ensure = (h: number) => { if (y + h > bottom) newPage(); };
+  const paragraph = (text: string, size = 8, bold = false) => {
+    doc.setFontSize(size).setFont("helvetica", bold ? "bold" : "normal");
+    const step = size * 0.3528 * 1.3;
+    for (const line of pdfWrap(doc, text, contentW)) {
+      ensure(step);
+      doc.text(line, M, y + step * 0.8);
+      y += step;
     }
   };
 
-  const ensureTable = (h: number) => {
-    if (y + h > H - 14) {
-      doc.addPage("a4", "landscape");
-      registerPage();
-      y = M;
-      doc.setFontSize(8).setFont("helvetica", "bold").setTextColor(60);
-      doc.text(pdfSafe(`Espelho de ponto (cont.) — ${r.member.name} — ${periodLabel(r.report)}`), M, y + 3);
-      doc.setTextColor(0);
-      y += 7;
-      if (inTable) drawHead();
-    }
-  };
-
-  const drawHead = () => {
-    doc.setFontSize(7.5).setFont("helvetica", "bold").setFillColor(226, 232, 240);
-    const headerLines = PDF_HEADERS.map((h, i) => doc.splitTextToSize(pdfSafe(h), cols[i] - 2) as string[]);
-    const headerH = Math.max(...headerLines.map((l: string[]) => l.length), 1) * 3.2 + 2;
-    let x = M;
-    doc.rect(M, y, W - 2 * M, headerH, "F");
-    headerLines.forEach((lines: string[], i: number) => {
-      doc.text(lines, x + 1, y + 3.2);
-      x += cols[i];
-    });
-    y += headerH;
-    doc.setFont("helvetica", "normal");
-  };
-
-  // Cabeçalho do documento
-  doc.setFontSize(16).setFont("helvetica", "bold").text("Espelho de Ponto", M, y + 5);
-  y += 10;
-
+  paragraph("Espelho de Ponto", 16, true);
+  y += 3;
   const miss = missingLegalFields(data, r);
   if (miss.length) {
-    doc.setFontSize(8).setFont("helvetica", "bold").setTextColor(140, 80, 0);
-    const warnLines = doc.splitTextToSize(pdfSafe(`Atenção — dados incompletos para uso em RH/processo: ${miss.join(", ")}.`), W - 2 * M) as string[];
-    for (const line of warnLines) { doc.text(line, M, y); y += 3.8; }
-    doc.setTextColor(0);
-    y += 1;
+    paragraph(`Atenção — dados incompletos para uso em RH/processo: ${miss.join(", ")}.`, 8, true);
+    y += 2;
   }
 
-  doc.setFontSize(8.5).setFont("helvetica", "normal");
+  // Cada linha cresce com o conteúdo; a coluna direita termina na margem, não em x=284.
   const left = companyLines(data), right = memberLines(r);
+  const gap = 8, colW = (contentW - gap) / 2;
+  const labelW = [30, 34];
+  doc.setFontSize(8.5);
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    if (left[i]) {
-      doc.setFont("helvetica", "bold").text(`${left[i][0]}:`, M, y);
-      doc.setFont("helvetica", "normal").text(pdfSafe(left[i][1]), M + 30, y, { maxWidth: 100 });
+    const pairs = [left[i], right[i]].map((pair, j) => {
+      if (!pair) return { label: [], value: [] };
+      doc.setFont("helvetica", "bold");
+      const label = pdfWrap(doc, `${pair[0]}:`, labelW[j] - 2);
+      doc.setFont("helvetica", "normal");
+      return { label, value: pdfWrap(doc, pair[1], colW - labelW[j]) };
+    });
+    const count = Math.max(1, ...pairs.flatMap((p) => [p.label.length, p.value.length]));
+    for (let line = 0; line < count; line++) {
+      ensure(4.2);
+      pairs.forEach((pair, j) => {
+        const x = M + j * (colW + gap);
+        doc.setFont("helvetica", "bold");
+        if (pair.label[line]) doc.text(pair.label[line], x, y + 3.2);
+        doc.setFont("helvetica", "normal");
+        if (pair.value[line]) doc.text(pair.value[line], x + labelW[j], y + 3.2);
+      });
+      y += 4.2;
     }
-    if (right[i]) {
-      doc.setFont("helvetica", "bold").text(`${right[i][0]}:`, 150, y);
-      doc.setFont("helvetica", "normal").text(pdfSafe(right[i][1]), 150 + 34, y, { maxWidth: 100 });
-    }
-    y += 4.5;
   }
-  doc.setFont("helvetica", "bold").text(
-    pdfSafe(`Período: ${periodLabel(r.report)}    Emitido em: ${stamp(data)} (Brasília)    Fuso: ${data.timeZone}`),
-    M, y + 1,
-  );
-  y += 5;
-
+  y += 2;
+  paragraph(`Período: ${periodLabel(r.report)}    Emitido em: ${stamp(data)} (Brasília)    Fuso: ${data.timeZone}`, 8, true);
+  y += 2;
   if (r.acceptance) {
     const a = r.acceptance;
     let when = a.acceptedAt;
-    try { const p = localParts(a.acceptedAt, data.timeZone); when = `${fmtDate(p.date)} ${p.hm}`; } catch { /* keep */ }
-    const dec = a.decision === "accepted" ? "confirmado eletronicamente pelo funcionario" : "contestado eletronicamente pelo funcionario";
-    doc.setFontSize(8).setFont("helvetica", "normal").setTextColor(20, 90, 80);
-    const accLines = doc.splitTextToSize(
-      pdfSafe(`Confirmação no app: ${dec} em ${when} (Brasília).${a.stillValid === false ? " ATENÇÃO: o espelho mudou depois desta confirmação." : ""}${a.comment ? ` Comentário: ${a.comment}.` : ""} Código: ${a.documentHash}`),
-      W - 2 * M,
-    ) as string[];
-    for (const line of accLines) { doc.text(line, M, y); y += 3.6; }
-    doc.setTextColor(0);
-    y += 1;
-  } else if (r.documentHash) {
-    doc.setFontSize(7.5).setFont("helvetica", "normal").setTextColor(80);
-    doc.text(pdfSafe(`Código do documento: ${r.documentHash}`), M, y);
-    doc.setTextColor(0);
-    y += 4;
+    try { const p = localParts(a.acceptedAt, "America/Sao_Paulo"); when = `${fmtDate(p.date)} ${p.hm}`; } catch { /* keep */ }
+    const dec = a.decision === "accepted" ? "confirmado eletronicamente pelo funcionário" : "contestado eletronicamente pelo funcionário";
+    paragraph(`Confirmação no app: ${dec} em ${when} (Brasília).${a.stillValid === false ? " ATENÇÃO: o espelho mudou depois desta confirmação." : ""}${a.comment ? ` Comentário: ${a.comment}.` : ""} Código: ${a.documentHash}`);
+  } else if (r.documentHash) paragraph(`Código do documento: ${r.documentHash}`, 7.5);
+  y += 2;
+
+  const drawHead = () => {
+    doc.setFontSize(7.5).setFont("helvetica", "bold").setFillColor(226, 232, 240);
+    const lines = PDF_HEADERS.map((h, i) => pdfWrap(doc, h, cols[i] - 2));
+    const h = Math.max(...lines.map((l) => l.length)) * 3.3 + 2;
+    doc.rect(M, y, contentW, h, "F");
+    let x = M;
+    lines.forEach((l, i) => { doc.text(l, x + 1, y + 3.3, { lineHeightFactor: 1.247 }); x += cols[i]; });
+    y += h;
+    doc.setFont("helvetica", "normal");
+  };
+  ensure(18);
+  drawHead();
+  for (const row of mirrorRows(r.report)) {
+    const lines = row.map((c, i) => pdfWrap(doc, c || "—", cols[i] - 2));
+    const count = Math.max(...lines.map((l) => l.length), 1);
+    const rowH = count * 3.3 + 2;
+    // Uma ocorrência longa pode ocupar várias páginas sem cortar texto nem invadir o rodapé.
+    if (y + Math.min(rowH, 25) > bottom) { newPage(); drawHead(); }
+    let offset = 0;
+    while (offset < count) {
+      const capacity = Math.floor((bottom - y - 2) / 3.3);
+      if (capacity < 1) { newPage(); drawHead(); continue; }
+      const take = Math.min(count - offset, capacity);
+      const h = take * 3.3 + 2;
+      let x = M;
+      doc.setDrawColor(190);
+      lines.forEach((l, i) => {
+        doc.rect(x, y, cols[i], h);
+        // Repete a data nas continuações da mesma ocorrência para manter a identificação.
+        const chunk = l.slice(offset, offset + take);
+        if (!chunk.length && offset && i < 2) chunk.push(l[0]);
+        if (chunk.length) doc.text(chunk, x + 1, y + 3.3, { lineHeightFactor: 1.247 });
+        x += cols[i];
+      });
+      y += h;
+      offset += take;
+      if (offset < count) { newPage(); drawHead(); }
+    }
   }
 
-  y += 1;
-  inTable = true;
-  drawHead();
-  doc.setFontSize(7.5);
-
-  for (const row of mirrorRows(r.report)) {
-    const lines = row.map((c, i) => doc.splitTextToSize(pdfSafe(c || "—"), cols[i] - 2) as string[]);
-    const h = Math.max(...lines.map((l: string[]) => l.length), 1) * 3.3 + 2;
-    ensureTable(h);
-    let x = M;
-    doc.setDrawColor(190);
-    lines.forEach((l: string[], i: number) => {
-      doc.rect(x, y, cols[i], h);
-      doc.text(l, x + 1, y + 3.4);
-      x += cols[i];
-    });
+  const totals = documentTotals(r);
+  ensure(12 + totals.length * 4.5);
+  y += 5;
+  paragraph("Totais do período", 10, true);
+  y += 2;
+  doc.setFontSize(8);
+  // Valores junto aos rótulos, em vez de 170 mm à direita (ilegível no celular).
+  const totalW = Math.min(contentW, 145), valueW = 24;
+  for (const [label, value] of totals) {
+    doc.setFont("helvetica", "normal");
+    const labels = pdfWrap(doc, label, totalW - valueW - 4);
+    doc.setFont("helvetica", "bold");
+    const values = pdfWrap(doc, value, valueW - 2);
+    const h = Math.max(labels.length, values.length) * 3.7 + 1;
+    ensure(h);
+    doc.setDrawColor(220).line(M, y + h, M + totalW, y + h);
+    doc.setFont("helvetica", "normal").text(labels, M + 1, y + 3.2, { lineHeightFactor: 1.3 });
+    doc.setFont("helvetica", "bold").text(values, M + totalW - valueW, y + 3.2, { lineHeightFactor: 1.3 });
     y += h;
   }
-  inTable = false;
-
-  const totals = totalsLines(r.report.totals);
-  ensurePlain(12 + totals.length * 4.2);
-  y += 6;
-  doc.setFontSize(10).setFont("helvetica", "bold").text("Totais do período", M, y);
-  y += 6;
-  doc.setFontSize(8);
-  for (const [k, v] of totals) {
-    ensurePlain(4.5);
-    doc.setFont("helvetica", "normal").text(pdfSafe(k), M, y, { maxWidth: 160 });
-    doc.setFont("helvetica", "bold").text(pdfSafe(String(v)), M + 170, y);
-    y += 4.2;
-  }
-
-  y += 3;
-  doc.setFont("helvetica", "normal").setFontSize(7.5);
-  const notes = [...r.report.notes.map((n) => `• ${n}`), LEGEND, DISCLAIMER]
-    .flatMap((n) => doc.splitTextToSize(pdfSafe(n), W - 2 * M) as string[]);
-  for (const line of notes) {
-    ensurePlain(3.8);
-    doc.text(line, M, y);
-    y += 3.5;
-  }
-
-  // Assinaturas: tenta caber na página atual; só quebra se faltar espaço de verdade.
-  const signH = r.acceptance?.decision === "accepted" ? 20 : 16;
-  ensurePlain(signH);
-  y += 6;
-  doc.setFontSize(8).setFont("helvetica", "normal");
-  doc.text("______________________________", 40, y);
-  doc.text("______________________________", 190, y);
-  doc.text("Assinatura do funcionario", 48, y + 4);
-  doc.text("Responsavel pela empresa", 198, y + 4);
-  doc.text("Data: ____/____/________", 48, y + 9);
-  doc.text("Data: ____/____/________", 198, y + 9);
-  if (r.acceptance?.decision === "accepted") {
-    doc.setFontSize(7).setTextColor(20, 90, 80);
-    doc.text(pdfSafe("(Aceite eletronico registrado no sistema — ver cabecalho do documento.)"), 40, y + 14);
-    doc.setTextColor(0);
-  }
+  const legend = documentLegend(r.report);
+  if (legend) { y += 3; paragraph(legend, 7.5); }
+  ensure(24);
+  y += 8;
+  doc.setDrawColor(80).line(M, y, M + 70, y);
+  y += 2;
+  paragraph("Assinatura do funcionário", 8);
+  paragraph("Data: ____/____/________", 8);
 }
 
 export async function buildMirrorPdf(data: MirrorData): Promise<Blob> {
@@ -358,12 +384,23 @@ export async function buildMirrorPdf(data: MirrorData): Promise<Blob> {
   for (let i = 1; i <= total; i++) {
     doc.setPage(i);
     const meta = pageMeta[i - 1] || { memberName: "", companyName: data.company.name, stamp: stamp(data), hash: null };
+    const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
     doc.setFontSize(7).setFont("helvetica", "normal").setTextColor(100);
+    // Nomes extensos não empurram emissão/paginação para fora da folha.
     const hashBit = meta.hash ? ` · cód. ${meta.hash}…` : "";
-    doc.text(
-      pdfSafe(`${meta.companyName} · Espelho de ponto · ${meta.memberName} · emitido em ${meta.stamp} (Brasília)${hashBit} · página ${i} de ${total}`),
-      10, 210 - 5,
-    );
+    const lines = pdfWrap(doc, `${meta.companyName} · Espelho de ponto · ${meta.memberName} · emitido em ${meta.stamp} (Brasília)${hashBit} · página ${i} de ${total}`, W - 20);
+    const available = 15;
+    if (lines.length * 3 > available) {
+      // Casos extremos: reduz a fonte até o rodapé inteiro caber na área reservada.
+      let size = 7;
+      while (lines.length * size * 0.3528 * 1.2 > available && size > 3) {
+        size -= 0.5;
+        doc.setFontSize(size);
+        lines.splice(0, lines.length, ...pdfWrap(doc, `${meta.companyName} · Espelho de ponto · ${meta.memberName} · emitido em ${meta.stamp} (Brasília)${hashBit} · página ${i} de ${total}`, W - 20));
+      }
+    }
+    const step = doc.getFontSize() * 0.3528 * 1.2;
+    doc.text(lines, 10, H - 5 - (lines.length - 1) * step, { lineHeightFactor: 1.2 });
     doc.setTextColor(0);
   }
   return doc.output("blob");

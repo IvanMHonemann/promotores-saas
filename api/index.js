@@ -3735,8 +3735,8 @@ function fmtMark(m, tz) {
   else if (m.kind === "legacy_adjusted") tag = "#";
   else if (included) tag = "+";
   else if (m.kind === "adjusted") tag = "*";
-  const sync = m.synced ? "" : "?";
-  const off = m.offline ? "o" : "";
+  const sync = m.synced ? "" : " (pendente)";
+  const off = m.offline ? " (off)" : "";
   return `${t2.hm}${tag}${off}${sync}`;
 }
 function adjustmentText(m, tz) {

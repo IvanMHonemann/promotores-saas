@@ -32,17 +32,29 @@ type NavItem = {
 };
 
 function InstallButton() {
-  const { canInstall, install, isInstalling, isIosInstallable, isStandalone } = useInstallPrompt();
-  if (isStandalone || (!canInstall && !isIosInstallable)) return null;
+  const { canInstall, showInstallOffer, install, isInstalling, isIosInstallable } = useInstallPrompt();
+  if (!showInstallOffer) return null;
+  const onClick = () => {
+    if (canInstall) {
+      void install();
+      return;
+    }
+    if (isIosInstallable) {
+      alert("No iPhone: toque em Compartilhar e depois em Adicionar à Tela de Início.");
+      return;
+    }
+    alert("No Chrome ou Edge: abra o menu ⋮ e escolha Instalar aplicativo (ou Adicionar à tela inicial).");
+  };
   return (
     <button
       type="button"
+      data-testid="sidebar-install-button"
       disabled={isInstalling}
-      onClick={() => canInstall ? void install() : alert("No iPhone: toque em Compartilhar e depois em Adicionar à Tela de Início.")}
+      onClick={onClick}
       className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 px-4 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-teal-500/20 transition hover:from-teal-300 hover:to-emerald-300 disabled:opacity-60"
     >
       <Download className="h-4 w-4" />
-      {isInstalling ? "Instalando..." : "Instalar aplicativo"}
+      {isInstalling ? "Instalando..." : "Baixar aplicativo"}
     </button>
   );
 }

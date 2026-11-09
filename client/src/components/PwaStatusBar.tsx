@@ -7,8 +7,18 @@ const IOS_HINT_KEY = "promotores_saas_ios_install_hint_dismissed";
 
 export function PwaStatusBar() {
   const isOnline = useOnlineStatus();
-  const { canInstall, install, isInstalling, installProgress, installStep, isIosInstallable, isStandalone } = useInstallPrompt();
+  const {
+    canInstall,
+    showInstallOffer,
+    install,
+    isInstalling,
+    installProgress,
+    installStep,
+    isIosInstallable,
+    isStandalone,
+  } = useInstallPrompt();
   const [showIosGuide, setShowIosGuide] = useState(false);
+  const [showAndroidGuide, setShowAndroidGuide] = useState(false);
   const [iosHintVisible, setIosHintVisible] = useState(false);
 
   useEffect(() => {
@@ -28,16 +38,37 @@ export function PwaStatusBar() {
     }
   };
 
+  const onInstallClick = () => {
+    if (canInstall) {
+      void install();
+      return;
+    }
+    if (isIosInstallable) {
+      setShowIosGuide(true);
+      return;
+    }
+    setShowAndroidGuide(true);
+  };
+
   return (
     <>
       <div
-        className={`pwa-online-pill fixed bottom-3 left-3 z-30 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow backdrop-blur print:hidden ${
+        className={`pwa-online-pill fixed bottom-3 left-3 z-30 flex max-w-[min(100vw-1.5rem,22rem)] flex-wrap items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow backdrop-blur print:hidden ${
           isOnline ? "border-emerald-400/40 bg-emerald-500/90 text-white" : "border-rose-300/40 bg-rose-500/90 text-white"
         }`}
       >
         {isOnline ? <Wifi className="h-3.5 w-3.5 shrink-0" /> : <WifiOff className="h-3.5 w-3.5 shrink-0" />}
         <span>{isOnline ? "Online" : "Offline — dados locais"}</span>
-        
+        {showInstallOffer && !isInstalling && (
+          <Button
+            size="sm"
+            data-testid="pwa-install-button"
+            className="ml-1 h-7 gap-1 rounded-full bg-teal-400 px-2.5 text-[10px] font-bold text-slate-950 hover:bg-teal-300"
+            onClick={onInstallClick}
+          >
+            <Download className="h-3.5 w-3.5" /> Baixar aplicativo
+          </Button>
+        )}
       </div>
 
       {/* Overlay de instalação com barra real de progresso */}
@@ -81,14 +112,24 @@ export function PwaStatusBar() {
               <X className="h-4 w-4" />
             </button>
           </div>
-          <Button size="sm" className="mt-3 w-full bg-red-600 text-white hover:bg-red-700" onClick={() => { setShowIosGuide(true); dismissIosHint(); }}>
+          <Button
+            size="sm"
+            className="mt-3 w-full bg-red-600 text-white hover:bg-red-700"
+            onClick={() => {
+              setShowIosGuide(true);
+              dismissIosHint();
+            }}
+          >
             Ver passo a passo
           </Button>
         </div>
       )}
 
       {showIosGuide && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-4 sm:items-center print:hidden" onClick={() => setShowIosGuide(false)}>
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-4 sm:items-center print:hidden"
+          onClick={() => setShowIosGuide(false)}
+        >
           <div className="w-full max-w-md rounded-2xl bg-white p-5 text-slate-900 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-lg font-bold">Como instalar no iPhone</h2>
@@ -99,22 +140,68 @@ export function PwaStatusBar() {
             <ol className="space-y-3 text-sm">
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">1</span>
-                <span>Abra este site no <strong>Safari</strong>.</span>
+                <span>
+                  Abra este site no <strong>Safari</strong>.
+                </span>
               </li>
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">2</span>
-                <span className="flex items-center gap-1">Toque em <Share className="inline h-4 w-4 text-blue-600" /> <strong>Compartilhar</strong>.</span>
+                <span className="flex items-center gap-1">
+                  Toque em <Share className="inline h-4 w-4 text-blue-600" /> <strong>Compartilhar</strong>.
+                </span>
               </li>
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">3</span>
-                <span>Toque em <strong>Adicionar à Tela de Início</strong>.</span>
+                <span>
+                  Toque em <strong>Adicionar à Tela de Início</strong>.
+                </span>
               </li>
               <li className="flex gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600 text-xs font-bold text-white">4</span>
-                <span>Confirme em <strong>Adicionar</strong>.</span>
+                <span>
+                  Confirme em <strong>Adicionar</strong>.
+                </span>
               </li>
             </ol>
             <Button className="mt-5 w-full bg-red-600 text-white hover:bg-red-700" onClick={() => setShowIosGuide(false)}>
+              Entendi
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {showAndroidGuide && (
+        <div
+          className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 p-4 sm:items-center print:hidden"
+          onClick={() => setShowAndroidGuide(false)}
+          data-testid="pwa-install-guide"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 text-slate-900 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Como baixar o aplicativo</h2>
+              <button type="button" className="rounded-full p-1 text-slate-400 hover:bg-slate-100" onClick={() => setShowAndroidGuide(false)} aria-label="Fechar">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <ol className="space-y-3 text-sm">
+              <li className="flex gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">1</span>
+                <span>
+                  No <strong>Chrome</strong> ou <strong>Edge</strong>, toque no menu <strong>⋮</strong>.
+                </span>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">2</span>
+                <span>
+                  Escolha <strong>Instalar aplicativo</strong> ou <strong>Adicionar à tela inicial</strong>.
+                </span>
+              </li>
+              <li className="flex gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">3</span>
+                <span>Confirme a instalação e abra o GondUp pelo ícone na tela inicial.</span>
+              </li>
+            </ol>
+            <Button className="mt-5 w-full bg-teal-600 text-white hover:bg-teal-700" onClick={() => setShowAndroidGuide(false)}>
               Entendi
             </Button>
           </div>

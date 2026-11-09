@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/lib/trpc";
+import { isStandaloneDisplay } from "@/pwa/hooks";
 
 
 async function updateApp() {
@@ -87,14 +88,19 @@ export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdo
           {user?.email && <p className="mt-0.5 truncate text-xs font-normal text-slate-400">{user.email}</p>}
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-white/10" />
-        <DropdownMenuItem
-          onClick={() => void updateApp()}
-          className="cursor-pointer gap-3 py-2.5 text-teal-200 focus:bg-teal-500/15 focus:text-teal-100"
-        >
-          <RefreshCw />
-          Atualizar aplicativo
-        </DropdownMenuItem>
-        <DropdownMenuSeparator className="bg-white/10" />
+        {isStandaloneDisplay() && (
+          <>
+            <DropdownMenuItem
+              onClick={() => void updateApp()}
+              data-testid="account-update-app"
+              className="cursor-pointer gap-3 py-2.5 text-teal-200 focus:bg-teal-500/15 focus:text-teal-100"
+            >
+              <RefreshCw />
+              Atualizar aplicativo
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="bg-white/10" />
+          </>
+        )}
         <DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
           <a href="/minha-conta#dados-usuario">
             <UserRound className="text-teal-300" />

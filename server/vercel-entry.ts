@@ -161,6 +161,10 @@ export async function createApp() {
           // Ícones, manifest, imagens da landing etc. (sem hash): cache curto.
           res.setHeader("Cache-Control", "public, max-age=3600");
         }
+        // Chrome prefere application/manifest+json para instalar o PWA.
+        if (filePath.endsWith(`${path.sep}manifest.json`) || filePath.endsWith("/manifest.json")) {
+          res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+        }
       },
     }));
     app.use("*", (_req, res) => res.sendFile(path.resolve(distPath, "index.html")));

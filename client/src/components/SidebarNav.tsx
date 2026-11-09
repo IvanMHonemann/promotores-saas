@@ -32,8 +32,8 @@ type NavItem = {
 };
 
 function InstallButton() {
-  const { showInstallOffer, isInstalling, isIosInstallable, beginNativeInstallFromGesture } = useInstallPrompt();
-  if (!showInstallOffer) return null;
+  const { showInstallOffer, alreadyInstalled, isInstalling, isIosInstallable, beginNativeInstallFromGesture } = useInstallPrompt();
+  if (alreadyInstalled || !showInstallOffer) return null;
   const onClick = () => {
     const result = beginNativeInstallFromGesture();
     if (result === "prompting" || result === "busy") return;

@@ -1,3 +1,4 @@
+import { formatSchedule, isValidCpf, isValidCpfOrCnpj, parseSchedule } from "@shared/brDocs";
 import { useMemo, useState } from "react";
 import { FileSpreadsheet, FileText, Loader2, MessageCircle, Printer, Save, Settings2 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -140,13 +141,16 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
   const lv = labor && labor.id === who ? labor.v : {
     jobTitle: stored.jobTitle ?? "", admissionDate: stored.admissionDate ?? "", cpf: stored.cpf ?? "", pis: stored.pis ?? "",
     dailyHours: stored.dailyMinutes ? String(stored.dailyMinutes / 60) : "", intervalMinutes: stored.intervalMinutes != null ? String(stored.intervalMinutes) : "",
-    workdays: stored.workdays ?? [], nightEnabled: Boolean(stored.nightEnabled), nightStart: stored.nightStart ?? "22:00", nightEnd: stored.nightEnd ?? "05:00",
+    schedule: formatSchedule(stored.schedule), workdays: stored.workdays ?? [], nightEnabled: Boolean(stored.nightEnabled), nightStart: stored.nightStart ?? "22:00", nightEnd: stored.nightEnd ?? "05:00",
   };
   const setLv = (patch: any) => setLabor({ id: who, v: { ...lv, ...patch } });
   const submitLabor = () => {
+    const schedule = parseSchedule(lv.schedule || "");
+    if (schedule === null) { toast.error("Horário contratual inválido. Use o formato 08:00-12:00, 13:00-17:00."); return; }
+    if (lv.cpf && !isValidCpf(lv.cpf)) { toast.error("CPF inválido: confira os números."); return; }
     const h = lv.dailyHours === "" ? null : Math.round(Number(String(lv.dailyHours).replace(",", ".")) * 60);
     saveLabor.mutate({ memberId: Number(who), profile: {
-      jobTitle: lv.jobTitle || null, admissionDate: lv.admissionDate || null, cpf: lv.cpf || null, pis: lv.pis || null,
+      jobTitle: lv.jobTitle || null, admissionDate: lv.admissionDate || null, cpf: lv.cpf || null, pis: lv.pis || null, schedule: schedule.length ? schedule : null,
       dailyMinutes: h && h > 0 ? h : null, intervalMinutes: lv.intervalMinutes === "" ? null : Number(lv.intervalMinutes),
       workdays: lv.workdays.length ? lv.workdays : null, nightEnabled: lv.nightEnabled, nightStart: lv.nightStart, nightEnd: lv.nightEnd,
     } });
@@ -155,7 +159,7 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
     <div className="space-y-3"><p className="text-sm text-slate-300">Identificação do empregador. Campos em branco aparecem como “Não informado” no relatório.</p>
       <div className="grid gap-3 md:grid-cols-2">
         <div><Label>Razão social / nome</Label><Input value={legalValue.legalName} onChange={(e) => setLegal({ ...legalValue, legalName: e.target.value })} className={field} /></div>
-        <div><Label>CNPJ ou CPF</Label><Input value={legalValue.document} onChange={(e) => setLegal({ ...legalValue, document: e.target.value })} className={field} /></div>
+        <div><Label>CNPJ ou CPF</Label><Input value={legalValue.document} onChange={(e) => setLegal({ ...legalValue, document: e.target.value })} className={field} />{legalValue.document && !isValidCpfOrCnpj(legalValue.document) && <p className="mt-1 text-xs text-rose-300">CNPJ/CPF inválido</p>}</div>
         <div><Label>Estabelecimento</Label><Input value={legalValue.establishment} onChange={(e) => setLegal({ ...legalValue, establishment: e.target.value })} className={field} /></div>
         <div><Label>Endereço</Label><Input value={legalValue.address} onChange={(e) => setLegal({ ...legalValue, address: e.target.value })} className={field} /></div>
       </div>
@@ -166,8 +170,9 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
       {!member ? <p className="text-sm text-amber-200">Escolha um funcionário específico para editar o perfil.</p> : <>
         <div className="grid gap-3 md:grid-cols-3">
           <div><Label>Cargo/função</Label><Input value={lv.jobTitle} onChange={(e) => setLv({ jobTitle: e.target.value })} className={field} /></div>
-          <div><Label>CPF</Label><Input value={lv.cpf} onChange={(e) => setLv({ cpf: e.target.value })} placeholder="000.000.000-00" className={field} /></div>
+          <div><Label>CPF</Label><Input value={lv.cpf} onChange={(e) => setLv({ cpf: e.target.value })} placeholder="000.000.000-00" className={field} />{lv.cpf && !isValidCpf(lv.cpf) && <p className="mt-1 text-xs text-rose-300">CPF inválido</p>}</div>
           <div><Label>PIS/PASEP</Label><Input value={lv.pis} onChange={(e) => setLv({ pis: e.target.value })} placeholder="00000000000" className={field} /></div>
+          <div className="md:col-span-2"><Label>Horário contratual (entrada-saída)</Label><Input value={lv.schedule} onChange={(e) => setLv({ schedule: e.target.value })} placeholder="Ex.: 08:00-12:00, 13:00-17:00" className={field} /><p className="mt-1 text-xs text-slate-400">Sai no AEJ e no espelho. Separe os turnos por vírgula.</p></div>
           <div><Label>Data de admissão</Label><Input type="date" value={lv.admissionDate} onChange={(e) => setLv({ admissionDate: e.target.value })} className={field} /></div>
           <div><Label>Jornada diária (horas)</Label><Input inputMode="decimal" value={lv.dailyHours} onChange={(e) => setLv({ dailyHours: e.target.value })} placeholder="Ex.: 8 ou 7,33" className={field} /></div>
           <div><Label>Intervalo previsto (min)</Label><Input inputMode="numeric" value={lv.intervalMinutes} onChange={(e) => setLv({ intervalMinutes: e.target.value })} className={field} /></div>

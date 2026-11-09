@@ -25,3 +25,11 @@
 
 ## Pendências fora do código
 Registro no INPI; certificado ICP-Brasil e assinatura .p7s; CNPJ/CPF do empregador cadastrado; parecer de advogado trabalhista; restringir permissões do banco.
+
+## LGPD e relógio (PR seguinte)
+- **Aviso ao trabalhador** (`shared/privacyNotice.ts`): modal de um toque no primeiro acesso do promotor; registra data, IP, aparelho, versão e hash do texto (`privacy_acknowledgements`). Mudou o texto → troque `PRIVACY_NOTICE_VERSION` e o aviso reaparece. Não é consentimento (base: art. 7º, II e V).
+- **Cadastro**: CNPJ/CPF da empresa e CPF do funcionário validados (dígitos verificadores); novo campo *horário contratual* (`labor_profile.schedule`) vai para o registro 04 do AEJ e para o espelho. Pendências aparecem em `/ponto-legal`.
+- **Relógio**: `server/ponto/clock.ts` mede o desvio do servidor e do banco contra a.ntp.br/b/c (SNTP UDP); se o UDP estiver bloqueado (comum em serverless), usa o cabeçalho Date HTTPS de ntp.br (~1 s). Roda no cron diário, ao abrir `/ponto-legal` (se > 6 h) e sob demanda. Grava em `clock_checks` e na auditoria; mudança de estado vira "ALERTA"/"AJUSTE". Em serverless não há como ajustar o relógio da máquina: o sistema mede e alerta.
+- **Direitos do titular**: promotor em `/meus-dados` (baixar cópia, abrir pedido); administrador em `/lgpd` (pedidos, ciência do aviso, exportar ZIP com `dados.json` + `resumo.pdf`, anonimizar). A anonimização troca nome/e-mail/telefone por pseudônimo, invalida senha e sessões, agenda as fotos para exclusão e apaga GPS/observações de visitas — **mantém** marcações de ponto, perfil trabalhista (CPF), correções, aceites e auditoria (LGPD art. 16, I).
+- **Textos jurídicos**: rascunhos em `docs/juridico/` (DPA, Termos, Política, Aviso). As páginas `/termos` e `/privacidade` são geradas deles por `scripts/gen-legal-texts.py` com aviso de versão preliminar.
+- Migração: `drizzle/0032_lgpd_relogio.sql` (também automática no primeiro uso).

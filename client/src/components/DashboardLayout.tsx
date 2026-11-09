@@ -13,6 +13,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { useSidebarCollapsed } from "@/lib/sidebarState";
 import HelpTip from "@/components/HelpTip";
+import PrivacyNoticeGate from "@/components/PrivacyNoticeGate";
 
 type Props = {
   title: string;
@@ -61,6 +62,7 @@ export default function DashboardLayout({ title, description, help, children, re
             <PaymentReminderBanner />
             <RejectedCorrectionAlert />
             <MissingPunchAlert />
+            <PrivacyNoticeGate />
           </ErrorBoundary>
           <ErrorBoundary resetKey="page">
             {children}

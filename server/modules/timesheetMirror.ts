@@ -1,3 +1,4 @@
+import { isValidCpf, isValidCpfOrCnpj } from "@shared/brDocs";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, eq, gte, lt, inArray, sql } from "drizzle-orm";
@@ -54,15 +55,17 @@ export async function recordAdjustment(a: { companyId: number; timeEventId: numb
 
 const legalSchema = z.object({
   legalName: z.string().trim().max(200).optional().default(""),
-  document: z.string().trim().max(32).optional().default(""), // CNPJ/CPF do empregador
+  document: z.string().trim().max(32).optional().default("").refine((v) => !v || isValidCpfOrCnpj(v), "CNPJ/CPF inválido: confira os números."), // CNPJ/CPF do empregador
   establishment: z.string().trim().max(200).optional().default(""),
   address: z.string().trim().max(300).optional().default(""),
 });
 const laborSchema = z.object({
   jobTitle: z.string().trim().max(120).nullish(),
   admissionDate: dateStr.nullish(),
-  cpf: z.string().trim().max(14).nullish(),
+  cpf: z.string().trim().max(14).nullish().refine((v) => !v || isValidCpf(v), "CPF inválido: confira os números."),
   pis: z.string().trim().max(20).nullish(),
+  /** Horário contratual: pares entrada/saída, ex.: [["08:00","12:00"],["13:00","17:00"]]. */
+  schedule: z.array(z.tuple([hm, hm])).max(4).nullish(),
   dailyMinutes: z.number().int().min(0).max(1440).nullish(),
   intervalMinutes: z.number().int().min(0).max(600).nullish(),
   workdays: z.array(z.number().int().min(0).max(6)).max(7).nullish(),

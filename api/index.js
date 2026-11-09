@@ -1085,8 +1085,8 @@ async function setPromoterStoreAssignments(db, companyId, promoterId, storeIds) 
 async function getPromoterStoreAssignments(db, companyId, promoterId) {
   await ensurePromoterStoreAssignmentsTable(db);
   const res = await db.execute(sql`SELECT storeId FROM promoter_store_assignments WHERE companyId = ${companyId} AND promoterId = ${promoterId}`);
-  const rows3 = Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [];
-  return rows3.map((r) => Number(r.storeId));
+  const rows4 = Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [];
+  return rows4.map((r) => Number(r.storeId));
 }
 async function assertStoreAccess(db, ctx, storeId) {
   const memberId = scopeMemberId(ctx);
@@ -1742,10 +1742,10 @@ function isMissingEntitlementsTable(error) {
 }
 async function replaceSubscriptionPlanFeatures(database2, planId, featureKeys) {
   const enabled = new Set(featureKeys);
-  const rows3 = ENTITLEMENT_KEYS.map((featureKey) => ({ planId, featureKey, enabled: enabled.has(featureKey) }));
+  const rows4 = ENTITLEMENT_KEYS.map((featureKey) => ({ planId, featureKey, enabled: enabled.has(featureKey) }));
   await database2.transaction(async (tx) => {
     await tx.delete(subscriptionPlanFeatures).where(eq2(subscriptionPlanFeatures.planId, planId));
-    await tx.insert(subscriptionPlanFeatures).values(rows3);
+    await tx.insert(subscriptionPlanFeatures).values(rows4);
   });
 }
 async function attachPlanFeatureKeys(database2, plans) {
@@ -1772,8 +1772,8 @@ async function getCompanyFeatureOverrides(companyId) {
   const database2 = await getDb();
   if (!database2) return {};
   try {
-    const rows3 = await database2.select({ featureKey: companyFeatureOverrides.featureKey, enabled: companyFeatureOverrides.enabled }).from(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, companyId));
-    return Object.fromEntries(rows3.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, Boolean(row2.enabled)]));
+    const rows4 = await database2.select({ featureKey: companyFeatureOverrides.featureKey, enabled: companyFeatureOverrides.enabled }).from(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, companyId));
+    return Object.fromEntries(rows4.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, Boolean(row2.enabled)]));
   } catch (error) {
     if (isMissingEntitlementsTable(error)) return {};
     throw error;
@@ -1785,8 +1785,8 @@ async function getMemberFeatureModes(memberAccountId, companyId) {
   const account = await database2.select({ id: memberAccounts2.id }).from(memberAccounts2).where(and2(eq2(memberAccounts2.id, memberAccountId), eq2(memberAccounts2.companyId, companyId))).limit(1);
   if (!account[0]) return {};
   try {
-    const rows3 = await database2.select({ featureKey: memberFeaturePermissions.featureKey, mode: memberFeaturePermissions.mode }).from(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, memberAccountId));
-    return Object.fromEntries(rows3.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, row2.mode]));
+    const rows4 = await database2.select({ featureKey: memberFeaturePermissions.featureKey, mode: memberFeaturePermissions.mode }).from(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, memberAccountId));
+    return Object.fromEntries(rows4.filter((row2) => ENTITLEMENT_KEYS.includes(row2.featureKey)).map((row2) => [row2.featureKey, row2.mode]));
   } catch (error) {
     if (isMissingEntitlementsTable(error)) return {};
     throw error;
@@ -1795,26 +1795,26 @@ async function getMemberFeatureModes(memberAccountId, companyId) {
 async function replaceCompanyFeatureOverrides(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
-  const rows3 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+  const rows4 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
     const enabled = input.overrides[featureKey];
     return enabled == null ? [] : [{ companyId: input.companyId, featureKey, enabled, reason: input.reason ?? null, updatedByPlatformAdminId: input.updatedByPlatformAdminId }];
   });
   await database2.transaction(async (tx) => {
     await tx.delete(companyFeatureOverrides).where(eq2(companyFeatureOverrides.companyId, input.companyId));
-    if (rows3.length) await tx.insert(companyFeatureOverrides).values(rows3);
+    if (rows4.length) await tx.insert(companyFeatureOverrides).values(rows4);
   });
   return { success: true };
 }
 async function replaceMemberFeatureModes(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
-  const rows3 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
+  const rows4 = ENTITLEMENT_KEYS.flatMap((featureKey) => {
     const mode = input.modes[featureKey];
     return !mode || mode === "inherit" ? [] : [{ memberAccountId: input.memberAccountId, featureKey, mode, updatedByMemberAccountId: input.updatedByMemberAccountId }];
   });
   await database2.transaction(async (tx) => {
     await tx.delete(memberFeaturePermissions).where(eq2(memberFeaturePermissions.memberAccountId, input.memberAccountId));
-    if (rows3.length) await tx.insert(memberFeaturePermissions).values(rows3);
+    if (rows4.length) await tx.insert(memberFeaturePermissions).values(rows4);
   });
   return { success: true };
 }
@@ -1854,7 +1854,7 @@ async function updateSubscriptionPlan(id2, data) {
 async function listCompanySubscriptions() {
   const db = await getDb();
   if (!db) return [];
-  const rows3 = await db.select({
+  const rows4 = await db.select({
     id: companySubscriptions.id,
     companyId: companySubscriptions.companyId,
     planId: companySubscriptions.planId,
@@ -1871,7 +1871,7 @@ async function listCompanySubscriptions() {
     maxClients: subscriptionPlans.maxClients,
     maxExtinguishers: subscriptionPlans.maxExtinguishers
   }).from(companySubscriptions).innerJoin(companies, eq2(companySubscriptions.companyId, companies.id)).innerJoin(subscriptionPlans, eq2(companySubscriptions.planId, subscriptionPlans.id)).orderBy(desc(companySubscriptions.createdAt));
-  return rows3;
+  return rows4;
 }
 async function getSubscriptionStats() {
   const db = await getDb();
@@ -1915,8 +1915,8 @@ async function updateCompanySubscription(id2, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   await db.update(companySubscriptions).set(data).where(eq2(companySubscriptions.id, id2));
-  const rows3 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.id, id2)).limit(1);
-  const sub = rows3[0];
+  const rows4 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.id, id2)).limit(1);
+  const sub = rows4[0];
   if (sub) {
     const patch = {};
     if (data.planId !== void 0) patch.planId = data.planId;
@@ -1932,8 +1932,8 @@ async function updateCompanySubscription(id2, data) {
 async function getSubscriptionPlanById(planId) {
   const database2 = await getDb();
   if (!database2) return null;
-  const rows3 = await database2.select().from(subscriptionPlans).where(eq2(subscriptionPlans.id, planId)).limit(1);
-  return (await attachPlanFeatureKeys(database2, rows3))[0] ?? null;
+  const rows4 = await database2.select().from(subscriptionPlans).where(eq2(subscriptionPlans.id, planId)).limit(1);
+  return (await attachPlanFeatureKeys(database2, rows4))[0] ?? null;
 }
 async function resolveCompanyPlan(companyId) {
   const db = await getDb();
@@ -1961,12 +1961,12 @@ async function resolveCompanyPlan(companyId) {
 async function getLatestCompanySubscription(companyId) {
   const db = await getDb();
   if (!db) return null;
-  const rows3 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.companyId, companyId)).orderBy(desc(companySubscriptions.createdAt));
-  if (!rows3.length) return null;
-  const preferred = rows3.find(
+  const rows4 = await db.select().from(companySubscriptions).where(eq2(companySubscriptions.companyId, companyId)).orderBy(desc(companySubscriptions.createdAt));
+  if (!rows4.length) return null;
+  const preferred = rows4.find(
     (r) => ["active", "trial", "test", "pending", "overdue"].includes(String(r.status))
   );
-  return preferred ?? rows3[0];
+  return preferred ?? rows4[0];
 }
 async function updateCompanySubscriptionFields(companyId, data) {
   const db = await getDb();
@@ -2019,8 +2019,8 @@ async function createPaymentRecord(data) {
 async function findPaymentEventByEventId(eventId) {
   const db = await getDb();
   if (!db) return null;
-  const rows3 = await db.select().from(paymentEvents).where(eq2(paymentEvents.eventId, eventId)).limit(1);
-  return rows3[0] ?? null;
+  const rows4 = await db.select().from(paymentEvents).where(eq2(paymentEvents.eventId, eventId)).limit(1);
+  return rows4[0] ?? null;
 }
 async function recordPaymentEvent(data) {
   const db = await getDb();
@@ -2167,8 +2167,8 @@ async function createOperationalStore(input, ownerMemberAccountId) {
   const result = await database2.insert(stores).values(input);
   const storeId = Number(result[0]?.insertId);
   if (ownerMemberAccountId) await recordStoreOwner(database2, { storeId, companyId: input.companyId, memberAccountId: ownerMemberAccountId });
-  const rows3 = await database2.select().from(stores).where(eq2(stores.id, storeId)).limit(1);
-  return rows3[0];
+  const rows4 = await database2.select().from(stores).where(eq2(stores.id, storeId)).limit(1);
+  return rows4[0];
 }
 async function updateOperationalStore(companyId, id2, patch) {
   const database2 = await getDb();
@@ -2370,8 +2370,8 @@ async function createOperationalRoute(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
   const result = await database2.insert(routes).values(input);
-  const rows3 = await database2.select().from(routes).where(eq2(routes.id, Number(result[0]?.insertId))).limit(1);
-  return rows3[0];
+  const rows4 = await database2.select().from(routes).where(eq2(routes.id, Number(result[0]?.insertId))).limit(1);
+  return rows4[0];
 }
 async function updateOperationalRoute(companyId, routeId, data) {
   const database2 = await getDb();
@@ -2434,8 +2434,8 @@ async function createOperationalRouteWithVisits(input) {
     const result = await tx.insert(routes).values(input.route);
     const routeId = Number(result[0]?.insertId);
     await tx.insert(visits).values(stores2.map((store) => ({ companyId, routeId, storeId: store.id, promoterId: input.route.promoterId, status: "pending" })));
-    const rows3 = await tx.select().from(routes).where(eq2(routes.id, routeId)).limit(1);
-    return rows3[0];
+    const rows4 = await tx.select().from(routes).where(eq2(routes.id, routeId)).limit(1);
+    return rows4[0];
   });
 }
 async function listOperationalVisits(companyId, options = {}) {
@@ -2446,15 +2446,15 @@ async function listOperationalVisits(companyId, options = {}) {
   if (options.promoterId) conditions.push(eq2(visits.promoterId, options.promoterId));
   if (options.routeId) conditions.push(eq2(visits.routeId, options.routeId));
   if (options.date) conditions.push(eq2(routes.date, options.date));
-  const rows3 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, and2(eq2(visits.storeId, stores.id), eq2(stores.companyId, visits.companyId))).innerJoin(routes, and2(eq2(visits.routeId, routes.id), eq2(routes.companyId, visits.companyId))).where(and2(...conditions)).orderBy(visits.plannedStart, visits.id);
-  return rows3;
+  const rows4 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, and2(eq2(visits.storeId, stores.id), eq2(stores.companyId, visits.companyId))).innerJoin(routes, and2(eq2(visits.routeId, routes.id), eq2(routes.companyId, visits.companyId))).where(and2(...conditions)).orderBy(visits.plannedStart, visits.id);
+  return rows4;
 }
 async function updateOperationalVisit(companyId, id2, data) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
   await database2.update(visits).set(data).where(and2(eq2(visits.id, id2), eq2(visits.companyId, requireAccountId(companyId))));
-  const rows3 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq2(visits.storeId, stores.id)).where(and2(eq2(visits.id, id2), eq2(visits.companyId, companyId))).limit(1);
-  return rows3[0];
+  const rows4 = await database2.select({ visit: visits, store: stores }).from(visits).innerJoin(stores, eq2(visits.storeId, stores.id)).where(and2(eq2(visits.id, id2), eq2(visits.companyId, companyId))).limit(1);
+  return rows4[0];
 }
 async function autoCloseStaleVisits(companyId, promoterId, today) {
   try {
@@ -2614,12 +2614,12 @@ async function deleteInventoryProducts(companyId, ids, actor) {
   await ensureTrashTable();
   await ensureInventoryProductsSchema();
   return database2.transaction(async (tx) => {
-    const rows3 = await tx.select().from(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
-    if (rows3.length !== uniqueIds.length) throw new Error("Um ou mais produtos n\xE3o existem ou n\xE3o pertencem \xE0 sua empresa.");
+    const rows4 = await tx.select().from(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
+    if (rows4.length !== uniqueIds.length) throw new Error("Um ou mais produtos n\xE3o existem ou n\xE3o pertencem \xE0 sua empresa.");
     const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1e3);
-    await tx.insert(trashItems).values(rows3.map((product) => ({ accountId: tenant, deletedByMemberId: actor?.memberId ?? null, deletedByName: actor?.name ?? null, ownerMemberId: product.createdByMemberId ?? null, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
+    await tx.insert(trashItems).values(rows4.map((product) => ({ accountId: tenant, deletedByMemberId: actor?.memberId ?? null, deletedByName: actor?.name ?? null, ownerMemberId: product.createdByMemberId ?? null, itemType: "product", originalId: product.id, label: `${product.description} (${product.productCode})`.slice(0, 255), snapshot: JSON.stringify(product), expiresAt })));
     await tx.delete(inventoryProducts).where(and2(inArray(inventoryProducts.id, uniqueIds), eq2(inventoryProducts.companyId, tenant)));
-    return { deleted: rows3.length };
+    return { deleted: rows4.length };
   });
 }
 async function deleteInventoryProduct(companyId, id2, actor) {
@@ -3182,12 +3182,12 @@ async function listAuditLogs(filters = {}) {
       params
     );
     const total = Number(countRows[0]?.value || 0);
-    const [rows3] = await pool.query(
+    const [rows4] = await pool.query(
       `SELECT * FROM \`audit_logs\` ${whereSql} ORDER BY \`createdAt\` DESC, \`id\` DESC LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
     return {
-      items: rows3 || [],
+      items: rows4 || [],
       total,
       page,
       pageSize
@@ -3202,11 +3202,11 @@ async function listAuditLogs(filters = {}) {
         params
       );
       const total = Number(countRows[0]?.value || 0);
-      const [rows3] = await pool.query(
+      const [rows4] = await pool.query(
         `SELECT * FROM \`audit_logs\` ${whereSql} ORDER BY \`createdAt\` DESC, \`id\` DESC LIMIT ? OFFSET ?`,
         [...params, pageSize, offset]
       );
-      return { items: rows3 || [], total, page, pageSize };
+      return { items: rows4 || [], total, page, pageSize };
     } catch (err2) {
       console.warn("[audit] list failed permanently", err2);
       return { items: [], total: 0, page, pageSize };
@@ -3219,17 +3219,17 @@ async function getAuditLogById(id2, companyId) {
   if (!pool) return null;
   try {
     if (companyId != null) {
-      const [rows4] = await pool.query(
+      const [rows5] = await pool.query(
         "SELECT * FROM `audit_logs` WHERE `id` = ? AND `companyId` = ? LIMIT 1",
         [id2, companyId]
       );
-      return rows4[0] || null;
+      return rows5[0] || null;
     }
-    const [rows3] = await pool.query(
+    const [rows4] = await pool.query(
       "SELECT * FROM `audit_logs` WHERE `id` = ? LIMIT 1",
       [id2]
     );
-    return rows3[0] || null;
+    return rows4[0] || null;
   } catch (err) {
     console.warn("[audit] getById failed", err);
     return null;
@@ -3376,8 +3376,8 @@ async function listPromoterActivities(filters) {
   try {
     const [countRows] = await pool.query(`SELECT COUNT(*) AS value ${tableSql}`, params);
     const total = Number(countRows[0]?.value || 0);
-    const [rows3] = await pool.query(`SELECT activity.* ${tableSql} ORDER BY activity.occurredAt DESC, activity.activityId DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
-    return { items: rows3 || [], total, page, pageSize };
+    const [rows4] = await pool.query(`SELECT activity.* ${tableSql} ORDER BY activity.occurredAt DESC, activity.activityId DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]);
+    return { items: rows4 || [], total, page, pageSize };
   } catch (err) {
     console.warn("[audit] promoter activity query failed", err);
     throw new TRPCError4({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel carregar as atividades dos promotores. Tente novamente em instantes." });
@@ -3391,6 +3391,39 @@ var init_audit = __esm({
     init_db();
     auditTableReady = false;
     SENSITIVE_KEY_RE = /password|passwd|pwd|token|secret|cookie|authorization|recovery|hash|credit.?card|card.?number|cvv|cvc|ssn|api.?key/i;
+  }
+});
+
+// shared/brDocs.ts
+function isValidCpf(value) {
+  const d = onlyDigitsStr(value);
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const calc = (len) => {
+    let sum = 0;
+    for (let i = 0; i < len; i++) sum += Number(d[i]) * (len + 1 - i);
+    const r = sum * 10 % 11;
+    return r === 10 ? 0 : r;
+  };
+  return calc(9) === Number(d[9]) && calc(10) === Number(d[10]);
+}
+function isValidCnpj(value) {
+  const d = onlyDigitsStr(value);
+  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+  const calc = (len) => {
+    const w = len === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    let sum = 0;
+    for (let i = 0; i < len; i++) sum += Number(d[i]) * w[i];
+    const r = sum % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  return calc(12) === Number(d[12]) && calc(13) === Number(d[13]);
+}
+var onlyDigitsStr, isValidCpfOrCnpj;
+var init_brDocs = __esm({
+  "shared/brDocs.ts"() {
+    "use strict";
+    onlyDigitsStr = (v) => String(v ?? "").replace(/\D/g, "");
+    isValidCpfOrCnpj = (v) => onlyDigitsStr(v).length === 11 ? isValidCpf(v) : isValidCnpj(v);
   }
 });
 
@@ -3817,14 +3850,14 @@ async function loadApprovedDayExcuses(companyId, memberIds, from, to) {
   await ensureCorrectionExtras();
   const start = new Date(Date.parse(`${from}T00:00:00Z`) - 15 * 36e5);
   const end = new Date(Date.parse(`${to}T00:00:00Z`) + 60 * 36e5);
-  const rows3 = await database2.select().from(timeCorrectionRequests).where(and3(
+  const rows4 = await database2.select().from(timeCorrectionRequests).where(and3(
     eq3(timeCorrectionRequests.companyId, companyId),
     inArray2(timeCorrectionRequests.memberAccountId, memberIds),
     eq3(timeCorrectionRequests.status, "approved"),
     gte(timeCorrectionRequests.requestedTime, start),
     lt(timeCorrectionRequests.requestedTime, end)
   ));
-  for (const row2 of rows3) {
+  for (const row2 of rows4) {
     if (!looksLikeFullDayExcuse(row2)) continue;
     const date3 = excuseDay(row2.requestedTime);
     if (date3 < from || date3 > to) continue;
@@ -4020,10 +4053,10 @@ function treatmentHash(t2, previousHash) {
   ].join("|");
   return sha256(payload + (previousHash || ""));
 }
-function verifyLedger(rows3) {
+function verifyLedger(rows4) {
   const problems = [];
-  const originals = rows3.filter((r) => r.origin === "original").sort((a, b) => (a.nsr ?? Infinity) - (b.nsr ?? Infinity) || a.id - b.id);
-  const treatments = rows3.filter((r) => r.origin !== "original").sort((a, b) => a.id - b.id);
+  const originals = rows4.filter((r) => r.origin === "original").sort((a, b) => (a.nsr ?? Infinity) - (b.nsr ?? Infinity) || a.id - b.id);
+  const treatments = rows4.filter((r) => r.origin !== "original").sort((a, b) => a.id - b.id);
   let prev = null;
   let expectedNsr = 1;
   const seen = /* @__PURE__ */ new Set();
@@ -4183,8 +4216,8 @@ async function loadWorkerCpf(companyId, memberId) {
 }
 async function lockState(tx, companyId) {
   await tx.execute(sql4`INSERT IGNORE INTO rep_ledger_state (companyId, lastNsr) VALUES (${companyId}, 0)`);
-  const [rows3] = await tx.execute(sql4`SELECT lastNsr, lastHash, lastTreatmentHash, initializedAt FROM rep_ledger_state WHERE companyId = ${companyId} FOR UPDATE`);
-  const row2 = rows3?.[0] ?? {};
+  const [rows4] = await tx.execute(sql4`SELECT lastNsr, lastHash, lastTreatmentHash, initializedAt FROM rep_ledger_state WHERE companyId = ${companyId} FOR UPDATE`);
+  const row2 = rows4?.[0] ?? {};
   let state = { lastNsr: Number(row2.lastNsr ?? 0), lastHash: row2.lastHash ?? null, lastTreatmentHash: row2.lastTreatmentHash ?? null };
   if (!row2.initializedAt) {
     state = await sealLegacy(tx, companyId, state);
@@ -4193,11 +4226,11 @@ async function lockState(tx, companyId) {
   return state;
 }
 async function sealLegacy(tx, companyId, state) {
-  const [rows3] = await tx.execute(sql4`SELECT id, memberAccountId, eventType, serverTime, deviceTime, latitude, longitude, accuracy, notes FROM time_events WHERE companyId = ${companyId} AND recordHash IS NULL ORDER BY id`);
-  if (!rows3?.length) return state;
+  const [rows4] = await tx.execute(sql4`SELECT id, memberAccountId, eventType, serverTime, deviceTime, latitude, longitude, accuracy, notes FROM time_events WHERE companyId = ${companyId} AND recordHash IS NULL ORDER BY id`);
+  if (!rows4?.length) return state;
   const cpfCache = /* @__PURE__ */ new Map();
   let { lastNsr, lastHash, lastTreatmentHash } = state;
-  for (const r of rows3) {
+  for (const r of rows4) {
     const memberId = Number(r.memberAccountId);
     if (!cpfCache.has(memberId)) cpfCache.set(memberId, await loadWorkerCpf(companyId, memberId));
     const cpf = cpfCache.get(memberId) ?? null;
@@ -4312,16 +4345,16 @@ async function supersededIds(companyId, ids) {
   if (!database2) return out;
   for (let i = 0; i < ids.length; i += 1e3) {
     const chunk = ids.slice(i, i + 1e3);
-    const rows3 = await database2.select({ id: timeEvents.replacesEventId }).from(timeEvents).where(and4(eq4(timeEvents.companyId, companyId), inArray3(timeEvents.replacesEventId, chunk)));
-    for (const r of rows3) if (r.id != null) out.add(Number(r.id));
+    const rows4 = await database2.select({ id: timeEvents.replacesEventId }).from(timeEvents).where(and4(eq4(timeEvents.companyId, companyId), inArray3(timeEvents.replacesEventId, chunk)));
+    for (const r of rows4) if (r.id != null) out.add(Number(r.id));
   }
   return out;
 }
-async function effectiveRows(rows3) {
-  if (!rows3.length) return rows3;
-  const companyId = rows3[0].companyId;
-  const gone = await supersededIds(companyId, rows3.map((r) => r.id));
-  return gone.size ? rows3.filter((r) => !gone.has(r.id)) : rows3;
+async function effectiveRows(rows4) {
+  if (!rows4.length) return rows4;
+  const companyId = rows4[0].companyId;
+  const gone = await supersededIds(companyId, rows4.map((r) => r.id));
+  return gone.size ? rows4.filter((r) => !gone.has(r.id)) : rows4;
 }
 function toLedgerRow(r) {
   return {
@@ -4504,7 +4537,7 @@ var init_vacations = __esm({
         if (input?.status && input.status !== "all") conds.push(eq5(vacationSchedules.status, input.status));
         if (input?.from) conds.push(gte2(vacationSchedules.endDate, input.from));
         if (input?.to) conds.push(lte(vacationSchedules.startDate, input.to));
-        const rows3 = await database2.select({
+        const rows4 = await database2.select({
           id: vacationSchedules.id,
           memberAccountId: vacationSchedules.memberAccountId,
           startDate: vacationSchedules.startDate,
@@ -4519,14 +4552,14 @@ var init_vacations = __esm({
           cancelledByMemberAccountId: vacationSchedules.cancelledByMemberAccountId,
           memberName: memberAccounts2.userName
         }).from(vacationSchedules).innerJoin(memberAccounts2, eq5(memberAccounts2.id, vacationSchedules.memberAccountId)).where(and5(...conds)).orderBy(vacationSchedules.startDate);
-        return rows3.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
       }),
       mine: protectedProcedure.query(async ({ ctx }) => {
         if (!ctx.memberAccountId) throw new TRPCError5({ code: "FORBIDDEN" });
         await ensureVacationSchedulesTable();
         const database2 = await requireDb();
-        const rows3 = await database2.select().from(vacationSchedules).where(and5(eq5(vacationSchedules.companyId, ctx.accountId), eq5(vacationSchedules.memberAccountId, ctx.memberAccountId))).orderBy(vacationSchedules.startDate);
-        return rows3.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+        const rows4 = await database2.select().from(vacationSchedules).where(and5(eq5(vacationSchedules.companyId, ctx.accountId), eq5(vacationSchedules.memberAccountId, ctx.memberAccountId))).orderBy(vacationSchedules.startDate);
+        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
       }),
       create: commercialFeatureProcedure("timeTracking").input(z.object({
         memberAccountId: z.number().int().positive(),
@@ -4607,7 +4640,7 @@ var init_vacations = __esm({
         const from = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-01` : `${input.year}-01-01`;
         const last = new Date(input.year, input.month, 0).getDate();
         const to = input.month ? `${input.year}-${String(input.month).padStart(2, "0")}-${String(last).padStart(2, "0")}` : `${input.year}-12-31`;
-        const rows3 = await database2.select({
+        const rows4 = await database2.select({
           id: vacationSchedules.id,
           memberAccountId: vacationSchedules.memberAccountId,
           memberName: memberAccounts2.userName,
@@ -4623,7 +4656,7 @@ var init_vacations = __esm({
           lte(vacationSchedules.startDate, to),
           gte2(vacationSchedules.endDate, from)
         ));
-        return rows3.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
+        return rows4.map((row2) => ({ ...row2, startDate: asDateStr(row2.startDate), endDate: asDateStr(row2.endDate) }));
       })
     });
   }
@@ -4653,8 +4686,8 @@ async function loadMemberVacations(companyId, memberIds, from, to) {
     await ensureVacationSchedulesTable2();
     const database2 = await getDb();
     if (!database2) return map;
-    const rows3 = await database2.select({ memberAccountId: vacationSchedules.memberAccountId, startDate: vacationSchedules.startDate, endDate: vacationSchedules.endDate }).from(vacationSchedules).where(and6(eq6(vacationSchedules.companyId, companyId), eq6(vacationSchedules.status, "scheduled"), inArray5(vacationSchedules.memberAccountId, memberIds)));
-    for (const r of rows3) {
+    const rows4 = await database2.select({ memberAccountId: vacationSchedules.memberAccountId, startDate: vacationSchedules.startDate, endDate: vacationSchedules.endDate }).from(vacationSchedules).where(and6(eq6(vacationSchedules.companyId, companyId), eq6(vacationSchedules.status, "scheduled"), inArray5(vacationSchedules.memberAccountId, memberIds)));
+    for (const r of rows4) {
       const startDate = dateOnly(r.startDate), endDate = dateOnly(r.endDate);
       if (!startDate || !endDate || endDate < from || startDate > to) continue;
       map.set(r.memberAccountId, [...map.get(r.memberAccountId) || [], { startDate, endDate }]);
@@ -4681,15 +4714,15 @@ async function loadAdjustmentsByEvent(companyId, memberIds) {
   try {
     const { ensureAdjustmentsTable: ensureAdjustmentsTable2 } = await Promise.resolve().then(() => (init_timesheetMirror2(), timesheetMirror_exports));
     await ensureAdjustmentsTable2();
-    const rows3 = (await database2.execute(sql5`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${companyId} AND memberAccountId IN (${sql5.join(memberIds.map((id2) => sql5`${id2}`), sql5`, `)}) ORDER BY id`))[0];
-    for (const a of rows3) if (!map.has(Number(a.timeEventId))) map.set(Number(a.timeEventId), a);
+    const rows4 = (await database2.execute(sql5`SELECT timeEventId, originalType, originalTime, justification, reviewedByName, createdAt FROM time_event_adjustments WHERE companyId = ${companyId} AND memberAccountId IN (${sql5.join(memberIds.map((id2) => sql5`${id2}`), sql5`, `)}) ORDER BY id`))[0];
+    for (const a of rows4) if (!map.has(Number(a.timeEventId))) map.set(Number(a.timeEventId), a);
   } catch (error) {
     console.warn("[mirror] ajustes indispon\xEDveis", error);
   }
   return map;
 }
-function toMirrorEvents(rows3, adjByEvent) {
-  return rows3.map((r) => {
+function toMirrorEvents(rows4, adjByEvent) {
+  return rows4.map((r) => {
     const a = adjByEvent.get(r.id);
     const notes = r.notes || "";
     const inclusion = r.origin === "inclusion";
@@ -4784,13 +4817,14 @@ async function companyMembers(companyId, memberIds) {
   if (!database2) throw new TRPCError6({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
   const where = [eq7(memberAccounts2.companyId, companyId)];
   if (memberIds?.length) where.push(inArray6(memberAccounts2.id, memberIds));
-  const rows3 = await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq7(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and7(...where));
-  return rows3.filter((r) => r.role !== "company_admin");
+  const rows4 = await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq7(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and7(...where));
+  return rows4.filter((r) => r.role !== "company_admin");
 }
 var TZ, dateStr2, hm, adjustmentsReady, legalSchema, laborSchema, timesheetMirrorRouter;
 var init_timesheetMirror2 = __esm({
   "server/modules/timesheetMirror.ts"() {
     "use strict";
+    init_brDocs();
     init_trpc();
     init_db();
     init_schema();
@@ -4804,7 +4838,7 @@ var init_timesheetMirror2 = __esm({
     adjustmentsReady = null;
     legalSchema = z2.object({
       legalName: z2.string().trim().max(200).optional().default(""),
-      document: z2.string().trim().max(32).optional().default(""),
+      document: z2.string().trim().max(32).optional().default("").refine((v) => !v || isValidCpfOrCnpj(v), "CNPJ/CPF inv\xE1lido: confira os n\xFAmeros."),
       // CNPJ/CPF do empregador
       establishment: z2.string().trim().max(200).optional().default(""),
       address: z2.string().trim().max(300).optional().default("")
@@ -4812,8 +4846,10 @@ var init_timesheetMirror2 = __esm({
     laborSchema = z2.object({
       jobTitle: z2.string().trim().max(120).nullish(),
       admissionDate: dateStr2.nullish(),
-      cpf: z2.string().trim().max(14).nullish(),
+      cpf: z2.string().trim().max(14).nullish().refine((v) => !v || isValidCpf(v), "CPF inv\xE1lido: confira os n\xFAmeros."),
       pis: z2.string().trim().max(20).nullish(),
+      /** Horário contratual: pares entrada/saída, ex.: [["08:00","12:00"],["13:00","17:00"]]. */
+      schedule: z2.array(z2.tuple([hm, hm])).max(4).nullish(),
       dailyMinutes: z2.number().int().min(0).max(1440).nullish(),
       intervalMinutes: z2.number().int().min(0).max(600).nullish(),
       workdays: z2.array(z2.number().int().min(0).max(6)).max(7).nullish(),
@@ -5038,8 +5074,8 @@ function row(label, value) {
     <td style="padding:8px 0;color:#fff;font-size:14px;font-weight:600;vertical-align:top;">${escapeHtml(value)}</td>
   </tr>`;
 }
-function dataTable(rows3) {
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:12px 0 20px;">${rows3.map(([l, v]) => row(l, v)).join("")}</table>`;
+function dataTable(rows4) {
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:12px 0 20px;">${rows4.map(([l, v]) => row(l, v)).join("")}</table>`;
 }
 function cta(href, label) {
   return `<p style="margin:20px 0 8px;"><a href="${escapeHtml(href)}" style="display:inline-block;background:#e10600;color:#fff;text-decoration:none;font-weight:700;padding:12px 20px;border-radius:999px;">${escapeHtml(label)}</a></p>`;
@@ -5120,18 +5156,18 @@ async function sendEmail(input) {
 async function emailAccountCreated(input) {
   const loginUrl = `${getAppPublicUrl()}/?login=1`;
   const planLine = input.planName ? `${input.planName}${input.isTrial ? " (teste gr\xE1tis)" : ""}` : input.isTrial ? "Teste gr\xE1tis" : "N\xE3o informado";
-  const rows3 = [
+  const rows4 = [
     ["Empresa", input.companyName],
     ["Respons\xE1vel", input.userName],
     ["E-mail de acesso", input.email]
   ];
-  if (input.password) rows3.push(["Senha", input.password]);
-  rows3.push(["C\xF3digo de redefini\xE7\xE3o", input.recoveryCode]);
-  rows3.push(["Plano", planLine]);
+  if (input.password) rows4.push(["Senha", input.password]);
+  rows4.push(["C\xF3digo de redefini\xE7\xE3o", input.recoveryCode]);
+  rows4.push(["Plano", planLine]);
   const html = layout(
     "Sua conta GondUp foi criada",
     `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Sua conta foi criada com sucesso. Guarde estes dados em local seguro.</p>
-    ${dataTable(rows3)}
+    ${dataTable(rows4)}
     <p style="margin:0 0 8px;color:#c4cae0;font-size:13px;line-height:1.5;">Use o <strong style="color:#fff;">c\xF3digo de redefini\xE7\xE3o</strong> se precisar trocar a senha na tela de recupera\xE7\xE3o.</p>
     ${cta(loginUrl, "Entrar no GondUp")}`
   );
@@ -5167,17 +5203,17 @@ Se voc\xEA n\xE3o pediu isso, ignore este e-mail.`
 }
 async function emailPlanChanged(input) {
   const title = input.isUpgrade ? "Upgrade de plano confirmado" : "Plano adquirido";
-  const rows3 = [
+  const rows4 = [
     ["Empresa", input.companyName],
     ["Plano", input.planName],
     ["Status", input.status]
   ];
-  if (input.amount) rows3.push(["Valor", `R$ ${input.amount}`]);
-  if (input.periodEnd) rows3.push(["V\xE1lido at\xE9", input.periodEnd]);
+  if (input.amount) rows4.push(["Valor", `R$ ${input.amount}`]);
+  if (input.periodEnd) rows4.push(["V\xE1lido at\xE9", input.periodEnd]);
   const html = layout(
     title,
     `<p style="margin:0 0 12px;color:#c4cae0;line-height:1.5;">Ol\xE1, <strong style="color:#fff;">${escapeHtml(input.userName)}</strong>. Registramos a altera\xE7\xE3o do plano da sua empresa.</p>
-    ${dataTable(rows3)}
+    ${dataTable(rows4)}
     ${cta(`${getAppPublicUrl()}/minha-assinatura`, "Ver minha assinatura")}`
   );
   return sendEmail({
@@ -5256,6 +5292,149 @@ var init_email = __esm({
   }
 });
 
+// server/ponto/clock.ts
+var clock_exports = {};
+__export(clock_exports, {
+  MAX_DRIFT_MS: () => MAX_DRIFT_MS,
+  NTP_SERVERS: () => NTP_SERVERS,
+  httpsDateSample: () => httpsDateSample,
+  latestClockChecks: () => latestClockChecks,
+  ntpOffset: () => ntpOffset,
+  readNtpTimestamp: () => readNtpTimestamp,
+  runClockCheck: () => runClockCheck,
+  sampleLegalTime: () => sampleLegalTime,
+  sntpQuery: () => sntpQuery
+});
+import dgram from "node:dgram";
+import { sql as sql10 } from "drizzle-orm";
+function readNtpTimestamp(buf, offset) {
+  const seconds = buf.readUInt32BE(offset);
+  const fraction = buf.readUInt32BE(offset + 4);
+  return (seconds - NTP_EPOCH_OFFSET) * 1e3 + Math.round(fraction / 2 ** 32 * 1e3);
+}
+function ntpOffset(t0, t1, t2, t3) {
+  return { offsetMs: Math.round((t1 - t0 + (t2 - t3)) / 2), roundTripMs: Math.max(0, t3 - t0 - (t2 - t1)) };
+}
+function sntpQuery(host, timeoutMs = 2500, now = Date.now) {
+  return new Promise((resolve, reject) => {
+    const socket = dgram.createSocket("udp4");
+    const packet = Buffer.alloc(48);
+    packet[0] = 35;
+    let t0 = 0;
+    const timer = setTimeout(() => {
+      socket.close();
+      reject(new Error(`timeout ${host}`));
+    }, timeoutMs);
+    socket.once("error", (e) => {
+      clearTimeout(timer);
+      socket.close();
+      reject(e);
+    });
+    socket.once("message", (msg) => {
+      const t3 = now();
+      clearTimeout(timer);
+      socket.close();
+      if (msg.length < 48) return reject(new Error("resposta NTP curta"));
+      const t1 = readNtpTimestamp(msg, 32);
+      const t2 = readNtpTimestamp(msg, 40);
+      const { offsetMs, roundTripMs } = ntpOffset(t0, t1, t2, t3);
+      resolve({ source: host, method: "sntp", offsetMs, roundTripMs, precisionMs: Math.max(1, Math.round(roundTripMs / 2)) });
+    });
+    t0 = now();
+    socket.send(packet, 123, host, (err) => {
+      if (err) {
+        clearTimeout(timer);
+        socket.close();
+        reject(err);
+      }
+    });
+  });
+}
+async function httpsDateSample(url = "https://ntp.br/", now = Date.now) {
+  const t0 = now();
+  const res = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(4e3) });
+  const t3 = now();
+  const date3 = res.headers.get("date");
+  if (!date3) throw new Error("sem cabe\xE7alho Date");
+  const server = Date.parse(date3) + 500;
+  return { source: new URL(url).host, method: "https-date", offsetMs: Math.round(server - (t0 + t3) / 2), roundTripMs: t3 - t0, precisionMs: 1e3 + Math.round((t3 - t0) / 2) };
+}
+async function sampleLegalTime() {
+  const results = await Promise.allSettled(NTP_SERVERS.map((h) => sntpQuery(h)));
+  const ok = results.flatMap((r) => r.status === "fulfilled" ? [r.value] : []);
+  if (ok.length) return ok.sort((a, b) => a.roundTripMs - b.roundTripMs)[0];
+  return httpsDateSample();
+}
+async function ensureClockTable() {
+  const database2 = await getDb();
+  if (!database2 || typeof database2.execute !== "function") return null;
+  await database2.execute(sql10.raw(`CREATE TABLE IF NOT EXISTS clock_checks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    checkedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source VARCHAR(64) NOT NULL,
+    method VARCHAR(16) NOT NULL,
+    precisionMs INT NOT NULL,
+    serverOffsetMs INT NOT NULL,
+    databaseOffsetMs INT NULL,
+    ok TINYINT(1) NOT NULL,
+    error VARCHAR(255) NULL,
+    INDEX clock_checks_checked_idx (checkedAt)
+  )`));
+  return database2;
+}
+async function runClockCheck(trigger = "agendado") {
+  const database2 = await ensureClockTable();
+  const checkedAt = (/* @__PURE__ */ new Date()).toISOString();
+  let result;
+  try {
+    const sample = await sampleLegalTime();
+    let databaseOffsetMs = null;
+    if (database2) {
+      const before = Date.now();
+      const [rows4] = await database2.execute(sql10`SELECT UNIX_TIMESTAMP(UTC_TIMESTAMP(3)) * 1000 AS ms`);
+      const after = Date.now();
+      const dbMs = Number(rows4?.[0]?.ms);
+      if (Number.isFinite(dbMs)) databaseOffsetMs = Math.round((before + after) / 2 + sample.offsetMs - dbMs);
+    }
+    const worstMs = Math.max(Math.abs(sample.offsetMs), Math.abs(databaseOffsetMs ?? 0));
+    result = { checkedAt, source: sample.source, method: sample.method, precisionMs: sample.precisionMs, serverOffsetMs: sample.offsetMs, databaseOffsetMs, worstMs, ok: worstMs <= MAX_DRIFT_MS };
+  } catch (e) {
+    result = { checkedAt, source: "-", method: "-", precisionMs: 0, serverOffsetMs: 0, databaseOffsetMs: null, worstMs: 0, ok: false, error: String(e?.message || e).slice(0, 200) };
+  }
+  let previousOk = null;
+  if (database2) {
+    try {
+      const [prev] = await database2.execute(sql10`SELECT ok FROM clock_checks WHERE error IS NULL ORDER BY id DESC LIMIT 1`);
+      previousOk = prev?.[0] ? Boolean(Number(prev[0].ok)) : null;
+      await database2.execute(sql10`INSERT INTO clock_checks (source, method, precisionMs, serverOffsetMs, databaseOffsetMs, ok, error)
+        VALUES (${result.source}, ${result.method}, ${result.precisionMs}, ${result.serverOffsetMs}, ${result.databaseOffsetMs}, ${result.ok ? 1 : 0}, ${result.error ?? null})`);
+    } catch (e) {
+      console.warn("[clock] falha ao gravar", e);
+    }
+  }
+  const changed = !result.error && previousOk !== null && previousOk !== result.ok;
+  const description = result.error ? `Confer\xEAncia do rel\xF3gio (${trigger}) falhou: ${result.error}` : `${changed ? result.ok ? "AJUSTE: rel\xF3gio voltou ao limite" : "ALERTA: rel\xF3gio fora do limite" : "Confer\xEAncia do rel\xF3gio"} (${trigger}) \u2014 servidor ${result.serverOffsetMs} ms, banco ${result.databaseOffsetMs ?? "?"} ms vs ${result.source} (${result.method})`;
+  void writeAuditLog({ companyId: null, action: result.ok ? "read" : "security", module: "time_tracking", entityType: "clock_check", description, newData: result });
+  return result;
+}
+async function latestClockChecks(limit = 10) {
+  const database2 = await ensureClockTable();
+  if (!database2) return [];
+  const [rows4] = await database2.execute(sql10`SELECT checkedAt, source, method, precisionMs, serverOffsetMs, databaseOffsetMs, ok, error FROM clock_checks ORDER BY id DESC LIMIT ${limit}`);
+  return (rows4 || []).map((r) => ({ ...r, ok: Boolean(Number(r.ok)) }));
+}
+var NTP_SERVERS, MAX_DRIFT_MS, NTP_EPOCH_OFFSET;
+var init_clock = __esm({
+  "server/ponto/clock.ts"() {
+    "use strict";
+    init_db();
+    init_audit();
+    NTP_SERVERS = ["a.ntp.br", "b.ntp.br", "c.ntp.br"];
+    MAX_DRIFT_MS = 3e4;
+    NTP_EPOCH_OFFSET = 2208988800;
+  }
+});
+
 // server/modules/timesheetArchive.ts
 var timesheetArchive_exports = {};
 __export(timesheetArchive_exports, {
@@ -5265,15 +5444,15 @@ __export(timesheetArchive_exports, {
   timesheetArchiveRouter: () => timesheetArchiveRouter
 });
 import { createHash as createHash2 } from "node:crypto";
-import { z as z6 } from "zod";
-import { TRPCError as TRPCError9 } from "@trpc/server";
-import { and as and10, eq as eq10, inArray as inArray10, sql as sql11 } from "drizzle-orm";
+import { z as z7 } from "zod";
+import { TRPCError as TRPCError10 } from "@trpc/server";
+import { and as and11, eq as eq11, inArray as inArray11, sql as sql13 } from "drizzle-orm";
 async function ensureTimesheetArchivesTable() {
-  if (ready4) return ready4;
-  ready4 = (async () => {
+  if (ready5) return ready5;
+  ready5 = (async () => {
     const database2 = await getDb();
     if (!database2) return;
-    await database2.execute(sql11`CREATE TABLE IF NOT EXISTS timesheet_archives (
+    await database2.execute(sql13`CREATE TABLE IF NOT EXISTS timesheet_archives (
       id int AUTO_INCREMENT PRIMARY KEY,
       companyId int NOT NULL,
       memberAccountId int NOT NULL,
@@ -5292,10 +5471,10 @@ async function ensureTimesheetArchivesTable() {
       KEY timesheet_archives_company_idx (companyId, year, month)
     )`);
   })().catch((e) => {
-    ready4 = null;
+    ready5 = null;
     throw e;
   });
-  return ready4;
+  return ready5;
 }
 async function readJson3(key, companyId) {
   const raw = await getSetting(key, companyId, "");
@@ -5309,16 +5488,16 @@ async function readJson3(key, companyId) {
 async function companyMembers2(companyId, memberIds) {
   const database2 = await getDb();
   if (!database2) throw new Error("Banco de dados indispon\xEDvel.");
-  const where = [eq10(memberAccounts2.companyId, companyId)];
-  if (memberIds?.length) where.push(inArray10(memberAccounts2.id, memberIds));
-  const rows3 = await database2.select({
+  const where = [eq11(memberAccounts2.companyId, companyId)];
+  if (memberIds?.length) where.push(inArray11(memberAccounts2.id, memberIds));
+  const rows4 = await database2.select({
     id: memberAccounts2.id,
     name: memberAccounts2.userName,
     role: memberAccounts2.role,
     active: memberAccounts2.active,
     employeeCode: promoterProfiles.employeeCode
-  }).from(memberAccounts2).leftJoin(promoterProfiles, eq10(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and10(...where));
-  return rows3.filter((r) => r.role !== "company_admin");
+  }).from(memberAccounts2).leftJoin(promoterProfiles, eq11(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and11(...where));
+  return rows4.filter((r) => r.role !== "company_admin");
 }
 async function buildPdfBuffer(opts) {
   const { jsPDF } = await import("jspdf");
@@ -5389,7 +5568,7 @@ async function archiveClosedMonth(companyId, year, month, memberIds) {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const to = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   const members = await companyMembers2(companyId, memberIds);
-  const company = (await database2.select({ name: companies2.name }).from(companies2).where(eq10(companies2.id, companyId)).limit(1))[0];
+  const company = (await database2.select({ name: companies2.name }).from(companies2).where(eq11(companies2.id, companyId)).limit(1))[0];
   const ids = members.map((m) => m.id);
   const eventRows = await loadMirrorEventRows(companyId, ids, from, to);
   const byMember = /* @__PURE__ */ new Map();
@@ -5413,7 +5592,7 @@ async function archiveClosedMonth(companyId, year, month, memberIds) {
         report
       });
       const hash = createHash2("sha256").update(buf).digest("hex");
-      const existing = (await database2.execute(sql11`SELECT id, version, contentHash FROM timesheet_archives WHERE companyId = ${companyId} AND memberAccountId = ${m.id} AND year = ${year} AND month = ${month} ORDER BY version DESC LIMIT 1`))[0] ?? [];
+      const existing = (await database2.execute(sql13`SELECT id, version, contentHash FROM timesheet_archives WHERE companyId = ${companyId} AND memberAccountId = ${m.id} AND year = ${year} AND month = ${month} ORDER BY version DESC LIMIT 1`))[0] ?? [];
       const last = existing[0];
       if (last && last.contentHash === hash) {
         results.push({ companyId, memberId: m.id, year, month, version: last.version, skipped: true, reason: "hash igual" });
@@ -5422,13 +5601,13 @@ async function archiveClosedMonth(companyId, year, month, memberIds) {
       const version = last ? Number(last.version) + 1 : 1;
       const keyBase = `archives/${companyId}/${year}/${String(month).padStart(2, "0")}/${m.id}/v${version}-espelho.pdf`;
       const uploaded = await storagePut(keyBase, buf, "application/pdf");
-      await database2.execute(sql11`INSERT INTO timesheet_archives (companyId, memberAccountId, year, month, version, fileKey, contentHash, mimeType, sizeBytes, status, generatedAt)
+      await database2.execute(sql13`INSERT INTO timesheet_archives (companyId, memberAccountId, year, month, version, fileKey, contentHash, mimeType, sizeBytes, status, generatedAt)
         VALUES (${companyId}, ${m.id}, ${year}, ${month}, ${version}, ${uploaded.key}, ${hash}, 'application/pdf', ${buf.length}, 'ready', NOW())`);
       results.push({ companyId, memberId: m.id, year, month, version, skipped: false });
     } catch (err) {
       console.warn(`[archive] company=${companyId} member=${m.id} ${year}-${month}`, err);
       try {
-        await database2.execute(sql11`INSERT INTO timesheet_archives (companyId, memberAccountId, year, month, version, status, notes, generatedAt)
+        await database2.execute(sql13`INSERT INTO timesheet_archives (companyId, memberAccountId, year, month, version, status, notes, generatedAt)
           VALUES (${companyId}, ${m.id}, ${year}, ${month}, 1, 'failed', ${String(err?.message || err).slice(0, 500)}, NOW())
           ON DUPLICATE KEY UPDATE status = 'failed', notes = VALUES(notes), generatedAt = NOW()`);
       } catch {
@@ -5454,7 +5633,7 @@ async function runTimesheetArchiveJob(opts) {
   const database2 = await getDb();
   if (!database2) return { processed: 0, results: [] };
   const months = eligibleMonths();
-  const companiesRows = opts?.companyId ? await database2.select({ id: companies2.id }).from(companies2).where(eq10(companies2.id, opts.companyId)).limit(1) : await database2.select({ id: companies2.id }).from(companies2).where(eq10(companies2.active, true)).limit(opts?.limitCompanies ?? 20);
+  const companiesRows = opts?.companyId ? await database2.select({ id: companies2.id }).from(companies2).where(eq11(companies2.id, opts.companyId)).limit(1) : await database2.select({ id: companies2.id }).from(companies2).where(eq11(companies2.active, true)).limit(opts?.limitCompanies ?? 20);
   const all = [];
   for (const c of companiesRows) {
     for (const { year, month } of months) {
@@ -5464,7 +5643,7 @@ async function runTimesheetArchiveJob(opts) {
   }
   return { processed: companiesRows.length, results: all };
 }
-var TZ4, GRACE_DAYS, ready4, timesheetArchiveRouter;
+var TZ4, GRACE_DAYS, ready5, timesheetArchiveRouter;
 var init_timesheetArchive = __esm({
   "server/modules/timesheetArchive.ts"() {
     "use strict";
@@ -5478,43 +5657,43 @@ var init_timesheetArchive = __esm({
     init_mirrorData();
     TZ4 = "America/Sao_Paulo";
     GRACE_DAYS = 5;
-    ready4 = null;
+    ready5 = null;
     timesheetArchiveRouter = router({
-      list: companyAdminFeatureProcedure("timeTracking").input(z6.object({
-        memberId: z6.number().int().positive().optional(),
-        year: z6.number().int().min(2020).max(2100).optional(),
-        month: z6.number().int().min(1).max(12).optional()
+      list: companyAdminFeatureProcedure("timeTracking").input(z7.object({
+        memberId: z7.number().int().positive().optional(),
+        year: z7.number().int().min(2020).max(2100).optional(),
+        month: z7.number().int().min(1).max(12).optional()
       }).optional()).query(async ({ ctx, input }) => {
         await ensureTimesheetArchivesTable();
         const database2 = await getDb();
         if (!database2) return [];
-        const conds = [sql11`a.companyId = ${ctx.accountId}`];
-        if (input?.memberId) conds.push(sql11`a.memberAccountId = ${input.memberId}`);
-        if (input?.year) conds.push(sql11`a.year = ${input.year}`);
-        if (input?.month) conds.push(sql11`a.month = ${input.month}`);
-        const rows3 = (await database2.execute(sql11`SELECT a.*, m.userName AS memberName
+        const conds = [sql13`a.companyId = ${ctx.accountId}`];
+        if (input?.memberId) conds.push(sql13`a.memberAccountId = ${input.memberId}`);
+        if (input?.year) conds.push(sql13`a.year = ${input.year}`);
+        if (input?.month) conds.push(sql13`a.month = ${input.month}`);
+        const rows4 = (await database2.execute(sql13`SELECT a.*, m.userName AS memberName
         FROM timesheet_archives a
         LEFT JOIN member_accounts m ON m.id = a.memberAccountId AND m.companyId = a.companyId
-        WHERE ${sql11.join(conds, sql11` AND `)}
+        WHERE ${sql13.join(conds, sql13` AND `)}
         ORDER BY a.year DESC, a.month DESC, a.memberAccountId, a.version DESC
         LIMIT 500`))[0] ?? [];
-        return rows3;
+        return rows4;
       }),
-      downloadUrl: companyAdminFeatureProcedure("timeTracking").input(z6.object({ id: z6.number().int().positive() })).query(async ({ ctx, input }) => {
+      downloadUrl: companyAdminFeatureProcedure("timeTracking").input(z7.object({ id: z7.number().int().positive() })).query(async ({ ctx, input }) => {
         await ensureTimesheetArchivesTable();
         const database2 = await getDb();
-        if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
-        const rows3 = (await database2.execute(sql11`SELECT fileKey, status FROM timesheet_archives WHERE id = ${input.id} AND companyId = ${ctx.accountId} LIMIT 1`))[0] ?? [];
-        const row2 = rows3[0];
-        if (!row2 || row2.status !== "ready" || !row2.fileKey) throw new TRPCError9({ code: "NOT_FOUND", message: "Arquivo n\xE3o encontrado ou indispon\xEDvel." });
+        if (!database2) throw new TRPCError10({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const rows4 = (await database2.execute(sql13`SELECT fileKey, status FROM timesheet_archives WHERE id = ${input.id} AND companyId = ${ctx.accountId} LIMIT 1`))[0] ?? [];
+        const row2 = rows4[0];
+        if (!row2 || row2.status !== "ready" || !row2.fileKey) throw new TRPCError10({ code: "NOT_FOUND", message: "Arquivo n\xE3o encontrado ou indispon\xEDvel." });
         const url = await storageGetSignedUrl(row2.fileKey);
         return { url };
       }),
-      archiveNow: companyAdminFeatureProcedure("timeTracking").input(z6.object({ year: z6.number().int().min(2020).max(2100), month: z6.number().int().min(1).max(12) })).mutation(async ({ ctx, input }) => {
+      archiveNow: companyAdminFeatureProcedure("timeTracking").input(z7.object({ year: z7.number().int().min(2020).max(2100), month: z7.number().int().min(1).max(12) })).mutation(async ({ ctx, input }) => {
         const now = /* @__PURE__ */ new Date();
         const curY = now.getUTCFullYear(), curM = now.getUTCMonth() + 1;
         if (input.year > curY || input.year === curY && input.month >= curM) {
-          throw new TRPCError9({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel arquivar o m\xEAs corrente ou futuro." });
+          throw new TRPCError10({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel arquivar o m\xEAs corrente ou futuro." });
         }
         const results = await archiveClosedMonth(ctx.accountId, input.year, input.month);
         return { success: true, results };
@@ -5840,28 +6019,28 @@ __export(platformCompanies_exports, {
   setCompanyPlan: () => setCompanyPlan,
   startOfDay: () => startOfDay
 });
-import { and as and11, eq as eq11, inArray as inArray11, sql as sql12 } from "drizzle-orm";
-import { TRPCError as TRPCError10 } from "@trpc/server";
+import { and as and12, eq as eq12, inArray as inArray12, sql as sql14 } from "drizzle-orm";
+import { TRPCError as TRPCError11 } from "@trpc/server";
 async function database() {
   const d = await getDb();
-  if (!d) throw new TRPCError10({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  if (!d) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
   return d;
 }
 async function listCompaniesOverview() {
   const d = await database();
-  const [rows3, plans, pays, counts, admins, flags] = await Promise.all([
+  const [rows4, plans, pays, counts, admins, flags] = await Promise.all([
     d.select().from(companies).orderBy(companies.name),
     d.select().from(subscriptionPlans),
-    d.execute(sql12`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
-    d.execute(sql12`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
-    d.execute(sql12`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
-    d.select().from(systemSettings).where(inArray11(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY]))
+    d.execute(sql14`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
+    d.execute(sql14`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
+    d.execute(sql14`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
+    d.select().from(systemSettings).where(inArray12(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY]))
   ]);
   const planById = new Map(plans.map((p) => [p.id, p]));
   const map = (r, key = "companyId") => new Map(r[0].map((x) => [Number(x[key]), x]));
   const payBy = map(pays), countBy = map(counts), adminBy = map(admins);
   const flagBy = new Map(flags.map((f) => [`${f.accountId}:${f.settingKey}`, f.settingValue]));
-  return rows3.map((c) => {
+  return rows4.map((c) => {
     const plan = c.planId ? planById.get(c.planId) : null;
     const monthlyAmount = flagBy.get(`${c.id}:${MONTHLY_AMOUNT_KEY}`) || (plan?.price != null ? String(plan.price) : null);
     const blockAfter = flagBy.get(`${c.id}:${BLOCK_AFTER_OVERDUE_KEY}`);
@@ -5893,23 +6072,23 @@ async function listCompaniesOverview() {
 async function setCompanyBlocked(companyId, blocked, reason) {
   const d = await database();
   const company = await getCompanyById(companyId);
-  if (!company) throw new TRPCError10({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (!company) throw new TRPCError11({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
   await updateCompany(companyId, { active: !blocked });
   if (blocked) await setSetting("blocked_reason", (reason || "").trim().slice(0, 300) || "Acesso bloqueado pelo administrador da plataforma.", companyId);
-  else await d.delete(systemSettings).where(and11(eq11(systemSettings.accountId, companyId), eq11(systemSettings.settingKey, "blocked_reason")));
+  else await d.delete(systemSettings).where(and12(eq12(systemSettings.accountId, companyId), eq12(systemSettings.settingKey, "blocked_reason")));
   if (blocked) {
-    const ids = (await d.select({ id: memberAccounts.id }).from(memberAccounts).where(eq11(memberAccounts.companyId, companyId))).map((r) => r.id);
-    if (ids.length) await d.delete(memberSessions).where(inArray11(memberSessions.memberAccountId, ids));
+    const ids = (await d.select({ id: memberAccounts.id }).from(memberAccounts).where(eq12(memberAccounts.companyId, companyId))).map((r) => r.id);
+    if (ids.length) await d.delete(memberSessions).where(inArray12(memberSessions.memberAccountId, ids));
   }
   return company;
 }
 async function setCompanyPlan(input) {
   const d = await database();
   const company = await getCompanyById(input.companyId);
-  if (!company) throw new TRPCError10({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (!company) throw new TRPCError11({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
   const plan = await getSubscriptionPlanById(input.planId);
-  if (!plan) throw new TRPCError10({ code: "NOT_FOUND", message: "Plano n\xE3o encontrado." });
-  if (input.endsAt && input.endsAt < input.startsAt) throw new TRPCError10({ code: "BAD_REQUEST", message: "A validade final n\xE3o pode ser anterior ao in\xEDcio." });
+  if (!plan) throw new TRPCError11({ code: "NOT_FOUND", message: "Plano n\xE3o encontrado." });
+  if (input.endsAt && input.endsAt < input.startsAt) throw new TRPCError11({ code: "BAD_REQUEST", message: "A validade final n\xE3o pode ser anterior ao in\xEDcio." });
   const latest = await getLatestCompanySubscription(input.companyId);
   if (latest) await updateCompanySubscription(latest.id, { planId: input.planId, status: input.status, startsAt: input.startsAt, endsAt: input.endsAt ?? null, notes: input.notes ?? latest.notes ?? null });
   else await createCompanySubscription({ companyId: input.companyId, planId: input.planId, status: input.status, startsAt: input.startsAt, endsAt: input.endsAt ?? null, notes: input.notes ?? null });
@@ -5921,16 +6100,16 @@ async function setCompanyPlan(input) {
     subscriptionExpiresAt: end,
     // tolerância explícita (padrão 5 dias): acesso até o fim do dia de validade + graceDays
     gracePeriodEndsAt: end ? addDaysDate(end, Math.max(0, input.graceDays ?? DEFAULT_OVERDUE_GRACE_DAYS)) : null
-  }).where(eq11(companies.id, input.companyId));
+  }).where(eq12(companies.id, input.companyId));
   if (input.endsAt) await ensureBillingDay(input.companyId, input.endsAt);
   return { success: true };
 }
 async function registerCompanyPayment(input) {
   const company = await getCompanyById(input.companyId);
-  if (!company) throw new TRPCError10({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-  if (input.periodTo < input.periodFrom) throw new TRPCError10({ code: "BAD_REQUEST", message: "O fim do per\xEDodo pago n\xE3o pode ser anterior ao in\xEDcio." });
+  if (!company) throw new TRPCError11({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (input.periodTo < input.periodFrom) throw new TRPCError11({ code: "BAD_REQUEST", message: "O fim do per\xEDodo pago n\xE3o pode ser anterior ao in\xEDcio." });
   const planId = input.planId ?? company.planId;
-  if (!planId) throw new TRPCError10({ code: "BAD_REQUEST", message: "Selecione um plano para esta empresa antes de registrar o pagamento." });
+  if (!planId) throw new TRPCError11({ code: "BAD_REQUEST", message: "Selecione um plano para esta empresa antes de registrar o pagamento." });
   const latest = await getLatestCompanySubscription(input.companyId);
   await setCompanyPlan({ companyId: input.companyId, planId, status: "active", startsAt: input.periodFrom, endsAt: input.periodTo, graceDays: input.graceDays ?? DEFAULT_OVERDUE_GRACE_DAYS, notes: input.note ?? latest?.notes ?? null });
   const sub = await getLatestCompanySubscription(input.companyId);
@@ -5943,32 +6122,32 @@ async function listCompanyPayments(companyId) {
 }
 async function deletePayment(id2, companyId) {
   const d = await database();
-  const r = await d.delete(payments).where(and11(eq11(payments.id, id2), eq11(payments.companyId, companyId)));
-  if (!r[0]?.affectedRows) throw new TRPCError10({ code: "NOT_FOUND", message: "Pagamento n\xE3o encontrado." });
+  const r = await d.delete(payments).where(and12(eq12(payments.id, id2), eq12(payments.companyId, companyId)));
+  if (!r[0]?.affectedRows) throw new TRPCError11({ code: "NOT_FOUND", message: "Pagamento n\xE3o encontrado." });
 }
 async function archiveCompany(companyId, archived) {
   const d = await database();
   const company = await getCompanyById(companyId);
-  if (!company) throw new TRPCError10({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (!company) throw new TRPCError11({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
   if (archived) {
     await setCompanyBlocked(companyId, true, "Empresa exclu\xEDda pelo administrador da plataforma.");
     await setSetting("archived_at", (/* @__PURE__ */ new Date()).toISOString(), companyId);
   } else {
-    await d.delete(systemSettings).where(and11(eq11(systemSettings.accountId, companyId), eq11(systemSettings.settingKey, "archived_at")));
+    await d.delete(systemSettings).where(and12(eq12(systemSettings.accountId, companyId), eq12(systemSettings.settingKey, "archived_at")));
     await setCompanyBlocked(companyId, false);
   }
   return company;
 }
 async function purgeCompany(companyId, confirmName) {
   const company = await getCompanyById(companyId);
-  if (!company) throw new TRPCError10({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-  if (company.name.trim() !== confirmName.trim()) throw new TRPCError10({ code: "BAD_REQUEST", message: "O nome digitado n\xE3o confere com o da empresa." });
+  if (!company) throw new TRPCError11({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (company.name.trim() !== confirmName.trim()) throw new TRPCError11({ code: "BAD_REQUEST", message: "O nome digitado n\xE3o confere com o da empresa." });
   const archived = await getSetting("archived_at", companyId, "");
-  if (!archived) throw new TRPCError10({ code: "PRECONDITION_FAILED", message: "Exclua (arquive) a empresa primeiro; a exclus\xE3o definitiva s\xF3 vale para empresas j\xE1 exclu\xEDdas." });
+  if (!archived) throw new TRPCError11({ code: "PRECONDITION_FAILED", message: "Exclua (arquive) a empresa primeiro; a exclus\xE3o definitiva s\xF3 vale para empresas j\xE1 exclu\xEDdas." });
   let filesDeleted = 0;
   try {
     const d = await database();
-    const [photoRows] = await d.execute(sql12`SELECT fileKey, thumbnailKey FROM store_photos WHERE companyId = ${companyId}`);
+    const [photoRows] = await d.execute(sql14`SELECT fileKey, thumbnailKey FROM store_photos WHERE companyId = ${companyId}`);
     const { storageDelete: storageDelete2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
     for (const p of photoRows) {
       for (const k of [p.fileKey, p.thumbnailKey]) if (k) {
@@ -5981,7 +6160,7 @@ async function purgeCompany(companyId, confirmName) {
   } catch {
   }
   const pool = await getPool();
-  if (!pool) throw new TRPCError10({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  if (!pool) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
   const conn = await pool.getConnection();
   const deleted = {};
   try {
@@ -6014,10 +6193,10 @@ async function purgeCompany(companyId, confirmName) {
 }
 async function setCompanyBilling(input) {
   const company = await getCompanyById(input.companyId);
-  if (!company) throw new TRPCError10({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (!company) throw new TRPCError11({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
   if (input.monthlyAmount != null && input.monthlyAmount !== "") {
     if (!/^\d{1,10}(\.\d{1,2})?$/.test(input.monthlyAmount) || Number(input.monthlyAmount) <= 0) {
-      throw new TRPCError10({ code: "BAD_REQUEST", message: "Valor mensal inv\xE1lido." });
+      throw new TRPCError11({ code: "BAD_REQUEST", message: "Valor mensal inv\xE1lido." });
     }
     await setSetting(MONTHLY_AMOUNT_KEY, Number(input.monthlyAmount).toFixed(2), input.companyId);
   }
@@ -6032,7 +6211,7 @@ async function setCompanyBilling(input) {
     }
   }
   if (input.dueDate) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) throw new TRPCError10({ code: "BAD_REQUEST", message: "Data de vencimento inv\xE1lida." });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)) throw new TRPCError11({ code: "BAD_REQUEST", message: "Data de vencimento inv\xE1lida." });
     const grace = input.blockAfterOverdueDays != null ? Math.max(0, Math.min(60, Math.floor(input.blockAfterOverdueDays))) : await resolveGraceDays(input.companyId);
     const end = endOfDay(input.dueDate);
     await updateCompanySubscriptionFields(input.companyId, {
@@ -6103,11 +6282,11 @@ var init_rateLimit = __esm({
 });
 
 // server/storeClients.ts
-import { sql as sql13 } from "drizzle-orm";
+import { sql as sql15 } from "drizzle-orm";
 function ensureStoreClientsSchema(db) {
   if (!ensured) {
     ensured = (async () => {
-      await db.execute(sql13.raw(`CREATE TABLE IF NOT EXISTS store_clients (
+      await db.execute(sql15.raw(`CREATE TABLE IF NOT EXISTS store_clients (
         id int AUTO_INCREMENT NOT NULL,
         companyId int NOT NULL,
         storeId int NOT NULL,
@@ -6121,7 +6300,7 @@ function ensureStoreClientsSchema(db) {
         PRIMARY KEY (id),
         KEY store_clients_company_store_idx (companyId, storeId)
       )`));
-      await db.execute(sql13.raw(`CREATE TABLE IF NOT EXISTS store_photos (
+      await db.execute(sql15.raw(`CREATE TABLE IF NOT EXISTS store_photos (
         id int AUTO_INCREMENT NOT NULL,
         companyId int NOT NULL,
         storeId int NOT NULL,
@@ -6147,12 +6326,12 @@ function ensureStoreClientsSchema(db) {
         KEY store_photos_expires_idx (expiresAt),
         UNIQUE KEY store_photos_company_idempotency_unique (companyId,idempotencyKey)
       )`));
-      const res = await db.execute(sql13`SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_photos' AND COLUMN_NAME = 'storeClientId'`);
+      const res = await db.execute(sql15`SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_photos' AND COLUMN_NAME = 'storeClientId'`);
       const first = Array.isArray(res?.[0]) ? res[0][0] : Array.isArray(res) ? res[0] : res?.rows?.[0];
       if (Number(first?.n ?? 0) === 0) {
-        await db.execute(sql13.raw(`ALTER TABLE store_photos ADD COLUMN storeClientId int NULL`));
+        await db.execute(sql15.raw(`ALTER TABLE store_photos ADD COLUMN storeClientId int NULL`));
         try {
-          await db.execute(sql13.raw(`CREATE INDEX store_photos_client_idx ON store_photos (companyId, storeClientId)`));
+          await db.execute(sql15.raw(`CREATE INDEX store_photos_client_idx ON store_photos (companyId, storeClientId)`));
         } catch {
         }
       }
@@ -6178,19 +6357,19 @@ __export(storePhotos_exports, {
   expireOldStorePhotos: () => expireOldStorePhotos,
   storePhotosRouter: () => storePhotosRouter
 });
-import { z as z8 } from "zod";
-import { and as and12, desc as desc5, eq as eq12, gte as gte8, lte as lte3, sql as sql14 } from "drizzle-orm";
-import { TRPCError as TRPCError11 } from "@trpc/server";
+import { z as z9 } from "zod";
+import { and as and13, desc as desc5, eq as eq13, gte as gte8, lte as lte3, sql as sql16 } from "drizzle-orm";
+import { TRPCError as TRPCError12 } from "@trpc/server";
 async function moveStorePhotosToTrash(db, accountId, photos, actor) {
   if (photos.length === 0) return;
   await ensureTrashTable();
   const storeIds = Array.from(new Set(photos.map((p) => p.storeId)));
-  const storeRows = await db.select({ id: stores.id, name: stores.name }).from(stores).where(and12(eq12(stores.companyId, accountId), sql14`${stores.id} IN (${sql14.join(storeIds.map((id2) => sql14`${id2}`), sql14`, `)})`));
+  const storeRows = await db.select({ id: stores.id, name: stores.name }).from(stores).where(and13(eq13(stores.companyId, accountId), sql16`${stores.id} IN (${sql16.join(storeIds.map((id2) => sql16`${id2}`), sql16`, `)})`));
   const storeName = new Map(storeRows.map((r) => [r.id, r.name]));
   const clientOf = /* @__PURE__ */ new Map();
   try {
     await ensureStoreClientsSchema(db);
-    const res = await db.execute(sql14`SELECT id, storeClientId FROM store_photos WHERE companyId = ${accountId} AND id IN (${sql14.join(photos.map((p) => sql14`${p.id}`), sql14`, `)})`);
+    const res = await db.execute(sql16`SELECT id, storeClientId FROM store_photos WHERE companyId = ${accountId} AND id IN (${sql16.join(photos.map((p) => sql16`${p.id}`), sql16`, `)})`);
     for (const r of Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? []) clientOf.set(Number(r.id), r.storeClientId == null ? null : Number(r.storeClientId));
   } catch {
   }
@@ -6209,7 +6388,7 @@ async function moveStorePhotosToTrash(db, accountId, photos, actor) {
         expiresAt
       }))
     );
-    await tx.delete(storePhotos).where(and12(eq12(storePhotos.companyId, accountId), sql14`${storePhotos.id} IN (${sql14.join(photos.map((p) => sql14`${p.id}`), sql14`, `)})`));
+    await tx.delete(storePhotos).where(and13(eq13(storePhotos.companyId, accountId), sql16`${storePhotos.id} IN (${sql16.join(photos.map((p) => sql16`${p.id}`), sql16`, `)})`));
   });
 }
 async function ensureStorePhotosTable(db) {
@@ -6251,13 +6430,13 @@ async function ensureStorePhotosTable(db) {
 }
 async function assertStoreClient(db, companyId, storeId, storeClientId) {
   await ensureStoreClientsSchema(db);
-  const res = await db.execute(sql14`SELECT id, active FROM store_clients WHERE id = ${storeClientId} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`);
+  const res = await db.execute(sql16`SELECT id, active FROM store_clients WHERE id = ${storeClientId} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`);
   const r = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0];
-  if (!r) throw new TRPCError11({ code: "BAD_REQUEST", message: "Cliente n\xE3o encontrado nesta loja." });
-  if (!r.active) throw new TRPCError11({ code: "BAD_REQUEST", message: "Este cliente foi removido da loja." });
+  if (!r) throw new TRPCError12({ code: "BAD_REQUEST", message: "Cliente n\xE3o encontrado nesta loja." });
+  if (!r.active) throw new TRPCError12({ code: "BAD_REQUEST", message: "Este cliente foi removido da loja." });
 }
 async function linkPhotoToClient(db, companyId, photoId, storeClientId) {
-  await db.execute(sql14`UPDATE store_photos SET storeClientId = ${storeClientId} WHERE id = ${photoId} AND companyId = ${companyId}`);
+  await db.execute(sql16`UPDATE store_photos SET storeClientId = ${storeClientId} WHERE id = ${photoId} AND companyId = ${companyId}`);
 }
 async function expireOldStorePhotos() {
   const db = await getDb();
@@ -6272,7 +6451,7 @@ async function expireOldStorePhotos() {
     try {
       if (photo.fileKey) await guardedStorageDelete(storageDelete2, photo.fileKey, photo.companyId);
       if (photo.thumbnailKey) await guardedStorageDelete(storageDelete2, photo.thumbnailKey, photo.companyId);
-      await db.delete(storePhotos).where(eq12(storePhotos.id, photo.id));
+      await db.delete(storePhotos).where(eq13(storePhotos.id, photo.id));
       deleted++;
     } catch {
       errors++;
@@ -6298,38 +6477,38 @@ var init_storePhotos = __esm({
     TRASH_DAYS = 5;
     storePhotosRouter = router({
       /** Lista lojas com contagem de fotos e última atividade. */
-      listStoresWithStats: commercialFeatureProcedure("fieldOperations").input(z8.object({ search: z8.string().optional(), city: z8.string().optional() }).optional()).query(async ({ ctx, input }) => {
+      listStoresWithStats: commercialFeatureProcedure("fieldOperations").input(z9.object({ search: z9.string().optional(), city: z9.string().optional() }).optional()).query(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         await ensureStorePhotosTable(db);
         const memberId = scopeMemberId(ctx);
-        const conditions = [eq12(stores.companyId, ctx.accountId), eq12(stores.active, true)];
+        const conditions = [eq13(stores.companyId, ctx.accountId), eq13(stores.active, true)];
         if (memberId !== null) {
           await ensurePromoterStoreAssignmentsTable(db);
           conditions.push(storeVisibleToMember(stores.id, memberId));
         }
-        const ownPhotos = memberId !== null ? sql14` AND store_photos.promoterId = ${memberId}` : sql14``;
+        const ownPhotos = memberId !== null ? sql16` AND store_photos.promoterId = ${memberId}` : sql16``;
         if (input?.search) {
-          conditions.push(sql14`${stores.name} LIKE ${`%${input.search}%`}`);
+          conditions.push(sql16`${stores.name} LIKE ${`%${input.search}%`}`);
         }
         if (input?.city) {
-          conditions.push(eq12(stores.city, input.city));
+          conditions.push(eq13(stores.city, input.city));
         }
         try {
-          const rows3 = await db.select({
+          const rows4 = await db.select({
             id: stores.id,
             name: stores.name,
             city: stores.city,
             state: stores.state,
             address: stores.address,
-            photoCount: sql14`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
-            lastActivity: sql14`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`
-          }).from(stores).where(and12(...conditions)).orderBy(desc5(stores.updatedAt));
-          return rows3;
+            photoCount: sql16`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
+            lastActivity: sql16`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`
+          }).from(stores).where(and13(...conditions)).orderBy(desc5(stores.updatedAt));
+          return rows4;
         } catch (err) {
           if (String(err?.message || "").includes("store_photos") || err?.code === "ER_NO_SUCH_TABLE") {
-            const rows3 = await db.select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address }).from(stores).where(and12(...conditions)).orderBy(desc5(stores.updatedAt));
-            return rows3.map((r) => ({ ...r, photoCount: 0, lastActivity: null }));
+            const rows4 = await db.select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address }).from(stores).where(and13(...conditions)).orderBy(desc5(stores.updatedAt));
+            return rows4.map((r) => ({ ...r, photoCount: 0, lastActivity: null }));
           }
           throw err;
         }
@@ -6340,38 +6519,38 @@ var init_storePhotos = __esm({
         if (!db) return { count: 0, lastActivity: null };
         await ensureStorePhotosTable(db);
         const memberId = scopeMemberId(ctx);
-        const own = memberId !== null ? sql14` AND promoterId = ${memberId}` : sql14``;
-        const res = await db.execute(sql14`SELECT COUNT(*) AS c, MAX(capturedAt) AS lastAt FROM store_photos WHERE companyId = ${ctx.accountId} AND storeId IS NULL AND uploadStatus = 'uploaded'${own}`);
+        const own = memberId !== null ? sql16` AND promoterId = ${memberId}` : sql16``;
+        const res = await db.execute(sql16`SELECT COUNT(*) AS c, MAX(capturedAt) AS lastAt FROM store_photos WHERE companyId = ${ctx.accountId} AND storeId IS NULL AND uploadStatus = 'uploaded'${own}`);
         const row2 = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0] ?? {};
         return { count: Number(row2.c ?? 0), lastActivity: row2.lastAt ?? null };
       }),
       /** Lista fotos de uma loja, agrupáveis por data no cliente. */
-      listByStore: commercialFeatureProcedure("fieldOperations").input(z8.object({
-        storeId: z8.number().int().positive().optional().nullable(),
-        from: z8.string().optional(),
-        to: z8.string().optional(),
-        promoterId: z8.number().int().positive().optional(),
-        storeClientId: z8.number().int().positive().optional(),
-        withoutClient: z8.boolean().optional()
+      listByStore: commercialFeatureProcedure("fieldOperations").input(z9.object({
+        storeId: z9.number().int().positive().optional().nullable(),
+        from: z9.string().optional(),
+        to: z9.string().optional(),
+        promoterId: z9.number().int().positive().optional(),
+        storeClientId: z9.number().int().positive().optional(),
+        withoutClient: z9.boolean().optional()
       })).query(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         await ensureStorePhotosTable(db);
         await ensureStoreClientsSchema(db);
         const memberId = scopeMemberId(ctx);
-        const conditions = [eq12(storePhotos.companyId, ctx.accountId)];
+        const conditions = [eq13(storePhotos.companyId, ctx.accountId)];
         if (input.storeId) {
           await assertStoreAccess(db, ctx, input.storeId);
-          conditions.push(eq12(storePhotos.storeId, input.storeId));
+          conditions.push(eq13(storePhotos.storeId, input.storeId));
         } else {
-          conditions.push(sql14`store_photos.storeId IS NULL`);
+          conditions.push(sql16`store_photos.storeId IS NULL`);
         }
-        if (input.storeClientId) conditions.push(sql14`store_photos.storeClientId = ${input.storeClientId}`);
-        else if (input.withoutClient) conditions.push(sql14`store_photos.storeClientId IS NULL`);
-        if (memberId !== null) conditions.push(eq12(storePhotos.promoterId, memberId));
+        if (input.storeClientId) conditions.push(sql16`store_photos.storeClientId = ${input.storeClientId}`);
+        else if (input.withoutClient) conditions.push(sql16`store_photos.storeClientId IS NULL`);
+        if (memberId !== null) conditions.push(eq13(storePhotos.promoterId, memberId));
         if (input.from) conditions.push(gte8(storePhotos.capturedAt, new Date(input.from)));
         if (input.to) conditions.push(lte3(storePhotos.capturedAt, new Date(input.to)));
-        if (memberId === null && input.promoterId) conditions.push(eq12(storePhotos.promoterId, input.promoterId));
+        if (memberId === null && input.promoterId) conditions.push(eq13(storePhotos.promoterId, input.promoterId));
         const photos = await db.select({
           id: storePhotos.id,
           companyId: storePhotos.companyId,
@@ -6389,47 +6568,47 @@ var init_storePhotos = __esm({
           fileSize: storePhotos.fileSize,
           uploadStatus: storePhotos.uploadStatus,
           expiresAt: storePhotos.expiresAt,
-          storeClientId: sql14`store_photos.storeClientId`,
-          clientName: sql14`(SELECT name FROM store_clients WHERE store_clients.id = store_photos.storeClientId AND store_clients.companyId = ${ctx.accountId})`,
-          promoterName: sql14`(SELECT userName FROM member_accounts WHERE member_accounts.id = store_photos.promoterId AND member_accounts.companyId = ${ctx.accountId})`
-        }).from(storePhotos).where(and12(...conditions)).orderBy(desc5(storePhotos.capturedAt));
+          storeClientId: sql16`store_photos.storeClientId`,
+          clientName: sql16`(SELECT name FROM store_clients WHERE store_clients.id = store_photos.storeClientId AND store_clients.companyId = ${ctx.accountId})`,
+          promoterName: sql16`(SELECT userName FROM member_accounts WHERE member_accounts.id = store_photos.promoterId AND member_accounts.companyId = ${ctx.accountId})`
+        }).from(storePhotos).where(and13(...conditions)).orderBy(desc5(storePhotos.capturedAt));
         return photos;
       }),
       /** Cria registro de foto com idempotência. Upload do arquivo é feito separadamente. */
-      create: commercialFeatureProcedure("fieldOperations").input(z8.object({
-        storeId: z8.number().int().positive().optional().nullable(),
-        visitId: z8.number().int().positive().optional(),
-        capturedAt: z8.string(),
-        latitude: z8.number().optional(),
-        longitude: z8.number().optional(),
-        accuracy: z8.number().optional(),
-        locationStatus: z8.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
-        fileKey: z8.string().min(1),
-        thumbnailKey: z8.string().optional(),
-        mimeType: z8.string().optional(),
-        fileSize: z8.number().int().optional(),
-        storeClientId: z8.number().int().positive().optional(),
-        idempotencyKey: z8.string().min(8).max(64)
+      create: commercialFeatureProcedure("fieldOperations").input(z9.object({
+        storeId: z9.number().int().positive().optional().nullable(),
+        visitId: z9.number().int().positive().optional(),
+        capturedAt: z9.string(),
+        latitude: z9.number().optional(),
+        longitude: z9.number().optional(),
+        accuracy: z9.number().optional(),
+        locationStatus: z9.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
+        fileKey: z9.string().min(1),
+        thumbnailKey: z9.string().optional(),
+        mimeType: z9.string().optional(),
+        fileSize: z9.number().int().optional(),
+        storeClientId: z9.number().int().positive().optional(),
+        idempotencyKey: z9.string().min(8).max(64)
       })).mutation(async ({ ctx, input }) => {
         const ip = getClientIp(ctx.req);
         const limit = checkRateLimit(`${ctx.accountId}:${ip}`, "upload");
         if (!limit.ok) {
-          throw new TRPCError11({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
+          throw new TRPCError12({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
         }
         if (!isTenantMediaKey(input.fileKey, ctx.accountId) || input.thumbnailKey && !isTenantMediaKey(input.thumbnailKey, ctx.accountId)) {
-          throw new TRPCError11({ code: "BAD_REQUEST", message: "Arquivo da foto inv\xE1lido." });
+          throw new TRPCError12({ code: "BAD_REQUEST", message: "Arquivo da foto inv\xE1lido." });
         }
         const db = await getDb();
-        if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         let storeName = "Sem loja vinculada";
         if (input.storeId) {
           const store = await assertStoreAccess(db, ctx, input.storeId);
           storeName = store.name;
           if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
         } else if (input.storeClientId) {
-          throw new TRPCError11({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
+          throw new TRPCError12({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
         }
-        const [existing] = await db.select().from(storePhotos).where(and12(eq12(storePhotos.companyId, ctx.accountId), eq12(storePhotos.idempotencyKey, input.idempotencyKey))).limit(1);
+        const [existing] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.companyId, ctx.accountId), eq13(storePhotos.idempotencyKey, input.idempotencyKey))).limit(1);
         if (existing) return existing;
         const capturedAt = new Date(input.capturedAt);
         const expiresAt = new Date(capturedAt.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1e3);
@@ -6465,42 +6644,42 @@ var init_storePhotos = __esm({
         return { id: photoId, expiresAt };
       }),
       /** Recebe imagem em base64, faz upload no storage e cria o registro (com idempotência). */
-      uploadAndCreate: commercialFeatureProcedure("fieldOperations").input(z8.object({
-        storeId: z8.number().int().positive().optional().nullable(),
-        visitId: z8.number().int().positive().optional(),
-        capturedAt: z8.string(),
-        latitude: z8.number().optional(),
-        longitude: z8.number().optional(),
-        accuracy: z8.number().optional(),
-        locationStatus: z8.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
+      uploadAndCreate: commercialFeatureProcedure("fieldOperations").input(z9.object({
+        storeId: z9.number().int().positive().optional().nullable(),
+        visitId: z9.number().int().positive().optional(),
+        capturedAt: z9.string(),
+        latitude: z9.number().optional(),
+        longitude: z9.number().optional(),
+        accuracy: z9.number().optional(),
+        locationStatus: z9.enum(["success", "permission_denied", "unavailable", "timeout", "error"]).optional(),
         // Limite da Vercel: corpo de 4,5 MB; base64 de 4,2 M caracteres ≈ 3,1 MB de imagem.
-        imageBase64: z8.string().min(100).max(MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE),
-        mimeType: z8.string().max(100).default("image/jpeg"),
+        imageBase64: z9.string().min(100).max(MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE),
+        mimeType: z9.string().max(100).default("image/jpeg"),
         // ignorado: o tipo real é detectado pelo conteúdo
-        storeClientId: z8.number().int().positive().optional(),
-        idempotencyKey: z8.string().min(8).max(64)
+        storeClientId: z9.number().int().positive().optional(),
+        idempotencyKey: z9.string().min(8).max(64)
       })).mutation(async ({ ctx, input }) => {
         const ip = getClientIp(ctx.req);
         const limit = checkRateLimit(`${ctx.accountId}:${ip}`, "upload");
         if (!limit.ok) {
-          throw new TRPCError11({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
+          throw new TRPCError12({ code: "TOO_MANY_REQUESTS", message: "Muitos uploads. Aguarde um minuto." });
         }
         const db = await getDb();
-        if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         let storeName = "Sem loja vinculada";
         if (input.storeId) {
           const store = await assertStoreAccess(db, ctx, input.storeId);
           storeName = store.name;
           if (input.storeClientId) await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
         } else if (input.storeClientId) {
-          throw new TRPCError11({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
+          throw new TRPCError12({ code: "BAD_REQUEST", message: "Cliente s\xF3 pode ser vinculado quando h\xE1 loja selecionada." });
         }
-        const [existing] = await db.select().from(storePhotos).where(and12(eq12(storePhotos.companyId, ctx.accountId), eq12(storePhotos.idempotencyKey, input.idempotencyKey))).limit(1);
+        const [existing] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.companyId, ctx.accountId), eq13(storePhotos.idempotencyKey, input.idempotencyKey))).limit(1);
         if (existing) return { id: existing.id, alreadyExists: true };
         const { storagePut: storagePut2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         const buffer = Buffer.from(input.imageBase64, "base64");
         const detectedMime = detectImageMime(buffer);
-        if (!detectedMime) throw new TRPCError11({ code: "BAD_REQUEST", message: "Arquivo n\xE3o \xE9 uma imagem v\xE1lida (use JPG, PNG ou WebP)." });
+        if (!detectedMime) throw new TRPCError12({ code: "BAD_REQUEST", message: "Arquivo n\xE3o \xE9 uma imagem v\xE1lida (use JPG, PNG ou WebP)." });
         input.mimeType = detectedMime;
         const ext = input.mimeType === "image/png" ? "png" : input.mimeType === "image/webp" ? "webp" : "jpg";
         const relKey = `store-photos/${ctx.accountId}/${safeKeySegment(input.storeId, "sem-loja")}/${safeKeySegment(input.idempotencyKey)}.${ext}`;
@@ -6509,7 +6688,7 @@ var init_storePhotos = __esm({
           const uploaded = await storagePut2(relKey, buffer, input.mimeType);
           fileKey = uploaded.key;
         } catch (err) {
-          throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao salvar a imagem. Verifique a configura\xE7\xE3o de armazenamento." });
+          throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Falha ao salvar a imagem. Verifique a configura\xE7\xE3o de armazenamento." });
         }
         const capturedAt = new Date(input.capturedAt);
         const expiresAt = new Date(capturedAt.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1e3);
@@ -6544,47 +6723,47 @@ var init_storePhotos = __esm({
         return { id: photoId, expiresAt, alreadyExists: false };
       }),
       /** Retorna URL assinada temporária para visualizar uma foto. */
-      getImageUrl: commercialFeatureProcedure("fieldOperations").input(z8.object({ photoId: z8.number().int().positive() })).query(async ({ ctx, input }) => {
+      getImageUrl: commercialFeatureProcedure("fieldOperations").input(z9.object({ photoId: z9.number().int().positive() })).query(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
-        const [photo] = await db.select().from(storePhotos).where(and12(eq12(storePhotos.id, input.photoId), eq12(storePhotos.companyId, ctx.accountId))).limit(1);
-        if (!photo) throw new TRPCError11({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const [photo] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.id, input.photoId), eq13(storePhotos.companyId, ctx.accountId))).limit(1);
+        if (!photo) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         assertPhotoAccess(ctx, photo);
-        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError11({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         const { storageGetSignedUrl: storageGetSignedUrl2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         const url = await storageGetSignedUrl2(photo.fileKey);
         return { url, expiresIn: 3600 };
       }),
       /** Retorna a imagem como base64 para compartilhamento sem CORS. */
-      getImageData: commercialFeatureProcedure("fieldOperations").input(z8.object({ photoId: z8.number().int().positive() })).query(async ({ ctx, input }) => {
+      getImageData: commercialFeatureProcedure("fieldOperations").input(z9.object({ photoId: z9.number().int().positive() })).query(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
-        const [photo] = await db.select().from(storePhotos).where(and12(eq12(storePhotos.id, input.photoId), eq12(storePhotos.companyId, ctx.accountId))).limit(1);
-        if (!photo) throw new TRPCError11({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const [photo] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.id, input.photoId), eq13(storePhotos.companyId, ctx.accountId))).limit(1);
+        if (!photo) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         assertPhotoAccess(ctx, photo);
-        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError11({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!isTenantMediaKey(photo.fileKey, ctx.accountId)) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         const { storageRead: storageRead2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         try {
           const image = await storageRead2(photo.fileKey);
           return { base64: image.data.toString("base64"), mime: image.contentType || photo.mimeType || "image/jpeg" };
         } catch {
-          throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel obter a imagem armazenada." });
+          throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel obter a imagem armazenada." });
         }
       }),
       /** Exclui uma foto (com auditoria). */
-      delete: commercialFeatureProcedure("fieldOperations").input(z8.object({ photoId: z8.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      delete: commercialFeatureProcedure("fieldOperations").input(z9.object({ photoId: z9.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
-        const [photo] = await db.select().from(storePhotos).where(and12(eq12(storePhotos.id, input.photoId), eq12(storePhotos.companyId, ctx.accountId))).limit(1);
-        if (!photo) throw new TRPCError11({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const [photo] = await db.select().from(storePhotos).where(and13(eq13(storePhotos.id, input.photoId), eq13(storePhotos.companyId, ctx.accountId))).limit(1);
+        if (!photo) throw new TRPCError12({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         if (scopeMemberId(ctx) !== null && photo.promoterId !== ctx.memberAccountId) {
-          throw new TRPCError11({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
+          throw new TRPCError12({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
         }
         try {
           await moveStorePhotosToTrash(db, ctx.accountId, [photo], { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
         } catch (error) {
           console.error("[storePhotos.delete] falha ao enviar para a lixeira", error);
-          throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar a foto para a lixeira." });
+          throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar a foto para a lixeira." });
         }
         await auditFromCtx(ctx, {
           action: "delete",
@@ -6598,19 +6777,19 @@ var init_storePhotos = __esm({
         return { ok: true };
       }),
       /** Exclui várias fotos de uma vez. */
-      bulkDelete: commercialFeatureProcedure("fieldOperations").input(z8.object({ photoIds: z8.array(z8.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+      bulkDelete: commercialFeatureProcedure("fieldOperations").input(z9.object({ photoIds: z9.array(z9.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
-        const photos = await db.select().from(storePhotos).where(and12(eq12(storePhotos.companyId, ctx.accountId), sql14`${storePhotos.id} IN (${sql14.join(input.photoIds.map((id2) => sql14`${id2}`), sql14`, `)})`));
+        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        const photos = await db.select().from(storePhotos).where(and13(eq13(storePhotos.companyId, ctx.accountId), sql16`${storePhotos.id} IN (${sql16.join(input.photoIds.map((id2) => sql16`${id2}`), sql16`, `)})`));
         if (photos.length === 0) return { deleted: 0 };
         const memberId = scopeMemberId(ctx);
         const allowed = photos.filter((photo) => memberId === null || photo.promoterId === memberId);
-        if (allowed.length === 0) throw new TRPCError11({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
+        if (allowed.length === 0) throw new TRPCError12({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode excluir suas pr\xF3prias fotos." });
         try {
           await moveStorePhotosToTrash(db, ctx.accountId, allowed, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
         } catch (error) {
           console.error("[storePhotos.bulkDelete] falha ao enviar para a lixeira", error);
-          throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar as fotos para a lixeira." });
+          throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel enviar as fotos para a lixeira." });
         }
         const deleted = allowed.length;
         await auditFromCtx(ctx, {
@@ -6623,28 +6802,28 @@ var init_storePhotos = __esm({
         return { deleted };
       }),
       /** Move fotos já tiradas para um cliente da mesma loja (ou tira o vínculo com `storeClientId: null`). */
-      assignClient: commercialFeatureProcedure("fieldOperations").input(z8.object({
-        storeId: z8.number().int().positive().optional().nullable(),
-        photoIds: z8.array(z8.number().int().positive()).min(1).max(200),
-        storeClientId: z8.number().int().positive().nullable()
+      assignClient: commercialFeatureProcedure("fieldOperations").input(z9.object({
+        storeId: z9.number().int().positive().optional().nullable(),
+        photoIds: z9.array(z9.number().int().positive()).min(1).max(200),
+        storeClientId: z9.number().int().positive().nullable()
       })).mutation(async ({ ctx, input }) => {
         const db = await getDb();
-        if (!db) throw new TRPCError11({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
         const store = input.storeId != null ? await assertStoreAccess(db, ctx, input.storeId) : null;
         await ensureStorePhotosTable(db);
         await ensureStoreClientsSchema(db);
         let clientName = "Sem cliente";
         if (input.storeClientId && input.storeId != null) {
           await assertStoreClient(db, ctx.accountId, input.storeId, input.storeClientId);
-          const res2 = await db.execute(sql14`SELECT name FROM store_clients WHERE id = ${input.storeClientId} AND companyId = ${ctx.accountId} LIMIT 1`);
+          const res2 = await db.execute(sql16`SELECT name FROM store_clients WHERE id = ${input.storeClientId} AND companyId = ${ctx.accountId} LIMIT 1`);
           clientName = (Array.isArray(res2?.[0]) ? res2[0] : Array.isArray(res2) ? res2 : res2?.rows ?? [])[0]?.name ?? clientName;
         }
         const memberId = scopeMemberId(ctx);
-        const owner = memberId !== null ? sql14` AND promoterId = ${memberId}` : sql14``;
-        const ids = sql14.join(input.photoIds.map((id2) => sql14`${id2}`), sql14`, `);
-        const res = await db.execute(sql14`UPDATE store_photos SET storeClientId = ${input.storeClientId} WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND id IN (${ids})${owner}`);
+        const owner = memberId !== null ? sql16` AND promoterId = ${memberId}` : sql16``;
+        const ids = sql16.join(input.photoIds.map((id2) => sql16`${id2}`), sql16`, `);
+        const res = await db.execute(sql16`UPDATE store_photos SET storeClientId = ${input.storeClientId} WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND id IN (${ids})${owner}`);
         const moved = Number((Array.isArray(res) ? res[0] : res)?.affectedRows ?? 0);
-        if (moved === 0) throw new TRPCError11({ code: "FORBIDDEN", message: "Nenhuma das fotos selecionadas p\xF4de ser movida (s\xF3 \xE9 poss\xEDvel mover as suas pr\xF3prias fotos desta loja)." });
+        if (moved === 0) throw new TRPCError12({ code: "FORBIDDEN", message: "Nenhuma das fotos selecionadas p\xF4de ser movida (s\xF3 \xE9 poss\xEDvel mover as suas pr\xF3prias fotos desta loja)." });
         await auditFromCtx(ctx, {
           action: "update",
           module: "store_photos",
@@ -6697,9 +6876,9 @@ function storeLabel(row2) {
   if (!row2.storeName || row2.storeActive === false) return row2.storeName ? `${row2.storeName} (loja removida)` : "Loja removida";
   return row2.storeName;
 }
-function productsCsv(rows3, today, alertDays) {
+function productsCsv(rows4, today, alertDays) {
   const header = ["Ind\xFAstria", "Loja", "C\xF3digo", "Descri\xE7\xE3o", "Lote", "Quantidade", "Validade", "Situa\xE7\xE3o", "Pre\xE7o (R$)", "Cadastrado por"];
-  const lines = rows3.map((p) => {
+  const lines = rows4.map((p) => {
     const iso = String(p.expirationDate).slice(0, 10);
     return [p.clientName || "Sem ind\xFAstria", storeLabel(p), p.productCode, p.description, p.lot || "", String(p.quantity), formatDateBR(iso), situationLabel(iso, today, alertDays), Number(p.price).toFixed(2).replace(".", ","), p.createdByName || ""];
   });
@@ -6741,7 +6920,7 @@ var productLookup_exports = {};
 __export(productLookup_exports, {
   lookupProductByCode: () => lookupProductByCode
 });
-import { and as and13, desc as desc6, eq as eq13, inArray as inArray12 } from "drizzle-orm";
+import { and as and14, desc as desc6, eq as eq14, inArray as inArray13 } from "drizzle-orm";
 async function fetchJson(url, init2 = {}, ms2 = 4e3) {
   const ctl = new AbortController();
   const t2 = setTimeout(() => ctl.abort(), ms2);
@@ -6769,8 +6948,8 @@ async function lookupProductByCode(companyId, rawCode) {
   if (database2) {
     await ensureInventoryProductsSchema();
     const codes = [.../* @__PURE__ */ new Set([rawCode.trim(), ...variants])];
-    const rows3 = await database2.select({ description: inventoryProducts.description, price: inventoryProducts.price, productCode: inventoryProducts.productCode }).from(inventoryProducts).where(and13(eq13(inventoryProducts.companyId, companyId), inArray12(inventoryProducts.productCode, codes))).orderBy(desc6(inventoryProducts.id)).limit(1);
-    if (rows3[0]) return { found: true, source: "company", description: rows3[0].description, price: String(rows3[0].price), code: rows3[0].productCode };
+    const rows4 = await database2.select({ description: inventoryProducts.description, price: inventoryProducts.price, productCode: inventoryProducts.productCode }).from(inventoryProducts).where(and14(eq14(inventoryProducts.companyId, companyId), inArray13(inventoryProducts.productCode, codes))).orderBy(desc6(inventoryProducts.id)).limit(1);
+    if (rows4[0]) return { found: true, source: "company", description: rows4[0].description, price: String(rows4[0].price), code: rows4[0].productCode };
   }
   if (!variants.length) return { found: false, source: null, description: "", code };
   const token = process.env.COSMOS_API_TOKEN;
@@ -6818,12 +6997,12 @@ __export(products_exports, {
   productsRouter: () => productsRouter,
   queryProducts: () => queryProducts
 });
-import { z as z10 } from "zod";
-import { TRPCError as TRPCError13 } from "@trpc/server";
-import { sql as sql16 } from "drizzle-orm";
-async function ready5() {
+import { z as z11 } from "zod";
+import { TRPCError as TRPCError14 } from "@trpc/server";
+import { sql as sql18 } from "drizzle-orm";
+async function ready6() {
   const database2 = await getDb();
-  if (!database2) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+  if (!database2) throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
   await ensureInventoryProductsSchema();
   await ensureStoreClientsSchema(database2);
   await ensurePromoterStoreAssignmentsTable(database2);
@@ -6837,26 +7016,26 @@ async function getProductsAlertDays(companyId) {
   }
 }
 function buildWhere(ctx, f, today, alertDays) {
-  const parts = [sql16`ip.companyId = ${ctx.accountId}`];
+  const parts = [sql18`ip.companyId = ${ctx.accountId}`];
   const memberId = hasFullStoreAccess(ctx) ? null : ctx.memberAccountId ?? -1;
-  if (memberId !== null) parts.push(sql16`(ip.createdByMemberId = ${memberId} OR (ip.storeId IS NOT NULL AND ${storeAssignedToPromoter(sql16`ip.storeId`, memberId)}))`);
-  if (f.mine && ctx.memberAccountId) parts.push(sql16`ip.createdByMemberId = ${ctx.memberAccountId}`);
+  if (memberId !== null) parts.push(sql18`(ip.createdByMemberId = ${memberId} OR (ip.storeId IS NOT NULL AND ${storeAssignedToPromoter(sql18`ip.storeId`, memberId)}))`);
+  if (f.mine && ctx.memberAccountId) parts.push(sql18`ip.createdByMemberId = ${ctx.memberAccountId}`);
   const search = f.search?.trim();
   if (search) {
     const pattern = `%${search.toLowerCase().replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
-    parts.push(sql16`(LOWER(ip.productCode) LIKE ${pattern} OR LOWER(ip.description) LIKE ${pattern} OR LOWER(COALESCE(ip.lot, '')) LIKE ${pattern})`);
+    parts.push(sql18`(LOWER(ip.productCode) LIKE ${pattern} OR LOWER(ip.description) LIKE ${pattern} OR LOWER(COALESCE(ip.lot, '')) LIKE ${pattern})`);
   }
   const limit = addDays(today, alertDays);
-  if (f.expiry === "expired") parts.push(sql16`ip.expirationDate < ${today}`);
-  if (f.expiry === "near") parts.push(sql16`ip.expirationDate >= ${today} AND ip.expirationDate <= ${limit}`);
-  if (f.expiry === "alert") parts.push(sql16`ip.expirationDate <= ${limit}`);
-  if (f.expiry === "valid") parts.push(sql16`ip.expirationDate > ${limit}`);
-  if (f.storeId) parts.push(sql16`ip.storeId = ${f.storeId}`);
-  if (f.storeClientId) parts.push(sql16`ip.storeClientId = ${f.storeClientId}`);
-  if (f.clientName) parts.push(f.clientName === "__none__" ? sql16`c.name IS NULL` : sql16`c.name = ${f.clientName}`);
-  if (f.from) parts.push(sql16`ip.expirationDate >= ${f.from}`);
-  if (f.to) parts.push(sql16`ip.expirationDate <= ${f.to}`);
-  return sql16.join(parts, sql16` AND `);
+  if (f.expiry === "expired") parts.push(sql18`ip.expirationDate < ${today}`);
+  if (f.expiry === "near") parts.push(sql18`ip.expirationDate >= ${today} AND ip.expirationDate <= ${limit}`);
+  if (f.expiry === "alert") parts.push(sql18`ip.expirationDate <= ${limit}`);
+  if (f.expiry === "valid") parts.push(sql18`ip.expirationDate > ${limit}`);
+  if (f.storeId) parts.push(sql18`ip.storeId = ${f.storeId}`);
+  if (f.storeClientId) parts.push(sql18`ip.storeClientId = ${f.storeClientId}`);
+  if (f.clientName) parts.push(f.clientName === "__none__" ? sql18`c.name IS NULL` : sql18`c.name = ${f.clientName}`);
+  if (f.from) parts.push(sql18`ip.expirationDate >= ${f.from}`);
+  if (f.to) parts.push(sql18`ip.expirationDate <= ${f.to}`);
+  return sql18.join(parts, sql18` AND `);
 }
 function mapRow(ctx, r) {
   return {
@@ -6874,49 +7053,49 @@ function mapRow(ctx, r) {
   };
 }
 async function queryProducts(ctx, f, opts) {
-  const database2 = await ready5();
+  const database2 = await ready6();
   const today = todayInZone();
   const alertDays = await getProductsAlertDays(ctx.accountId);
   const where = buildWhere(ctx, f, today, alertDays);
-  const items = rowsOf(await database2.execute(sql16`SELECT ${COLUMNS} ${FROM} WHERE ${where} ORDER BY ip.expirationDate ASC, ip.description ASC, ip.id ASC LIMIT ${opts.limit} OFFSET ${opts.offset ?? 0}`)).map((r) => mapRow(ctx, r));
+  const items = rowsOf(await database2.execute(sql18`SELECT ${COLUMNS} ${FROM} WHERE ${where} ORDER BY ip.expirationDate ASC, ip.description ASC, ip.id ASC LIMIT ${opts.limit} OFFSET ${opts.offset ?? 0}`)).map((r) => mapRow(ctx, r));
   return { items, today, alertDays, where, database: database2 };
 }
 async function loadOne(ctx, id2) {
-  const database2 = await ready5();
-  const r = rowsOf(await database2.execute(sql16`SELECT ${COLUMNS} ${FROM} WHERE ip.id = ${id2} AND ip.companyId = ${ctx.accountId} LIMIT 1`))[0];
+  const database2 = await ready6();
+  const r = rowsOf(await database2.execute(sql18`SELECT ${COLUMNS} ${FROM} WHERE ip.id = ${id2} AND ip.companyId = ${ctx.accountId} LIMIT 1`))[0];
   return r ? mapRow(ctx, r) : null;
 }
 async function loadManageable(ctx, id2) {
   const row2 = await loadOne(ctx, id2);
-  if (!row2) throw new TRPCError13({ code: "NOT_FOUND", message: "Produto n\xE3o encontrado." });
-  if (!row2.canManage) throw new TRPCError13({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode alterar ou excluir produtos que voc\xEA mesmo cadastrou." });
+  if (!row2) throw new TRPCError14({ code: "NOT_FOUND", message: "Produto n\xE3o encontrado." });
+  if (!row2.canManage) throw new TRPCError14({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode alterar ou excluir produtos que voc\xEA mesmo cadastrou." });
   return row2;
 }
 async function validatePlace(ctx, storeId, storeClientId) {
-  const database2 = await ready5();
+  const database2 = await ready6();
   if (!storeId) {
-    if (storeClientId) throw new TRPCError13({ code: "BAD_REQUEST", message: "Escolha a loja antes da ind\xFAstria." });
+    if (storeClientId) throw new TRPCError14({ code: "BAD_REQUEST", message: "Escolha a loja antes da ind\xFAstria." });
     return { storeId: null, storeClientId: null };
   }
   const store = await assertStoreAccess(database2, ctx, storeId);
-  if (!store.active) throw new TRPCError13({ code: "BAD_REQUEST", message: "Essa loja foi removida. Escolha outra loja." });
+  if (!store.active) throw new TRPCError14({ code: "BAD_REQUEST", message: "Essa loja foi removida. Escolha outra loja." });
   if (storeClientId) {
-    const c = rowsOf(await database2.execute(sql16`SELECT id FROM store_clients WHERE id = ${storeClientId} AND companyId = ${ctx.accountId} AND storeId = ${storeId} AND active = true LIMIT 1`))[0];
-    if (!c) throw new TRPCError13({ code: "BAD_REQUEST", message: "Ind\xFAstria n\xE3o encontrada nesta loja." });
+    const c = rowsOf(await database2.execute(sql18`SELECT id FROM store_clients WHERE id = ${storeClientId} AND companyId = ${ctx.accountId} AND storeId = ${storeId} AND active = true LIMIT 1`))[0];
+    if (!c) throw new TRPCError14({ code: "BAD_REQUEST", message: "Ind\xFAstria n\xE3o encontrada nesta loja." });
   }
   return { storeId, storeClientId: storeClientId ?? null };
 }
 async function uploadLabelPhoto(companyId, base64, requestId) {
   const buffer = Buffer.from(base64, "base64");
   const mime = detectImageMime(buffer);
-  if (!mime) throw new TRPCError13({ code: "BAD_REQUEST", message: "A foto precisa ser uma imagem (JPG, PNG ou WebP)." });
+  if (!mime) throw new TRPCError14({ code: "BAD_REQUEST", message: "A foto precisa ser uma imagem (JPG, PNG ou WebP)." });
   const ext = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
   const { storagePut: storagePut2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
   try {
     const { key } = await storagePut2(`product-photos/${companyId}/${safeKeySegment(requestId)}.${ext}`, buffer, mime);
     return key;
   } catch {
-    throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel salvar a foto da etiqueta agora. Tente sem a foto ou mais tarde." });
+    throw new TRPCError14({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel salvar a foto da etiqueta agora. Tente sem a foto ou mais tarde." });
   }
 }
 async function deleteLabelPhoto(companyId, key) {
@@ -6950,80 +7129,80 @@ var init_products2 = __esm({
     init_products();
     rowsOf = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
     isoDate = (v) => v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? "").slice(0, 10);
-    listFilters = z10.object({
-      search: z10.string().trim().max(100).optional(),
-      expiry: z10.enum(["all", "expired", "near", "alert", "valid"]).optional(),
-      storeId: z10.number().int().positive().optional(),
-      storeClientId: z10.number().int().positive().optional(),
+    listFilters = z11.object({
+      search: z11.string().trim().max(100).optional(),
+      expiry: z11.enum(["all", "expired", "near", "alert", "valid"]).optional(),
+      storeId: z11.number().int().positive().optional(),
+      storeClientId: z11.number().int().positive().optional(),
       /** Nome da indústria (agrupa a mesma indústria cadastrada em lojas diferentes). */
-      clientName: z10.string().trim().max(255).optional(),
-      from: z10.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      to: z10.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      mine: z10.boolean().optional()
+      clientName: z11.string().trim().max(255).optional(),
+      from: z11.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z11.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      mine: z11.boolean().optional()
     });
-    FROM = sql16`FROM inventory_products ip
+    FROM = sql18`FROM inventory_products ip
   LEFT JOIN stores s ON s.id = ip.storeId AND s.companyId = ip.companyId
   LEFT JOIN store_clients c ON c.id = ip.storeClientId AND c.companyId = ip.companyId
   LEFT JOIN member_accounts m ON m.id = ip.createdByMemberId AND m.companyId = ip.companyId`;
-    COLUMNS = sql16`ip.id, ip.companyId, ip.productCode, ip.description, ip.quantity, ip.expirationDate, ip.price, ip.storeId, ip.storeClientId, ip.lot, ip.photoKey,
+    COLUMNS = sql18`ip.id, ip.companyId, ip.productCode, ip.description, ip.quantity, ip.expirationDate, ip.price, ip.storeId, ip.storeClientId, ip.lot, ip.photoKey,
   ip.createdByMemberId, ip.createdAt, ip.updatedAt, s.name AS storeName, s.active AS storeActive, c.name AS clientName, m.userName AS createdByName`;
     productFields = {
-      productCode: z10.string().trim().min(1).max(64),
-      description: z10.string().trim().min(1).max(500),
-      quantity: z10.number().int().min(0).max(1e6),
-      expirationDate: z10.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isPlausibleExpiry, "Data de validade inv\xE1lida."),
-      price: z10.string().regex(/^\d{1,10}(\.\d{1,2})?$/),
-      storeId: z10.number().int().positive().nullish(),
-      storeClientId: z10.number().int().positive().nullish(),
-      lot: z10.string().trim().max(64).nullish(),
-      photoBase64: z10.string().min(100).max(MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE).optional()
+      productCode: z11.string().trim().min(1).max(64),
+      description: z11.string().trim().min(1).max(500),
+      quantity: z11.number().int().min(0).max(1e6),
+      expirationDate: z11.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isPlausibleExpiry, "Data de validade inv\xE1lida."),
+      price: z11.string().regex(/^\d{1,10}(\.\d{1,2})?$/),
+      storeId: z11.number().int().positive().nullish(),
+      storeClientId: z11.number().int().positive().nullish(),
+      lot: z11.string().trim().max(64).nullish(),
+      photoBase64: z11.string().min(100).max(MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE).optional()
     };
-    nullSafe = (col, v) => v == null ? sql16.raw(`${col} IS NULL`) : sql16`${sql16.raw(col)} = ${v}`;
+    nullSafe = (col, v) => v == null ? sql18.raw(`${col} IS NULL`) : sql18`${sql18.raw(col)} = ${v}`;
     productsRouter = router({
       settings: commercialFeatureProcedure("products").query(async ({ ctx }) => ({ alertDays: await getProductsAlertDays(ctx.accountId) })),
-      setAlertDays: commercialFeatureProcedure("products").input(z10.object({ days: z10.number().int().min(1).max(180) })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role !== "company_admin") throw new TRPCError13({ code: "FORBIDDEN", message: "Somente o administrador pode mudar o prazo de alerta." });
+      setAlertDays: commercialFeatureProcedure("products").input(z11.object({ days: z11.number().int().min(1).max(180) })).mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "company_admin") throw new TRPCError14({ code: "FORBIDDEN", message: "Somente o administrador pode mudar o prazo de alerta." });
         await setSetting(PRODUCTS_ALERT_DAYS_KEY, String(input.days), ctx.accountId);
         void auditFromCtx(ctx, { action: "update", module: "products", entityType: "settings", description: `Alerta de validade: ${input.days} dias antes`, newData: input });
         return { alertDays: input.days };
       }),
       /** Lojas ativas visíveis ao usuário (não depende do módulo de lojas/roteiros estar ligado). */
       stores: commercialFeatureProcedure("products").query(async ({ ctx }) => {
-        await ready5();
+        await ready6();
         return (await listOperationalStores(ctx.accountId, void 0, scopeMemberId(ctx))).map((s) => ({ id: s.id, name: s.name, city: s.city }));
       }),
       /** Indústrias (clientes) ativas de uma loja. */
-      storeClients: commercialFeatureProcedure("products").input(z10.object({ storeId: z10.number().int().positive() })).query(async ({ ctx, input }) => {
-        const database2 = await ready5();
+      storeClients: commercialFeatureProcedure("products").input(z11.object({ storeId: z11.number().int().positive() })).query(async ({ ctx, input }) => {
+        const database2 = await ready6();
         await assertStoreAccess(database2, ctx, input.storeId);
-        return rowsOf(await database2.execute(sql16`SELECT id, name FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true ORDER BY name`)).map((r) => ({ id: Number(r.id), name: String(r.name) }));
+        return rowsOf(await database2.execute(sql18`SELECT id, name FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true ORDER BY name`)).map((r) => ({ id: Number(r.id), name: String(r.name) }));
       }),
       /** Nomes de indústria usados nos produtos visíveis (filtro e agrupamento do relatório). */
       industries: commercialFeatureProcedure("products").query(async ({ ctx }) => {
-        const database2 = await ready5();
+        const database2 = await ready6();
         const where = buildWhere(ctx, {}, todayInZone(), 30);
-        return rowsOf(await database2.execute(sql16`SELECT DISTINCT c.name AS name ${FROM} WHERE ${where} AND c.name IS NOT NULL ORDER BY c.name LIMIT 500`)).map((r) => String(r.name));
+        return rowsOf(await database2.execute(sql18`SELECT DISTINCT c.name AS name ${FROM} WHERE ${where} AND c.name IS NOT NULL ORDER BY c.name LIMIT 500`)).map((r) => String(r.name));
       }),
-      lookupByCode: commercialFeatureProcedure("products").input(z10.object({ code: z10.string().trim().min(6).max(64) })).query(async ({ ctx, input }) => {
+      lookupByCode: commercialFeatureProcedure("products").input(z11.object({ code: z11.string().trim().min(6).max(64) })).query(async ({ ctx, input }) => {
         const { lookupProductByCode: lookupProductByCode2 } = await Promise.resolve().then(() => (init_productLookup(), productLookup_exports));
         return lookupProductByCode2(ctx.accountId, input.code);
       }),
       /** Lista paginada e filtrada no servidor. */
-      list: commercialFeatureProcedure("products").input(listFilters.extend({ page: z10.number().int().min(1).max(1e4).optional(), pageSize: z10.number().int().min(5).max(100).optional() }).optional()).query(async ({ ctx, input }) => {
+      list: commercialFeatureProcedure("products").input(listFilters.extend({ page: z11.number().int().min(1).max(1e4).optional(), pageSize: z11.number().int().min(5).max(100).optional() }).optional()).query(async ({ ctx, input }) => {
         const f = input ?? {};
         const pageSize = f.pageSize ?? PRODUCTS_PAGE_SIZE;
         const page = f.page ?? 1;
         const { items, alertDays, where, database: database2, today } = await queryProducts(ctx, f, { limit: pageSize, offset: (page - 1) * pageSize });
-        const total = Number(rowsOf(await database2.execute(sql16`SELECT COUNT(*) AS n ${FROM} WHERE ${where}`))[0]?.n ?? 0);
+        const total = Number(rowsOf(await database2.execute(sql18`SELECT COUNT(*) AS n ${FROM} WHERE ${where}`))[0]?.n ?? 0);
         return { items, total, page, pageSize, pages: Math.max(1, Math.ceil(total / pageSize)), alertDays, today };
       }),
       /** Contagem do alerta: vencidos + que vencem dentro da janela da empresa. */
       summary: commercialFeatureProcedure("products").query(async ({ ctx }) => {
-        const database2 = await ready5();
+        const database2 = await ready6();
         const today = todayInZone();
         const alertDays = await getProductsAlertDays(ctx.accountId);
         const where = buildWhere(ctx, {}, today, alertDays);
-        const r = rowsOf(await database2.execute(sql16`SELECT
+        const r = rowsOf(await database2.execute(sql18`SELECT
       SUM(CASE WHEN ip.expirationDate < ${today} THEN 1 ELSE 0 END) AS expired,
       SUM(CASE WHEN ip.expirationDate >= ${today} AND ip.expirationDate <= ${addDays(today, alertDays)} THEN 1 ELSE 0 END) AS near,
       COUNT(*) AS total ${FROM} WHERE ${where}`))[0] ?? {};
@@ -7040,22 +7219,22 @@ var init_products2 = __esm({
         void auditFromCtx(ctx, { action: "export", module: "products", entityType: "product_csv", description: `Exportou ${items.length} produto(s) em CSV`, newData: input ?? {} });
         return { filename: `produtos-validades-${today}.csv`, csv: productsCsv(items, today, alertDays), count: items.length, truncated: items.length >= PRODUCTS_EXPORT_LIMIT };
       }),
-      photoUrl: commercialFeatureProcedure("products").input(z10.object({ id: z10.number().int().positive() })).query(async ({ ctx, input }) => {
-        const database2 = await ready5();
+      photoUrl: commercialFeatureProcedure("products").input(z11.object({ id: z11.number().int().positive() })).query(async ({ ctx, input }) => {
+        const database2 = await ready6();
         const where = buildWhere(ctx, {}, todayInZone(), 30);
-        const row2 = rowsOf(await database2.execute(sql16`SELECT ip.photoKey ${FROM} WHERE ${where} AND ip.id = ${input.id} LIMIT 1`))[0];
-        if (!row2?.photoKey || !isTenantMediaKey(row2.photoKey, ctx.accountId, ["product-photos"])) throw new TRPCError13({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
+        const row2 = rowsOf(await database2.execute(sql18`SELECT ip.photoKey ${FROM} WHERE ${where} AND ip.id = ${input.id} LIMIT 1`))[0];
+        if (!row2?.photoKey || !isTenantMediaKey(row2.photoKey, ctx.accountId, ["product-photos"])) throw new TRPCError14({ code: "NOT_FOUND", message: "Foto n\xE3o encontrada." });
         const { storageGetSignedUrl: storageGetSignedUrl2 } = await Promise.resolve().then(() => (init_storage(), storage_exports));
         return { url: await storageGetSignedUrl2(String(row2.photoKey)) };
       }),
       /** Quantos produtos ainda apontam para a loja (aviso antes de remover a loja). */
-      countByStore: commercialFeatureProcedure("products").input(z10.object({ storeId: z10.number().int().positive() })).query(async ({ ctx, input }) => {
-        const database2 = await ready5();
-        return { count: Number(rowsOf(await database2.execute(sql16`SELECT COUNT(*) AS n FROM inventory_products WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId}`))[0]?.n ?? 0) };
+      countByStore: commercialFeatureProcedure("products").input(z11.object({ storeId: z11.number().int().positive() })).query(async ({ ctx, input }) => {
+        const database2 = await ready6();
+        return { count: Number(rowsOf(await database2.execute(sql18`SELECT COUNT(*) AS n FROM inventory_products WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId}`))[0]?.n ?? 0) };
       }),
-      create: commercialFeatureProcedure("products").input(z10.object({ ...productFields, clientRequestId: z10.string().min(8).max(64).regex(/^[A-Za-z0-9_-]+$/) })).mutation(async ({ ctx, input }) => {
-        const database2 = await ready5();
-        const prior = rowsOf(await database2.execute(sql16`SELECT productId, merged FROM inventory_product_requests WHERE companyId = ${ctx.accountId} AND clientRequestId = ${input.clientRequestId} LIMIT 1`))[0];
+      create: commercialFeatureProcedure("products").input(z11.object({ ...productFields, clientRequestId: z11.string().min(8).max(64).regex(/^[A-Za-z0-9_-]+$/) })).mutation(async ({ ctx, input }) => {
+        const database2 = await ready6();
+        const prior = rowsOf(await database2.execute(sql18`SELECT productId, merged FROM inventory_product_requests WHERE companyId = ${ctx.accountId} AND clientRequestId = ${input.clientRequestId} LIMIT 1`))[0];
         if (prior) return { product: await loadOne(ctx, Number(prior.productId)), merged: Boolean(Number(prior.merged)), duplicate: true };
         const place = await validatePlace(ctx, input.storeId, input.storeClientId);
         const lot = normalizeLot(input.lot);
@@ -7064,7 +7243,7 @@ var init_products2 = __esm({
         let result;
         try {
           result = await database2.transaction(async (tx) => {
-            const existing = rowsOf(await tx.execute(sql16`SELECT id, quantity, price, photoKey FROM inventory_products
+            const existing = rowsOf(await tx.execute(sql18`SELECT id, quantity, price, photoKey FROM inventory_products
           WHERE companyId = ${ctx.accountId} AND productCode = ${key.productCode} AND expirationDate = ${key.expirationDate}
             AND ${nullSafe("storeId", key.storeId)} AND ${nullSafe("storeClientId", key.storeClientId)} AND ${nullSafe("lot", key.lot)}
           ORDER BY id ASC LIMIT 1 FOR UPDATE`))[0];
@@ -7072,20 +7251,20 @@ var init_products2 = __esm({
             if (existing) {
               const keepPrice = Number(existing.price) > 0 ? existing.price : input.price;
               const usePhoto = photoKey && !existing.photoKey;
-              await tx.execute(sql16`UPDATE inventory_products SET quantity = quantity + ${input.quantity}, price = ${keepPrice}${usePhoto ? sql16`, photoKey = ${photoKey}` : sql16``} WHERE id = ${existing.id} AND companyId = ${ctx.accountId}`);
+              await tx.execute(sql18`UPDATE inventory_products SET quantity = quantity + ${input.quantity}, price = ${keepPrice}${usePhoto ? sql18`, photoKey = ${photoKey}` : sql18``} WHERE id = ${existing.id} AND companyId = ${ctx.accountId}`);
               out = { id: Number(existing.id), merged: true, previousQuantity: Number(existing.quantity), photoUnused: Boolean(photoKey && !usePhoto) };
             } else {
-              const ins = await tx.execute(sql16`INSERT INTO inventory_products (companyId, productCode, description, quantity, expirationDate, price, storeId, storeClientId, lot, photoKey, createdByMemberId)
+              const ins = await tx.execute(sql18`INSERT INTO inventory_products (companyId, productCode, description, quantity, expirationDate, price, storeId, storeClientId, lot, photoKey, createdByMemberId)
             VALUES (${ctx.accountId}, ${key.productCode}, ${input.description}, ${input.quantity}, ${key.expirationDate}, ${input.price}, ${key.storeId}, ${key.storeClientId}, ${key.lot}, ${photoKey}, ${ctx.memberAccountId ?? null})`);
               out = { id: Number(ins?.[0]?.insertId ?? ins?.insertId), merged: false };
             }
-            await tx.execute(sql16`INSERT INTO inventory_product_requests (companyId, clientRequestId, productId, merged) VALUES (${ctx.accountId}, ${input.clientRequestId}, ${out.id}, ${out.merged})`);
+            await tx.execute(sql18`INSERT INTO inventory_product_requests (companyId, clientRequestId, productId, merged) VALUES (${ctx.accountId}, ${input.clientRequestId}, ${out.id}, ${out.merged})`);
             return out;
           });
         } catch (error) {
           await deleteLabelPhoto(ctx.accountId, photoKey);
           if (/duplicate/i.test(String(error?.message ?? error?.cause?.message ?? ""))) {
-            const p = rowsOf(await database2.execute(sql16`SELECT productId, merged FROM inventory_product_requests WHERE companyId = ${ctx.accountId} AND clientRequestId = ${input.clientRequestId} LIMIT 1`))[0];
+            const p = rowsOf(await database2.execute(sql18`SELECT productId, merged FROM inventory_product_requests WHERE companyId = ${ctx.accountId} AND clientRequestId = ${input.clientRequestId} LIMIT 1`))[0];
             if (p) return { product: await loadOne(ctx, Number(p.productId)), merged: Boolean(Number(p.merged)), duplicate: true };
           }
           throw error;
@@ -7096,15 +7275,15 @@ var init_products2 = __esm({
         void auditFromCtx(ctx, result.merged ? { action: "update", module: "products", entityType: "product", entityId: result.id, entityLabel: input.description, description: `Somou ${input.quantity} un. ao produto: ${input.description} (antes ${result.previousQuantity})`, newData: logged } : { action: "create", module: "products", entityType: "product", entityId: result.id, entityLabel: input.description, description: `Cadastrou produto: ${input.description}`, newData: logged });
         return { product, merged: result.merged, duplicate: false };
       }),
-      update: commercialFeatureProcedure("products").input(z10.object({ ...productFields, id: z10.number().int().positive(), removePhoto: z10.boolean().optional() })).mutation(async ({ ctx, input }) => {
+      update: commercialFeatureProcedure("products").input(z11.object({ ...productFields, id: z11.number().int().positive(), removePhoto: z11.boolean().optional() })).mutation(async ({ ctx, input }) => {
         const before = await loadManageable(ctx, input.id);
         const sameStore = input.storeId != null && input.storeId === before.storeId && input.storeClientId === before.storeClientId;
         const place = sameStore ? { storeId: before.storeId, storeClientId: before.storeClientId } : await validatePlace(ctx, input.storeId, input.storeClientId);
-        const database2 = await ready5();
+        const database2 = await ready6();
         let photoKey = before.photoKey;
         if (input.photoBase64) photoKey = await uploadLabelPhoto(ctx.accountId, input.photoBase64, `${input.id}-${Date.now()}`);
         else if (input.removePhoto) photoKey = null;
-        await database2.execute(sql16`UPDATE inventory_products SET productCode = ${input.productCode}, description = ${input.description}, quantity = ${input.quantity}, expirationDate = ${input.expirationDate}, price = ${input.price},
+        await database2.execute(sql18`UPDATE inventory_products SET productCode = ${input.productCode}, description = ${input.description}, quantity = ${input.quantity}, expirationDate = ${input.expirationDate}, price = ${input.price},
       storeId = ${place.storeId}, storeClientId = ${place.storeClientId}, lot = ${normalizeLot(input.lot)}, photoKey = ${photoKey} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
         if (before.photoKey && before.photoKey !== photoKey) await deleteLabelPhoto(ctx.accountId, before.photoKey);
         const product = await loadOne(ctx, input.id);
@@ -7112,14 +7291,14 @@ var init_products2 = __esm({
         void auditFromCtx(ctx, { action: "update", module: "products", entityType: "product", entityId: input.id, entityLabel: input.description, description: `Alterou produto: ${input.description}`, oldData: before, newData: logged });
         return product;
       }),
-      deleteMany: commercialFeatureProcedure("products").input(z10.object({ ids: z10.array(z10.number().int().positive()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
+      deleteMany: commercialFeatureProcedure("products").input(z11.object({ ids: z11.array(z11.number().int().positive()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
         const ids = [...new Set(input.ids)];
         for (const id2 of ids) await loadManageable(ctx, id2);
         const result = await deleteInventoryProducts(ctx.accountId, ids, { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
         void auditFromCtx(ctx, { action: "delete", module: "products", entityType: ids.length === 1 ? "product" : "product_bulk", entityId: ids.length === 1 ? ids[0] : void 0, entityLabel: `${result.deleted} produto(s)`, description: `Enviou ${result.deleted} produto(s) \xE0 lixeira`, newData: { productIds: ids } });
         return result;
       }),
-      delete: commercialFeatureProcedure("products").input(z10.object({ id: z10.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      delete: commercialFeatureProcedure("products").input(z11.object({ id: z11.number().int().positive() })).mutation(async ({ ctx, input }) => {
         await loadManageable(ctx, input.id);
         return deleteInventoryProducts(ctx.accountId, [input.id], { memberId: ctx.memberAccountId ?? null, name: ctx.user?.name ?? null });
       }),
@@ -7225,29 +7404,29 @@ async function runBackupStep(c, opts = { budgetMs: 18e3 }) {
     const pk = keys.length === 1 ? keys[0].Column_name : null;
     let finished = false;
     while (Date.now() - started < opts.budgetMs) {
-      const [rows3] = pk ? await c.query(
+      const [rows4] = pk ? await c.query(
         `SELECT * FROM \`${table2}\` ${cursor != null ? `WHERE \`${pk}\` > ?` : ""} ORDER BY \`${pk}\` LIMIT ${CHUNK_ROWS}`,
         cursor != null ? [cursor] : []
       ) : await c.query(`SELECT * FROM \`${table2}\` ORDER BY 1 LIMIT ${CHUNK_ROWS} OFFSET ${rowsDone}`);
-      if (!rows3.length) {
+      if (!rows4.length) {
         finished = true;
         break;
       }
-      const body = await gzip(Buffer.from(rows3.map((r) => JSON.stringify(r, jsonReplacer)).join("\n") + "\n"));
+      const body = await gzip(Buffer.from(rows4.map((r) => JSON.stringify(r, jsonReplacer)).join("\n") + "\n"));
       const key = `${prefix}/${table2}.${String(part).padStart(5, "0")}.jsonl.gz`;
       const stored = await storagePut2(key, body, "application/gzip");
-      files.push({ key: stored.key, rows: rows3.length, sha256: crypto3.createHash("sha256").update(body).digest("hex") });
+      files.push({ key: stored.key, rows: rows4.length, sha256: crypto3.createHash("sha256").update(body).digest("hex") });
       bytes += body.length;
       partsWritten += 1;
       part += 1;
-      rowsDone += rows3.length;
-      if (pk) cursor = String(rows3[rows3.length - 1][pk]);
+      rowsDone += rows4.length;
+      if (pk) cursor = String(rows4[rows4.length - 1][pk]);
       await c.query(
         `INSERT INTO backup_progress (day, tableName, cursorValue, part, rowsDone, done, files) VALUES (?,?,?,?,?,0,?)
          ON DUPLICATE KEY UPDATE cursorValue = VALUES(cursorValue), part = VALUES(part), rowsDone = VALUES(rowsDone), files = VALUES(files)`,
         [day, table2, cursor, part, rowsDone, JSON.stringify(files)]
       );
-      if (rows3.length < CHUNK_ROWS) {
+      if (rows4.length < CHUNK_ROWS) {
         finished = true;
         break;
       }
@@ -7484,8 +7663,8 @@ async function findSubmission(companyId, clientId) {
   await ensureOfflineSubmissions();
   const database2 = await getDb();
   if (!database2) return null;
-  const [rows3] = await database2.execute(sql8`SELECT kind, entityId FROM offline_submissions WHERE companyId = ${companyId} AND clientId = ${clientId} LIMIT 1`);
-  const r = rows3?.[0];
+  const [rows4] = await database2.execute(sql8`SELECT kind, entityId FROM offline_submissions WHERE companyId = ${companyId} AND clientId = ${clientId} LIMIT 1`);
+  const r = rows4?.[0];
   return r ? { kind: String(r.kind), entityId: r.entityId == null ? null : Number(r.entityId) } : null;
 }
 async function recordSubmission(input) {
@@ -7501,9 +7680,9 @@ async function listVisitOfflineMarks(companyId, visitIds) {
   await ensureOfflineSubmissions();
   const database2 = await getDb();
   if (!database2) return [];
-  const [rows3] = await database2.execute(sql8`SELECT kind, entityId, offline, deviceTime, receivedAt, alert FROM offline_submissions
+  const [rows4] = await database2.execute(sql8`SELECT kind, entityId, offline, deviceTime, receivedAt, alert FROM offline_submissions
     WHERE companyId = ${companyId} AND kind IN ('visit_start', 'visit_complete') AND entityId IN (${sql8.join(ids.map((id2) => sql8`${id2}`), sql8`, `)})`);
-  return (rows3 || []).filter((r) => Number(r.offline) === 1 || r.alert).map((r) => ({
+  return (rows4 || []).filter((r) => Number(r.offline) === 1 || r.alert).map((r) => ({
     visitId: Number(r.entityId),
     phase: r.kind === "visit_start" ? "start" : "complete",
     offline: Number(r.offline) === 1,
@@ -7647,9 +7826,9 @@ var timeTrackingRouter = router({
       eq8(memberAccounts2.role, "promoter"),
       gte5(timeEvents.serverTime, since)
     )).orderBy(desc2(timeEvents.serverTime)).limit(5e3);
-    const rows3 = await effectiveRows(rawRows);
+    const rows4 = await effectiveRows(rawRows);
     const eventsByPromoter = /* @__PURE__ */ new Map();
-    for (const row2 of rows3) {
+    for (const row2 of rows4) {
       if (localDay(row2.deviceTime || row2.serverTime, timeZone) !== today) continue;
       const promoterEvents = eventsByPromoter.get(row2.promoterId) || [];
       promoterEvents.push(row2);
@@ -7810,7 +7989,7 @@ var timeTrackingRouter = router({
     const database2 = await getDb();
     if (!database2) return found;
     const memberIds = [...new Set(found.map((m) => m.memberId))];
-    const rows3 = await database2.select({
+    const rows4 = await database2.select({
       memberAccountId: timeCorrectionRequests.memberAccountId,
       requestedTime: timeCorrectionRequests.requestedTime
     }).from(timeCorrectionRequests).where(and8(
@@ -7819,7 +7998,7 @@ var timeTrackingRouter = router({
       sql9`${timeCorrectionRequests.status} IN ('pending', 'approved')`
     )).orderBy(desc2(timeCorrectionRequests.createdAt)).limit(500);
     const covered = /* @__PURE__ */ new Set();
-    for (const row2 of rows3) {
+    for (const row2 of rows4) {
       const day = excuseDay(row2.requestedTime);
       covered.add(`${row2.memberAccountId}:${day}`);
     }
@@ -7863,8 +8042,8 @@ var timeTrackingRouter = router({
     const from = `${today.slice(0, 7)}-01`;
     const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
     const to = `${today.slice(0, 7)}-${String(lastDay).padStart(2, "0")}`;
-    const rows3 = await loadMirrorEventRows(companyId, [memberId], from, to);
-    const events = rows3.map((row2) => ({
+    const rows4 = await loadMirrorEventRows(companyId, [memberId], from, to);
+    const events = rows4.map((row2) => ({
       id: row2.id,
       type: row2.eventType,
       time: (row2.deviceTime || row2.serverTime).toISOString(),
@@ -8049,12 +8228,12 @@ var timeTrackingRouter = router({
       const database2 = await getDb();
       if (!database2) return [];
       await ensureCorrectionExtras();
-      const rows3 = await database2.select({
+      const rows4 = await database2.select({
         request: timeCorrectionRequests,
         event: timeEvents,
         employee: { userName: memberAccounts2.userName }
       }).from(timeCorrectionRequests).innerJoin(memberAccounts2, eq8(timeCorrectionRequests.memberAccountId, memberAccounts2.id)).leftJoin(timeEvents, eq8(timeCorrectionRequests.timeEventId, timeEvents.id)).where(and8(eq8(timeCorrectionRequests.companyId, ctx.accountId), eq8(timeCorrectionRequests.status, "pending"))).orderBy(desc2(timeCorrectionRequests.createdAt));
-      return Promise.all(rows3.map(async (row2) => {
+      return Promise.all(rows4.map(async (row2) => {
         const key = row2.request.attachmentKey;
         let attachmentUrl = null;
         if (key) {
@@ -8070,8 +8249,8 @@ var timeTrackingRouter = router({
     review: companyAdminFeatureProcedure("timeTracking").input(z4.object({ id: z4.number().int().positive(), status: z4.enum(["approved", "rejected"]), reviewNotes: z4.string().max(1e3).optional() })).mutation(async ({ ctx, input }) => {
       const database2 = await getDb();
       if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-      const rows3 = await database2.select().from(timeCorrectionRequests).where(and8(eq8(timeCorrectionRequests.id, input.id), eq8(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
-      const request = rows3[0];
+      const rows4 = await database2.select().from(timeCorrectionRequests).where(and8(eq8(timeCorrectionRequests.id, input.id), eq8(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
+      const request = rows4[0];
       if (!request) throw new TRPCError7({ code: "NOT_FOUND", message: "Solicita\xE7\xE3o de corre\xE7\xE3o n\xE3o encontrada." });
       if (request.status !== "pending") throw new TRPCError7({ code: "BAD_REQUEST", message: "Esta solicita\xE7\xE3o j\xE1 foi analisada." });
       await database2.transaction(async (tx) => {
@@ -8088,8 +8267,8 @@ var timeTrackingRouter = router({
       if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
       let done = 0;
       for (const id2 of input.ids) {
-        const rows3 = await database2.select().from(timeCorrectionRequests).where(and8(eq8(timeCorrectionRequests.id, id2), eq8(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
-        const request = rows3[0];
+        const rows4 = await database2.select().from(timeCorrectionRequests).where(and8(eq8(timeCorrectionRequests.id, id2), eq8(timeCorrectionRequests.companyId, ctx.accountId))).limit(1);
+        const request = rows4[0];
         if (!request || request.status !== "pending") continue;
         const applied = await database2.transaction(async (tx) => {
           const claimed = await tx.update(timeCorrectionRequests).set({ status: input.status, reviewedByUserId: ctx.memberAccountId, reviewedAt: /* @__PURE__ */ new Date(), reviewNotes: input.reviewNotes || null }).where(and8(eq8(timeCorrectionRequests.id, request.id), eq8(timeCorrectionRequests.status, "pending")));
@@ -8109,6 +8288,7 @@ var timeTrackingRouter = router({
 init_timesheetMirror2();
 
 // server/ponto/router.ts
+init_brDocs();
 init_trpc();
 init_db();
 init_schema();
@@ -8120,7 +8300,7 @@ init_ledger();
 init_repFormat();
 import { z as z5 } from "zod";
 import { TRPCError as TRPCError8 } from "@trpc/server";
-import { and as and9, asc, desc as desc3, eq as eq9, gte as gte6, inArray as inArray9, lt as lt5, sql as sql10 } from "drizzle-orm";
+import { and as and9, asc, desc as desc3, eq as eq9, gte as gte6, inArray as inArray9, lt as lt5, sql as sql11 } from "drizzle-orm";
 
 // server/ponto/receipt.ts
 init_repFormat();
@@ -8216,7 +8396,7 @@ async function buildReceiptPdf(r) {
 }
 function receiptEmailHtml(r) {
   const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const rows3 = [
+  const rows4 = [
     ["N\xFAmero da batida", r.nsr != null ? String(r.nsr).padStart(9, "0") : "-"],
     ["Marca\xE7\xE3o", r.eventLabel],
     ["Data e hora", `${r.markedLocal} (${r.timeZone})`],
@@ -8227,12 +8407,13 @@ function receiptEmailHtml(r) {
     ["C\xF3digo de seguran\xE7a", r.hash || "-"]
   ];
   return `<h2 style="margin:0 0 8px">Comprovante de Registro de Ponto</h2>
-<table style="border-collapse:collapse;font-size:14px">${rows3.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;font-weight:bold;vertical-align:top">${esc(k)}</td><td style="padding:4px 0;word-break:break-all">${esc(v)}</td></tr>`).join("")}</table>
+<table style="border-collapse:collapse;font-size:14px">${rows4.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;font-weight:bold;vertical-align:top">${esc(k)}</td><td style="padding:4px 0;word-break:break-all">${esc(v)}</td></tr>`).join("")}</table>
 <p style="font-size:12px;color:#555">Guarde este e-mail. Voc\xEA tamb\xE9m pode baixar o comprovante em PDF no aplicativo (Ponto &gt; Comprovantes).</p>`;
 }
 
 // server/ponto/router.ts
 init_email();
+init_clock();
 var TZ3 = DEFAULT_TZ;
 var monthStr = z5.string().regex(/^\d{4}-\d{2}$/);
 var dateStr3 = z5.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -8287,13 +8468,13 @@ async function memberMonthMirror(companyId, memberId, month) {
   if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
   const member = (await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, employeeCode: promoterProfiles.employeeCode }).from(memberAccounts2).leftJoin(promoterProfiles, eq9(promoterProfiles.memberAccountId, memberAccounts2.id)).where(and9(eq9(memberAccounts2.id, memberId), eq9(memberAccounts2.companyId, companyId))).limit(1))[0];
   if (!member) throw new TRPCError8({ code: "NOT_FOUND", message: "Funcion\xE1rio n\xE3o encontrado." });
-  const rows3 = await loadMirrorEventRows(companyId, [memberId], from, to);
+  const rows4 = await loadMirrorEventRows(companyId, [memberId], from, to);
   const adj = await loadAdjustmentsByEvent(companyId, [memberId]);
   const labor = await readJson2(`labor_profile:${memberId}`, companyId);
   const excuses = (await loadApprovedDayExcuses(companyId, [memberId], from, to)).get(memberId) || [];
   const vacations = (await loadMemberVacations(companyId, [memberId], from, to)).get(memberId) || [];
   const options = await loadMirrorOptions(companyId);
-  const report = buildMirror({ events: toMirrorEvents(rows3, adj), from, to, timeZone: TZ3, labor, excuses, vacations, options });
+  const report = buildMirror({ events: toMirrorEvents(rows4, adj), from, to, timeZone: TZ3, labor, excuses, vacations, options });
   const employer = await employerOf(companyId);
   const document = {
     v: 1,
@@ -8309,10 +8490,10 @@ async function latestAcceptances(companyId, month, memberIds) {
   await ensurePunchLedger();
   const database2 = await getDb();
   if (!database2) return /* @__PURE__ */ new Map();
-  const filter = memberIds?.length ? sql10` AND memberAccountId IN (${sql10.join(memberIds.map((id2) => sql10`${id2}`), sql10`, `)})` : sql10``;
-  const [rows3] = await database2.execute(sql10`SELECT id, memberAccountId, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND month = ${month}${filter} ORDER BY id DESC`);
+  const filter = memberIds?.length ? sql11` AND memberAccountId IN (${sql11.join(memberIds.map((id2) => sql11`${id2}`), sql11`, `)})` : sql11``;
+  const [rows4] = await database2.execute(sql11`SELECT id, memberAccountId, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND month = ${month}${filter} ORDER BY id DESC`);
   const map = /* @__PURE__ */ new Map();
-  for (const r of rows3) if (!map.has(Number(r.memberAccountId))) map.set(Number(r.memberAccountId), r);
+  for (const r of rows4) if (!map.has(Number(r.memberAccountId))) map.set(Number(r.memberAccountId), r);
   return map;
 }
 function rangeUtc(from, to) {
@@ -8320,6 +8501,29 @@ function rangeUtc(from, to) {
 }
 function fileResponse(content, fileName) {
   return { fileName, base64: toLatin1(content).toString("base64"), mimeType: "text/plain;charset=iso-8859-1" };
+}
+async function dataReadiness(companyId) {
+  const legal = await readJson2("company_legal_profile", companyId);
+  const company = [];
+  if (!(legal?.legalName || "").trim()) company.push("Raz\xE3o social");
+  const doc = onlyDigits(legal?.document);
+  if (!doc) company.push("CNPJ/CPF");
+  else if (!isValidCpfOrCnpj(doc)) company.push("CNPJ/CPF v\xE1lido (o cadastrado n\xE3o confere)");
+  if (!(legal?.address || "").trim()) company.push("Endere\xE7o");
+  const database2 = await getDb();
+  const members = database2 ? (await database2.select({ id: memberAccounts2.id, name: memberAccounts2.userName, role: memberAccounts2.role, active: memberAccounts2.active }).from(memberAccounts2).where(eq9(memberAccounts2.companyId, companyId))).filter((m) => m.role !== "company_admin" && m.active) : [];
+  const people = [];
+  for (const m of members) {
+    const l = await readJson2(`labor_profile:${m.id}`, companyId);
+    const missing = [];
+    if (!l?.cpf) missing.push("CPF");
+    else if (!isValidCpf(l.cpf)) missing.push("CPF v\xE1lido");
+    if (!(l?.jobTitle || "").trim()) missing.push("Cargo");
+    if (!l?.admissionDate) missing.push("Data de admiss\xE3o");
+    if (!l?.schedule?.length) missing.push("Hor\xE1rio contratual");
+    if (missing.length) people.push({ memberId: m.id, name: m.name, missing });
+  }
+  return { company, people, ok: company.length === 0 && people.length === 0 };
 }
 var pontoLegalRouter = router({
   /** Situação para a empresa cliente: só o que ela pode cadastrar (sem pendências do dono da plataforma). */
@@ -8343,7 +8547,8 @@ var pontoLegalRouter = router({
       employerAddress: Boolean(employer.workplace),
       workersMissingCpf,
       workersMissingSchedule,
-      emailEnabled: Boolean(process.env.RESEND_API_KEY || process.env.EMAIL_WEBHOOK_URL)
+      emailEnabled: Boolean(process.env.RESEND_API_KEY || process.env.EMAIL_WEBHOOK_URL),
+      readiness: await dataReadiness(ctx.accountId)
     };
   }),
   /** Pendências do dono do GondUp (INPI, documento do desenvolvedor, certificado) — só platform_admin. */
@@ -8364,9 +8569,9 @@ var pontoLegalRouter = router({
     const database2 = await getDb();
     if (!database2) return [];
     const since = new Date(Date.now() - (input?.days ?? 30) * 864e5);
-    const rows3 = await database2.select({ id: timeEvents.id, nsr: timeEvents.nsr, eventType: timeEvents.eventType, serverTime: timeEvents.serverTime, deviceTime: timeEvents.deviceTime, recordHash: timeEvents.recordHash, origin: timeEvents.origin, timeZone: timeEvents.timeZone, offline: timeEvents.offline }).from(timeEvents).where(and9(eq9(timeEvents.companyId, ctx.accountId), eq9(timeEvents.memberAccountId, ctx.memberAccountId), gte6(timeEvents.serverTime, since))).orderBy(desc3(timeEvents.serverTime)).limit(500);
-    const gone = await supersededIds(ctx.accountId, rows3.map((r) => r.id));
-    return rows3.map((r) => ({ ...r, markedAt: r.deviceTime || r.serverTime, superseded: gone.has(r.id) }));
+    const rows4 = await database2.select({ id: timeEvents.id, nsr: timeEvents.nsr, eventType: timeEvents.eventType, serverTime: timeEvents.serverTime, deviceTime: timeEvents.deviceTime, recordHash: timeEvents.recordHash, origin: timeEvents.origin, timeZone: timeEvents.timeZone, offline: timeEvents.offline }).from(timeEvents).where(and9(eq9(timeEvents.companyId, ctx.accountId), eq9(timeEvents.memberAccountId, ctx.memberAccountId), gte6(timeEvents.serverTime, since))).orderBy(desc3(timeEvents.serverTime)).limit(500);
+    const gone = await supersededIds(ctx.accountId, rows4.map((r) => r.id));
+    return rows4.map((r) => ({ ...r, markedAt: r.deviceTime || r.serverTime, superseded: gone.has(r.id) }));
   }),
   receipt: commercialFeatureProcedure("timeTracking").input(z5.object({ eventId: z5.number().int().positive() })).query(async ({ ctx, input }) => (await loadReceipt(ctx, input.eventId)).data),
   receiptPdf: commercialFeatureProcedure("timeTracking").input(z5.object({ eventId: z5.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -8411,7 +8616,7 @@ var pontoLegalRouter = router({
     const database2 = await getDb();
     if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     const summary = JSON.stringify({ totals: m.report.totals, days: m.report.days.length });
-    await database2.execute(sql10`INSERT INTO timesheet_acceptances (companyId, memberAccountId, month, decision, documentHash, summary, comment, ipAddress, userAgent, acceptedAt)
+    await database2.execute(sql11`INSERT INTO timesheet_acceptances (companyId, memberAccountId, month, decision, documentHash, summary, comment, ipAddress, userAgent, acceptedAt)
         VALUES (${ctx.accountId}, ${ctx.memberAccountId}, ${input.month}, ${input.decision}, ${m.documentHash}, ${summary}, ${input.comment || null}, ${meta.ipAddress?.slice(0, 64) ?? null}, ${meta.userAgent?.slice(0, 512) ?? null}, UTC_TIMESTAMP())`);
     void auditFromCtx(ctx, { action: input.decision === "accepted" ? "update" : "security", module: "time_tracking", entityType: "timesheet_acceptance", entityId: ctx.memberAccountId, description: `${input.decision === "accepted" ? "Funcion\xE1rio confirmou" : "Funcion\xE1rio contestou"} o espelho de ${input.month} (hash ${m.documentHash.slice(0, 12)}\u2026)`, newData: { month: input.month, documentHash: m.documentHash, comment: input.comment || null } });
     return { success: true, documentHash: m.documentHash };
@@ -8437,17 +8642,32 @@ var pontoLegalRouter = router({
     }
     return out.sort((x, y) => x.name.localeCompare(y.name, "pt-BR"));
   }),
+  // ------------------------------------------------------------------ relógio (Hora Legal Brasileira)
+  clockStatus: companyAdminFeatureProcedure("timeTracking").query(async () => {
+    let checks = await latestClockChecks(10);
+    const last = checks[0] ? new Date(checks[0].checkedAt).getTime() : 0;
+    if (Date.now() - last > 6 * 36e5) {
+      await runClockCheck("agendado");
+      checks = await latestClockChecks(10);
+    }
+    return { limitMs: MAX_DRIFT_MS, checks };
+  }),
+  clockCheck: companyAdminFeatureProcedure("timeTracking").mutation(async ({ ctx }) => {
+    const r = await runClockCheck("manual");
+    void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "clock_check", description: `Conferiu o rel\xF3gio com a Hora Legal Brasileira: ${r.error ? "falhou" : `${r.worstMs} ms`}` });
+    return r;
+  }),
   // ------------------------------------------------------------------ integridade
   verifyIntegrity: companyAdminFeatureProcedure("timeTracking").mutation(async ({ ctx }) => {
     await ensurePunchLedger();
     const database2 = await getDb();
     if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
-    const rows3 = await database2.select().from(timeEvents).where(eq9(timeEvents.companyId, ctx.accountId)).orderBy(asc(timeEvents.id));
-    const result = verifyLedger(rows3.map(toLedgerRow));
-    const [stateRows] = await database2.execute(sql10`SELECT lastNsr, lastHash, initializedAt FROM rep_ledger_state WHERE companyId = ${ctx.accountId}`);
+    const rows4 = await database2.select().from(timeEvents).where(eq9(timeEvents.companyId, ctx.accountId)).orderBy(asc(timeEvents.id));
+    const result = verifyLedger(rows4.map(toLedgerRow));
+    const [stateRows] = await database2.execute(sql11`SELECT lastNsr, lastHash, initializedAt FROM rep_ledger_state WHERE companyId = ${ctx.accountId}`);
     const state = stateRows?.[0] ?? null;
     const stateMismatch = state && Number(state.lastNsr) !== result.lastNsr;
-    const legacy = rows3.filter((r) => r.sealedLegacy).length;
+    const legacy = rows4.filter((r) => r.sealedLegacy).length;
     void auditFromCtx(ctx, { action: "read", module: "time_tracking", entityType: "integrity_check", description: `Verifica\xE7\xE3o de integridade do ponto: ${result.ok && !stateMismatch ? "OK" : `${result.problems.length} problema(s)`}` });
     return {
       ok: result.ok && !stateMismatch,
@@ -8471,7 +8691,7 @@ var pontoLegalRouter = router({
     const database2 = await getDb();
     if (!database2) throw new TRPCError8({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     const { start, end } = rangeUtc(input.from, input.to);
-    const rows3 = (await database2.select().from(timeEvents).where(and9(eq9(timeEvents.companyId, ctx.accountId), eq9(timeEvents.origin, "original"), gte6(effectiveEventTime, start), lt5(effectiveEventTime, end))).orderBy(asc(timeEvents.nsr))).filter((r) => r.nsr != null && r.recordHash).filter((r) => {
+    const rows4 = (await database2.select().from(timeEvents).where(and9(eq9(timeEvents.companyId, ctx.accountId), eq9(timeEvents.origin, "original"), gte6(effectiveEventTime, start), lt5(effectiveEventTime, end))).orderBy(asc(timeEvents.nsr))).filter((r) => r.nsr != null && r.recordHash).filter((r) => {
       const d = formatD(r.deviceTime || r.serverTime, r.timeZone || TZ3);
       return d >= input.from && d <= input.to;
     });
@@ -8485,14 +8705,14 @@ var pontoLegalRouter = router({
       to: input.to,
       generatedAt: /* @__PURE__ */ new Date(),
       timeZone: TZ3,
-      punches: rows3.map((r) => ({ nsr: Number(r.nsr), markedAt: r.deviceTime || r.serverTime, recordedAt: r.serverTime, cpf: r.workerCpf, timeZone: r.timeZone || TZ3, collector: r.collectorId || "02", offline: Boolean(r.offline), hash: r.recordHash }))
+      punches: rows4.map((r) => ({ nsr: Number(r.nsr), markedAt: r.deviceTime || r.serverTime, recordedAt: r.serverTime, cpf: r.workerCpf, timeZone: r.timeZone || TZ3, collector: r.collectorId || "02", offline: Boolean(r.offline), hash: r.recordHash }))
     });
     const warnings = [
       ...!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto \u2192 Dados da empresa."] : [],
-      ...rows3.some((r) => !r.workerCpf) ? [`${rows3.filter((r) => !r.workerCpf).length} batida(s) sem CPF do funcion\xE1rio. Complete o cadastro no Espelho de ponto (vale para as pr\xF3ximas batidas).`] : []
+      ...rows4.some((r) => !r.workerCpf) ? [`${rows4.filter((r) => !r.workerCpf).length} batida(s) sem CPF do funcion\xE1rio. Complete o cadastro no Espelho de ponto (vale para as pr\xF3ximas batidas).`] : []
     ];
-    void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "afd", description: `Gerou AFD ${input.from} a ${input.to} (${rows3.length} marca\xE7\xF5es)`, newData: { from: input.from, to: input.to, count: rows3.length } });
-    return { ...fileResponse(afd.content, afd.fileName), count: rows3.length, warnings };
+    void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "afd", description: `Gerou AFD ${input.from} a ${input.to} (${rows4.length} marca\xE7\xF5es)`, newData: { from: input.from, to: input.to, count: rows4.length } });
+    return { ...fileResponse(afd.content, afd.fileName), count: rows4.length, warnings };
   }),
   exportAej: companyAdminFeatureProcedure("timeTracking").input(z5.object({ from: dateStr3, to: dateStr3 })).mutation(async ({ ctx, input }) => {
     if (input.from > input.to) throw new TRPCError8({ code: "BAD_REQUEST", message: "A data inicial deve ser anterior ou igual \xE0 final." });
@@ -8511,6 +8731,7 @@ var pontoLegalRouter = router({
     for (const r of all) if (r.replacesEventId) replacedBy.set(r.replacesEventId, r);
     const workers = [];
     const missingCpf = [];
+    const missingSchedule = [];
     for (const m of members) {
       const mine = inPeriod.filter((r) => r.memberAccountId === m.id);
       if (!mine.length) continue;
@@ -8534,8 +8755,16 @@ var pontoLegalRouter = router({
         marks.push({ markedAt: r.deviceTime || r.serverTime, tpMarc: "D", seq: 0, fonte: r.origin === "original" ? "O" : "I", motivo: `Substitu\xEDda por ajuste aprovado por ${by.recordedByName || "administrador"}: ${by.reason || ""}` });
       }
       marks.sort((a, b) => a.markedAt.getTime() - b.markedAt.getTime());
-      const daily = Number(labor?.dailyMinutes || 0);
-      workers.push({ cpf, name: m.name, marks, contract: daily > 0 ? { code: `J${daily}`, dailyMinutes: daily, pairs: [] } : null });
+      const sched = (labor?.schedule || []).filter((p) => Array.isArray(p) && p.length === 2);
+      const schedMinutes = sched.reduce((t2, [a, b]) => {
+        const [ah, am] = a.split(":").map(Number);
+        const [bh, bm] = b.split(":").map(Number);
+        return t2 + (bh * 60 + bm - ah * 60 - am + 1440) % 1440;
+      }, 0);
+      const daily = Number(labor?.dailyMinutes || 0) || schedMinutes;
+      if (!sched.length) missingSchedule.push(m.name);
+      const pairs = sched.map(([a, b]) => [a.replace(":", ""), b.replace(":", "")]);
+      workers.push({ cpf, name: m.name, marks, contract: daily > 0 ? { code: `J${daily}${pairs.length ? `-${pairs.flat().join("")}` : ""}`, dailyMinutes: daily, pairs } : null });
     }
     const employer = await employerOf(ctx.accountId);
     const dev = developerInfo();
@@ -8553,10 +8782,293 @@ var pontoLegalRouter = router({
       ...!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto \u2192 Dados da empresa."] : [],
       ...missingCpf.length ? [`Sem CPF no cadastro: ${missingCpf.slice(0, 10).join(", ")}${missingCpf.length > 10 ? "\u2026" : ""}. Complete no Espelho de ponto.`] : [],
       ...workers.some((w) => !w.contract) ? ["H\xE1 funcion\xE1rio sem hor\xE1rio de trabalho cadastrado. Preencha a jornada no Espelho de ponto."] : [],
-      "O arquivo usa s\xF3 a carga hor\xE1ria di\xE1ria; os hor\xE1rios previstos de entrada e sa\xEDda ainda n\xE3o s\xE3o cadastrados no sistema."
+      ...missingSchedule.length ? [`Sem hor\xE1rio de entrada e sa\xEDda cadastrado: ${missingSchedule.slice(0, 10).join(", ")}${missingSchedule.length > 10 ? "\u2026" : ""}. Complete no Espelho de ponto.`] : []
     ];
     void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "aej", description: `Gerou AEJ ${input.from} a ${input.to} (${workers.length} funcion\xE1rio(s))`, newData: { from: input.from, to: input.to } });
     return { ...fileResponse(aej.content, aej.fileName), count: workers.length, warnings };
+  })
+});
+
+// server/lgpd/router.ts
+init_trpc();
+init_db();
+init_schema();
+init_audit();
+import { randomBytes } from "node:crypto";
+import { z as z6 } from "zod";
+import { TRPCError as TRPCError9 } from "@trpc/server";
+import { and as and10, eq as eq10, inArray as inArray10, sql as sql12 } from "drizzle-orm";
+import { zipSync, strToU8 } from "fflate";
+
+// shared/privacyNotice.ts
+var PRIVACY_NOTICE_VERSION = "2026-11-05.1";
+var PRIVACY_NOTICE_TITLE = "Como seus dados s\xE3o usados no ponto e nas visitas";
+var PRIVACY_NOTICE_SECTIONS = [
+  { title: "Quem \xE9 o respons\xE1vel", body: "A empresa que te contratou (seu empregador) \xE9 a controladora dos seus dados. O GondUp \xE9 o sistema que ela usa e trata os dados s\xF3 seguindo as instru\xE7\xF5es dela." },
+  { title: "O que coletamos", body: "Em cada batida de ponto: data e hora (do servidor e do seu aparelho), fuso hor\xE1rio, localiza\xE7\xE3o GPS com a precis\xE3o informada pelo aparelho e dados t\xE9cnicos do aparelho/navegador. Nas visitas a lojas: as fotos que voc\xEA tirar e a localiza\xE7\xE3o no check-in/check-out. Tamb\xE9m seu nome, e-mail, telefone e os dados do contrato informados pela empresa (CPF, cargo, admiss\xE3o, hor\xE1rio)." },
+  { title: "Para qu\xEA", body: "Registrar sua jornada como a lei exige, calcular horas e gerar o espelho de ponto, comprovar as visitas feitas e cumprir obriga\xE7\xF5es trabalhistas e fiscais. A localiza\xE7\xE3o \xE9 colhida s\xF3 no momento da batida ou do check-in \u2014 n\xE3o existe rastreamento cont\xEDnuo." },
+  { title: "Por que n\xE3o pedimos \u201Cconsentimento\u201D", body: "O registro de ponto \xE9 uma obriga\xE7\xE3o legal do empregador (CLT art. 74) e faz parte do contrato de trabalho. Por isso a base legal \xE9 o cumprimento de obriga\xE7\xE3o legal e a execu\xE7\xE3o do contrato (LGPD art. 7\xBA, II e V). Voc\xEA est\xE1 sendo informado, n\xE3o precisa autorizar." },
+  { title: "Quem v\xEA", body: "Os administradores e supervisores da sua empresa e, quando necess\xE1rio, auditores-fiscais do trabalho, a Justi\xE7a e o contador da empresa. O GondUp usa fornecedores de infraestrutura (hospedagem, banco de dados, armazenamento de arquivos, e-mail e monitoramento de erros), alguns com servidores fora do Brasil, sob contrato com cl\xE1usulas de prote\xE7\xE3o de dados." },
+  { title: "Por quanto tempo", body: "As marca\xE7\xF5es de ponto s\xE3o guardadas durante o contrato e por pelo menos 5 anos depois dele, por exig\xEAncia legal, e n\xE3o podem ser apagadas nem alteradas \u2014 corre\xE7\xF5es viram registros separados. Fotos de visitas s\xE3o apagadas automaticamente ap\xF3s 60 dias." },
+  { title: "Seus direitos", body: "Voc\xEA pode pedir uma c\xF3pia dos seus dados, a corre\xE7\xE3o de dados errados e a elimina\xE7\xE3o ou anonimiza\xE7\xE3o do que n\xE3o for de guarda obrigat\xF3ria. Use o bot\xE3o \u201CMeus dados (LGPD)\u201D no menu ou fale com o administrador da sua empresa." }
+];
+function privacyNoticeText() {
+  return [PRIVACY_NOTICE_TITLE, ...PRIVACY_NOTICE_SECTIONS.map((s) => `${s.title}
+${s.body}`)].join("\n\n");
+}
+
+// server/lgpd/router.ts
+init_repFormat();
+var ready4 = null;
+async function ensureLgpdTables() {
+  if (ready4) return ready4;
+  ready4 = (async () => {
+    const database2 = await getDb();
+    if (!database2 || typeof database2.execute !== "function") return;
+    await database2.execute(sql12.raw(`CREATE TABLE IF NOT EXISTS privacy_acknowledgements (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      companyId INT NOT NULL,
+      memberAccountId INT NOT NULL,
+      noticeVersion VARCHAR(32) NOT NULL,
+      textHash CHAR(64) NOT NULL,
+      ipAddress VARCHAR(64) NULL,
+      userAgent VARCHAR(512) NULL,
+      acknowledgedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX privacy_ack_member_idx (companyId, memberAccountId, noticeVersion)
+    )`));
+    await database2.execute(sql12.raw(`CREATE TABLE IF NOT EXISTS lgpd_requests (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      companyId INT NOT NULL,
+      memberAccountId INT NOT NULL,
+      kind VARCHAR(24) NOT NULL,
+      message TEXT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'open',
+      ipAddress VARCHAR(64) NULL,
+      userAgent VARCHAR(512) NULL,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      resolvedAt TIMESTAMP NULL,
+      resolvedBy VARCHAR(255) NULL,
+      resolution TEXT NULL,
+      INDEX lgpd_requests_company_idx (companyId, status)
+    )`));
+  })().catch((e) => {
+    ready4 = null;
+    throw e;
+  });
+  return ready4;
+}
+var noticeHash = () => sha256(privacyNoticeText());
+var KIND_LABEL = { export: "C\xF3pia dos meus dados", correction: "Corre\xE7\xE3o de dados", anonymize: "Elimina\xE7\xE3o/anonimiza\xE7\xE3o", info: "D\xFAvida sobre meus dados" };
+async function rows(query) {
+  const database2 = await getDb();
+  if (!database2) return [];
+  const [r] = await database2.execute(query);
+  return r || [];
+}
+async function collectSubjectData(companyId, memberId) {
+  await ensureLgpdTables();
+  const database2 = await getDb();
+  if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  const [account] = await database2.select({ id: memberAccounts2.id, nome: memberAccounts2.userName, email: memberAccounts2.email, telefone: memberAccounts2.phone, perfil: memberAccounts2.role, ativo: memberAccounts2.active, criadoEm: memberAccounts2.createdAt, atualizadoEm: memberAccounts2.updatedAt }).from(memberAccounts2).where(and10(eq10(memberAccounts2.id, memberId), eq10(memberAccounts2.companyId, companyId))).limit(1);
+  if (!account) throw new TRPCError9({ code: "NOT_FOUND", message: "Funcion\xE1rio n\xE3o encontrado nesta empresa." });
+  const laborRaw = await getSetting(`labor_profile:${memberId}`, companyId, "");
+  const myVisits = await database2.select().from(visits).where(and10(eq10(visits.companyId, companyId), eq10(visits.promoterId, memberId)));
+  const visitIds = myVisits.map((v) => v.id);
+  return {
+    geradoEm: (/* @__PURE__ */ new Date()).toISOString(),
+    observacao: "Exporta\xE7\xE3o dos dados pessoais do titular (LGPD art. 18, II e V). Senhas e tokens de sess\xE3o n\xE3o s\xE3o exportados.",
+    conta: account,
+    perfilPromotor: (await database2.select().from(promoterProfiles).where(eq10(promoterProfiles.memberAccountId, memberId)))[0] ?? null,
+    perfilTrabalhista: laborRaw ? JSON.parse(laborRaw) : null,
+    marcacoesDePonto: await database2.select().from(timeEvents).where(and10(eq10(timeEvents.companyId, companyId), eq10(timeEvents.memberAccountId, memberId))),
+    pedidosDeCorrecao: await database2.select().from(timeCorrectionRequests).where(and10(eq10(timeCorrectionRequests.companyId, companyId), eq10(timeCorrectionRequests.memberAccountId, memberId))),
+    aceitesDoEspelho: await rows(sql12`SELECT month, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`).catch(() => []),
+    cienciasDoAviso: await rows(sql12`SELECT noticeVersion, textHash, ipAddress, userAgent, acknowledgedAt FROM privacy_acknowledgements WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`),
+    pedidosLgpd: await rows(sql12`SELECT id, kind, message, status, createdAt, resolvedAt, resolution FROM lgpd_requests WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`),
+    ferias: await database2.select().from(vacationSchedules).where(and10(eq10(vacationSchedules.companyId, companyId), eq10(vacationSchedules.memberAccountId, memberId))),
+    visitas: myVisits,
+    fotosDeVisita: visitIds.length ? await database2.select().from(visitPhotos).where(and10(eq10(visitPhotos.companyId, companyId), inArray10(visitPhotos.visitId, visitIds))) : [],
+    fotosDeLoja: await database2.select().from(storePhotos).where(and10(eq10(storePhotos.companyId, companyId), eq10(storePhotos.promoterId, memberId))),
+    evidencias: await database2.select().from(evidences).where(and10(eq10(evidences.companyId, companyId), eq10(evidences.promoterId, memberId))),
+    checklists: await database2.select().from(checklistResponses).where(and10(eq10(checklistResponses.companyId, companyId), eq10(checklistResponses.promoterId, memberId))),
+    registrosDeAuditoria: await rows(sql12`SELECT action, module, entityType, description, ipAddress, userAgent, createdAt FROM audit_logs WHERE companyId = ${companyId} AND userId = ${memberId} ORDER BY id DESC LIMIT 5000`).catch(() => [])
+  };
+}
+function summarizeSubjectData(data) {
+  const count = (v) => Array.isArray(v) ? v.length : v ? 1 : 0;
+  return [
+    ["Conta de acesso (nome, e-mail, telefone)", count(data.conta), "Execu\xE7\xE3o do contrato"],
+    ["Perfil trabalhista (CPF, cargo, admiss\xE3o, hor\xE1rio)", count(data.perfilTrabalhista), "Obriga\xE7\xE3o legal"],
+    ["Marca\xE7\xF5es de ponto (hora, fuso, GPS, aparelho)", count(data.marcacoesDePonto), "Obriga\xE7\xE3o legal \u2014 guarda obrigat\xF3ria"],
+    ["Pedidos de corre\xE7\xE3o de ponto", count(data.pedidosDeCorrecao), "Obriga\xE7\xE3o legal"],
+    ["Aceites do espelho de ponto", count(data.aceitesDoEspelho), "Obriga\xE7\xE3o legal"],
+    ["Ci\xEAncias do aviso de privacidade", count(data.cienciasDoAviso), "Obriga\xE7\xE3o legal (prova de transpar\xEAncia)"],
+    ["F\xE9rias", count(data.ferias), "Obriga\xE7\xE3o legal"],
+    ["Visitas (check-in/out com GPS)", count(data.visitas), "Execu\xE7\xE3o do contrato"],
+    ["Fotos de visita e de loja (metadados)", count(data.fotosDeVisita) + count(data.fotosDeLoja), "Execu\xE7\xE3o do contrato \u2014 apagadas em 60 dias"],
+    ["Evid\xEAncias e checklists", count(data.evidencias) + count(data.checklists), "Execu\xE7\xE3o do contrato"],
+    ["Registros de auditoria (a\xE7\xF5es do titular)", count(data.registrosDeAuditoria), "Leg\xEDtimo interesse / defesa em processo"]
+  ];
+}
+async function summaryPdf(data, companyName) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  let y = 18;
+  const line = (t2, size = 10, bold = false) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    for (const l of doc.splitTextToSize(t2, 180)) {
+      if (y > 280) {
+        doc.addPage();
+        y = 18;
+      }
+      doc.text(l, 15, y);
+      y += size * 0.5;
+    }
+    y += 1.5;
+  };
+  line("Relat\xF3rio de dados pessoais do titular (LGPD art. 18)", 14, true);
+  line(`Empresa (controladora): ${companyName}`);
+  line(`Titular: ${data.conta.nome} \u2014 ${data.conta.email}`);
+  line(`Gerado em: ${new Date(data.geradoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} (hor\xE1rio de Bras\xEDlia)`);
+  y += 3;
+  line("Categorias de dados encontradas", 12, true);
+  for (const [label, n, basis] of summarizeSubjectData(data)) line(`\u2022 ${label}: ${n} registro(s). Base legal: ${basis}.`);
+  y += 3;
+  line("O arquivo dados.json, no mesmo pacote, cont\xE9m o conte\xFAdo completo em formato leg\xEDvel por m\xE1quina (portabilidade).", 9);
+  line("As marca\xE7\xF5es de ponto n\xE3o podem ser apagadas: a lei exige guard\xE1-las (CLT art. 74; Portaria MTP 671; prescri\xE7\xE3o de 5 anos \u2014 CF art. 7\xBA, XXIX).", 9);
+  return Buffer.from(doc.output("arraybuffer"));
+}
+async function buildSubjectExportZip(companyId, memberId) {
+  const data = await collectSubjectData(companyId, memberId);
+  const database2 = await getDb();
+  const [company] = database2 ? await rows(sql12`SELECT name FROM companies WHERE id = ${companyId}`) : [];
+  const pdf = await summaryPdf(data, company?.name || "");
+  const json2 = JSON.stringify(data, (_k, v) => typeof v === "bigint" ? v.toString() : v, 2);
+  const zip = zipSync({
+    "LEIA-ME.txt": strToU8("Pacote de dados pessoais (LGPD art. 18).\r\n- resumo.pdf: resumo leg\xEDvel.\r\n- dados.json: todos os dados.\r\nHor\xE1rios em UTC (ISO 8601).\r\n"),
+    "dados.json": strToU8(json2),
+    "resumo.pdf": new Uint8Array(pdf)
+  });
+  const safe = data.conta.nome.normalize("NFD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || `titular-${memberId}`;
+  return { fileName: `dados-lgpd-${safe}-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.zip`, buffer: Buffer.from(zip), summary: summarizeSubjectData(data) };
+}
+var ANONYMIZE_PLAN = {
+  apaga: ["Nome, e-mail e telefone da conta (substitu\xEDdos por pseud\xF4nimo)", "Senha, c\xF3digo de recupera\xE7\xE3o e sess\xF5es (a conta fica inutiliz\xE1vel)", "C\xF3digo de funcion\xE1rio", "Fotos de visita e de loja (apagadas na pr\xF3xima limpeza autom\xE1tica)", "Coordenadas GPS de visitas e evid\xEAncias", "Observa\xE7\xF5es de visitas e legendas de evid\xEAncias"],
+  mantem: ["Marca\xE7\xF5es de ponto completas (hora, GPS, NSR, hash) \u2014 guarda obrigat\xF3ria por lei e protegidas contra altera\xE7\xE3o", "Perfil trabalhista (CPF, cargo, admiss\xE3o, hor\xE1rio) \u2014 necess\xE1rio para AFD/AEJ e espelho durante o prazo legal", "Pedidos de corre\xE7\xE3o, aceites do espelho, f\xE9rias e auditoria \u2014 prova trabalhista"]
+};
+async function anonymizeSubject(companyId, memberId) {
+  const database2 = await getDb();
+  if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+  const [m] = await database2.select({ id: memberAccounts2.id, role: memberAccounts2.role }).from(memberAccounts2).where(and10(eq10(memberAccounts2.id, memberId), eq10(memberAccounts2.companyId, companyId))).limit(1);
+  if (!m) throw new TRPCError9({ code: "NOT_FOUND", message: "Funcion\xE1rio n\xE3o encontrado nesta empresa." });
+  if (m.role === "company_admin") throw new TRPCError9({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel anonimizar um administrador da empresa." });
+  const pseudonym = `Titular anonimizado #${memberId}`;
+  await database2.update(memberAccounts2).set({
+    userName: pseudonym,
+    email: `anonimizado+${companyId}-${memberId}@invalid.gondup`,
+    phone: null,
+    active: false,
+    passwordHash: `!anonimizado:${randomBytes(24).toString("hex")}`,
+    recoveryCodeHash: null
+  }).where(and10(eq10(memberAccounts2.id, memberId), eq10(memberAccounts2.companyId, companyId)));
+  await database2.delete(memberSessions2).where(eq10(memberSessions2.memberAccountId, memberId));
+  await database2.update(promoterProfiles).set({ employeeCode: null }).where(eq10(promoterProfiles.memberAccountId, memberId));
+  const now = /* @__PURE__ */ new Date();
+  await database2.update(storePhotos).set({ expiresAt: now }).where(and10(eq10(storePhotos.companyId, companyId), eq10(storePhotos.promoterId, memberId)));
+  const myVisits = await database2.select({ id: visits.id }).from(visits).where(and10(eq10(visits.companyId, companyId), eq10(visits.promoterId, memberId)));
+  if (myVisits.length) {
+    const ids = myVisits.map((v) => v.id);
+    await database2.update(visitPhotos).set({ expiresAt: now }).where(and10(eq10(visitPhotos.companyId, companyId), inArray10(visitPhotos.visitId, ids)));
+    await database2.update(visits).set({ startLatitude: null, startLongitude: null, endLatitude: null, endLongitude: null, notes: null }).where(and10(eq10(visits.companyId, companyId), inArray10(visits.id, ids)));
+  }
+  await database2.update(evidences).set({ latitude: null, longitude: null, caption: null }).where(and10(eq10(evidences.companyId, companyId), eq10(evidences.promoterId, memberId)));
+  return { pseudonym };
+}
+var kindSchema = z6.enum(["export", "correction", "anonymize", "info"]);
+var lgpdRouter = router({
+  /** Aviso ao trabalhador: precisa mostrar? (só para promotores) */
+  noticeStatus: companyBillingProcedure.query(async ({ ctx }) => {
+    const base = { version: PRIVACY_NOTICE_VERSION, required: false, acknowledgedAt: null };
+    if (ctx.user?.role !== "promoter" || !ctx.memberAccountId || ctx.actingAsPlatform) return base;
+    await ensureLgpdTables();
+    const r = await rows(sql12`SELECT acknowledgedAt FROM privacy_acknowledgements WHERE companyId = ${ctx.accountId} AND memberAccountId = ${ctx.memberAccountId} AND noticeVersion = ${PRIVACY_NOTICE_VERSION} ORDER BY id DESC LIMIT 1`);
+    return { ...base, required: !r.length, acknowledgedAt: r[0]?.acknowledgedAt ?? null };
+  }),
+  acknowledgeNotice: companyBillingProcedure.input(z6.object({ version: z6.string().max(32) })).mutation(async ({ ctx, input }) => {
+    if (!ctx.memberAccountId) throw new TRPCError9({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
+    if (input.version !== PRIVACY_NOTICE_VERSION) throw new TRPCError9({ code: "CONFLICT", message: "O aviso foi atualizado. Recarregue a p\xE1gina para ler a vers\xE3o nova." });
+    await ensureLgpdTables();
+    const meta = requestMeta(ctx);
+    const hash = noticeHash();
+    const database2 = await getDb();
+    if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+    await database2.execute(sql12`INSERT INTO privacy_acknowledgements (companyId, memberAccountId, noticeVersion, textHash, ipAddress, userAgent, acknowledgedAt)
+      VALUES (${ctx.accountId}, ${ctx.memberAccountId}, ${PRIVACY_NOTICE_VERSION}, ${hash}, ${meta.ipAddress?.slice(0, 64) ?? null}, ${meta.userAgent?.slice(0, 512) ?? null}, UTC_TIMESTAMP())`);
+    void auditFromCtx(ctx, { action: "update", module: "lgpd", entityType: "privacy_notice", entityId: ctx.memberAccountId, description: `Ci\xEAncia do aviso de privacidade vers\xE3o ${PRIVACY_NOTICE_VERSION} (hash ${hash.slice(0, 12)}\u2026)`, newData: { version: PRIVACY_NOTICE_VERSION, textHash: hash } });
+    return { success: true };
+  }),
+  /** Titular: abrir pedido (art. 18). */
+  createRequest: companyBillingProcedure.input(z6.object({ kind: kindSchema, message: z6.string().trim().max(2e3).optional() })).mutation(async ({ ctx, input }) => {
+    if (!ctx.memberAccountId) throw new TRPCError9({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
+    await ensureLgpdTables();
+    const meta = requestMeta(ctx);
+    const database2 = await getDb();
+    if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+    await database2.execute(sql12`INSERT INTO lgpd_requests (companyId, memberAccountId, kind, message, ipAddress, userAgent) VALUES (${ctx.accountId}, ${ctx.memberAccountId}, ${input.kind}, ${input.message || null}, ${meta.ipAddress?.slice(0, 64) ?? null}, ${meta.userAgent?.slice(0, 512) ?? null})`);
+    void auditFromCtx(ctx, { action: "create", module: "lgpd", entityType: "lgpd_request", entityId: ctx.memberAccountId, description: `Pedido do titular (LGPD): ${KIND_LABEL[input.kind]}` });
+    return { success: true };
+  }),
+  myRequests: companyBillingProcedure.query(async ({ ctx }) => {
+    if (!ctx.memberAccountId) return [];
+    await ensureLgpdTables();
+    return rows(sql12`SELECT id, kind, message, status, createdAt, resolvedAt, resolution FROM lgpd_requests WHERE companyId = ${ctx.accountId} AND memberAccountId = ${ctx.memberAccountId} ORDER BY id DESC LIMIT 50`);
+  }),
+  /** Titular baixa a própria cópia (mesmo pacote do administrador). */
+  exportMine: companyBillingProcedure.mutation(async ({ ctx }) => {
+    if (!ctx.memberAccountId) throw new TRPCError9({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
+    const z14 = await buildSubjectExportZip(ctx.accountId, ctx.memberAccountId);
+    void auditFromCtx(ctx, { action: "export", module: "lgpd", entityType: "subject_export", entityId: ctx.memberAccountId, description: "Titular baixou c\xF3pia dos pr\xF3prios dados (LGPD art. 18)" });
+    return { fileName: z14.fileName, base64: z14.buffer.toString("base64") };
+  }),
+  // ------------------------------------------------------------- administrador
+  requests: companyAdminProcedure.input(z6.object({ status: z6.enum(["open", "all"]).default("open") }).optional()).query(async ({ ctx, input }) => {
+    await ensureLgpdTables();
+    const companyId = Number(ctx.accountId);
+    return rows(sql12`SELECT r.id, r.memberAccountId, m.userName AS name, r.kind, r.message, r.status, r.createdAt, r.resolvedAt, r.resolvedBy, r.resolution
+      FROM lgpd_requests r LEFT JOIN member_accounts m ON m.id = r.memberAccountId WHERE r.companyId = ${companyId} ${input?.status === "all" ? sql12`` : sql12`AND r.status = 'open'`} ORDER BY r.id DESC LIMIT 200`);
+  }),
+  acknowledgements: companyAdminProcedure.query(async ({ ctx }) => {
+    await ensureLgpdTables();
+    return rows(sql12`SELECT m.id AS memberId, m.userName AS name, m.active, MAX(CASE WHEN a.noticeVersion = ${PRIVACY_NOTICE_VERSION} THEN a.acknowledgedAt END) AS acknowledgedAt
+      FROM member_accounts m LEFT JOIN privacy_acknowledgements a ON a.memberAccountId = m.id AND a.companyId = m.companyId
+      WHERE m.companyId = ${Number(ctx.accountId)} AND m.role = 'promoter' GROUP BY m.id, m.userName, m.active ORDER BY m.userName`);
+  }),
+  plan: companyAdminProcedure.query(() => ANONYMIZE_PLAN),
+  exportMember: companyAdminProcedure.input(z6.object({ memberId: z6.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const companyId = Number(ctx.accountId);
+    const z14 = await buildSubjectExportZip(companyId, input.memberId);
+    void auditFromCtx(ctx, { action: "export", module: "lgpd", entityType: "subject_export", entityId: input.memberId, description: "Exportou todos os dados pessoais de um titular (LGPD art. 18)" });
+    return { fileName: z14.fileName, base64: z14.buffer.toString("base64"), summary: z14.summary };
+  }),
+  anonymizeMember: companyAdminProcedure.input(z6.object({ memberId: z6.number().int().positive(), confirm: z6.literal("ANONIMIZAR"), requestId: z6.number().int().positive().optional(), reason: z6.string().trim().min(5).max(500) })).mutation(async ({ ctx, input }) => {
+    const companyId = Number(ctx.accountId);
+    await ensureLgpdTables();
+    const { pseudonym } = await anonymizeSubject(companyId, input.memberId);
+    if (input.requestId) {
+      const database2 = await getDb();
+      await database2?.execute(sql12`UPDATE lgpd_requests SET status = 'done', resolvedAt = UTC_TIMESTAMP(), resolvedBy = ${ctx.user?.name ?? null}, resolution = ${`Anonimizado: ${input.reason}`} WHERE id = ${input.requestId} AND companyId = ${companyId}`);
+    }
+    void auditFromCtx(ctx, { action: "delete", module: "lgpd", entityType: "subject_anonymization", entityId: input.memberId, entityLabel: pseudonym, description: `Anonimizou dados pessoais do titular #${input.memberId} (ponto preservado por obriga\xE7\xE3o legal). Motivo: ${input.reason}`, newData: { plan: ANONYMIZE_PLAN, requestId: input.requestId ?? null } });
+    return { success: true, pseudonym };
+  }),
+  resolveRequest: companyAdminProcedure.input(z6.object({ id: z6.number().int().positive(), status: z6.enum(["done", "rejected"]), resolution: z6.string().trim().min(3).max(2e3) })).mutation(async ({ ctx, input }) => {
+    await ensureLgpdTables();
+    const database2 = await getDb();
+    if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
+    await database2.execute(sql12`UPDATE lgpd_requests SET status = ${input.status}, resolvedAt = UTC_TIMESTAMP(), resolvedBy = ${ctx.user?.name ?? null}, resolution = ${input.resolution} WHERE id = ${input.id} AND companyId = ${Number(ctx.accountId)}`);
+    void auditFromCtx(ctx, { action: "update", module: "lgpd", entityType: "lgpd_request", entityId: input.id, description: `Pedido LGPD #${input.id} ${input.status === "done" ? "atendido" : "recusado"}: ${input.resolution}` });
+    return { success: true };
   })
 });
 
@@ -8569,48 +9081,48 @@ init_trpc();
 init_db();
 init_audit();
 init_platformCompanies();
-import { z as z7 } from "zod";
-var dateStr4 = z7.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-var status = z7.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]);
-var id = z7.number().int().positive();
+import { z as z8 } from "zod";
+var dateStr4 = z8.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+var status = z8.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]);
+var id = z8.number().int().positive();
 var log = (ctx, companyId, action, description, data) => void auditFromCtx(ctx, { action, module: "platform", entityType: "company", entityId: companyId, entityLabel: String(companyId), description, newData: data, companyId: null });
 var platformCompaniesRouter = router({
   overview: platformProcedure.query(() => listCompaniesOverview()),
-  rename: platformProcedure.input(z7.object({ companyId: id, name: z7.string().trim().min(2).max(255) })).mutation(async ({ ctx, input }) => {
+  rename: platformProcedure.input(z8.object({ companyId: id, name: z8.string().trim().min(2).max(255) })).mutation(async ({ ctx, input }) => {
     await updateCompany(input.companyId, { name: input.name });
     log(ctx, input.companyId, "update", `Renomeou empresa #${input.companyId} para ${input.name}`);
     return { success: true };
   }),
-  setBlocked: platformProcedure.input(z7.object({ companyId: id, blocked: z7.boolean(), reason: z7.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
+  setBlocked: platformProcedure.input(z8.object({ companyId: id, blocked: z8.boolean(), reason: z8.string().max(300).optional() })).mutation(async ({ ctx, input }) => {
     const c = await setCompanyBlocked(input.companyId, input.blocked, input.reason);
     log(ctx, input.companyId, input.blocked ? "block" : "unblock", `${input.blocked ? "Bloqueou" : "Desbloqueou"} a empresa ${c.name}${input.reason ? `: ${input.reason}` : ""}`);
     return { success: true };
   }),
-  setPlan: platformProcedure.input(z7.object({ companyId: id, planId: id, status, startsAt: dateStr4, endsAt: dateStr4.nullish(), graceDays: z7.number().int().min(0).max(60).optional(), notes: z7.string().max(500).nullish() })).mutation(async ({ ctx, input }) => {
+  setPlan: platformProcedure.input(z8.object({ companyId: id, planId: id, status, startsAt: dateStr4, endsAt: dateStr4.nullish(), graceDays: z8.number().int().min(0).max(60).optional(), notes: z8.string().max(500).nullish() })).mutation(async ({ ctx, input }) => {
     await setCompanyPlan(input);
     log(ctx, input.companyId, "update", `Definiu plano/validade da empresa #${input.companyId}: plano ${input.planId}, ${input.status}, ${input.startsAt} a ${input.endsAt ?? "sem fim"}`, input);
     return { success: true };
   }),
-  payments: platformProcedure.input(z7.object({ companyId: id })).query(({ input }) => listCompanyPayments(input.companyId)),
-  registerPayment: platformProcedure.input(z7.object({
+  payments: platformProcedure.input(z8.object({ companyId: id })).query(({ input }) => listCompanyPayments(input.companyId)),
+  registerPayment: platformProcedure.input(z8.object({
     companyId: id,
-    amount: z7.string().regex(/^\d{1,10}(\.\d{1,2})?$/),
+    amount: z8.string().regex(/^\d{1,10}(\.\d{1,2})?$/),
     paymentDate: dateStr4,
     periodFrom: dateStr4,
     periodTo: dateStr4,
-    billingType: z7.enum(["BOLETO", "CREDIT_CARD", "PIX", "UNDEFINED"]).default("PIX"),
+    billingType: z8.enum(["BOLETO", "CREDIT_CARD", "PIX", "UNDEFINED"]).default("PIX"),
     planId: id.nullish(),
-    graceDays: z7.number().int().min(0).max(60).optional(),
-    note: z7.string().max(500).nullish()
+    graceDays: z8.number().int().min(0).max(60).optional(),
+    note: z8.string().max(500).nullish()
   })).mutation(async ({ ctx, input }) => {
     const r = await registerCompanyPayment(input);
     log(ctx, input.companyId, "payment", `Registrou pagamento de R$ ${input.amount} em ${input.paymentDate}; plano v\xE1lido de ${input.periodFrom} a ${input.periodTo}`, input);
     return r;
   }),
-  setBilling: platformProcedure.input(z7.object({
+  setBilling: platformProcedure.input(z8.object({
     companyId: id,
-    monthlyAmount: z7.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
-    blockAfterOverdueDays: z7.number().int().min(0).max(60).nullish(),
+    monthlyAmount: z8.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
+    blockAfterOverdueDays: z8.number().int().min(0).max(60).nullish(),
     dueDate: dateStr4.nullish()
   })).mutation(async ({ ctx, input }) => {
     const r = await setCompanyBilling(input);
@@ -8618,30 +9130,30 @@ var platformCompaniesRouter = router({
     return r;
   }),
   /** Um clique: registra Pix recebido e avança a validade em 1 mês. */
-  markPaid: platformProcedure.input(z7.object({
+  markPaid: platformProcedure.input(z8.object({
     companyId: id,
-    amount: z7.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
+    amount: z8.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
     paymentDate: dateStr4.optional(),
-    graceDays: z7.number().int().min(0).max(60).optional(),
-    note: z7.string().max(500).nullish()
+    graceDays: z8.number().int().min(0).max(60).optional(),
+    note: z8.string().max(500).nullish()
   })).mutation(async ({ ctx, input }) => {
     const r = await markCompanyPaid(input);
     log(ctx, input.companyId, "payment", `Marcou como pago a empresa #${input.companyId}`, input);
     return r;
   }),
-  deletePayment: platformProcedure.input(z7.object({ companyId: id, paymentId: id })).mutation(async ({ ctx, input }) => {
+  deletePayment: platformProcedure.input(z8.object({ companyId: id, paymentId: id })).mutation(async ({ ctx, input }) => {
     await deletePayment(input.paymentId, input.companyId);
     log(ctx, input.companyId, "delete", `Excluiu o pagamento #${input.paymentId} da empresa #${input.companyId}`);
     return { success: true };
   }),
   /** "Excluir": arquiva e bloqueia (reversível). */
-  archive: platformProcedure.input(z7.object({ companyId: id, archived: z7.boolean() })).mutation(async ({ ctx, input }) => {
+  archive: platformProcedure.input(z8.object({ companyId: id, archived: z8.boolean() })).mutation(async ({ ctx, input }) => {
     const c = await archiveCompany(input.companyId, input.archived);
     log(ctx, input.companyId, input.archived ? "delete" : "restore", `${input.archived ? "Excluiu (arquivou)" : "Restaurou"} a empresa ${c.name}`);
     return { success: true };
   }),
   /** Exclusão definitiva e irreversível; exige o nome da empresa e que ela já esteja excluída. */
-  purge: platformProcedure.input(z7.object({ companyId: id, confirmName: z7.string().min(1) })).mutation(async ({ ctx, input }) => {
+  purge: platformProcedure.input(z8.object({ companyId: id, confirmName: z8.string().min(1) })).mutation(async ({ ctx, input }) => {
     const r = await purgeCompany(input.companyId, input.confirmName);
     log(ctx, input.companyId, "permanent_delete", `Excluiu DEFINITIVAMENTE a empresa ${r.company.name} (#${input.companyId})`, { deleted: r.deleted, filesDeleted: r.filesDeleted });
     return { success: true, deleted: r.deleted };
@@ -8657,64 +9169,64 @@ init_trpc();
 init_audit();
 init_storeAccess();
 init_storeClients();
-import { z as z9 } from "zod";
-import { TRPCError as TRPCError12 } from "@trpc/server";
-import { sql as sql15 } from "drizzle-orm";
-var rows = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
-var text3 = (max) => z9.string().trim().max(max).optional().transform((v) => v ? v : null);
+import { z as z10 } from "zod";
+import { TRPCError as TRPCError13 } from "@trpc/server";
+import { sql as sql17 } from "drizzle-orm";
+var rows2 = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
+var text3 = (max) => z10.string().trim().max(max).optional().transform((v) => v ? v : null);
 async function loadClient(db, companyId, storeId, id2) {
-  const r = rows(await db.execute(sql15`SELECT * FROM store_clients WHERE id = ${id2} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`));
-  if (!r[0]) throw new TRPCError12({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado nesta loja." });
+  const r = rows2(await db.execute(sql17`SELECT * FROM store_clients WHERE id = ${id2} AND companyId = ${companyId} AND storeId = ${storeId} LIMIT 1`));
+  if (!r[0]) throw new TRPCError13({ code: "NOT_FOUND", message: "Cliente n\xE3o encontrado nesta loja." });
   return r[0];
 }
 var storeClientsRouter = router({
   /** Clientes de uma loja, com a quantidade de fotos (o promotor conta só as próprias). */
-  list: commercialFeatureProcedure("fieldOperations").input(z9.object({ storeId: z9.number().int().positive(), includeInactive: z9.boolean().optional() })).query(async ({ ctx, input }) => {
+  list: commercialFeatureProcedure("fieldOperations").input(z10.object({ storeId: z10.number().int().positive(), includeInactive: z10.boolean().optional() })).query(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const memberId = scopeMemberId(ctx);
-    const own = memberId !== null ? sql15` AND p.promoterId = ${memberId}` : sql15``;
-    const r = rows(await db.execute(sql15`
+    const own = memberId !== null ? sql17` AND p.promoterId = ${memberId}` : sql17``;
+    const r = rows2(await db.execute(sql17`
         SELECT c.id, c.storeId, c.name, c.contactName, c.phone, c.notes, c.active,
           (SELECT COUNT(*) FROM store_photos p WHERE p.companyId = c.companyId AND p.storeClientId = c.id AND p.uploadStatus = 'uploaded'${own}) AS photoCount,
           (SELECT MAX(p.capturedAt) FROM store_photos p WHERE p.companyId = c.companyId AND p.storeClientId = c.id${own}) AS lastActivity
         FROM store_clients c
-        WHERE c.companyId = ${ctx.accountId} AND c.storeId = ${input.storeId}${input.includeInactive ? sql15`` : sql15` AND c.active = true`}
+        WHERE c.companyId = ${ctx.accountId} AND c.storeId = ${input.storeId}${input.includeInactive ? sql17`` : sql17` AND c.active = true`}
         ORDER BY c.name ASC`));
     return r.map((c) => ({ ...c, active: Boolean(c.active), photoCount: Number(c.photoCount ?? 0) }));
   }),
-  create: commercialFeatureProcedure("fieldOperations").input(z9.object({ storeId: z9.number().int().positive(), name: z9.string().trim().min(2, "Informe o nome do cliente.").max(255), contactName: text3(255), phone: text3(50), notes: text3(2e3) })).mutation(async ({ ctx, input }) => {
+  create: commercialFeatureProcedure("fieldOperations").input(z10.object({ storeId: z10.number().int().positive(), name: z10.string().trim().min(2, "Informe o nome do cliente.").max(255), contactName: text3(255), phone: text3(50), notes: text3(2e3) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
-    const dup = rows(await db.execute(sql15`SELECT id FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true AND LOWER(name) = ${input.name.toLowerCase()} LIMIT 1`));
-    if (dup[0]) throw new TRPCError12({ code: "CONFLICT", message: "Esta loja j\xE1 tem um cliente com esse nome." });
-    const res = await db.execute(sql15`INSERT INTO store_clients (companyId, storeId, name, contactName, phone, notes) VALUES (${ctx.accountId}, ${input.storeId}, ${input.name}, ${input.contactName}, ${input.phone}, ${input.notes})`);
+    const dup = rows2(await db.execute(sql17`SELECT id FROM store_clients WHERE companyId = ${ctx.accountId} AND storeId = ${input.storeId} AND active = true AND LOWER(name) = ${input.name.toLowerCase()} LIMIT 1`));
+    if (dup[0]) throw new TRPCError13({ code: "CONFLICT", message: "Esta loja j\xE1 tem um cliente com esse nome." });
+    const res = await db.execute(sql17`INSERT INTO store_clients (companyId, storeId, name, contactName, phone, notes) VALUES (${ctx.accountId}, ${input.storeId}, ${input.name}, ${input.contactName}, ${input.phone}, ${input.notes})`);
     const id2 = Number((Array.isArray(res) ? res[0] : res)?.insertId);
     await auditFromCtx(ctx, { action: "create", module: "store_clients", entityType: "store_client", entityId: id2, entityLabel: input.name, description: `Cliente ${input.name} cadastrado na loja ${store.name}`, newData: { storeId: input.storeId, name: input.name } });
     return { id: id2 };
   }),
-  update: commercialFeatureProcedure("fieldOperations").input(z9.object({ storeId: z9.number().int().positive(), id: z9.number().int().positive(), name: z9.string().trim().min(2).max(255), contactName: text3(255), phone: text3(50), notes: text3(2e3) })).mutation(async ({ ctx, input }) => {
+  update: commercialFeatureProcedure("fieldOperations").input(z10.object({ storeId: z10.number().int().positive(), id: z10.number().int().positive(), name: z10.string().trim().min(2).max(255), contactName: text3(255), phone: text3(50), notes: text3(2e3) })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const old = await loadClient(db, ctx.accountId, input.storeId, input.id);
-    await db.execute(sql15`UPDATE store_clients SET name = ${input.name}, contactName = ${input.contactName}, phone = ${input.phone}, notes = ${input.notes} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
+    await db.execute(sql17`UPDATE store_clients SET name = ${input.name}, contactName = ${input.contactName}, phone = ${input.phone}, notes = ${input.notes} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
     await auditFromCtx(ctx, { action: "update", module: "store_clients", entityType: "store_client", entityId: input.id, entityLabel: input.name, description: `Cliente ${old.name} atualizado na loja ${store.name}`, oldData: { name: old.name, phone: old.phone }, newData: { name: input.name, phone: input.phone } });
     return { id: input.id };
   }),
   /** Remover = desativar: as fotos já tiradas continuam ligadas ao cliente na galeria. */
-  setActive: commercialFeatureProcedure("fieldOperations").input(z9.object({ storeId: z9.number().int().positive(), id: z9.number().int().positive(), active: z9.boolean() })).mutation(async ({ ctx, input }) => {
+  setActive: commercialFeatureProcedure("fieldOperations").input(z10.object({ storeId: z10.number().int().positive(), id: z10.number().int().positive(), active: z10.boolean() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new TRPCError12({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+    if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
     const store = await assertStoreAccess(db, ctx, input.storeId);
     await ensureStoreClientsSchema(db);
     const old = await loadClient(db, ctx.accountId, input.storeId, input.id);
-    await db.execute(sql15`UPDATE store_clients SET active = ${input.active} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
+    await db.execute(sql17`UPDATE store_clients SET active = ${input.active} WHERE id = ${input.id} AND companyId = ${ctx.accountId}`);
     await auditFromCtx(ctx, { action: input.active ? "update" : "delete", module: "store_clients", entityType: "store_client", entityId: input.id, entityLabel: old.name, description: `Cliente ${old.name} ${input.active ? "reativado" : "removido"} da loja ${store.name}` });
     return { id: input.id, active: input.active };
   })
@@ -8723,13 +9235,13 @@ var storeClientsRouter = router({
 // server/routers.ts
 init_products2();
 init_rateLimit();
-import { z as z12 } from "zod";
+import { z as z13 } from "zod";
 import { parse as parseCookie } from "cookie";
-import { TRPCError as TRPCError16 } from "@trpc/server";
+import { TRPCError as TRPCError17 } from "@trpc/server";
 
 // server/authThrottle.ts
 import { createHash as createHash3 } from "node:crypto";
-import { sql as sql17 } from "drizzle-orm";
+import { sql as sql19 } from "drizzle-orm";
 var THROTTLE_LIMIT = 5;
 var THROTTLE_WINDOW_MS = 15 * 60 * 1e3;
 var THROTTLE_BLOCK_MS = 15 * 60 * 1e3;
@@ -8748,12 +9260,12 @@ function configureThrottleDb(getter) {
   dbGetter = getter;
   ensured2 = null;
 }
-var rows2 = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
+var rows3 = (r) => Array.isArray(r?.[0]) ? r[0] : Array.isArray(r) ? r : r?.rows ?? [];
 async function table() {
   const db = await dbGetter();
   if (!db) return null;
   if (!ensured2) {
-    ensured2 = db.execute(sql17.raw(`CREATE TABLE IF NOT EXISTS auth_throttle (
+    ensured2 = db.execute(sql19.raw(`CREATE TABLE IF NOT EXISTS auth_throttle (
       keyHash char(64) NOT NULL,
       failures int NOT NULL DEFAULT 0,
       windowStartedAt bigint NOT NULL,
@@ -8774,7 +9286,7 @@ async function isThrottled(key) {
   try {
     const db = await table();
     if (!db) return false;
-    const found = rows2(await db.execute(sql17`SELECT blockedUntil FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)} LIMIT 1`));
+    const found = rows3(await db.execute(sql19`SELECT blockedUntil FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)} LIMIT 1`));
     return Number(found[0]?.blockedUntil ?? 0) > now;
   } catch (err) {
     console.warn("[auth-throttle] banco indispon\xEDvel, usando s\xF3 a mem\xF3ria", err?.message);
@@ -8791,10 +9303,10 @@ async function registerThrottleFailure(key) {
     const db = await table();
     if (!db) return;
     const hash = throttleKeyHash(key);
-    const found = rows2(await db.execute(sql17`SELECT failures, windowStartedAt, blockedUntil FROM auth_throttle WHERE keyHash = ${hash} LIMIT 1`));
+    const found = rows3(await db.execute(sql19`SELECT failures, windowStartedAt, blockedUntil FROM auth_throttle WHERE keyHash = ${hash} LIMIT 1`));
     const current = found[0] ? { failures: Number(found[0].failures), windowStartedAt: Number(found[0].windowStartedAt), blockedUntil: Number(found[0].blockedUntil) } : void 0;
     const next = nextEntryAfterFailure(current, now);
-    await db.execute(sql17`INSERT INTO auth_throttle (keyHash, failures, windowStartedAt, blockedUntil)
+    await db.execute(sql19`INSERT INTO auth_throttle (keyHash, failures, windowStartedAt, blockedUntil)
       VALUES (${hash}, ${next.failures}, ${next.windowStartedAt}, ${next.blockedUntil})
       ON DUPLICATE KEY UPDATE failures = VALUES(failures), windowStartedAt = VALUES(windowStartedAt), blockedUntil = VALUES(blockedUntil)`);
   } catch (err) {
@@ -8805,7 +9317,7 @@ async function clearThrottle(key) {
   memory.delete(key);
   try {
     const db = await table();
-    if (db) await db.execute(sql17`DELETE FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)}`);
+    if (db) await db.execute(sql19`DELETE FROM auth_throttle WHERE keyHash = ${throttleKeyHash(key)}`);
   } catch {
   }
 }
@@ -8830,23 +9342,23 @@ function getSessionCookieOptions(req, allowCrossSite = false) {
 }
 
 // server/_core/systemRouter.ts
-import { z as z11 } from "zod";
+import { z as z12 } from "zod";
 
 // server/_core/notification.ts
-import { TRPCError as TRPCError14 } from "@trpc/server";
+import { TRPCError as TRPCError15 } from "@trpc/server";
 var TITLE_MAX_LENGTH = 1200;
 var CONTENT_MAX_LENGTH = 2e4;
 var trimValue = (value) => value.trim();
 var isNonEmptyString = (value) => typeof value === "string" && value.trim().length > 0;
 var validatePayload = (input) => {
   if (!isNonEmptyString(input.title)) {
-    throw new TRPCError14({
+    throw new TRPCError15({
       code: "BAD_REQUEST",
       message: "Notification title is required."
     });
   }
   if (!isNonEmptyString(input.content)) {
-    throw new TRPCError14({
+    throw new TRPCError15({
       code: "BAD_REQUEST",
       message: "Notification content is required."
     });
@@ -8854,13 +9366,13 @@ var validatePayload = (input) => {
   const title = trimValue(input.title);
   const content = trimValue(input.content);
   if (title.length > TITLE_MAX_LENGTH) {
-    throw new TRPCError14({
+    throw new TRPCError15({
       code: "BAD_REQUEST",
       message: `Notification title must be at most ${TITLE_MAX_LENGTH} characters.`
     });
   }
   if (content.length > CONTENT_MAX_LENGTH) {
-    throw new TRPCError14({
+    throw new TRPCError15({
       code: "BAD_REQUEST",
       message: `Notification content must be at most ${CONTENT_MAX_LENGTH} characters.`
     });
@@ -8898,16 +9410,16 @@ async function notifyOwner(payload) {
 init_trpc();
 var systemRouter = router({
   health: publicProcedure.input(
-    z11.object({
-      timestamp: z11.number().min(0, "timestamp cannot be negative")
+    z12.object({
+      timestamp: z12.number().min(0, "timestamp cannot be negative")
     })
   ).query(() => ({
     ok: true
   })),
   notifyOwner: adminProcedure.input(
-    z11.object({
-      title: z11.string().min(1, "title is required"),
-      content: z11.string().min(1, "content is required")
+    z12.object({
+      title: z12.string().min(1, "title is required"),
+      content: z12.string().min(1, "content is required")
     })
   ).mutation(async ({ input }) => {
     const delivered = await notifyOwner(input);
@@ -8923,22 +9435,22 @@ init_subscriptionAccess();
 
 // server/planLimits.ts
 init_db();
-import { TRPCError as TRPCError15 } from "@trpc/server";
+import { TRPCError as TRPCError16 } from "@trpc/server";
 
 // server/memberAuth.ts
 init_ttlCache();
 init_schema_original();
 init_schema();
 init_db();
-import { createHash as createHash4, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { and as and14, eq as eq14, gt, inArray as inArray13, lte as lte4 } from "drizzle-orm";
+import { createHash as createHash4, createHmac, randomBytes as randomBytes2, scryptSync, timingSafeEqual } from "node:crypto";
+import { and as and15, eq as eq15, gt, inArray as inArray14, lte as lte4 } from "drizzle-orm";
 var SESSION_DAYS = 30;
 configureThrottleDb(() => getDb());
 var isRateLimited = isThrottled;
 var registerFailure = registerThrottleFailure;
 var clearRateLimit = clearThrottle;
 function hashPassword(password) {
-  const salt = randomBytes(16).toString("hex");
+  const salt = randomBytes2(16).toString("hex");
   const derived = scryptSync(password, salt, 64).toString("hex");
   return `scrypt:${salt}:${derived}`;
 }
@@ -8963,13 +9475,13 @@ async function authenticateMember(email, password) {
   if (await isRateLimited(key)) return null;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const platformResult = await db.select().from(platformAdmins).where(eq14(platformAdmins.email, normalizedEmail)).limit(1);
+  const platformResult = await db.select().from(platformAdmins).where(eq15(platformAdmins.email, normalizedEmail)).limit(1);
   const platform = platformResult[0];
   if (platform && platform.active && verifyPassword(password, platform.passwordHash)) {
     await clearRateLimit(key);
     return { kind: "platform", account: platform };
   }
-  const memberResult = await db.select().from(memberAccounts).where(eq14(memberAccounts.email, normalizedEmail)).limit(1);
+  const memberResult = await db.select().from(memberAccounts).where(eq15(memberAccounts.email, normalizedEmail)).limit(1);
   const member = memberResult[0];
   if (member && member.active && verifyPassword(password, member.passwordHash)) {
     await clearRateLimit(key);
@@ -8981,14 +9493,14 @@ async function authenticateMember(email, password) {
 async function createSession(principal) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const rawToken = randomBytes(32).toString("base64url");
+  const rawToken = randomBytes2(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1e3);
   if (principal.kind === "platform") {
-    await db.delete(platformSessions).where(and14(eq14(platformSessions.platformAdminId, principal.account.id), lte4(platformSessions.expiresAt, /* @__PURE__ */ new Date())));
+    await db.delete(platformSessions).where(and15(eq15(platformSessions.platformAdminId, principal.account.id), lte4(platformSessions.expiresAt, /* @__PURE__ */ new Date())));
     await db.insert(platformSessions).values({ platformAdminId: principal.account.id, tokenHash: hashToken(rawToken), expiresAt });
     return { rawToken, expiresAt, kind: "platform" };
   }
-  await db.delete(memberSessions).where(and14(eq14(memberSessions.memberAccountId, principal.account.id), lte4(memberSessions.expiresAt, /* @__PURE__ */ new Date())));
+  await db.delete(memberSessions).where(and15(eq15(memberSessions.memberAccountId, principal.account.id), lte4(memberSessions.expiresAt, /* @__PURE__ */ new Date())));
   await db.insert(memberSessions).values({ memberAccountId: principal.account.id, tokenHash: hashToken(rawToken), expiresAt });
   return { rawToken, expiresAt, kind: "company" };
 }
@@ -9018,7 +9530,7 @@ async function loadMemberBySessionToken(rawToken) {
   const db = await getDb();
   if (!db || !rawToken) return null;
   const now = /* @__PURE__ */ new Date();
-  const result = await db.select({ account: memberAccounts, session: memberSessions }).from(memberSessions).innerJoin(memberAccounts, eq14(memberSessions.memberAccountId, memberAccounts.id)).innerJoin(companies, eq14(memberAccounts.companyId, companies.id)).where(and14(eq14(memberSessions.tokenHash, hashToken(rawToken)), gt(memberSessions.expiresAt, now), eq14(memberAccounts.active, true), eq14(companies.active, true))).limit(1);
+  const result = await db.select({ account: memberAccounts, session: memberSessions }).from(memberSessions).innerJoin(memberAccounts, eq15(memberSessions.memberAccountId, memberAccounts.id)).innerJoin(companies, eq15(memberAccounts.companyId, companies.id)).where(and15(eq15(memberSessions.tokenHash, hashToken(rawToken)), gt(memberSessions.expiresAt, now), eq15(memberAccounts.active, true), eq15(companies.active, true))).limit(1);
   cleanupExpiredSessions(db);
   return result[0]?.account ?? null;
 }
@@ -9030,7 +9542,7 @@ async function loadPlatformAdminBySessionToken(rawToken) {
   const db = await getDb();
   if (!db || !rawToken) return null;
   const now = /* @__PURE__ */ new Date();
-  const result = await db.select({ account: platformAdmins, session: platformSessions }).from(platformSessions).innerJoin(platformAdmins, eq14(platformSessions.platformAdminId, platformAdmins.id)).where(and14(eq14(platformSessions.tokenHash, hashToken(rawToken)), gt(platformSessions.expiresAt, now), eq14(platformAdmins.active, true))).limit(1);
+  const result = await db.select({ account: platformAdmins, session: platformSessions }).from(platformSessions).innerJoin(platformAdmins, eq15(platformSessions.platformAdminId, platformAdmins.id)).where(and15(eq15(platformSessions.tokenHash, hashToken(rawToken)), gt(platformSessions.expiresAt, now), eq15(platformAdmins.active, true))).limit(1);
   cleanupExpiredSessions(db);
   return result[0]?.account ?? null;
 }
@@ -9040,23 +9552,23 @@ async function revokeSessions(rawToken) {
   const tokenHash = hashToken(rawToken);
   memberSessionCache.delete(tokenHash);
   platformSessionCache.delete(tokenHash);
-  await db.delete(memberSessions).where(eq14(memberSessions.tokenHash, tokenHash));
-  await db.delete(platformSessions).where(eq14(platformSessions.tokenHash, tokenHash));
+  await db.delete(memberSessions).where(eq15(memberSessions.tokenHash, tokenHash));
+  await db.delete(platformSessions).where(eq15(platformSessions.tokenHash, tokenHash));
 }
 async function changeMemberPassword(memberAccountId, currentPassword, newPassword) {
   const key = `change:member:${memberAccountId}`;
   if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const result = await db.select().from(memberAccounts).where(eq14(memberAccounts.id, memberAccountId)).limit(1);
+  const result = await db.select().from(memberAccounts).where(eq15(memberAccounts.id, memberAccountId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(currentPassword, account.passwordHash)) {
     await registerFailure(key);
     return false;
   }
   await clearRateLimit(key);
-  await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq14(memberAccounts.id, memberAccountId));
-  await db.delete(memberSessions).where(eq14(memberSessions.memberAccountId, memberAccountId));
+  await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq15(memberAccounts.id, memberAccountId));
+  await db.delete(memberSessions).where(eq15(memberSessions.memberAccountId, memberAccountId));
   dropSessionCaches();
   return true;
 }
@@ -9065,25 +9577,25 @@ async function changePlatformPassword(platformAdminId, currentPassword, newPassw
   if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const result = await db.select().from(platformAdmins).where(eq14(platformAdmins.id, platformAdminId)).limit(1);
+  const result = await db.select().from(platformAdmins).where(eq15(platformAdmins.id, platformAdminId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(currentPassword, account.passwordHash)) {
     await registerFailure(key);
     return false;
   }
   await clearRateLimit(key);
-  await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq14(platformAdmins.id, platformAdminId));
-  await db.delete(platformSessions).where(eq14(platformSessions.platformAdminId, platformAdminId));
+  await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq15(platformAdmins.id, platformAdminId));
+  await db.delete(platformSessions).where(eq15(platformSessions.platformAdminId, platformAdminId));
   dropSessionCaches();
   return true;
 }
 async function resetMemberPassword(memberAccountId, newPassword) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq14(memberAccounts.id, memberAccountId));
-  await db.delete(memberSessions).where(eq14(memberSessions.memberAccountId, memberAccountId));
+  await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq15(memberAccounts.id, memberAccountId));
+  await db.delete(memberSessions).where(eq15(memberSessions.memberAccountId, memberAccountId));
   dropSessionCaches();
-  const [acc] = await db.select({ email: memberAccounts.email }).from(memberAccounts).where(eq14(memberAccounts.id, memberAccountId)).limit(1);
+  const [acc] = await db.select({ email: memberAccounts.email }).from(memberAccounts).where(eq15(memberAccounts.id, memberAccountId)).limit(1);
   if (acc?.email) await clearRateLimit(`login:${acc.email.trim().toLowerCase()}`);
 }
 async function recoverPassword(email, recoveryCode, newPassword) {
@@ -9092,20 +9604,20 @@ async function recoverPassword(email, recoveryCode, newPassword) {
   if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const nextRecoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
-  const platformResult = await db.select().from(platformAdmins).where(eq14(platformAdmins.email, normalizedEmail)).limit(1);
+  const nextRecoveryCode = `EXT-${randomBytes2(12).toString("base64url")}`;
+  const platformResult = await db.select().from(platformAdmins).where(eq15(platformAdmins.email, normalizedEmail)).limit(1);
   const platform = platformResult[0];
   if (platform?.active && platform.recoveryCodeHash && verifyPassword(recoveryCode, platform.recoveryCodeHash)) {
-    await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq14(platformAdmins.id, platform.id));
-    await db.delete(platformSessions).where(eq14(platformSessions.platformAdminId, platform.id));
+    await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq15(platformAdmins.id, platform.id));
+    await db.delete(platformSessions).where(eq15(platformSessions.platformAdminId, platform.id));
     await clearRateLimit(key);
     return { recoveryCode: nextRecoveryCode, kind: "platform" };
   }
-  const memberResult = await db.select().from(memberAccounts).where(eq14(memberAccounts.email, normalizedEmail)).limit(1);
+  const memberResult = await db.select().from(memberAccounts).where(eq15(memberAccounts.email, normalizedEmail)).limit(1);
   const member = memberResult[0];
   if (member?.active && member.recoveryCodeHash && verifyPassword(recoveryCode, member.recoveryCodeHash)) {
-    await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq14(memberAccounts.id, member.id));
-    await db.delete(memberSessions).where(eq14(memberSessions.memberAccountId, member.id));
+    await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword), recoveryCodeHash: hashPassword(nextRecoveryCode) }).where(eq15(memberAccounts.id, member.id));
+    await db.delete(memberSessions).where(eq15(memberSessions.memberAccountId, member.id));
     await clearRateLimit(key);
     return { recoveryCode: nextRecoveryCode, kind: "company" };
   }
@@ -9141,9 +9653,9 @@ async function createPasswordResetToken(email) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   const exp = Date.now() + RESET_TOKEN_TTL_MS;
-  const platform = (await db.select().from(platformAdmins).where(eq14(platformAdmins.email, normalizedEmail)).limit(1))[0];
+  const platform = (await db.select().from(platformAdmins).where(eq15(platformAdmins.email, normalizedEmail)).limit(1))[0];
   if (platform?.active) return { token: signResetToken("platform", platform.id, exp, platform.passwordHash), userName: platform.userName || normalizedEmail };
-  const member = (await db.select().from(memberAccounts).where(eq14(memberAccounts.email, normalizedEmail)).limit(1))[0];
+  const member = (await db.select().from(memberAccounts).where(eq15(memberAccounts.email, normalizedEmail)).limit(1))[0];
   if (member?.active) return { token: signResetToken("company", member.id, exp, member.passwordHash), userName: member.userName || normalizedEmail };
   return null;
 }
@@ -9155,7 +9667,7 @@ async function resetPasswordWithToken(token, newPassword) {
   if (await isRateLimited(key)) return false;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const account = parsed.k === "platform" ? (await db.select().from(platformAdmins).where(eq14(platformAdmins.id, parsed.id)).limit(1))[0] : (await db.select().from(memberAccounts).where(eq14(memberAccounts.id, parsed.id)).limit(1))[0];
+  const account = parsed.k === "platform" ? (await db.select().from(platformAdmins).where(eq15(platformAdmins.id, parsed.id)).limit(1))[0] : (await db.select().from(memberAccounts).where(eq15(memberAccounts.id, parsed.id)).limit(1))[0];
   if (!account || !account.active) {
     await registerFailure(key);
     return false;
@@ -9168,11 +9680,11 @@ async function resetPasswordWithToken(token, newPassword) {
     return false;
   }
   if (parsed.k === "platform") {
-    await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq14(platformAdmins.id, parsed.id));
-    await db.delete(platformSessions).where(eq14(platformSessions.platformAdminId, parsed.id));
+    await db.update(platformAdmins).set({ passwordHash: hashPassword(newPassword) }).where(eq15(platformAdmins.id, parsed.id));
+    await db.delete(platformSessions).where(eq15(platformSessions.platformAdminId, parsed.id));
   } else {
-    await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq14(memberAccounts.id, parsed.id));
-    await db.delete(memberSessions).where(eq14(memberSessions.memberAccountId, parsed.id));
+    await db.update(memberAccounts).set({ passwordHash: hashPassword(newPassword) }).where(eq15(memberAccounts.id, parsed.id));
+    await db.delete(memberSessions).where(eq15(memberSessions.memberAccountId, parsed.id));
   }
   await clearRateLimit(key);
   dropSessionCaches();
@@ -9187,7 +9699,7 @@ async function allowPasswordResetRequest(email) {
 async function createCompanyWithAdmin(input) {
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
-  const recoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
+  const recoveryCode = `EXT-${randomBytes2(12).toString("base64url")}`;
   const normalizedEmail = input.email.trim().toLowerCase();
   return await database2.transaction(async (tx) => {
     const trialEnds = new Date(Date.now() + 14 * 24 * 3600 * 1e3);
@@ -9213,7 +9725,7 @@ async function createCompanyWithAdmin(input) {
       active: true
     });
     if (input.planId) {
-      const planRows = await tx.select().from(subscriptionPlans).where(eq14(subscriptionPlans.id, input.planId)).limit(1);
+      const planRows = await tx.select().from(subscriptionPlans).where(eq15(subscriptionPlans.id, input.planId)).limit(1);
       const plan = planRows[0];
       if (plan) {
         await tx.insert(companySubscriptions).values({
@@ -9241,7 +9753,7 @@ async function createCompanyUser(input) {
   const email = input.email.trim().toLowerCase();
   if (userName.length < 2) throw new Error("Informe o nome completo do usu\xE1rio.");
   if (email.length < 3) throw new Error("Informe um e-mail v\xE1lido.");
-  const recoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
+  const recoveryCode = `EXT-${randomBytes2(12).toString("base64url")}`;
   const result = await db.insert(memberAccounts).values({
     companyId: input.companyId,
     userName,
@@ -9256,34 +9768,34 @@ async function createCompanyUser(input) {
 async function listMemberAccounts(companyId) {
   const db = await getDb();
   if (!db) return [];
-  const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt, employeeCode: promoterProfiles.employeeCode, workStartTime: promoterProfiles.workStartTime, workEndTime: promoterProfiles.workEndTime }).from(memberAccounts).leftJoin(promoterProfiles, and14(eq14(promoterProfiles.memberAccountId, memberAccounts.id), eq14(promoterProfiles.companyId, memberAccounts.companyId)));
-  const rows3 = companyId ? await query.where(eq14(memberAccounts.companyId, companyId)) : await query;
-  return rows3.map((row2) => ({ ...row2, role: normalizeMemberRole(String(row2.role)) }));
+  const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt, employeeCode: promoterProfiles.employeeCode, workStartTime: promoterProfiles.workStartTime, workEndTime: promoterProfiles.workEndTime }).from(memberAccounts).leftJoin(promoterProfiles, and15(eq15(promoterProfiles.memberAccountId, memberAccounts.id), eq15(promoterProfiles.companyId, memberAccounts.companyId)));
+  const rows4 = companyId ? await query.where(eq15(memberAccounts.companyId, companyId)) : await query;
+  return rows4.map((row2) => ({ ...row2, role: normalizeMemberRole(String(row2.role)) }));
 }
 async function updateCompanyUser(accountId, companyId, data) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
   if (data.role && data.role !== "company_admin") {
-    const [target] = await db.select({ role: memberAccounts.role }).from(memberAccounts).where(and14(eq14(memberAccounts.id, accountId), eq14(memberAccounts.companyId, companyId))).limit(1);
+    const [target] = await db.select({ role: memberAccounts.role }).from(memberAccounts).where(and15(eq15(memberAccounts.id, accountId), eq15(memberAccounts.companyId, companyId))).limit(1);
     if (target && normalizeMemberRole(String(target.role)) === "company_admin") {
-      const admins = await db.select({ id: memberAccounts.id }).from(memberAccounts).where(and14(eq14(memberAccounts.companyId, companyId), eq14(memberAccounts.active, true), inArray13(memberAccounts.role, ["company_admin", "admin"]))).limit(2);
+      const admins = await db.select({ id: memberAccounts.id }).from(memberAccounts).where(and15(eq15(memberAccounts.companyId, companyId), eq15(memberAccounts.active, true), inArray14(memberAccounts.role, ["company_admin", "admin"]))).limit(2);
       if (admins.length <= 1) throw new Error("A empresa precisa manter pelo menos um administrador ativo.");
     }
   }
-  await db.update(memberAccounts).set({ ...data, email: data.email?.trim().toLowerCase() }).where(and14(eq14(memberAccounts.id, accountId), eq14(memberAccounts.companyId, companyId)));
+  await db.update(memberAccounts).set({ ...data, email: data.email?.trim().toLowerCase() }).where(and15(eq15(memberAccounts.id, accountId), eq15(memberAccounts.companyId, companyId)));
 }
 async function setMemberActive(id2, active, companyId) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const conditions = companyId === void 0 ? eq14(memberAccounts.id, id2) : and14(eq14(memberAccounts.id, id2), eq14(memberAccounts.companyId, companyId));
+  const conditions = companyId === void 0 ? eq15(memberAccounts.id, id2) : and15(eq15(memberAccounts.id, id2), eq15(memberAccounts.companyId, companyId));
   const account = await db.select({ role: memberAccounts.role }).from(memberAccounts).where(conditions).limit(1);
   if (account[0]?.role === "company_admin" && !active) {
-    const adminCount = await db.select({ id: memberAccounts.id }).from(memberAccounts).where(and14(eq14(memberAccounts.companyId, companyId ?? 0), eq14(memberAccounts.role, "company_admin"), eq14(memberAccounts.active, true))).limit(2);
+    const adminCount = await db.select({ id: memberAccounts.id }).from(memberAccounts).where(and15(eq15(memberAccounts.companyId, companyId ?? 0), eq15(memberAccounts.role, "company_admin"), eq15(memberAccounts.active, true))).limit(2);
     if (adminCount.length <= 1) throw new Error("A empresa precisa manter pelo menos um administrador ativo.");
   }
   await db.update(memberAccounts).set({ active }).where(conditions);
   if (!active) {
-    await db.delete(memberSessions).where(eq14(memberSessions.memberAccountId, id2));
+    await db.delete(memberSessions).where(eq15(memberSessions.memberAccountId, id2));
     dropSessionCaches();
   }
 }
@@ -9292,20 +9804,20 @@ async function updateMemberProfile(memberAccountId, data) {
   if (!db) throw new Error("Database not connected");
   const name = data.userName.trim();
   if (name.length < 2) throw new Error("Nome deve ter pelo menos 2 caracteres.");
-  await db.update(memberAccounts).set({ userName: name }).where(eq14(memberAccounts.id, memberAccountId));
+  await db.update(memberAccounts).set({ userName: name }).where(eq15(memberAccounts.id, memberAccountId));
   return { success: true, userName: name };
 }
 async function regenerateMemberRecoveryCode(memberAccountId) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  const recoveryCode = `EXT-${randomBytes(12).toString("base64url")}`;
-  await db.update(memberAccounts).set({ recoveryCodeHash: hashPassword(recoveryCode) }).where(eq14(memberAccounts.id, memberAccountId));
+  const recoveryCode = `EXT-${randomBytes2(12).toString("base64url")}`;
+  await db.update(memberAccounts).set({ recoveryCodeHash: hashPassword(recoveryCode) }).where(eq15(memberAccounts.id, memberAccountId));
   return { recoveryCode };
 }
 async function revokeAllMemberSessions(memberAccountId) {
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
-  await db.delete(memberSessions).where(eq14(memberSessions.memberAccountId, memberAccountId));
+  await db.delete(memberSessions).where(eq15(memberSessions.memberAccountId, memberAccountId));
   dropSessionCaches();
   return { success: true };
 }
@@ -9314,7 +9826,7 @@ async function verifyMemberPassword(memberAccountId, password) {
   if (await isRateLimited(key)) return false;
   const database2 = await getDb();
   if (!database2) throw new Error("Database not connected");
-  const result = await database2.select().from(memberAccounts).where(eq14(memberAccounts.id, memberAccountId)).limit(1);
+  const result = await database2.select().from(memberAccounts).where(eq15(memberAccounts.id, memberAccountId)).limit(1);
   const account = result[0];
   if (!account || !verifyPassword(password, account.passwordHash)) {
     await registerFailure(key);
@@ -9328,7 +9840,7 @@ async function verifyMemberPassword(memberAccountId, password) {
 init_schema_original();
 init_entitlements();
 init_entitlements2();
-import { sql as sql18, eq as eq15 } from "drizzle-orm";
+import { sql as sql20, eq as eq16 } from "drizzle-orm";
 async function getEffectivePlan(companyId) {
   const base = await getCompanyEntitlementBase(companyId);
   const plan = base.plan;
@@ -9352,7 +9864,7 @@ async function assertUserLimit(companyId) {
   if (plan.maxUsers == null) return plan;
   const current = await countUsers(companyId);
   if (current >= plan.maxUsers) {
-    throw new TRPCError15({
+    throw new TRPCError16({
       code: "FORBIDDEN",
       message: `Limite de usu\xE1rios do plano ${plan.name} atingido (${plan.maxUsers}). Fa\xE7a upgrade para adicionar outro usu\xE1rio.`,
       cause: { code: "PLAN_LIMIT", resource: "users", limit: plan.maxUsers, current }
@@ -9885,10 +10397,10 @@ Abri um Pull Request para revis\xE3o: ${pr.html_url}. Nada foi publicado ainda; 
 
 // server/routers.ts
 init_expiry();
-var companyUserRole = z12.enum(["company_admin", "supervisor", "promoter"]);
-var entitlementFeatureKey = z12.enum(ENTITLEMENT_KEYS);
-var permissionModeSchema = z12.enum(["inherit", "allow", "deny"]);
-var featurePermissionListSchema = z12.array(z12.object({ featureKey: entitlementFeatureKey, mode: permissionModeSchema })).max(ENTITLEMENT_KEYS.length);
+var companyUserRole = z13.enum(["company_admin", "supervisor", "promoter"]);
+var entitlementFeatureKey = z13.enum(ENTITLEMENT_KEYS);
+var permissionModeSchema = z13.enum(["inherit", "allow", "deny"]);
+var featurePermissionListSchema = z13.array(z13.object({ featureKey: entitlementFeatureKey, mode: permissionModeSchema })).max(ENTITLEMENT_KEYS.length);
 var platformTestSessions = /* @__PURE__ */ new Map();
 var platformTestKey = (platformAdminId, fallbackId) => platformAdminId ?? fallbackId;
 var getPlatformTestSession = (key) => platformTestSessions.get(key) ?? { status: "pending", photoCount: 0, lastPhotoAt: null, lastLatitude: null, lastLongitude: null };
@@ -9897,6 +10409,7 @@ var appRouter = router({
   timeTracking: timeTrackingRouter,
   timesheetMirror: timesheetMirrorRouter,
   pontoLegal: pontoLegalRouter,
+  lgpd: lgpdRouter,
   timesheetArchive: timesheetArchiveRouter,
   vacations: vacationsRouter,
   platformCompanies: platformCompaniesRouter,
@@ -9916,24 +10429,24 @@ var appRouter = router({
           effectiveFeatureKeys: [...ENTITLEMENT_KEYS]
         };
       }
-      if (!ctx.memberAccountId) throw new TRPCError16({ code: "FORBIDDEN", message: "Usu\xE1rio da empresa n\xE3o encontrado." });
+      if (!ctx.memberAccountId) throw new TRPCError17({ code: "FORBIDDEN", message: "Usu\xE1rio da empresa n\xE3o encontrado." });
       return getMemberEntitlementSnapshot(ctx.accountId, ctx.memberAccountId, ctx.user.role);
     })
   }),
   auth: router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
     /** Cadastro público: cria empresa + admin com plano opcional (trial 14 dias). */
-    signup: publicProcedure.input(z12.object({
-      companyName: z12.string().min(2, "Nome da empresa \xE9 obrigat\xF3rio"),
-      userName: z12.string().min(2, "Nome do respons\xE1vel \xE9 obrigat\xF3rio"),
-      email: z12.string().email(),
-      password: z12.string().min(8, "A senha deve ter pelo menos 8 caracteres"),
-      planId: z12.number().int().positive("Selecione um plano antes de criar a conta"),
-      paymentConfirmed: z12.boolean().refine((v) => v === true, { message: "Confirme o pagamento para criar a conta." })
+    signup: publicProcedure.input(z13.object({
+      companyName: z13.string().min(2, "Nome da empresa \xE9 obrigat\xF3rio"),
+      userName: z13.string().min(2, "Nome do respons\xE1vel \xE9 obrigat\xF3rio"),
+      email: z13.string().email(),
+      password: z13.string().min(8, "A senha deve ter pelo menos 8 caracteres"),
+      planId: z13.number().int().positive("Selecione um plano antes de criar a conta"),
+      paymentConfirmed: z13.boolean().refine((v) => v === true, { message: "Confirme o pagamento para criar a conta." })
     })).mutation(async ({ ctx, input }) => {
       const signupKey = `signup:${getClientIp(ctx.req)}`;
       if (await isThrottled(signupKey)) {
-        throw new TRPCError16({ code: "TOO_MANY_REQUESTS", message: "Muitos cadastros deste endere\xE7o. Tente novamente em alguns minutos." });
+        throw new TRPCError17({ code: "TOO_MANY_REQUESTS", message: "Muitos cadastros deste endere\xE7o. Tente novamente em alguns minutos." });
       }
       await registerThrottleFailure(signupKey);
       try {
@@ -9979,27 +10492,27 @@ var appRouter = router({
         return { success: true, ...created };
       } catch (error) {
         if (error?.code === "ER_DUP_ENTRY") {
-          throw new TRPCError16({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
         }
         throw error;
       }
     }),
-    login: publicProcedure.input(z12.object({ email: z12.string().email(), password: z12.string().min(1) })).mutation(async ({ ctx, input }) => {
+    login: publicProcedure.input(z13.object({ email: z13.string().email(), password: z13.string().min(1) })).mutation(async ({ ctx, input }) => {
       const ip = getClientIp(ctx.req);
       const limit = checkRateLimit(ip, "login");
       if (!limit.ok) {
-        throw new TRPCError16({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde um minuto." });
+        throw new TRPCError17({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde um minuto." });
       }
       const principal = await authenticateMember(input.email, input.password);
       if (!principal) {
         void auditFromCtx(ctx, { action: "login_failed", module: "auth", entityType: "session", description: `Tentativa de login falhou para ${input.email}`, newData: { email: input.email } });
-        throw new TRPCError16({ code: "UNAUTHORIZED", message: "E-mail ou senha inv\xE1lidos." });
+        throw new TRPCError17({ code: "UNAUTHORIZED", message: "E-mail ou senha inv\xE1lidos." });
       }
       if (principal.kind === "company") {
         const company = await getCompanyById(principal.account.companyId);
         if (!company || company.active === false) {
           const reason = company ? await getSetting("blocked_reason", company.id, "") : "";
-          throw new TRPCError16({ code: "FORBIDDEN", message: reason || "Acesso da empresa bloqueado. Entre em contato com o suporte." });
+          throw new TRPCError17({ code: "FORBIDDEN", message: reason || "Acesso da empresa bloqueado. Entre em contato com o suporte." });
         }
       }
       const session = await createSession(principal);
@@ -10036,13 +10549,13 @@ var appRouter = router({
       });
       return { success: true, kind: session.kind, user, sessionToken: session.rawToken };
     }),
-    recoverPassword: publicProcedure.input(z12.object({ email: z12.string().email(), recoveryCode: z12.string().min(1), newPassword: z12.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ input }) => {
+    recoverPassword: publicProcedure.input(z13.object({ email: z13.string().email(), recoveryCode: z13.string().min(1), newPassword: z13.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ input }) => {
       const recovered = await recoverPassword(input.email, input.recoveryCode, input.newPassword);
-      if (!recovered) throw new TRPCError16({ code: "UNAUTHORIZED", message: "E-mail ou c\xF3digo de recupera\xE7\xE3o inv\xE1lido." });
+      if (!recovered) throw new TRPCError17({ code: "UNAUTHORIZED", message: "E-mail ou c\xF3digo de recupera\xE7\xE3o inv\xE1lido." });
       return { success: true, recoveryCode: recovered.recoveryCode };
     }),
     /** "Esqueci minha senha": resposta sempre igual (não revela se o e-mail existe). */
-    requestPasswordReset: publicProcedure.input(z12.object({ email: z12.string().trim().email() })).mutation(async ({ input }) => {
+    requestPasswordReset: publicProcedure.input(z13.object({ email: z13.string().trim().email() })).mutation(async ({ input }) => {
       const message = "Se o e-mail estiver cadastrado, enviaremos um link para criar uma nova senha. Se n\xE3o chegar em alguns minutos, use o c\xF3digo de recupera\xE7\xE3o ou fale com o suporte.";
       if (!isPasswordResetAvailable() || !await allowPasswordResetRequest(input.email)) return { success: true, message };
       try {
@@ -10053,32 +10566,32 @@ var appRouter = router({
       }
       return { success: true, message };
     }),
-    resetPasswordWithToken: publicProcedure.input(z12.object({ token: z12.string().min(10).max(2e3), newPassword: z12.string().min(8, "A nova senha deve ter pelo menos 8 caracteres").max(200) })).mutation(async ({ input }) => {
+    resetPasswordWithToken: publicProcedure.input(z13.object({ token: z13.string().min(10).max(2e3), newPassword: z13.string().min(8, "A nova senha deve ter pelo menos 8 caracteres").max(200) })).mutation(async ({ input }) => {
       const ok = await resetPasswordWithToken(input.token, input.newPassword);
-      if (!ok) throw new TRPCError16({ code: "UNAUTHORIZED", message: "Link inv\xE1lido ou expirado. Pe\xE7a um novo link." });
+      if (!ok) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Link inv\xE1lido ou expirado. Pe\xE7a um novo link." });
       return { success: true };
     }),
     changePassword: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError16({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
-    }).input(z12.object({ currentPassword: z12.string().min(1), newPassword: z12.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ ctx, input }) => {
+    }).input(z13.object({ currentPassword: z13.string().min(1), newPassword: z13.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ ctx, input }) => {
       const changed = ctx.user.role === "platform_admin" ? await changePlatformPassword(ctx.platformAdminId ?? ctx.user.id, input.currentPassword, input.newPassword) : await changeMemberPassword(ctx.memberAccountId ?? Math.abs(ctx.user.id), input.currentPassword, input.newPassword);
-      if (!changed) throw new TRPCError16({ code: "UNAUTHORIZED", message: "A senha atual est\xE1 incorreta." });
+      if (!changed) throw new TRPCError17({ code: "UNAUTHORIZED", message: "A senha atual est\xE1 incorreta." });
       return { success: true };
     }),
     updateProfile: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError16({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
-    }).input(z12.object({
-      userName: z12.string().min(2).optional(),
-      avatarDataUrl: z12.string().max(4e5).optional().nullable()
+    }).input(z13.object({
+      userName: z13.string().min(2).optional(),
+      avatarDataUrl: z13.string().max(4e5).optional().nullable()
     })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role === "platform_admin") {
-        throw new TRPCError16({ code: "BAD_REQUEST", message: "Perfil de plataforma n\xE3o usa esta rota." });
+        throw new TRPCError17({ code: "BAD_REQUEST", message: "Perfil de plataforma n\xE3o usa esta rota." });
       }
       const memberId = ctx.memberAccountId ?? Math.abs(ctx.user.id);
       const companyId = ctx.accountId;
-      if (!companyId) throw new TRPCError16({ code: "FORBIDDEN", message: "Empresa n\xE3o identificada." });
+      if (!companyId) throw new TRPCError17({ code: "FORBIDDEN", message: "Empresa n\xE3o identificada." });
       let userName = ctx.user.name || "";
       if (input.userName) {
         const updated = await updateMemberProfile(memberId, { userName: input.userName });
@@ -10090,7 +10603,7 @@ var appRouter = router({
           await setSetting(key, "", companyId);
         } else {
           if (!input.avatarDataUrl.startsWith("data:image/")) {
-            throw new TRPCError16({ code: "BAD_REQUEST", message: "Imagem de perfil inv\xE1lida." });
+            throw new TRPCError17({ code: "BAD_REQUEST", message: "Imagem de perfil inv\xE1lida." });
           }
           await setSetting(key, input.avatarDataUrl, companyId);
         }
@@ -10098,7 +10611,7 @@ var appRouter = router({
       return { success: true, userName };
     }),
     profileExtras: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError16({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).query(async ({ ctx }) => {
       if (ctx.user.role === "platform_admin" || !ctx.accountId) {
@@ -10110,20 +10623,20 @@ var appRouter = router({
       return { avatarDataUrl: avatar || null, alertDays };
     }),
     regenerateRecoveryCode: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError16({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
-    }).input(z12.object({ currentPassword: z12.string().min(1) })).mutation(async ({ ctx, input }) => {
+    }).input(z13.object({ currentPassword: z13.string().min(1) })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role === "platform_admin") {
-        throw new TRPCError16({ code: "BAD_REQUEST", message: "Indispon\xEDvel para admin da plataforma nesta tela." });
+        throw new TRPCError17({ code: "BAD_REQUEST", message: "Indispon\xEDvel para admin da plataforma nesta tela." });
       }
       const memberId = ctx.memberAccountId ?? Math.abs(ctx.user.id);
       const ok = await verifyMemberPassword(memberId, input.currentPassword);
-      if (!ok) throw new TRPCError16({ code: "UNAUTHORIZED", message: "Senha atual incorreta." });
+      if (!ok) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Senha atual incorreta." });
       const result = await regenerateMemberRecoveryCode(memberId);
       return { success: true, recoveryCode: result.recoveryCode };
     }),
     logoutAllSessions: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError16({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError17({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).mutation(async ({ ctx }) => {
       if (ctx.user.role === "platform_admin") return { success: true };
@@ -10143,36 +10656,36 @@ var appRouter = router({
   offline: router({}),
   platform: router({
     aiSupport: router({
-      chat: platformProcedure.input(z12.object({
-        prompt: z12.string().trim().min(1).max(12e3),
-        history: z12.array(z12.object({ role: z12.enum(["user", "assistant"]), content: z12.string().max(12e3) })).max(30).optional()
+      chat: platformProcedure.input(z13.object({
+        prompt: z13.string().trim().min(1).max(12e3),
+        history: z13.array(z13.object({ role: z13.enum(["user", "assistant"]), content: z13.string().max(12e3) })).max(30).optional()
       })).mutation(async ({ input }) => runPersistentGemini(input.prompt, input.history ?? []))
     }),
     plans: router({
       list: platformProcedure.query(() => listSubscriptionPlans()),
-      create: platformProcedure.input(z12.object({
-        name: z12.string().min(2),
-        description: z12.string().optional().nullable(),
-        price: z12.string().default("0.00"),
-        billingCycle: z12.enum(["monthly", "yearly"]).default("monthly"),
-        maxUsers: z12.number().int().positive().optional().nullable(),
-        maxClients: z12.number().int().positive().optional().nullable(),
-        maxExtinguishers: z12.number().int().positive().optional().nullable(),
-        featureKeys: z12.array(entitlementFeatureKey).default([]),
-        availableForNew: z12.boolean().default(true)
+      create: platformProcedure.input(z13.object({
+        name: z13.string().min(2),
+        description: z13.string().optional().nullable(),
+        price: z13.string().default("0.00"),
+        billingCycle: z13.enum(["monthly", "yearly"]).default("monthly"),
+        maxUsers: z13.number().int().positive().optional().nullable(),
+        maxClients: z13.number().int().positive().optional().nullable(),
+        maxExtinguishers: z13.number().int().positive().optional().nullable(),
+        featureKeys: z13.array(entitlementFeatureKey).default([]),
+        availableForNew: z13.boolean().default(true)
       })).mutation(({ input }) => createSubscriptionPlan(input)),
-      update: platformProcedure.input(z12.object({
-        id: z12.number().int().positive(),
-        name: z12.string().min(2).optional(),
-        description: z12.string().optional().nullable(),
-        price: z12.string().optional(),
-        billingCycle: z12.enum(["monthly", "yearly"]).optional(),
-        maxUsers: z12.number().int().positive().optional().nullable(),
-        maxClients: z12.number().int().positive().optional().nullable(),
-        maxExtinguishers: z12.number().int().positive().optional().nullable(),
-        featureKeys: z12.array(entitlementFeatureKey).optional(),
-        availableForNew: z12.boolean().optional(),
-        active: z12.boolean().optional()
+      update: platformProcedure.input(z13.object({
+        id: z13.number().int().positive(),
+        name: z13.string().min(2).optional(),
+        description: z13.string().optional().nullable(),
+        price: z13.string().optional(),
+        billingCycle: z13.enum(["monthly", "yearly"]).optional(),
+        maxUsers: z13.number().int().positive().optional().nullable(),
+        maxClients: z13.number().int().positive().optional().nullable(),
+        maxExtinguishers: z13.number().int().positive().optional().nullable(),
+        featureKeys: z13.array(entitlementFeatureKey).optional(),
+        availableForNew: z13.boolean().optional(),
+        active: z13.boolean().optional()
       })).mutation(async ({ input }) => {
         const { id: id2, ...data } = input;
         return updateSubscriptionPlan(id2, data);
@@ -10181,32 +10694,32 @@ var appRouter = router({
     subscriptions: router({
       list: platformProcedure.query(() => listCompanySubscriptions()),
       stats: platformProcedure.query(() => getSubscriptionStats()),
-      create: platformProcedure.input(z12.object({
-        companyId: z12.number().int().positive(),
-        planId: z12.number().int().positive(),
-        status: z12.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]).default("active"),
-        startsAt: z12.string().min(8),
-        endsAt: z12.string().optional().nullable(),
-        notes: z12.string().optional().nullable()
+      create: platformProcedure.input(z13.object({
+        companyId: z13.number().int().positive(),
+        planId: z13.number().int().positive(),
+        status: z13.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]).default("active"),
+        startsAt: z13.string().min(8),
+        endsAt: z13.string().optional().nullable(),
+        notes: z13.string().optional().nullable()
       })).mutation(({ input }) => createCompanySubscription(input)),
-      update: platformProcedure.input(z12.object({
-        id: z12.number().int().positive(),
-        planId: z12.number().int().positive().optional(),
-        status: z12.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]).optional(),
-        startsAt: z12.string().min(8).optional(),
-        endsAt: z12.string().optional().nullable(),
-        notes: z12.string().optional().nullable()
+      update: platformProcedure.input(z13.object({
+        id: z13.number().int().positive(),
+        planId: z13.number().int().positive().optional(),
+        status: z13.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]).optional(),
+        startsAt: z13.string().min(8).optional(),
+        endsAt: z13.string().optional().nullable(),
+        notes: z13.string().optional().nullable()
       })).mutation(async ({ input }) => {
         const { id: id2, ...data } = input;
         return updateCompanySubscription(id2, data);
       })
     }),
     companyFeatures: router({
-      get: platformProcedure.input(z12.object({ companyId: z12.number().int().positive() })).query(({ input }) => getCompanyEntitlementBase(input.companyId)),
-      set: platformProcedure.input(z12.object({
-        companyId: z12.number().int().positive(),
+      get: platformProcedure.input(z13.object({ companyId: z13.number().int().positive() })).query(({ input }) => getCompanyEntitlementBase(input.companyId)),
+      set: platformProcedure.input(z13.object({
+        companyId: z13.number().int().positive(),
         overrides: featurePermissionListSchema,
-        reason: z12.string().max(500).optional().nullable()
+        reason: z13.string().max(500).optional().nullable()
       })).mutation(async ({ ctx, input }) => {
         const overrides = Object.fromEntries(input.overrides.map(({ featureKey, mode }) => [
           featureKey,
@@ -10223,7 +10736,7 @@ var appRouter = router({
     }),
     /** Compatibilidade do painel administrativo: somente platform_admin acessa estas operações globais. */
     identity: platformProcedure.query(({ ctx }) => ({ id: ctx.platformAdminId ?? ctx.user.id, role: "platform_admin", global: true })),
-    reverseGeocodePoint: platformProcedure.input(z12.object({ latitude: z12.number().min(-90).max(90), longitude: z12.number().min(-180).max(180) })).mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
+    reverseGeocodePoint: platformProcedure.input(z13.object({ latitude: z13.number().min(-90).max(90), longitude: z13.number().min(-180).max(180) })).mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
     testing: router({
       session: platformProcedure.query(({ ctx }) => {
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
@@ -10235,30 +10748,30 @@ var appRouter = router({
         platformTestSessions.delete(platformTestKey(ctx.platformAdminId, ctx.user.id));
         return { success: true };
       }),
-      start: platformProcedure.input(z12.object({ id: z12.number().int().positive(), latitude: z12.number().optional(), longitude: z12.number().optional(), accuracy: z12.number().optional() })).mutation(({ ctx, input }) => {
-        if (input.id !== 1) throw new TRPCError16({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
+      start: platformProcedure.input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional() })).mutation(({ ctx, input }) => {
+        if (input.id !== 1) throw new TRPCError17({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
         const session = getPlatformTestSession(key);
-        if (session.status === "completed") throw new TRPCError16({ code: "BAD_REQUEST", message: "Reinicie a sess\xE3o de sandbox para testar novamente." });
+        if (session.status === "completed") throw new TRPCError17({ code: "BAD_REQUEST", message: "Reinicie a sess\xE3o de sandbox para testar novamente." });
         session.status = "in_progress";
         session.lastLatitude = input.latitude ?? null;
         session.lastLongitude = input.longitude ?? null;
         platformTestSessions.set(key, session);
         return { visitId: 1, storeId: 1, storeName: "Loja de teste do administrador geral", ...session };
       }),
-      complete: platformProcedure.input(z12.object({ id: z12.number().int().positive(), latitude: z12.number().optional(), longitude: z12.number().optional(), accuracy: z12.number().optional() })).mutation(({ ctx, input }) => {
-        if (input.id !== 1) throw new TRPCError16({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
+      complete: platformProcedure.input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional() })).mutation(({ ctx, input }) => {
+        if (input.id !== 1) throw new TRPCError17({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
         const session = getPlatformTestSession(key);
-        if (session.status !== "in_progress") throw new TRPCError16({ code: "BAD_REQUEST", message: "Fa\xE7a o check-in antes do check-out." });
+        if (session.status !== "in_progress") throw new TRPCError17({ code: "BAD_REQUEST", message: "Fa\xE7a o check-in antes do check-out." });
         session.status = "completed";
         session.lastLatitude = input.latitude ?? null;
         session.lastLongitude = input.longitude ?? null;
         platformTestSessions.set(key, session);
         return { visitId: 1, storeId: 1, storeName: "Loja de teste do administrador geral", ...session };
       }),
-      uploadPhoto: platformProcedure.input(z12.object({ storeId: z12.number().int().positive().optional().nullable(), visitId: z12.number().int().positive().optional(), capturedAt: z12.string(), latitude: z12.number().optional(), longitude: z12.number().optional(), accuracy: z12.number().optional(), imageBase64: z12.string().min(100).max(6e6), mimeType: z12.string().default("image/jpeg"), idempotencyKey: z12.string().min(8).max(64) })).mutation(({ ctx, input }) => {
-        if (input.visitId !== void 0 && input.visitId !== 1) throw new TRPCError16({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
+      uploadPhoto: platformProcedure.input(z13.object({ storeId: z13.number().int().positive().optional().nullable(), visitId: z13.number().int().positive().optional(), capturedAt: z13.string(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional(), imageBase64: z13.string().min(100).max(6e6), mimeType: z13.string().default("image/jpeg"), idempotencyKey: z13.string().min(8).max(64) })).mutation(({ ctx, input }) => {
+        if (input.visitId !== void 0 && input.visitId !== 1) throw new TRPCError17({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
         const session = getPlatformTestSession(key);
         session.photoCount += 1;
@@ -10271,7 +10784,7 @@ var appRouter = router({
     }),
     companies: router({
       list: platformProcedure.query(() => listCompanies()),
-      create: platformProcedure.input(z12.object({ companyName: z12.string().min(2), userName: z12.string().min(2), email: z12.string().email(), password: z12.string().min(8), featureKeys: z12.array(entitlementFeatureKey).optional() })).mutation(async ({ ctx, input }) => {
+      create: platformProcedure.input(z13.object({ companyName: z13.string().min(2), userName: z13.string().min(2), email: z13.string().email(), password: z13.string().min(8), featureKeys: z13.array(entitlementFeatureKey).optional() })).mutation(async ({ ctx, input }) => {
         try {
           const created = await createCompanyWithAdmin(input);
           const selected = new Set(input.featureKeys ?? []);
@@ -10279,27 +10792,27 @@ var appRouter = router({
           await replaceCompanyFeatureOverrides({ companyId: created.companyId, overrides, updatedByPlatformAdminId: ctx.platformAdminId ?? null, reason: "Definido na cria\xE7\xE3o da empresa" });
           return created;
         } catch (error) {
-          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError16({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
           throw error;
         }
       }),
-      update: platformProcedure.input(z12.object({ id: z12.number().int().positive(), name: z12.string().min(2).optional(), active: z12.boolean().optional() })).mutation(async ({ input }) => {
+      update: platformProcedure.input(z13.object({ id: z13.number().int().positive(), name: z13.string().min(2).optional(), active: z13.boolean().optional() })).mutation(async ({ input }) => {
         await updateCompany(input.id, { name: input.name, active: input.active });
         return { success: true };
       })
     }),
     users: router({
       list: platformProcedure.query(() => listMemberAccounts()),
-      create: platformProcedure.input(z12.object({ companyId: z12.number().int().positive(), userName: z12.string().min(2), email: z12.string().email(), password: z12.string().min(8), role: companyUserRole })).mutation(async ({ input, ctx }) => {
+      create: platformProcedure.input(z13.object({ companyId: z13.number().int().positive(), userName: z13.string().min(2), email: z13.string().email(), password: z13.string().min(8), role: companyUserRole })).mutation(async ({ input, ctx }) => {
         const company = await getCompanyById(input.companyId);
-        if (!company) throw new TRPCError16({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-        if (!company.active) throw new TRPCError16({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
+        if (!company) throw new TRPCError17({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+        if (!company.active) throw new TRPCError17({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
         try {
           const created = await createCompanyUser(input);
           void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usu\xE1rio criado pelo administrador geral: ${input.userName}`, newData: { companyId: input.companyId, email: input.email, role: input.role } });
           return created;
         } catch (error) {
-          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError16({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
           throw error;
         }
       })
@@ -10307,7 +10820,7 @@ var appRouter = router({
   }),
   accounts: router({
     list: platformProcedure.query(() => listMemberAccounts()),
-    create: platformProcedure.input(z12.object({ companyName: z12.string().min(2), userName: z12.string().min(2), email: z12.string().email(), password: z12.string().min(8) })).mutation(async ({ input }) => {
+    create: platformProcedure.input(z13.object({ companyName: z13.string().min(2), userName: z13.string().min(2), email: z13.string().email(), password: z13.string().min(8) })).mutation(async ({ input }) => {
       const created = await createCompanyWithAdmin(input);
       void (async () => {
         try {
@@ -10334,41 +10847,41 @@ var appRouter = router({
       })();
       return created;
     }),
-    setActive: platformProcedure.input(z12.object({ id: z12.number().int().positive(), active: z12.boolean() })).mutation(async ({ input }) => {
+    setActive: platformProcedure.input(z13.object({ id: z13.number().int().positive(), active: z13.boolean() })).mutation(async ({ input }) => {
       await setMemberActive(input.id, input.active);
       return { success: true };
     }),
-    resetPassword: platformProcedure.input(z12.object({ id: z12.number().int().positive(), newPassword: z12.string().min(8) })).mutation(async ({ input }) => {
+    resetPassword: platformProcedure.input(z13.object({ id: z13.number().int().positive(), newPassword: z13.string().min(8) })).mutation(async ({ input }) => {
       await resetMemberPassword(input.id, input.newPassword);
       return { success: true };
     })
   }),
   companyUsers: router({
     list: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => listMemberAccounts(ctx.accountId)),
-    permissions: companyAdminFeatureProcedure("teamManagement").input(z12.object({ id: z12.number().int().positive() })).query(async ({ ctx, input }) => {
+    permissions: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive() })).query(async ({ ctx, input }) => {
       const members = await listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
-      if (!target) throw new TRPCError16({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!target) throw new TRPCError17({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
       return getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role);
     }),
-    setPermissions: companyAdminFeatureProcedure("teamManagement").input(z12.object({
-      id: z12.number().int().positive(),
+    setPermissions: companyAdminFeatureProcedure("teamManagement").input(z13.object({
+      id: z13.number().int().positive(),
       permissions: featurePermissionListSchema
     })).mutation(async ({ ctx, input }) => {
       const members = await listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
-      if (!target) throw new TRPCError16({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!target) throw new TRPCError17({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
       const modes = Object.fromEntries(input.permissions.map(({ featureKey, mode }) => [featureKey, mode]));
       if (target.role === "company_admin" && modes.teamManagement === "deny") {
-        throw new TRPCError16({ code: "BAD_REQUEST", message: "A permiss\xE3o de gest\xE3o da equipe n\xE3o pode ser bloqueada individualmente para um administrador da empresa." });
+        throw new TRPCError17({ code: "BAD_REQUEST", message: "A permiss\xE3o de gest\xE3o da equipe n\xE3o pode ser bloqueada individualmente para um administrador da empresa." });
       }
       const base = await getCompanyEntitlementBase(ctx.accountId);
       for (const [featureKey, mode] of Object.entries(modes)) {
         if (mode === "allow" && !base.companyFeatures[featureKey]) {
-          throw new TRPCError16({ code: "BAD_REQUEST", message: `O m\xF3dulo ${featureKey} n\xE3o est\xE1 liberado para esta empresa.` });
+          throw new TRPCError17({ code: "BAD_REQUEST", message: `O m\xF3dulo ${featureKey} n\xE3o est\xE1 liberado para esta empresa.` });
         }
         if (mode === "allow" && !ROLE_FEATURE_CEILING[target.role].includes(featureKey)) {
-          throw new TRPCError16({ code: "BAD_REQUEST", message: `O papel ${target.role} n\xE3o permite liberar o m\xF3dulo ${featureKey}.` });
+          throw new TRPCError17({ code: "BAD_REQUEST", message: `O papel ${target.role} n\xE3o permite liberar o m\xF3dulo ${featureKey}.` });
         }
       }
       const before = await getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role);
@@ -10377,7 +10890,7 @@ var appRouter = router({
       void auditFromCtx(ctx, { action: "settings_change", module: "users", entityType: "user_permissions", entityId: target.id, entityLabel: target.userName, description: `Permiss\xF5es de m\xF3dulos atualizadas para ${target.userName}`, oldData: before.effective, newData: after.effective });
       return { success: true };
     }),
-    create: companyAdminFeatureProcedure("teamManagement").input(z12.object({ userName: z12.string().min(2), email: z12.string().email(), password: z12.string().min(8), role: companyUserRole, storeIds: z12.array(z12.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
+    create: companyAdminFeatureProcedure("teamManagement").input(z13.object({ userName: z13.string().min(2), email: z13.string().email(), password: z13.string().min(8), role: companyUserRole, storeIds: z13.array(z13.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
       try {
         await assertUserLimit(ctx.accountId);
         const { storeIds, ...userInput } = input;
@@ -10406,21 +10919,21 @@ var appRouter = router({
         })();
         return created;
       } catch (error) {
-        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError16({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
         console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message });
-        if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError16({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
-        if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError16({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados est\xE1 com a estrutura de usu\xE1rios desatualizada. A implanta\xE7\xE3o precisa concluir a migra\xE7\xE3o." });
-        throw new TRPCError16({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar o usu\xE1rio. Verifique os dados e tente novamente." });
+        if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError17({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
+        if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError17({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados est\xE1 com a estrutura de usu\xE1rios desatualizada. A implanta\xE7\xE3o precisa concluir a migra\xE7\xE3o." });
+        throw new TRPCError17({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar o usu\xE1rio. Verifique os dados e tente novamente." });
       }
     }),
-    update: companyAdminFeatureProcedure("teamManagement").input(z12.object({ id: z12.number().int().positive(), userName: z12.string().min(2).optional(), email: z12.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
-      if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError16({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode remover o pr\xF3prio n\xEDvel administrativo." });
+    update: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), userName: z13.string().min(2).optional(), email: z13.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
+      if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError17({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode remover o pr\xF3prio n\xEDvel administrativo." });
       const usersBefore = await listMemberAccounts(ctx.accountId);
       const beforeUser = usersBefore.find((u) => u.id === input.id) || null;
       try {
         await updateCompanyUser(input.id, ctx.accountId, { userName: input.userName, email: input.email, role: input.role });
       } catch (error) {
-        if (error?.message === "A empresa precisa manter pelo menos um administrador ativo.") throw new TRPCError16({ code: "BAD_REQUEST", message: error.message });
+        if (error?.message === "A empresa precisa manter pelo menos um administrador ativo.") throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
         throw error;
       }
       const usersAfter = await listMemberAccounts(ctx.accountId);
@@ -10429,26 +10942,26 @@ var appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "users", entityType: "user", entityId: input.id, entityLabel: afterUser?.userName || beforeUser?.userName || `#${input.id}`, description: `Usu\xE1rio atualizado: ${afterUser?.userName || input.id}`, oldData: userDiff.oldData, newData: userDiff.newData });
       return { success: true };
     }),
-    getPromoterStores: companyAdminFeatureProcedure("teamManagement").input(z12.object({ id: z12.number().int().positive() })).query(async ({ ctx, input }) => {
+    getPromoterStores: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive() })).query(async ({ ctx, input }) => {
       const database2 = await getDb();
       return getPromoterStoreAssignments(database2, ctx.accountId, input.id);
     }),
-    updatePromoterManagement: companyAdminFeatureProcedure("teamManagement").input(z12.object({
-      id: z12.number().int().positive(),
-      userName: z12.string().trim().min(2).max(255),
-      email: z12.string().trim().email().max(320),
-      employeeCode: z12.string().trim().max(50).nullable(),
-      workStartTime: z12.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
-      workEndTime: z12.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
-      weeklyRoutes: z12.array(z12.object({ weekday: z12.number().int().min(0).max(6), storeIds: z12.array(z12.number().int().positive()).min(1) })).max(7).optional(),
-      storeIds: z12.array(z12.number().int().positive()).optional()
+    updatePromoterManagement: companyAdminFeatureProcedure("teamManagement").input(z13.object({
+      id: z13.number().int().positive(),
+      userName: z13.string().trim().min(2).max(255),
+      email: z13.string().trim().email().max(320),
+      employeeCode: z13.string().trim().max(50).nullable(),
+      workStartTime: z13.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+      workEndTime: z13.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+      weeklyRoutes: z13.array(z13.object({ weekday: z13.number().int().min(0).max(6), storeIds: z13.array(z13.number().int().positive()).min(1) })).max(7).optional(),
+      storeIds: z13.array(z13.number().int().positive()).optional()
     })).mutation(async ({ ctx, input }) => {
       if (input.workStartTime && input.workEndTime && input.workEndTime <= input.workStartTime) {
-        throw new TRPCError16({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao in\xEDcio." });
+        throw new TRPCError17({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao in\xEDcio." });
       }
       const usersBefore = await listMemberAccounts(ctx.accountId);
       const before = usersBefore.find((member) => member.id === input.id);
-      if (!before || before.role !== "promoter") throw new TRPCError16({ code: "NOT_FOUND", message: "Promotor n\xE3o encontrado nesta empresa." });
+      if (!before || before.role !== "promoter") throw new TRPCError17({ code: "NOT_FOUND", message: "Promotor n\xE3o encontrado nesta empresa." });
       try {
         await updatePromoterManagement({
           companyId: ctx.accountId,
@@ -10465,9 +10978,9 @@ var appRouter = router({
           await setPromoterStoreAssignments(database2, ctx.accountId, input.id, input.storeIds);
         }
       } catch (error) {
-        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError16({ code: "CONFLICT", message: "Este e-mail ou matr\xEDcula j\xE1 est\xE1 em uso." });
+        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError17({ code: "CONFLICT", message: "Este e-mail ou matr\xEDcula j\xE1 est\xE1 em uso." });
         if (error?.message?.includes("n\xE3o pertence") || error?.message?.includes("inativas") || error?.message?.includes("programa\xE7\xE3o") || error?.message?.includes("dia programado")) {
-          throw new TRPCError16({ code: "BAD_REQUEST", message: error.message });
+          throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
         }
         throw error;
       }
@@ -10476,15 +10989,15 @@ var appRouter = router({
       void auditFromCtx(ctx, { action: "update", module: "users", entityType: "promoter_profile", entityId: input.id, entityLabel: after?.userName || before.userName, description: `Cadastro e roteiro de ${after?.userName || before.userName} atualizados`, oldData: before, newData: after });
       return { success: true };
     }),
-    setActive: companyAdminFeatureProcedure("teamManagement").input(z12.object({ id: z12.number().int().positive(), active: z12.boolean() })).mutation(async ({ ctx, input }) => {
-      if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError16({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode desativar a pr\xF3pria sess\xE3o." });
+    setActive: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), active: z13.boolean() })).mutation(async ({ ctx, input }) => {
+      if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError17({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode desativar a pr\xF3pria sess\xE3o." });
       await setMemberActive(input.id, input.active, ctx.accountId);
       void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Usu\xE1rio ${input.active ? "ativado" : "desativado"} #${input.id}`, newData: { active: input.active } });
       return { success: true };
     }),
-    resetPassword: companyAdminFeatureProcedure("teamManagement").input(z12.object({ id: z12.number().int().positive(), newPassword: z12.string().min(8) })).mutation(async ({ ctx, input }) => {
+    resetPassword: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), newPassword: z13.string().min(8) })).mutation(async ({ ctx, input }) => {
       const users3 = await listMemberAccounts(ctx.accountId);
-      if (!users3.some((account) => account.id === input.id)) throw new TRPCError16({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!users3.some((account) => account.id === input.id)) throw new TRPCError17({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
       await resetMemberPassword(input.id, input.newPassword);
       return { success: true };
     })
@@ -10492,7 +11005,7 @@ var appRouter = router({
   // O dashboard é a tela básica de toda conta autenticada; módulos pagos
   // continuam usando commercialFeatureProcedure normalmente.
   companyProfile: router({
-    updateName: companyAdminProcedure.input(z12.object({ name: z12.string().min(2).max(255) })).mutation(async ({ ctx, input }) => {
+    updateName: companyAdminProcedure.input(z13.object({ name: z13.string().min(2).max(255) })).mutation(async ({ ctx, input }) => {
       await updateCompany(ctx.accountId, { name: input.name.trim() });
       void auditFromCtx(ctx, {
         action: "update",
@@ -10508,41 +11021,41 @@ var appRouter = router({
   }),
   settings: router({
     getAutoClockOut: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => await getSetting("auto_clock_out_time", ctx.accountId, "")),
-    setAutoClockOut: companyAdminFeatureProcedure("timeTracking").input(z12.object({ time: z12.string().regex(/^\d{2}:\d{2}$/).optional() })).mutation(async ({ ctx, input }) => {
+    setAutoClockOut: companyAdminFeatureProcedure("timeTracking").input(z13.object({ time: z13.string().regex(/^\d{2}:\d{2}$/).optional() })).mutation(async ({ ctx, input }) => {
       await setSetting("auto_clock_out_time", input.time || "", ctx.accountId);
       return { success: true, time: input.time || "" };
     }),
     getAlertDays: commercialFeatureProcedure("alerts").query(async ({ ctx }) => parseInt(await getSetting("alert_days_ahead", ctx.accountId, "30"), 10) || 30),
-    setAlertDays: companyAdminFeatureProcedure("alerts").input(z12.object({ days: z12.number().min(1).max(365) })).mutation(async ({ ctx, input }) => {
+    setAlertDays: companyAdminFeatureProcedure("alerts").input(z13.object({ days: z13.number().min(1).max(365) })).mutation(async ({ ctx, input }) => {
       const prev = await getSetting("alert_days_ahead", ctx.accountId, "30");
       await setSetting("alert_days_ahead", input.days.toString(), ctx.accountId);
       void auditFromCtx(ctx, { action: "settings_change", module: "settings", entityType: "setting", entityLabel: "alert_days_ahead", description: `Anteced\xEAncia de alertas alterada: ${prev} \u2192 ${input.days} dias`, oldData: { alert_days_ahead: prev }, newData: { alert_days_ahead: String(input.days) } });
       return { success: true, days: input.days };
     })
   }),
-  inventoryAlerts: protectedProcedure.input(z12.object({ daysAhead: z12.number().optional() }).optional()).query(async ({ ctx }) => {
+  inventoryAlerts: protectedProcedure.input(z13.object({ daysAhead: z13.number().optional() }).optional()).query(async ({ ctx }) => {
     if (!ctx.accountId || !ctx.user || ctx.user.role === "platform_admin") return [];
     const { inventoryAlertsFor: inventoryAlertsFor2 } = await Promise.resolve().then(() => (init_products2(), products_exports));
     try {
       return await inventoryAlertsFor2(ctx);
     } catch (error) {
       console.error("[inventoryAlerts] falha ao consultar validades", error);
-      throw new TRPCError16({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel consultar as validades." });
+      throw new TRPCError17({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel consultar as validades." });
     }
   }),
   // Endereço para carimbo de foto/ponto (qualquer membro da empresa). Feito no servidor com cache.
   geo: router({
-    reverse: companyBillingProcedure.input(z12.object({ latitude: z12.number().min(-90).max(90), longitude: z12.number().min(-180).max(180) })).mutation(async ({ input }) => ({ address: await reverseGeocodeBr(input.latitude, input.longitude) }))
+    reverse: companyBillingProcedure.input(z13.object({ latitude: z13.number().min(-90).max(90), longitude: z13.number().min(-180).max(180) })).mutation(async ({ input }) => ({ address: await reverseGeocodeBr(input.latitude, input.longitude) }))
   }),
   trash: router({
     // Qualquer usuário autenticado da empresa; não-administradores só enxergam/operam o que apagaram ou é deles.
     list: companyBillingProcedure.query(({ ctx }) => listTrash(ctx.accountId, scopeMemberId(ctx))),
-    restore: companyBillingProcedure.input(z12.object({ id: z12.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    restore: companyBillingProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const item = await restoreTrashItem(input.id, ctx.accountId, scopeMemberId(ctx));
       void auditFromCtx(ctx, { action: "restore", module: "trash", entityType: item.itemType, entityId: item.originalId, entityLabel: item.label, description: `Restaurou da lixeira: ${item.label}` });
       return { success: true };
     }),
-    permanentlyDelete: companyBillingProcedure.input(z12.object({ id: z12.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    permanentlyDelete: companyBillingProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const item = await permanentlyDeleteTrashItem(input.id, ctx.accountId, scopeMemberId(ctx));
       void auditFromCtx(ctx, { action: "permanent_delete", module: "trash", entityType: item.itemType, entityId: item.originalId, entityLabel: item.label, description: `Excluiu definitivamente: ${item.label}` });
       return { success: true };
@@ -10586,33 +11099,33 @@ var appRouter = router({
   operations: router({
     promoters: router({
       list: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError16({ code: "FORBIDDEN", message: "Promotores n\xE3o podem consultar a lista da equipe." });
+        if (ctx.user.role === "promoter") throw new TRPCError17({ code: "FORBIDDEN", message: "Promotores n\xE3o podem consultar a lista da equipe." });
         return (await listMemberAccounts(ctx.accountId)).filter((member) => member.role === "promoter" && member.active).map(({ id: id2, userName, role, active }) => ({ id: id2, userName, role, active }));
       })
     }),
     stores: router({
-      list: commercialFeatureProcedure("fieldOperations").input(z12.object({ search: z12.string().optional() }).optional()).query(({ ctx, input }) => listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
-      create: commercialFeatureProcedure("fieldOperations").input(z12.object({ name: z12.string().min(2), city: z12.string().min(2), address: z12.string().optional(), state: z12.string().length(2).optional(), cep: z12.string().optional(), code: z12.string().optional(), latitude: z12.number().optional(), longitude: z12.number().optional(), notes: z12.string().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError16({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
+      list: commercialFeatureProcedure("fieldOperations").input(z13.object({ search: z13.string().optional() }).optional()).query(({ ctx, input }) => listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
+      create: commercialFeatureProcedure("fieldOperations").input(z13.object({ name: z13.string().min(2), city: z13.string().min(2), address: z13.string().optional(), state: z13.string().length(2).optional(), cep: z13.string().optional(), code: z13.string().optional(), latitude: z13.number().optional(), longitude: z13.number().optional(), notes: z13.string().optional() })).mutation(async ({ ctx, input }) => {
+        if (ctx.user.role === "promoter") throw new TRPCError17({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
         return createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
       }),
-      update: commercialFeatureProcedure("fieldOperations").input(z12.object({ id: z12.number().int().positive(), name: z12.string().trim().min(2).max(255).optional(), city: z12.string().trim().min(2).max(255).optional(), state: z12.string().trim().length(2).optional().or(z12.literal("")), address: z12.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError16({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem editar lojas." });
+      update: commercialFeatureProcedure("fieldOperations").input(z13.object({ id: z13.number().int().positive(), name: z13.string().trim().min(2).max(255).optional(), city: z13.string().trim().min(2).max(255).optional(), state: z13.string().trim().length(2).optional().or(z13.literal("")), address: z13.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
+        if (ctx.user.role === "promoter") throw new TRPCError17({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem editar lojas." });
         const { id: id2, ...patch } = input;
         const ok = await updateOperationalStore(ctx.accountId, id2, { ...patch, state: patch.state === void 0 ? void 0 : patch.state ? patch.state.toUpperCase() : null });
-        if (!ok) throw new TRPCError16({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+        if (!ok) throw new TRPCError17({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
         await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", entityId: id2, description: `Loja editada: ${patch.name ?? `#${id2}`}`, newData: patch });
         return { success: true };
       }),
-      archive: companyAdminProcedure.input(z12.object({ id: z12.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      archive: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const store = await archiveOperationalStore(ctx.accountId, input.id);
-        if (!store) throw new TRPCError16({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+        if (!store) throw new TRPCError17({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
         await auditFromCtx(ctx, { action: "delete", module: "stores", entityType: "store", entityId: input.id, description: `Loja removida da lista: ${store.name}` });
         return { success: true };
       })
     }),
     routes: router({
-      list: commercialFeatureProcedure("fieldOperations").input(z12.object({ date: z12.string().optional(), promoterId: z12.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
+      list: commercialFeatureProcedure("fieldOperations").input(z13.object({ date: z13.string().optional(), promoterId: z13.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
         const date3 = input?.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
         const ownerId = scopeMemberId(ctx);
         if (ownerId !== null) {
@@ -10628,45 +11141,45 @@ var appRouter = router({
         return listOperationalRoutes(ctx.accountId, { date: filterDate, promoterId: ownerId ?? input?.promoterId });
       }),
       weekly: commercialFeatureProcedure("fieldOperations").query(({ ctx }) => listWeeklyRouteSchedules(ctx.accountId)),
-      saveWeekly: companyAdminProcedure.input(z12.object({ name: z12.string().min(2).max(255), weekday: z12.number().int().min(0).max(6), promoterId: z12.number().int().positive(), storeIds: z12.array(z12.number().int().positive()).min(1) })).mutation(async ({ ctx, input }) => {
+      saveWeekly: companyAdminProcedure.input(z13.object({ name: z13.string().min(2).max(255), weekday: z13.number().int().min(0).max(6), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1) })).mutation(async ({ ctx, input }) => {
         const members = await listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
-        if (!promoter) throw new TRPCError16({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        if (!promoter) throw new TRPCError17({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         return saveWeeklyRouteSchedule({ ...input, companyId: ctx.accountId });
       }),
-      create: commercialFeatureProcedure("fieldOperations").input(z12.object({ name: z12.string().min(2), date: z12.string().min(8), promoterId: z12.number().int().positive(), storeIds: z12.array(z12.number().int().positive()).min(1), teamId: z12.number().int().positive().optional(), notes: z12.string().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError16({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
+      create: commercialFeatureProcedure("fieldOperations").input(z13.object({ name: z13.string().min(2), date: z13.string().min(8), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1), teamId: z13.number().int().positive().optional(), notes: z13.string().optional() })).mutation(async ({ ctx, input }) => {
+        if (ctx.user.role === "promoter") throw new TRPCError17({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
         const members = await listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
-        if (!promoter) throw new TRPCError16({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        if (!promoter) throw new TRPCError17({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         const { storeIds, ...route } = input;
         return createOperationalRouteWithVisits({ route: { ...route, date: /* @__PURE__ */ new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" }, storeIds });
       }),
-      update: companyAdminProcedure.input(z12.object({ id: z12.number().int().positive(), name: z12.string().optional(), promoterId: z12.number().int().positive().optional(), date: z12.string().optional(), storeIds: z12.array(z12.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
+      update: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive(), name: z13.string().optional(), promoterId: z13.number().int().positive().optional(), date: z13.string().optional(), storeIds: z13.array(z13.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
         const { id: id2, ...data } = input;
         if (data.promoterId) {
           const members = await listMemberAccounts(ctx.accountId);
           const promoter = members.find((member) => member.id === data.promoterId && member.role === "promoter" && member.active);
-          if (!promoter) throw new TRPCError16({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+          if (!promoter) throw new TRPCError17({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         }
         try {
           return await updateOperationalRoute(ctx.accountId, id2, data);
         } catch (error) {
-          if (error instanceof RouteValidationError) throw new TRPCError16({ code: "BAD_REQUEST", message: error.message });
+          if (error instanceof RouteValidationError) throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
           throw error;
         }
       }),
-      delete: companyAdminProcedure.input(z12.object({ id: z12.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      delete: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
         try {
           return await deleteOperationalRoute(ctx.accountId, input.id);
         } catch (error) {
-          if (error instanceof RouteValidationError) throw new TRPCError16({ code: "BAD_REQUEST", message: error.message });
+          if (error instanceof RouteValidationError) throw new TRPCError17({ code: "BAD_REQUEST", message: error.message });
           throw error;
         }
       })
     }),
     visits: router({
-      today: commercialFeatureProcedure("fieldOperations").input(z12.object({ date: z12.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional()).query(async ({ ctx, input }) => {
+      today: commercialFeatureProcedure("fieldOperations").input(z13.object({ date: z13.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).optional()).query(async ({ ctx, input }) => {
         const date3 = input?.date || todayInZone();
         const promoterId = scopeMemberId(ctx) ?? void 0;
         if (promoterId) {
@@ -10683,15 +11196,15 @@ var appRouter = router({
         }
         return listOperationalVisits(ctx.accountId, { date: date3, promoterId: promoterId ?? void 0 });
       }),
-      list: commercialFeatureProcedure("fieldOperations").input(z12.object({ date: z12.string().optional(), routeId: z12.number().int().positive().optional(), promoterId: z12.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
+      list: commercialFeatureProcedure("fieldOperations").input(z13.object({ date: z13.string().optional(), routeId: z13.number().int().positive().optional(), promoterId: z13.number().int().positive().optional() }).optional()).query(({ ctx, input }) => listOperationalVisits(ctx.accountId, { date: input?.date, routeId: input?.routeId, promoterId: scopeMemberId(ctx) ?? input?.promoterId })),
       /** Marcas "registrado offline" (horário do aparelho x recebimento) para os relatórios do gestor. */
-      offlineMarks: commercialFeatureProcedure("fieldOperations").input(z12.object({ visitIds: z12.array(z12.number().int().positive()).max(500) })).query(({ ctx, input }) => listVisitOfflineMarks(ctx.accountId, input.visitIds)),
-      start: commercialFeatureProcedure("visitCheckIn").input(z12.object({ id: z12.number().int().positive(), latitude: z12.number().optional(), longitude: z12.number().optional(), accuracy: z12.number().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
+      offlineMarks: commercialFeatureProcedure("fieldOperations").input(z13.object({ visitIds: z13.array(z13.number().int().positive()).max(500) })).query(({ ctx, input }) => listVisitOfflineMarks(ctx.accountId, input.visitIds)),
+      start: commercialFeatureProcedure("visitCheckIn").input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
         const promoterId = scopeMemberId(ctx);
         if (input.clientId) {
           const prior = await findSubmission(ctx.accountId, input.clientId);
           if (prior) {
-            if (prior.kind !== "visit_start" || prior.entityId !== input.id) throw new TRPCError16({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
+            if (prior.kind !== "visit_start" || prior.entityId !== input.id) throw new TRPCError17({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
             const [again] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: promoterId ?? void 0 });
             if (again) return again;
           }
@@ -10702,15 +11215,15 @@ var appRouter = router({
           await autoCloseStaleVisits(ctx.accountId, promoterId, today);
         }
         const [owned] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: promoterId ?? void 0 });
-        if (!owned) throw new TRPCError16({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
-        if (promoterId !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError16({ code: "FORBIDDEN", message: "Visita n\xE3o pertence ao promotor autenticado." });
+        if (!owned) throw new TRPCError17({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        if (promoterId !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError17({ code: "FORBIDDEN", message: "Visita n\xE3o pertence ao promotor autenticado." });
         if (owned.visit.status !== "pending") return owned;
         if (promoterId != null) {
           const todayVisits = await listOperationalVisits(ctx.accountId, { promoterId, date: today });
           const openVisit = todayVisits.find((v) => v.visit.status === "in_progress" && v.visit.id !== input.id);
           if (openVisit) {
             const storeName = openVisit.store?.name || "a loja atual";
-            throw new TRPCError16({
+            throw new TRPCError17({
               code: "CONFLICT",
               message: `N\xE3o \xE9 poss\xEDvel fazer check-in em outra loja. Realize o check-out em "${storeName}" primeiro.`
             });
@@ -10720,12 +11233,12 @@ var appRouter = router({
         if (input.clientId) await recordSubmission({ companyId: ctx.accountId, memberAccountId: ctx.memberAccountId ?? null, clientId: input.clientId, kind: "visit_start", entityId: input.id, deviceTime: input.deviceTime ? new Date(input.deviceTime) : null, offline: when.offline, alert: when.clockAlert ?? when.timeNote });
         return started;
       }),
-      complete: commercialFeatureProcedure("visitCheckIn").input(z12.object({ id: z12.number().int().positive(), latitude: z12.number().optional(), longitude: z12.number().optional(), accuracy: z12.number().optional(), notes: z12.string().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
+      complete: commercialFeatureProcedure("visitCheckIn").input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional(), notes: z13.string().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
         const [owned] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? void 0 });
-        if (!owned) throw new TRPCError16({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        if (!owned) throw new TRPCError17({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
         if (input.clientId) {
           const prior = await findSubmission(ctx.accountId, input.clientId);
-          if (prior && (prior.kind !== "visit_complete" || prior.entityId !== input.id)) throw new TRPCError16({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
+          if (prior && (prior.kind !== "visit_complete" || prior.entityId !== input.id)) throw new TRPCError17({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
           if (prior) return owned;
         }
         if (owned.visit.status === "completed") return owned;
@@ -10743,15 +11256,15 @@ var appRouter = router({
     promoters: companyAdminFeatureProcedure("reports").query(
       async ({ ctx }) => (await listMemberAccounts(ctx.accountId)).filter((member) => member.role === "promoter").map(({ id: id2, userName, email, active }) => ({ id: id2, userName, email, active }))
     ),
-    reverseGeocodePoint: companyAdminFeatureProcedure("reports").input(z12.object({ latitude: z12.number().min(-90).max(90), longitude: z12.number().min(-180).max(180) })).mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
-    promoterActivity: companyAdminFeatureProcedure("reports").input(z12.object({
-      page: z12.number().int().positive().optional(),
-      pageSize: z12.number().int().positive().max(100).optional(),
-      from: z12.string().optional(),
-      to: z12.string().optional(),
-      promoterId: z12.number().int().positive().optional(),
-      category: z12.string().optional(),
-      search: z12.string().optional()
+    reverseGeocodePoint: companyAdminFeatureProcedure("reports").input(z13.object({ latitude: z13.number().min(-90).max(90), longitude: z13.number().min(-180).max(180) })).mutation(({ input }) => reverseGeocodeAddress(input.latitude, input.longitude)),
+    promoterActivity: companyAdminFeatureProcedure("reports").input(z13.object({
+      page: z13.number().int().positive().optional(),
+      pageSize: z13.number().int().positive().max(100).optional(),
+      from: z13.string().optional(),
+      to: z13.string().optional(),
+      promoterId: z13.number().int().positive().optional(),
+      category: z13.string().optional(),
+      search: z13.string().optional()
     }).optional()).query(({ ctx, input }) => listPromoterActivities({
       companyId: ctx.accountId,
       page: input?.page,
@@ -10762,12 +11275,12 @@ var appRouter = router({
       category: input?.category,
       search: input?.search
     })),
-    promoterActivityExportCsv: companyAdminFeatureProcedure("reports").input(z12.object({
-      from: z12.string().optional(),
-      to: z12.string().optional(),
-      promoterId: z12.number().int().positive().optional(),
-      category: z12.string().optional(),
-      search: z12.string().optional()
+    promoterActivityExportCsv: companyAdminFeatureProcedure("reports").input(z13.object({
+      from: z13.string().optional(),
+      to: z13.string().optional(),
+      promoterId: z13.number().int().positive().optional(),
+      category: z13.string().optional(),
+      search: z13.string().optional()
     }).optional()).mutation(async ({ ctx, input }) => {
       const result = await listPromoterActivities({ companyId: ctx.accountId, page: 1, pageSize: 1e4, ...input });
       const headers = ["Data/hora", "Promotor", "E-mail", "Atividade", "\xC1rea", "Registro", "Descri\xE7\xE3o", "Detalhes"];
@@ -10776,17 +11289,17 @@ var appRouter = router({
       const csv = `\uFEFF${[headers, ...values].map((line) => line.map(cell2).join(";")).join("\r\n")}`;
       return { csv, contentType: "text/csv; charset=utf-8", filename: `atividades-promotores-${ctx.accountId}.csv` };
     }),
-    list: companyAdminFeatureProcedure("reports").input(z12.object({
-      page: z12.number().int().positive().optional(),
-      pageSize: z12.number().int().positive().max(100).optional(),
-      from: z12.string().optional(),
-      to: z12.string().optional(),
-      userId: z12.number().int().positive().optional(),
-      module: z12.string().optional(),
-      action: z12.string().optional(),
-      entityType: z12.string().optional(),
-      entityId: z12.number().int().positive().optional(),
-      search: z12.string().optional()
+    list: companyAdminFeatureProcedure("reports").input(z13.object({
+      page: z13.number().int().positive().optional(),
+      pageSize: z13.number().int().positive().max(100).optional(),
+      from: z13.string().optional(),
+      to: z13.string().optional(),
+      userId: z13.number().int().positive().optional(),
+      module: z13.string().optional(),
+      action: z13.string().optional(),
+      entityType: z13.string().optional(),
+      entityId: z13.number().int().positive().optional(),
+      search: z13.string().optional()
     }).optional()).query(async ({ ctx, input }) => {
       return listAuditLogs({
         companyId: ctx.accountId,
@@ -10803,16 +11316,16 @@ var appRouter = router({
         search: input?.search
       });
     }),
-    byId: companyAdminFeatureProcedure("reports").input(z12.object({ id: z12.number().int().positive() })).query(async ({ ctx, input }) => {
+    byId: companyAdminFeatureProcedure("reports").input(z13.object({ id: z13.number().int().positive() })).query(async ({ ctx, input }) => {
       const row2 = await getAuditLogById(input.id, ctx.accountId);
-      if (!row2) throw new TRPCError16({ code: "NOT_FOUND", message: "Registro de auditoria n\xE3o encontrado." });
+      if (!row2) throw new TRPCError17({ code: "NOT_FOUND", message: "Registro de auditoria n\xE3o encontrado." });
       return row2;
     }),
-    entityHistory: commercialFeatureProcedure("reports").input(z12.object({
-      entityType: z12.string().min(1),
-      entityId: z12.number().int().positive(),
-      page: z12.number().int().positive().optional(),
-      pageSize: z12.number().int().positive().max(100).optional()
+    entityHistory: commercialFeatureProcedure("reports").input(z13.object({
+      entityType: z13.string().min(1),
+      entityId: z13.number().int().positive(),
+      page: z13.number().int().positive().optional(),
+      pageSize: z13.number().int().positive().max(100).optional()
     })).query(async ({ ctx, input }) => listEntityAuditHistory({
       companyId: ctx.accountId,
       entityType: input.entityType,
@@ -10820,15 +11333,15 @@ var appRouter = router({
       page: input.page,
       pageSize: input.pageSize
     })),
-    exportCsv: companyAdminFeatureProcedure("reports").input(z12.object({
-      from: z12.string().optional(),
-      to: z12.string().optional(),
-      userId: z12.number().int().positive().optional(),
-      module: z12.string().optional(),
-      action: z12.string().optional(),
-      entityType: z12.string().optional(),
-      entityId: z12.number().int().positive().optional(),
-      search: z12.string().optional()
+    exportCsv: companyAdminFeatureProcedure("reports").input(z13.object({
+      from: z13.string().optional(),
+      to: z13.string().optional(),
+      userId: z13.number().int().positive().optional(),
+      module: z13.string().optional(),
+      action: z13.string().optional(),
+      entityType: z13.string().optional(),
+      entityId: z13.number().int().positive().optional(),
+      search: z13.string().optional()
     }).optional()).mutation(async ({ ctx, input }) => {
       const csv = await exportAuditLogsCsv({
         companyId: ctx.accountId,
@@ -10844,15 +11357,15 @@ var appRouter = router({
       });
       return { csv, contentType: "text/csv; charset=utf-8", filename: `auditoria-${ctx.accountId}.csv` };
     }),
-    platformList: platformProcedure.input(z12.object({
-      companyId: z12.number().int().positive().optional(),
-      page: z12.number().int().positive().optional(),
-      pageSize: z12.number().int().positive().max(100).optional(),
-      from: z12.string().optional(),
-      to: z12.string().optional(),
-      module: z12.string().optional(),
-      action: z12.string().optional(),
-      search: z12.string().optional()
+    platformList: platformProcedure.input(z13.object({
+      companyId: z13.number().int().positive().optional(),
+      page: z13.number().int().positive().optional(),
+      pageSize: z13.number().int().positive().max(100).optional(),
+      from: z13.string().optional(),
+      to: z13.string().optional(),
+      module: z13.string().optional(),
+      action: z13.string().optional(),
+      search: z13.string().optional()
     }).optional()).query(async ({ input }) => listAuditLogs({
       companyId: input?.companyId,
       page: input?.page,
@@ -11033,7 +11546,7 @@ async function runMissingPunchAlerts() {
   const dbm = await Promise.resolve().then(() => (init_db(), db_exports));
   const database2 = await dbm.getDb();
   if (!database2) return { found: 0, notified: 0 };
-  const { and: and15, eq: eq16 } = await import("drizzle-orm");
+  const { and: and16, eq: eq17 } = await import("drizzle-orm");
   const { memberAccounts: memberAccounts3 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
   const { sendEmail: sendEmail2 } = await Promise.resolve().then(() => (init_email(), email_exports));
   const missing = await findMissingPunches2();
@@ -11055,7 +11568,7 @@ async function runMissingPunchAlerts() {
         await sendEmail2({ to: m.email, subject: "Falta de batida no cart\xE3o ponto", text: `${detail} Abra o app, v\xE1 em Cart\xE3o ponto > Corre\xE7\xF5es de ponto e solicite a corre\xE7\xE3o com a justificativa.`, html: `<p>${detail}</p><p>Abra o app, v\xE1 em <b>Cart\xE3o ponto &gt; Corre\xE7\xF5es de ponto</b> e solicite a corre\xE7\xE3o com a justificativa.</p>` });
         notified += 1;
       }
-      const admins = await database2.select({ email: memberAccounts3.email }).from(memberAccounts3).where(and15(eq16(memberAccounts3.companyId, m.companyId), eq16(memberAccounts3.role, "company_admin"), eq16(memberAccounts3.active, true)));
+      const admins = await database2.select({ email: memberAccounts3.email }).from(memberAccounts3).where(and16(eq17(memberAccounts3.companyId, m.companyId), eq17(memberAccounts3.role, "company_admin"), eq17(memberAccounts3.active, true)));
       for (const admin of admins) {
         if (!admin.email) continue;
         await sendEmail2({ to: admin.email, subject: `Falta de batida: ${m.name}`, text: `${m.name}: ${detail}`, html: `<p><b>${m.name}</b>: ${detail}</p><p>O promotor foi avisado para solicitar a corre\xE7\xE3o; voc\xEA poder\xE1 analis\xE1-la em Cart\xE3o-ponto.</p>` });
@@ -11245,7 +11758,14 @@ async function createApp() {
       } catch (e) {
         console.warn("[photos]", e);
       }
-      return res.json({ ok: true, result, missingPunch, photos });
+      let clock = null;
+      try {
+        const { runClockCheck: runClockCheck2 } = await Promise.resolve().then(() => (init_clock(), clock_exports));
+        clock = await runClockCheck2("agendado");
+      } catch (e) {
+        console.warn("[clock]", e);
+      }
+      return res.json({ ok: true, result, missingPunch, photos, clock });
     } catch (error) {
       console.error("[Maintenance] failed:", error);
       await notifyOwner({ title: "Falha no backup di\xE1rio", content: "O backup autom\xE1tico falhou." }).catch(() => void 0);

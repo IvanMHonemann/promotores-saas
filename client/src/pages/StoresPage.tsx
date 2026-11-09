@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Camera, ChevronRight, MapPin, Pencil, Plus, Search, Store, Trash2, X } from "lucide-react";
+import { Camera, ChevronRight, MapPin, Pencil, Plus, Search, Store, Trash2 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,7 +11,8 @@ import { useBusy } from "@/components/BusyOverlay";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet } from "@/lib/offlineCache";
 import { useOnline } from "@/hooks/useOnline";
-import { enqueueStore, listStores } from "@/lib/storeQueue";
+import { listStores } from "@/lib/storeQueue";
+import StoreForm from "@/components/StoreForm";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { confirmAction } from "@/components/ConfirmDialog";
 
@@ -55,20 +56,16 @@ export default function StoresPage() {
   const { run } = useBusy();
   const utils = trpc.useUtils();
   const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", city: "", state: "", address: "" });
   const isCompanyAdmin = user?.role === "company_admin";
   const [editingId, setEditingId] = useState<number | null>(null);
-  const updateStore = trpc.operations.stores.update.useMutation({
-    onSuccess: () => { toast.success("Loja atualizada."); setForm({ name: "", city: "", state: "", address: "" }); setEditingId(null); setFormOpen(false); void stores.refetch(); },
-    onError: (e) => toast.error(e.message || "Não foi possível salvar a loja."),
-  });
   const archiveStore = trpc.operations.stores.archive.useMutation({
     onSuccess: () => { toast.success("Loja removida da lista. Fotos e histórico continuam guardados."); void stores.refetch(); },
     onError: (e) => toast.error(e.message || "Não foi possível remover a loja."),
   });
+  const [editingStore, setEditingStore] = useState<any>(null);
   const startEdit = (store: any) => {
     setEditingId(store.id);
-    setForm({ name: store.name || "", city: store.city || "", state: store.state || "", address: store.address || "" });
+    setEditingStore(store);
     setFormOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -80,41 +77,8 @@ export default function StoresPage() {
     if (!(await confirmAction({ title: `Remover a loja "${store.name}"?`, description: `As fotos e o histórico continuam guardados.${productNote}`, confirmLabel: "Remover loja" }))) return;
     void run("Removendo loja...", () => archiveStore.mutateAsync({ id: store.id })).catch(() => {});
   };
-  const closeForm = () => { setFormOpen(false); setEditingId(null); setForm({ name: "", city: "", state: "", address: "" }); };
-  const createStore = trpc.operations.stores.create.useMutation({
-    onSuccess: () => {
-      toast.success("Loja cadastrada.");
-      setForm({ name: "", city: "", state: "", address: "" });
-      setFormOpen(false);
-      void stores.refetch();
-    },
-    onError: (e) => toast.error(e.message || "Não foi possível cadastrar a loja."),
-  });
-  const submitStore = () => {
-    const name = form.name.trim();
-    const city = form.city.trim();
-    const state = form.state.trim().toUpperCase();
-    if (name.length < 2) return toast.info("Informe o nome da loja.");
-    if (city.length < 2) return toast.info("Informe a cidade.");
-    if (state && state.length !== 2) return toast.info("Use a sigla do estado com 2 letras (ex.: SP).");
-    const payload = { name, city, state: state || undefined, address: form.address.trim() || undefined };
-    if (editingId) {
-      if (!online) return toast.info("Conecte-se à internet para editar a loja.");
-      void run("Salvando loja...", () => updateStore.mutateAsync({ id: editingId, name, city, state: state || "", address: form.address.trim() })).catch(() => {});
-      return;
-    }
-    if (!online) {
-      enqueueStore(payload);
-      setPendingStores(listStores());
-      toast.success("Loja salva offline. Será cadastrada quando a internet voltar.");
-      setForm({ name: "", city: "", state: "", address: "" });
-      setFormOpen(false);
-      return;
-    }
-    void run("Cadastrando loja...", () =>
-      createStore.mutateAsync(payload),
-    ).catch(() => {});
-  };
+  const closeForm = () => { setFormOpen(false); setEditingId(null); setEditingStore(null); };
+  const onStoreSaved = () => { setPendingStores(listStores()); closeForm(); void stores.refetch(); };
 
   return (
     <DashboardLayout
@@ -136,23 +100,7 @@ export default function StoresPage() {
         </div>
 
         {canCreateStore && formOpen && (
-          <section className="space-y-3 rounded-2xl border border-white/15 bg-slate-800/70 p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-white">{editingId ? "Editar loja" : "Cadastrar loja"}</h3>
-              <button type="button" onClick={closeForm} aria-label="Fechar" className="rounded-full p-1.5 text-slate-200 hover:bg-white/10">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome da loja" className="h-11 border-white/20 bg-slate-950/70 text-white placeholder:text-slate-400" />
-            <div className="grid grid-cols-[1fr_5rem] gap-2">
-              <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Cidade" className="h-11 border-white/20 bg-slate-950/70 text-white placeholder:text-slate-400" />
-              <Input value={form.state} maxLength={2} onChange={(e) => setForm({ ...form, state: e.target.value.toUpperCase() })} placeholder="UF" className="h-11 border-white/20 bg-slate-950/70 text-center text-white placeholder:text-slate-400" />
-            </div>
-            <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Endereço (opcional)" className="h-11 border-white/20 bg-slate-950/70 text-white placeholder:text-slate-400" />
-            <Button className="h-11 w-full bg-teal-400 font-bold text-slate-950 hover:bg-teal-300" onClick={submitStore}>
-              Salvar loja
-            </Button>
-          </section>
+          <StoreForm key={editingId ?? "new"} editing={editingId ? editingStore : null} onClose={closeForm} onSaved={onStoreSaved} />
         )}
 
         <div className="relative">

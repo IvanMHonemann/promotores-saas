@@ -40,11 +40,20 @@ pnpm drizzle-kit migrate
 
 ## Deploy
 
-### Vercel (atual)
+### Produção — VPS Locaweb (`gondup.com`)
 
-O `vercel.json` está configurado. Conecte o repositório na Vercel e defina as variáveis de ambiente.
+Produção roda no VPS Locaweb. Um timer no servidor verifica a branch `main` a cada ~2 minutos; se houver commit novo, reconstrói a imagem Docker e reinicia o app (~10 min de build). O site continua no ar durante o build; se o healthcheck falhar, faz rollback para a imagem anterior.
 
-### Hospedagem tradicional / ShardCloud / Docker
+- **Automático:** push/merge em `main` → o VPS detecta em até ~2 min e faz deploy sozinho.
+- **Manual:** `ssh gondup /opt/gondup/deploy.sh`
+- **Logs:** `/var/log/gondup-autodeploy.log` (detecção) e `/var/log/gondup-deploy.log` (build/restart)
+- **Health:** `https://gondup.com/healthz`
+
+### Vercel (somente testes)
+
+O `vercel.json` ainda está configurado. A Vercel continua publicando `main` automaticamente, mas serve só para testes — o domínio principal é o VPS. Atenção: por enquanto a Vercel usa o mesmo banco da produção.
+
+### Hospedagem tradicional / Docker
 
 Veja o guia completo em **[DEPLOY.md](./DEPLOY.md)**.
 

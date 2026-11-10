@@ -8,10 +8,22 @@ describe("SEO e página inicial", () => {
   it("tem description, canonical, Open Graph e Twitter Card", () => {
     for (const tag of ['name="description"', 'rel="canonical"', 'property="og:title"', 'property="og:image"', 'name="twitter:card"']) expect(html).toContain(tag);
     expect(existsSync("client/public/og-image.png")).toBe(true);
+    expect(html).toContain('href="https://gondup.com/"');
+    expect(html).toContain('content="https://gondup.com/"');
+    expect(html).toContain('content="https://gondup.com/og-image.png"');
+    expect(html).not.toContain("vercel.app");
   });
   it("robots.txt e sitemap.xml existem e não são reescritos para o app", () => {
-    expect(readFileSync("client/public/robots.txt", "utf8")).toContain("Sitemap:");
-    expect(readFileSync("client/public/sitemap.xml", "utf8")).toContain("<urlset");
+    const robots = readFileSync("client/public/robots.txt", "utf8");
+    const sitemap = readFileSync("client/public/sitemap.xml", "utf8");
+    expect(robots).toContain("Sitemap:");
+    expect(robots).toContain("https://gondup.com/sitemap.xml");
+    expect(robots).not.toContain("vercel.app");
+    expect(sitemap).toContain("<urlset");
+    expect(sitemap).toContain("https://gondup.com/");
+    expect(sitemap).toContain("https://gondup.com/termos");
+    expect(sitemap).toContain("https://gondup.com/privacidade");
+    expect(sitemap).not.toContain("vercel.app");
     const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
     const spa = vercel.rewrites.find((r: { destination: string }) => r.destination === "/index.html");
     const re = new RegExp(`^${spa.source}$`);

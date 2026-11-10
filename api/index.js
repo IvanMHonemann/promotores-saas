@@ -7994,6 +7994,9 @@ function punchOrderError(existing, change, timeZone = "America/Sao_Paulo") {
   return null;
 }
 
+// shared/personalPonto.ts
+var ADMIN_NO_PUNCH_MESSAGE = "O administrador da empresa n\xE3o registra ponto. Use as telas de ponto da equipe.";
+
 // server/modules/timeTracking.ts
 init_ledger();
 init_mirrorData();
@@ -8268,6 +8271,7 @@ var timeTrackingRouter = router({
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) throw new TRPCError7({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
+    if (ctx.user?.role === "company_admin") throw new TRPCError7({ code: "FORBIDDEN", message: ADMIN_NO_PUNCH_MESSAGE });
     if (!Number.isFinite(input.latitude) || !Number.isFinite(input.longitude) || !Number.isFinite(input.accuracy) || input.locationStatus !== "success") {
       throw new TRPCError7({ code: "BAD_REQUEST", message: "O ponto s\xF3 pode ser registrado ap\xF3s obter uma localiza\xE7\xE3o GPS v\xE1lida." });
     }
@@ -8508,6 +8512,7 @@ var timeTrackingRouter = router({
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) throw new TRPCError7({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
+    if (ctx.user?.role === "company_admin") throw new TRPCError7({ code: "FORBIDDEN", message: ADMIN_NO_PUNCH_MESSAGE });
     const database2 = await getDb();
     if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     const jType = input.justificationType || "normal";

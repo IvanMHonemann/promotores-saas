@@ -19,6 +19,7 @@ import { buildMemberReports, closedPeriodBalance } from "./timeBank";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
 import { defaultCorrectionJustification, justificationRequiresText } from "../../shared/correctionGroups";
 import { punchOrderError } from "@shared/punchOrder";
+import { ADMIN_NO_PUNCH_MESSAGE } from "@shared/personalPonto";
 import { activeDisregards, appendOriginalPunch, appendTreatment, effectiveRows, ensureDisregardsTable, ensurePunchLedger, NEW_SHIFT_MARKER, supersededIds } from "../ponto/ledger";
 import { effectiveEventTime } from "./mirrorData";
 import { clockEvidenceSchema } from "./offlineSync";
@@ -227,6 +228,7 @@ export const timeTrackingRouter = router({
       const companyId = ctx.accountId;
       const memberId = ctx.memberAccountId;
       if (!companyId || !memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário de empresa não identificado." });
+      if (ctx.user?.role === "company_admin") throw new TRPCError({ code: "FORBIDDEN", message: ADMIN_NO_PUNCH_MESSAGE });
       if (!Number.isFinite(input.latitude) || !Number.isFinite(input.longitude) || !Number.isFinite(input.accuracy) || input.locationStatus !== "success") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "O ponto só pode ser registrado após obter uma localização GPS válida." });
       }
@@ -531,6 +533,7 @@ export const timeTrackingRouter = router({
       const companyId = ctx.accountId;
       const memberId = ctx.memberAccountId;
       if (!companyId || !memberId) throw new TRPCError({ code: "FORBIDDEN", message: "Usuário de empresa não identificado." });
+      if (ctx.user?.role === "company_admin") throw new TRPCError({ code: "FORBIDDEN", message: ADMIN_NO_PUNCH_MESSAGE });
       const database = await db.getDb();
       if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
       const jType = input.justificationType || "normal";

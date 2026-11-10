@@ -111,7 +111,7 @@ export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdo
           <DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
             <a href={isCompanyAdmin ? "/banco-de-horas" : "/minha-conta#banco-de-horas"}>
               <Clock3 className="text-teal-300" />
-              Banco de horas
+              {isCompanyAdmin ? "Banco de horas da equipe" : "Banco de horas"}
             </a>
           </DropdownMenuItem>
         )}

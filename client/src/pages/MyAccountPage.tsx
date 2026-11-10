@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Clock3, KeyRound, Minus, TrendingDown, TrendingUp, UserRound } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { hasPersonalTimeClock } from "@shared/personalPonto";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,8 +31,11 @@ export default function MyAccountPage() {
     enabled: Boolean(user && !isPlatformAdmin),
   });
   const canViewTimeBank = Boolean(entitlements.data?.effective?.timeTracking);
+  // Administrador da empresa não bate ponto: sem banco de horas pessoal (só o da equipe, no menu).
+  const isCompanyAdmin = user?.role === "company_admin";
+  const showPersonalTimeBank = hasPersonalTimeClock(user?.role);
   const summary = trpc.timeTracking.myTimeSummary.useQuery(undefined, {
-    enabled: Boolean(user && !isPlatformAdmin && canViewTimeBank),
+    enabled: Boolean(user && showPersonalTimeBank && canViewTimeBank),
   });
   const changePassword = trpc.auth.changePassword.useMutation({
     onSuccess: () => {
@@ -60,8 +64,16 @@ export default function MyAccountPage() {
   }, []);
 
   return (
-    <DashboardLayout title="Minha conta" description="Confira seus dados, banco de horas e segurança de acesso.">
+    <DashboardLayout title="Minha conta" description={isCompanyAdmin || isPlatformAdmin ? "Confira seus dados e a segurança de acesso." : "Confira seus dados, banco de horas e segurança de acesso."}>
       <div className="max-w-5xl space-y-6">
+        {isCompanyAdmin ? (
+          canViewTimeBank && (
+            <a data-testid="team-time-bank-link" href="/banco-de-horas" className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm font-semibold text-teal-200 hover:bg-white/5">
+              <span className="flex items-center gap-2"><Clock3 className="h-4 w-4" /> Ver o banco de horas dos funcionários</span>
+              <span aria-hidden>→</span>
+            </a>
+          )
+        ) : (
         <section id="banco-de-horas" className="scroll-mt-6">
           {isPlatformAdmin ? (
             <Card className="border-slate-200 bg-white shadow-xl">
@@ -89,9 +101,6 @@ export default function MyAccountPage() {
                 <p className="text-sm text-slate-600">
                   Cálculo baseado nas marcações de ponto registradas neste mês. Jornada padrão considerada: 8 horas por dia com marcação.
                 </p>
-                {user?.role === "company_admin" && (
-                  <a href="/banco-de-horas" className="text-sm font-bold text-teal-700 underline">Ver o banco de horas dos funcionários</a>
-                )}
               </CardHeader>
               <CardContent>
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -125,6 +134,7 @@ export default function MyAccountPage() {
             </Card>
           )}
         </section>
+        )}
 
         <section className="space-y-3">
           <h2 className="text-lg font-bold text-white">Dados e segurança da conta</h2>

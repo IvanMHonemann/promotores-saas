@@ -4,4 +4,4 @@ Allow: /termos
 Allow: /privacidade
 Disallow: /api/
 Disallow: /admin/
-Sitemap: https://promotores-saas.vercel.app/sitemap.xml
+Sitemap: https://gondup.com/sitemap.xml

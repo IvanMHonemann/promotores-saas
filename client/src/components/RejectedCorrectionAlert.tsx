@@ -29,6 +29,7 @@ export default function RejectedCorrectionAlert() {
     refetchOnWindowFocus: true,
   });
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const next = new Set<number>();
@@ -69,14 +70,17 @@ export default function RejectedCorrectionAlert() {
   };
 
   const entries = [...groups.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  // Vários recusados: mostra só uma linha (não empurra o ponto para baixo); "Ver todos" abre a lista.
+  const collapsed = entries.length > 1 && !expanded;
   return (
     <section role="alert" className="mb-5 rounded-2xl border border-rose-400/40 bg-rose-500/10 p-3 text-rose-50">
       <div className="flex items-center gap-2">
         <XCircle className="h-5 w-5 shrink-0 text-rose-300" />
         <p className="flex-1 text-sm font-bold">{entries.length > 1 ? `${entries.length} pedidos de correção recusados` : "Pedido de correção recusado"}</p>
+        {entries.length > 1 && <button type="button" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)} className="h-11 rounded-lg px-3 text-sm font-semibold text-rose-100 underline hover:bg-rose-400/20">{expanded ? "Ocultar" : "Ver todos"}</button>}
         {entries.length > 1 && <button type="button" onClick={() => dismiss(entries.flatMap(([, items]) => items.map((i) => i.id)))} className="h-11 rounded-lg px-3 text-sm font-semibold text-rose-100 hover:bg-rose-400/20">Fechar todos</button>}
       </div>
-      <ul className="mt-1 divide-y divide-rose-300/15">
+      {!collapsed && <ul className="mt-1 divide-y divide-rose-300/15">
         {entries.map(([day, items]) => {
           const ids = items.map((item) => item.id);
           const note = items.find((item) => item.reviewNotes)?.reviewNotes;
@@ -93,7 +97,7 @@ export default function RejectedCorrectionAlert() {
             </li>
           );
         })}
-      </ul>
+      </ul>}
     </section>
   );
 }

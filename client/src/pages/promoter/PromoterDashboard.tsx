@@ -33,7 +33,7 @@ function formatVisitClock(iso: string | Date | null | undefined) {
 }
 
 export default function PromoterDashboard() {
-  const [checkIn, setCheckIn] = useState<{ action: "start" | "complete"; visitId: number; storeId: number; storeName: string; storeAddress?: string | null } | null>(null);
+  const [checkIn, setCheckIn] = useState<{ action: "start" | "complete"; visitId: number; storeId: number; storeName: string; storeAddress?: string | null; storeLatitude?: number | null; storeLongitude?: number | null } | null>(null);
   const { user } = useAuth();
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const todayParts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
@@ -185,7 +185,7 @@ export default function PromoterDashboard() {
                           toast.error(`Não é possível fazer check-in em outra loja. Realize o check-out em "${openVisit.store.name}" primeiro.`);
                           return;
                         }
-                        setCheckIn({ action: "start", visitId: visit.id, storeId: store.id, storeName: store.name, storeAddress: store.address || null });
+                        setCheckIn({ action: "start", visitId: visit.id, storeId: store.id, storeName: store.name, storeAddress: store.address || null, storeLatitude: store.latitude ?? null, storeLongitude: store.longitude ?? null });
                       }}
                       disabled={!canManageVisits || (openVisit != null && openVisit.visit.id !== visit.id)}
                     >

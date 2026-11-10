@@ -970,7 +970,7 @@ export async function createOperationalStore(input: typeof operationalStores.$in
 }
 
 /** Atualiza dados de uma loja da própria empresa. Retorna false se a loja não existir nesta empresa. */
-export async function updateOperationalStore(companyId: number, id: number, patch: Partial<Pick<typeof operationalStores.$inferInsert, "name" | "city" | "state" | "address">>) {
+export async function updateOperationalStore(companyId: number, id: number, patch: Partial<Pick<typeof operationalStores.$inferInsert, "name" | "city" | "state" | "address" | "latitude" | "longitude">>) {
   const database = await getDb();
   if (!database) throw new Error("Database not connected");
   const where = and(eq(operationalStores.id, id), eq(operationalStores.companyId, requireAccountId(companyId)), eq(operationalStores.active, true));
@@ -979,6 +979,25 @@ export async function updateOperationalStore(companyId: number, id: number, patc
   const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
   if (Object.keys(clean).length) await database.update(operationalStores).set(clean as any).where(where);
   return true;
+}
+
+/** Uma loja ativa da empresa (ou undefined). */
+export async function getOperationalStore(companyId: number, id: number) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  const rows = await database.select().from(operationalStores).where(and(eq(operationalStores.id, id), eq(operationalStores.companyId, requireAccountId(companyId)), eq(operationalStores.active, true))).limit(1);
+  return rows[0];
+}
+
+/** Lojas ativas da empresa com endereço e sem localização (para buscar a localização pelo endereço). */
+export async function listStoresMissingCoordinates(companyId: number, limit = 10) {
+  const database = await getDb();
+  if (!database) throw new Error("Database not connected");
+  return database.select({ id: operationalStores.id, name: operationalStores.name, address: operationalStores.address, city: operationalStores.city, state: operationalStores.state })
+    .from(operationalStores)
+    .where(and(eq(operationalStores.companyId, requireAccountId(companyId)), eq(operationalStores.active, true), isNull(operationalStores.latitude), sql`${operationalStores.address} IS NOT NULL AND TRIM(${operationalStores.address}) <> ''`))
+    .orderBy(operationalStores.id)
+    .limit(limit);
 }
 
 /** Desativa (arquiva) a loja: some das listas, mas fotos, visitas e histórico continuam guardados. */

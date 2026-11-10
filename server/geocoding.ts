@@ -319,3 +319,116 @@ export function __clearBrGeocodeCacheForTests() {
   brCache.clear();
   lastNominatimAt = 0;
 }
+
+// ---------------------------------------------------------------------------
+// Localização da loja a partir do endereço cadastrado (geocodificação direta).
+// Só gravamos coordenadas quando o resultado bate com o NÚMERO e a CIDADE da loja:
+// endereço vago ("Centro", rua sem número) não vira ponto no mapa, para não gerar
+// aviso falso de "longe da loja" no check-in. Sem chave paga: Nominatim (1 consulta/s,
+// User-Agent identificado) e Photon como reserva.
+// ---------------------------------------------------------------------------
+
+export type StoreAddressInput = { address?: string | null; city?: string | null; state?: string | null };
+export type StoreGeocode = { latitude: number; longitude: number; source: "nominatim" | "photon" };
+
+const forwardCache = new Map<string, { value: StoreGeocode | null; expiresAt: number }>();
+const FORWARD_BUDGET_MS = 9_000;
+
+function norm(s: unknown): string {
+  return String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function firstNumber(s: unknown): string | null {
+  const m = String(s ?? "").match(/\d+/);
+  return m ? String(Number(m[0])) : null;
+}
+
+/** Separa "Rua Vicente Celestino, 46 - Centro" em rua + número. Sem número claro → null. */
+export function splitStreetNumber(address: string | null | undefined): { street: string; number: string } | null {
+  const first = String(address ?? "").split(/\s[-–]\s/)[0].trim();
+  const m = first.match(/^(.*?)(?:,\s*|\bn[º°o]\.?\s*|\s)(\d{1,5})\s*[a-z]?\s*$/i);
+  if (!m) return null;
+  const street = m[1].replace(/[,\s]+$/, "").trim();
+  if (street.length < 3 || !/[a-zà-ú]/i.test(street)) return null;
+  return { street, number: String(Number(m[2])) };
+}
+
+type Candidate = { lat: number; lng: number; number: string | null; city: string };
+
+function matches(c: Candidate, number: string, city: string) {
+  return c.number === number && norm(c.city) === norm(city) && Number.isFinite(c.lat) && Number.isFinite(c.lng);
+}
+
+async function nominatimSearch(params: Record<string, string>, fetchImpl: typeof fetch): Promise<Candidate[]> {
+  const run = nominatimQueue.then(async () => {
+    const wait = 1100 - (Date.now() - lastNominatimAt);
+    if (wait > 0) await delay(wait);
+    lastNominatimAt = Date.now();
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    for (const [k, v] of Object.entries({ ...params, format: "jsonv2", addressdetails: "1", limit: "3", countrycodes: "br", "accept-language": "pt-BR", email: "contato@gondup.com.br" })) url.searchParams.set(k, v);
+    const res = await fetchImpl(url.toString(), { headers: { accept: "application/json", "user-agent": NOMINATIM_UA }, signal: AbortSignal.timeout(6_000) });
+    if (!res.ok) { console.warn(`[geocoding] Nominatim busca HTTP ${res.status}`); return []; }
+    const data = (await res.json()) as Array<{ lat?: string; lon?: string; address?: Record<string, string> }>;
+    return (Array.isArray(data) ? data : []).map((r) => ({
+      lat: Number(r.lat), lng: Number(r.lon),
+      number: firstNumber(r.address?.house_number),
+      city: r.address?.city || r.address?.town || r.address?.municipality || r.address?.village || "",
+    }));
+  });
+  nominatimQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+async function photonSearch(q: string, fetchImpl: typeof fetch): Promise<Candidate[]> {
+  const url = new URL("https://photon.komoot.io/api/");
+  url.searchParams.set("q", q);
+  url.searchParams.set("limit", "5");
+  const res = await fetchImpl(url.toString(), { headers: { accept: "application/json", "user-agent": NOMINATIM_UA }, signal: AbortSignal.timeout(5_000) });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { features?: Array<{ geometry?: { coordinates?: [number, number] }; properties?: Record<string, string> }> };
+  return (data.features || [])
+    .filter((f) => String(f.properties?.countrycode || "").toUpperCase() === "BR")
+    .map((f) => ({ lat: Number(f.geometry?.coordinates?.[1]), lng: Number(f.geometry?.coordinates?.[0]), number: firstNumber(f.properties?.housenumber), city: f.properties?.city || "" }));
+}
+
+/**
+ * Coordenadas da loja pelo endereço. Nunca lança erro: qualquer falha vira null (a loja só fica sem aviso de distância).
+ */
+export async function geocodeStoreAddress(input: StoreAddressInput, fetchImpl: typeof fetch = fetch): Promise<StoreGeocode | null> {
+  const parts = splitStreetNumber(input.address);
+  const city = String(input.city ?? "").trim();
+  if (!parts || city.length < 2) return null;
+  const state = String(input.state ?? "").trim();
+  const key = norm(`${parts.street}|${parts.number}|${city}|${state}`);
+  const hit = forwardCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+
+  const started = Date.now();
+  const attempts: Array<() => Promise<{ list: Candidate[]; source: StoreGeocode["source"] }>> = [
+    async () => ({ source: "nominatim", list: await nominatimSearch({ street: `${parts.number} ${parts.street}`, city, ...(state ? { state } : {}), country: "Brasil" }, fetchImpl) }),
+    async () => ({ source: "nominatim", list: await nominatimSearch({ q: `${parts.street}, ${parts.number}, ${city}${state ? `, ${state}` : ""}, Brasil` }, fetchImpl) }),
+    async () => ({ source: "photon", list: await photonSearch(`${parts.street} ${parts.number} ${city}${state ? ` ${state}` : ""}`, fetchImpl) }),
+  ];
+  let value: StoreGeocode | null = null;
+  let anyAnswered = false;
+  for (const attempt of attempts) {
+    if (Date.now() - started > FORWARD_BUDGET_MS) break;
+    try {
+      const { list, source } = await attempt();
+      anyAnswered = true;
+      const found = list.find((c) => matches(c, parts.number, city));
+      if (found) { value = { latitude: found.lat, longitude: found.lng, source }; break; }
+    } catch (error) {
+      console.warn("[geocoding] busca do endereço da loja falhou", error instanceof Error ? error.name : "erro");
+    }
+  }
+  // Só guarda em cache respostas reais (falha de rede não "decide" que o endereço não existe).
+  if (value || anyAnswered) forwardCache.set(key, { value, expiresAt: Date.now() + BR_TTL_MS });
+  return value;
+}
+
+/** Só para testes. */
+export function __clearStoreGeocodeCacheForTests() {
+  forwardCache.clear();
+  lastNominatimAt = 0;
+}

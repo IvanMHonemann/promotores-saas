@@ -5307,7 +5307,7 @@ async function findMissingPunches(opts = {}) {
     if (lt7.date < now.date) reason = "previous_day";
     else {
       const limit = endByMember.get(e.memberAccountId) || limitByCompany.get(e.companyId) || "";
-      if (limit && now.hm >= limit) reason = "past_end_time";
+      if (limit && now.hm >= limit && lt7.hm < limit) reason = "past_end_time";
     }
     if (!reason) continue;
     out.push({ memberId: e.memberAccountId, companyId: e.companyId, name: member.name, email: member.email, lastType: e.eventType, lastLabel: LABEL[e.eventType] ?? e.eventType, missing: NEXT[e.eventType] ?? "Sa\xEDda", lastTime: e.t.toISOString(), day: lt7.date, reason });

@@ -60,7 +60,10 @@ export async function findMissingPunches(opts: { companyId?: number; memberId?: 
     if (lt.date < now.date) reason = "previous_day";
     else {
       const limit = endByMember.get(e.memberAccountId) || limitByCompany.get(e.companyId) || "";
-      if (limit && now.hm >= limit) reason = "past_end_time";
+      // Só alerta no mesmo dia se a última batida foi ANTES do horário limite. Quem voltou a trabalhar
+      // depois do limite (ex.: entrada às 20:42 com limite 18:00) não recebe "falta batida" um minuto depois;
+      // se esquecer a saída, o alerta aparece no dia seguinte (previous_day).
+      if (limit && now.hm >= limit && lt.hm < limit) reason = "past_end_time";
     }
     if (!reason) continue;
     out.push({ memberId: e.memberAccountId, companyId: e.companyId, name: member.name, email: member.email, lastType: e.eventType, lastLabel: LABEL[e.eventType] ?? e.eventType, missing: NEXT[e.eventType] ?? "Saída", lastTime: e.t.toISOString(), day: lt.date, reason });

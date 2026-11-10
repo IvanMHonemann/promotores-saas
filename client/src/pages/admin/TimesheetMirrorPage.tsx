@@ -11,6 +11,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { MIRROR_HEADERS, mirrorRows, totalsLines } from "@shared/timesheetMirror";
 import { buildMirrorHtml, buildMirrorPdf, buildMirrorXlsx, companyLines, download, fileBase, memberLines, periodLabel, shareOrDownload, stamp, LEGEND, DISCLAIMER, type MirrorData } from "@/lib/mirrorExport";
+import { todayInZone } from "@shared/expiry";
 
 const field = "mt-1 border-white/15 bg-slate-950/60 text-white";
 const select = "mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white";
@@ -25,11 +26,11 @@ const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 export default function TimesheetMirrorPage() {
   const { run } = useBusy();
   const utils = trpc.useUtils();
-  const nowMonth = new Date().toISOString().slice(0, 7);
+  const nowMonth = todayInZone().slice(0, 7);
   const [who, setWho] = useState<string>("all"); // "all" | id
   const [mode, setMode] = useState<"month" | "custom">("month");
   const [month, setMonth] = useState(nowMonth);
-  const [custom, setCustom] = useState({ from: `${nowMonth}-01`, to: new Date().toISOString().slice(0, 10) });
+  const [custom, setCustom] = useState({ from: `${nowMonth}-01`, to: todayInZone() });
   const [request, setRequest] = useState<{ memberIds?: number[]; from: string; to: string } | null>(null);
   const [consolidated, setConsolidated] = useState(false);
   const [showSettings, setShowSettings] = useState(false);

@@ -8,6 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 import { formatGroupedCorrectionTitle, groupCorrectionItems } from "@shared/correctionGroups";
+import { todayInZone } from "@shared/expiry";
 
 /** "2026-11" → "novembro de 2026". */
 function monthLabel(ym: string) {
@@ -20,7 +21,7 @@ const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Inte
 
 export default function TimesheetPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(() => todayInZone().slice(0, 7));
   const [autoTime, setAutoTime] = useState("");
   const autoSetting = trpc.settings.getAutoClockOut.useQuery(undefined, { staleTime: 60000 });
   const setAuto = trpc.settings.setAutoClockOut.useMutation({ onSuccess: () => toast.success("Horário salvo.") });

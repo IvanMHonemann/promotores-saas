@@ -15,6 +15,7 @@ import { buildZip } from "@/lib/zip";
 import { canShareFiles, splitShareBatches } from "@/lib/shareFiles";
 import { confirmAction } from "@/components/ConfirmDialog";
 import { toastWithUndo } from "@/lib/undoTrash";
+import { todayInZone } from "@shared/expiry";
 
 const SHARE_BATCH_SIZE = 10;
 const FETCH_CONCURRENCY = 4;
@@ -180,7 +181,7 @@ export default function StoreGalleryPage() {
   // Sem resposta da rede, usa a lista de lojas salva neste aparelho.
   const store = stores.data?.find((s) => s.id === storeId) ?? cacheGet<any[]>("stores")?.find((s) => s.id === storeId);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInZone();
   const entitlements = trpc.entitlements.mine.useQuery(undefined, { staleTime: 60_000 });
   const hasVisitCheckIn = Boolean(entitlements.data?.effective?.visitCheckIn);
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { staleTime: 15000, enabled: hasVisitCheckIn });

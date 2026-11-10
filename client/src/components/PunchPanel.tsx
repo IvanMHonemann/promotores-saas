@@ -296,7 +296,7 @@ export function PunchPanel() {
                 disabled={busy}
                 className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-rose-300/50 bg-rose-400/10 text-sm font-bold text-rose-100 transition hover:bg-rose-400/20 disabled:opacity-60"
               >
-                <LogOut className="h-4 w-4" /> Encerrar jornada
+                <LogOut className="h-4 w-4" /> Bater saída (sem intervalo)
               </button>
             )}
           </div>

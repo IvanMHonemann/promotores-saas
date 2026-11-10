@@ -15,6 +15,14 @@ ENV VITE_SENTRY_DSN=${VITE_SENTRY_DSN}
 ENV VITE_SENTRY_ENVIRONMENT=${VITE_SENTRY_ENVIRONMENT}
 RUN NODE_OPTIONS=--max-old-space-size=${BUILD_MAX_OLD_SPACE} pnpm run build
 
+# Só os arquivos prontos do build. O GitHub Actions extrai este estágio (--target artifact) e publica na
+# branch build/main; o servidor só instala e reinicia (Dockerfile.prebuilt), sem compilar na VPS.
+FROM scratch AS artifact
+COPY --from=build /app/dist /dist
+COPY --from=build /app/drizzle /drizzle
+COPY --from=build /app/scripts /scripts
+COPY --from=build /app/package.json /app/pnpm-lock.yaml /
+
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production

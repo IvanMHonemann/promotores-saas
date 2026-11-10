@@ -1,0 +1,62 @@
+# Compila o GondUp aqui no GitHub (rápido) em vez de na VPS de 2 GB, onde o build levava 12–16 min
+# usando toda a memória e deixava o site lento para todo mundo durante cada atualização.
+# Resultado: branch build/main com os arquivos prontos + BUILD_SHA (commit de origem).
+# A VPS (auto-deploy) só instala esse build quando BUILD_SHA == main; se não chegar em 25 min, compila lá como antes.
+name: Build de produção
+
+on:
+  push:
+    branches: [main]
+  # Em PR só compila e confere (não publica), para pegar erro de build antes do merge.
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-producao-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (mesmo Dockerfile da VPS)
+        env:
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_SENTRY_ENVIRONMENT: ${{ vars.VITE_SENTRY_ENVIRONMENT }}
+        run: |
+          docker buildx build --target artifact \
+            --build-arg VITE_SENTRY_DSN \
+            --build-arg VITE_SENTRY_ENVIRONMENT \
+            --cache-from type=gha --cache-to type=gha,mode=max \
+            --output type=local,dest=out .
+
+      - name: Confere o build
+        run: |
+          test -s out/dist/index.js
+          test -s out/dist/public/index.html
+          test -s out/dist/public/sw.js
+          ! grep -q '__BUILD_ID__' out/dist/public/sw.js
+
+      - name: Publica na branch build/main
+        if: github.event_name != 'pull_request'
+        run: |
+          cp Dockerfile.prebuilt out/Dockerfile
+          echo "${GITHUB_SHA}" > out/BUILD_SHA
+          # Esta branch não é um app para a Vercel publicar.
+          printf '{"git":{"deploymentEnabled":false}}\n' > out/vercel.json
+          cd out
+          git init -q -b build/main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "build de ${GITHUB_SHA}"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:refs/heads/build/main

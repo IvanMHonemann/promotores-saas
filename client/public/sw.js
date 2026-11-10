@@ -15,7 +15,15 @@ self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL_CACHE);
     // Uma falha isolada (ex.: imagem grande) não impede a instalação.
-    await Promise.allSettled(["/", ...PRECACHE].map((url) => cache.add(new Request(url, { cache: "reload" }))));
+    // Arquivos de /assets/ têm o hash do conteúdo no nome (nunca mudam): se a versão anterior já os salvou,
+    // reaproveita a cópia em vez de baixar tudo de novo a cada atualização (só os arquivos novos vão à rede).
+    await Promise.allSettled(["/", ...PRECACHE].map(async (url) => {
+      if (url.startsWith("/assets/")) {
+        const saved = await caches.match(url);
+        if (saved && saved.ok) return cache.put(url, saved);
+      }
+      return cache.add(new Request(url, { cache: "reload" }));
+    }));
     // Primeira instalação (nenhuma versão ativa): assume já. Atualização: espera o usuário aceitar.
     if (!self.registration.active) await self.skipWaiting();
   })());

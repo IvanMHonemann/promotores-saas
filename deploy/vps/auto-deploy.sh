@@ -57,7 +57,7 @@ fi
 MODE=local
 WAIT_FILE=/opt/gondup/.waiting-build
 PREBUILT_SHA=""
-if git -C "$APP" fetch --quiet origin build/main 2>/dev/null; then
+if git -C "$APP" fetch --quiet origin +refs/heads/build/main:refs/remotes/origin/build/main 2>/dev/null; then
   PREBUILT_SHA="$(git -C "$APP" show origin/build/main:BUILD_SHA 2>/dev/null | tr -d '[:space:]' || true)"
 fi
 if [[ "$PREBUILT_SHA" == "$REMOTE_SHA" ]]; then

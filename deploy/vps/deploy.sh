@@ -29,7 +29,7 @@ build_local() { docker compose build app; }
 if [[ "$MODE" == "prebuilt" ]]; then
   PRE=/opt/gondup/prebuilt
   rm -rf "$PRE" && mkdir -p "$PRE"
-  git -C app fetch --quiet origin build/main
+  git -C app fetch --quiet origin +refs/heads/build/main:refs/remotes/origin/build/main
   git -C app archive origin/build/main | tar -x -C "$PRE"
   PRE_SHA="$(tr -d '[:space:]' < "$PRE/BUILD_SHA" 2>/dev/null || true)"
   if [[ "$PRE_SHA" == "$NEW_SHA" && -s "$PRE/dist/index.js" && -s "$PRE/Dockerfile" ]]; then

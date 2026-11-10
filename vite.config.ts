@@ -49,7 +49,8 @@ function pwaPrecachePlugin(): Plugin {
         const m = manifest[key];
         set.add("/" + m.file);
         for (const c of m.css || []) set.add("/" + c);
-        for (const asset of m.assets || []) if (!/\.(ttf|woff)$/.test(asset)) set.add("/" + asset);
+        // Vídeos da landing e fontes: não entram no precache do app (pesam e não são usados no dia a dia).
+        for (const asset of m.assets || []) if (!/\.(ttf|woff|mp4|webm)$/.test(asset)) set.add("/" + asset);
         for (const i of m.imports || []) visit(i);
         if (!key.includes("node_modules") && !key.startsWith("_")) for (const d of m.dynamicImports || []) visit(d);
       };

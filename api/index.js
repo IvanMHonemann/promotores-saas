@@ -3433,7 +3433,7 @@ async function listPromoterActivities(filters) {
       ma.userName, ma.email AS userEmail, COALESCE(tc.reviewedAt, tc.createdAt) AS occurredAt,
       'corrections' AS module, tc.status AS action, 'time_correction' AS entityType,
       CONCAT('Solicita\xE7\xE3o #', tc.id) AS entityLabel,
-      CONCAT('Solicita\xE7\xE3o de corre\xE7\xE3o de ponto \xB7 ', tc.status) AS description,
+      CONCAT('Solicita\xE7\xE3o de corre\xE7\xE3o de ponto \xB7 ', CASE tc.status WHEN 'pending' THEN 'pendente' WHEN 'approved' THEN 'aprovada' WHEN 'rejected' THEN 'recusada' ELSE tc.status END) AS description,
       JSON_OBJECT('marca\xE7\xE3o solicitada', tc.requestedType, 'hor\xE1rio solicitado', tc.requestedTime, 'justificativa', tc.justification, 'situa\xE7\xE3o', tc.status, 'observa\xE7\xF5es da revis\xE3o', tc.reviewNotes, 'solicitado em', tc.createdAt, 'revisado em', tc.reviewedAt, 'revisor (ID)', tc.reviewedByUserId) AS details
     FROM time_correction_requests tc INNER JOIN member_accounts ma ON ma.id = tc.memberAccountId AND ma.companyId = tc.companyId
     WHERE tc.companyId = ? AND ma.role NOT IN ('company_admin', 'admin', 'supervisor')

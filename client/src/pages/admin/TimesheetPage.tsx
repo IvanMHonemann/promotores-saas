@@ -9,6 +9,13 @@ import { toast } from "sonner";
 import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 import { formatGroupedCorrectionTitle, groupCorrectionItems } from "@shared/correctionGroups";
 
+/** "2026-11" → "novembro de 2026". */
+function monthLabel(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return ym;
+  return new Date(y, m - 1, 15).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+}
+
 const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Intervalo", break_end: "Retorno", clock_out: "Saída" };
 
 export default function TimesheetPage() {
@@ -62,6 +69,7 @@ export default function TimesheetPage() {
                 </button>
               ))}
               {!promoters.data?.length && <p className="text-sm text-slate-400">Nenhum promotor cadastrado.</p>}
+              {!!promoters.data?.length && !selectedId && <p className="pt-1 text-sm text-slate-300">Toque em um promotor para ver as marcações do mês.</p>}
             </CardContent>
           </Card>
           <Card className="border-white/10 bg-slate-900/70 text-white">
@@ -75,7 +83,7 @@ export default function TimesheetPage() {
 
         {selectedId && (
           <Card className="border-white/10 bg-slate-900/70 text-white">
-            <CardHeader><CardTitle className="text-base">Marcações de {month}</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Marcações de {monthLabel(month)}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               {history.isLoading && <p className="text-sm text-slate-400">Carregando...</p>}
               {!history.isLoading && byDay.length === 0 && !excuses.data?.length && <p className="text-sm text-slate-400">Nenhuma marcação neste mês.</p>}

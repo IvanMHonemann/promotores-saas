@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 
+const VISIT_STATUS_LABEL: Record<string, string> = { pending: "Pendente", in_progress: "Em andamento", completed: "Concluída", not_done: "Não realizada", cancelled: "Cancelada" };
+
 const fmt = (iso: string | Date | null) => iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
 
 function PhotoThumb({ photoId, label }: { photoId: number; label: string }) {
@@ -137,7 +139,7 @@ export default function CheckInOutPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between text-base text-white">
                   <span>{store.name}</span>
-                  <Badge variant="outline" className="border-white/20">{visit.status}</Badge>
+                  <Badge variant="outline" className="border-white/20">{VISIT_STATUS_LABEL[visit.status] || visit.status}</Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">

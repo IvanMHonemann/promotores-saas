@@ -78,7 +78,8 @@ Sem `RESEND_API_KEY` / webhook, e-mails não saem (ficam no log).
 | Variável | Para quê |
 |----------|----------|
 | `SENTRY_DSN` | Ativa Sentry no **servidor** |
-| `VITE_SENTRY_DSN` | Ativa Sentry no **navegador** (precisa rebuild) |
+| `VITE_SENTRY_DSN` | Ativa Sentry no **navegador** (precisa rebuild). No Docker é *build arg*: o `docker-compose.yml` lê do `.env` ao lado dele (`build.args`). |
+| `VITE_SENTRY_ENVIRONMENT` | Ambiente no navegador (ex.: `production`), também *build arg* |
 | `SENTRY_ENVIRONMENT` | Ex.: `production` |
 | `SENTRY_TRACES_SAMPLE_RATE` | Padrão `0.05` |
 

@@ -18,11 +18,13 @@ import { useLocation } from "wouter";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import ContactChat from "@/components/ContactChat";
+import LandingPromoVideo from "@/components/LandingPromoVideo";
 import FloatingContactButton from "@/components/FloatingContactButton";
 import { useEffect, useState } from "react";
 
 
 const navLinks = [
+  { href: "#video", label: "Vídeo" },
   { href: "#recursos", label: "Recursos" },
   { href: "#operacao", label: "Operação" },
   { href: "#perfis", label: "Perfis" },
@@ -277,6 +279,8 @@ export default function LandingPage() {
           ))}
         </div>
       </section>
+
+      <LandingPromoVideo />
 
       <section id="recursos" className="relative z-10 mx-auto max-w-6xl px-5 py-20 sm:px-8">
         <p className="text-xs font-bold uppercase tracking-[0.22em] text-teal-300">Recursos</p>

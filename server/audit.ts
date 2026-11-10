@@ -516,7 +516,7 @@ export async function listPromoterActivities(filters: PromoterActivityFilters) {
       ma.userName, ma.email AS userEmail, COALESCE(tc.reviewedAt, tc.createdAt) AS occurredAt,
       'corrections' AS module, tc.status AS action, 'time_correction' AS entityType,
       CONCAT('Solicitação #', tc.id) AS entityLabel,
-      CONCAT('Solicitação de correção de ponto · ', tc.status) AS description,
+      CONCAT('Solicitação de correção de ponto · ', CASE tc.status WHEN 'pending' THEN 'pendente' WHEN 'approved' THEN 'aprovada' WHEN 'rejected' THEN 'recusada' ELSE tc.status END) AS description,
       JSON_OBJECT('marcação solicitada', tc.requestedType, 'horário solicitado', tc.requestedTime, 'justificativa', tc.justification, 'situação', tc.status, 'observações da revisão', tc.reviewNotes, 'solicitado em', tc.createdAt, 'revisado em', tc.reviewedAt, 'revisor (ID)', tc.reviewedByUserId) AS details
     FROM time_correction_requests tc INNER JOIN member_accounts ma ON ma.id = tc.memberAccountId AND ma.companyId = tc.companyId
     WHERE tc.companyId = ? AND ma.role NOT IN ('company_admin', 'admin', 'supervisor')

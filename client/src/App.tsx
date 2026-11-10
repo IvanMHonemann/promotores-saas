@@ -175,7 +175,8 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
     return <>{children}</>;
   }
 
-  if (access.isLoading) return <LoadingScreen />;
+  // Offline a consulta fica "pausada" (isLoading eterno): segue com a cópia salva no aparelho (ou mostra "Sem conexão"), em vez de girar para sempre.
+  if (access.isLoading && isOnline()) return <LoadingScreen />;
 
   if (access.error && isUnauthorizedError(access.error)) {
     localStorage.removeItem("promotores-saas-auth-user");

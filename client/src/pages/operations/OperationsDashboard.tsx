@@ -13,6 +13,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 import { formatGroupedCorrectionTitle, groupCorrectionItems } from "@shared/correctionGroups";
 import RoutesSection from "./RoutesSection";
+import { confirmWithInput } from "@/components/ConfirmDialog";
 import SetupChecklist, { AttentionCard, buildSetupSteps } from "@/components/SetupChecklist";
 
 type Section = "overview" | "routes" | "visits";
@@ -101,10 +102,10 @@ export default function OperationsDashboard() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  const approve = (id: number, status: "approved" | "rejected") => review.mutate({ id, status, reviewNotes: reviewNotes[id]?.trim() || undefined });
+  const approve = (id: number, status: "approved" | "rejected", notesOverride?: string) => review.mutate({ id, status, reviewNotes: (notesOverride ?? reviewNotes[id])?.trim() || undefined });
   const [approving, setApproving] = useState(false);
-  const approveMany = async (ids: number[], status: "approved" | "rejected") => {
-    const notes = reviewNotes[ids[0]]?.trim() || undefined;
+  const approveMany = async (ids: number[], status: "approved" | "rejected", notesOverride?: string) => {
+    const notes = (notesOverride ?? reviewNotes[ids[0]])?.trim() || undefined;
     setApproving(true);
     try {
       for (const id of ids) {
@@ -373,9 +374,12 @@ function CorrectionCard({ corrections = [], reviewNotes, setReviewNotes, approve
                   if (ids.length > 1 && approveMany) void approveMany(ids, "approved");
                   else ids.forEach((id: number) => approve(id, "approved"));
                 }} disabled={reviewPending}>{reviewPending ? "Aguarde..." : "Aprovar"}</Button>
-                <Button type="button" size="sm" variant="outline" className="cursor-pointer" onClick={() => {
-                  if (ids.length > 1 && approveMany) void approveMany(ids, "rejected");
-                  else ids.forEach((id: number) => approve(id, "rejected"));
+                <Button type="button" size="sm" variant="outline" className="cursor-pointer" onClick={async () => {
+                  // Confirmação antes de recusar (um toque sem querer não recusa mais); o motivo é opcional e o promotor vê.
+                  const reason = await confirmWithInput({ title: "Recusar este pedido de correção?", description: "O promotor verá que o pedido foi recusado e o motivo, se você escrever.", confirmLabel: "Recusar", input: { label: "Motivo (opcional)", placeholder: "Ex.: horário não confere com o roteiro", initial: reviewNotes[ids[0]] || "" } });
+                  if (reason === null) return;
+                  if (ids.length > 1 && approveMany) void approveMany(ids, "rejected", reason);
+                  else ids.forEach((id: number) => approve(id, "rejected", reason));
                 }} disabled={reviewPending}>{reviewPending ? "Aguarde..." : "Recusar"}</Button>
               </div>
             </div>

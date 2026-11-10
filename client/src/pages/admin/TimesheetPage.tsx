@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 import { formatGroupedCorrectionTitle, groupCorrectionItems } from "@shared/correctionGroups";
 import { todayInZone } from "@shared/expiry";
+import { confirmWithInput } from "@/components/ConfirmDialog";
 
 /** "2026-11" → "novembro de 2026". */
 function monthLabel(ym: string) {
@@ -182,7 +183,12 @@ export default function TimesheetPage() {
                       <Button size="sm" className="bg-emerald-500 text-white hover:bg-emerald-400" disabled={review.isPending || reviewMany.isPending} onClick={() => ids.length > 1 ? reviewMany.mutate({ ids, status: "approved" }) : review.mutate({ id: ids[0], status: "approved" })}>
                         <Check className="mr-1 h-3.5 w-3.5" /> Aprovar
                       </Button>
-                      <Button size="sm" variant="outline" className="border-rose-300/40 text-rose-200" disabled={review.isPending || reviewMany.isPending} onClick={() => ids.length > 1 ? reviewMany.mutate({ ids, status: "rejected" }) : review.mutate({ id: ids[0], status: "rejected" })}>
+                      <Button size="sm" variant="outline" className="border-rose-300/40 text-rose-200" disabled={review.isPending || reviewMany.isPending} onClick={async () => {
+                        const reason = await confirmWithInput({ title: "Recusar este pedido de correção?", description: "O promotor verá que o pedido foi recusado e o motivo, se você escrever.", confirmLabel: "Recusar", input: { label: "Motivo (opcional)", placeholder: "Ex.: horário não confere com o roteiro" } });
+                        if (reason === null) return;
+                        const reviewNotes = reason || undefined;
+                        if (ids.length > 1) reviewMany.mutate({ ids, status: "rejected", reviewNotes }); else review.mutate({ id: ids[0], status: "rejected", reviewNotes });
+                      }}>
                         <X className="mr-1 h-3.5 w-3.5" /> Recusar
                       </Button>
                     </div>

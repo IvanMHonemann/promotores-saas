@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   Clock3,
   Fingerprint,
+  Instagram,
   MapPinned,
   Radio,
   Route,
@@ -14,7 +15,6 @@ import {
   Users,
   WifiOff,
 } from "lucide-react";
-import { Instagram } from "lucide-react";
 import { useLocation } from "wouter";
 import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
@@ -378,6 +378,7 @@ export default function LandingPage() {
           <details className="group rounded-2xl border border-white/10 bg-white/[0.035] p-5 open:border-teal-300/30">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-bold text-white">
               Quanto custa?
+              <span className="text-teal-300 transition group-open:rotate-45" aria-hidden>+</span>
             </summary>
             <p className="mt-3 text-sm leading-6 text-slate-300">
               Planos sob medida conforme o tamanho da equipe.{" "}
@@ -408,19 +409,21 @@ export default function LandingPage() {
 
       <footer className="relative z-10 border-t border-white/8 px-5 pb-28 pt-8 sm:pb-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-300 sm:flex-row">
-          <BrandLogo variant="dark" height={28} />
-          <p>GondUp · Gestão inteligente de equipes de campo</p>
-          <div className="flex gap-5 items-center">
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
+            <BrandLogo variant="dark" height={28} />
             <a
               href="https://instagram.com/gondup.app"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 hover:text-white"
-              aria-label="Instagram @gondup.app"
+              aria-label="Instagram do GondUp (@gondup.app)"
+              className="inline-flex items-center gap-1.5 text-slate-400 transition hover:text-white"
             >
-              <Instagram className="h-4 w-4" />
-              @gondup.app
+              <Instagram className="h-4 w-4" aria-hidden="true" />
+              <span>@gondup.app</span>
             </a>
+          </div>
+          <p>GondUp · Gestão inteligente de equipes de campo</p>
+          <div className="flex flex-wrap items-center justify-center gap-5">
             <button className="hover:text-white" onClick={() => navigate("/login")}>Entrar</button>
             <button className="hover:text-white" onClick={() => navigate("/termos")}>Termos de Uso</button>
             <button className="hover:text-white" onClick={() => navigate("/privacidade")}>Privacidade</button>

@@ -64,12 +64,15 @@ export default function ProductsPage() {
   const filters = { search: debouncedSearch || undefined, expiry, storeId: storeFilter, clientName: industryFilter || undefined, from: from || undefined, to: to || undefined, mine: mine || undefined };
   useEffect(() => { setPage(1); }, [debouncedSearch, expiry, storeFilter, industryFilter, from, to, mine]);
 
-  const [form, setForm] = useState(blank);
+  // Atalho do roteiro: /produtos?loja=ID&novo=1 já abre o cadastro com a loja da visita.
+  const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const urlStoreId = urlParams?.get("loja") && /^\d+$/.test(urlParams.get("loja")!) ? urlParams.get("loja")! : "";
+  const [form, setForm] = useState(() => (urlStoreId ? { ...blank, storeId: urlStoreId } : blank));
   const [requestId, setRequestId] = useState(newRequestId);
   const [photo, setPhoto] = useState<{ base64: string; preview: string } | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(() => Boolean(urlStoreId && urlParams?.get("novo") === "1"));
   const [sequential, setSequential] = useState(true);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState("");

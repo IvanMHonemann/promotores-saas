@@ -44,7 +44,7 @@ jobs:
           test -s out/dist/index.js
           test -s out/dist/public/index.html
           test -s out/dist/public/sw.js
-          ! grep -q '__BUILD_ID__' out/dist/public/sw.js
+          ! grep -q 'const BUILD_ID = "__BUILD_ID__"' out/dist/public/sw.js
 
       - name: Publica na branch build/main
         if: github.event_name != 'pull_request'

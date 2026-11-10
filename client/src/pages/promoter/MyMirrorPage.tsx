@@ -122,7 +122,32 @@ export default function MyMirrorPage() {
                   <div className="rounded-lg bg-white/5 p-2"><p className="text-xs text-slate-400">Saldo</p><p className="font-bold">{fmtMinutes(data.report.totals.balanceMinutes)}</p></div>
                   <div className="rounded-lg bg-white/5 p-2"><p className="text-xs text-slate-400">Marcações ajustadas</p><p className="font-bold">{data.report.totals.adjustedMarks}</p></div>
                 </div>
-                <div className="overflow-x-auto">
+                {/* Celular: um cartão por dia (mesmos dados da tabela; o PDF e os arquivos legais não mudam). */}
+                <ul className="space-y-2 sm:hidden" aria-label="Dias do mês">
+                  {data.report.days.map((d: any) => {
+                    const obs = [d.holiday, d.excuse?.label, d.vacation ? "Férias" : null, ...(d.issues || []), (d as any).disregarded?.length ? `Desconsiderada(s) pela empresa: ${(d as any).disregarded.map((m: any) => `${hhmm(m.time)} — ${m.reason}`).join(", ")}` : null].filter(Boolean).join(" · ");
+                    const weekday = new Date(`${String(d.date).slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+                    return (
+                      <li key={d.date} className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-bold text-white"><span className="capitalize text-slate-400">{weekday}</span> {brDate(d.date)}</p>
+                          <p className="text-sm font-bold tabular-nums text-teal-200">{fmtMinutes(d.workedMinutes)}</p>
+                        </div>
+                        {d.marks.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {d.marks.map((m: any, i: number) => (
+                              <span key={i} className={`rounded-lg bg-white/5 px-2 py-1 text-xs ${m.kind === "adjusted" ? "text-amber-200" : "text-slate-100"}`} title={m.originalTime ? `Original: ${hhmm(m.originalTime)} — ${m.justification || ""}` : undefined}>
+                                {m.label.split(" ")[0]} <strong className="tabular-nums">{hhmm(m.time)}</strong>{m.kind === "adjusted" ? "*" : ""}{m.kind === "automatic" ? "A" : ""}{m.offline ? <span className="ml-0.5 text-sky-300">(offline)</span> : null}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {obs && <p className="mt-2 text-xs leading-5 text-slate-300">{obs}</p>}
+                      </li>
+                    );
+                  })}
+                </ul>
+                <div className="hidden overflow-x-auto sm:block">
                   <table className="w-full text-left text-xs">
                     <thead className="text-slate-400"><tr><th className="p-1">Dia</th><th className="p-1">Marcações</th><th className="p-1">Trabalhado</th><th className="p-1">Observações</th></tr></thead>
                     <tbody>

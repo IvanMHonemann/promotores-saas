@@ -48,6 +48,50 @@ const PlatformAuditPage = lazy(() => import("./pages/platform/PlatformAuditPage"
 const PlatformUsersPage = lazy(() => import("./pages/platform/PlatformUsersPage"));
 const PlatformCheckInOutTestPage = lazy(() => import("./pages/platform/PlatformCheckInOutTestPage"));
 const PaymentRequiredPage = lazy(() => import("./pages/PaymentRequiredPage"));
+
+/**
+ * Abertura mais rápida: já começa a baixar a tela da rota atual enquanto o login/assinatura/módulos são
+ * confirmados (antes a tela só começava a carregar depois dessas 2–3 consultas, uma atrás da outra).
+ * Mesmos import() das telas acima: o navegador reaproveita o mesmo arquivo, nada é baixado duas vezes.
+ */
+const ROUTE_PRELOADS: Array<[RegExp, () => Promise<unknown>]> = [
+  [/^\/produtos/, () => import("./pages/ProductsPage")],
+  [/^\/lojas\/./, () => import("./pages/StoreGalleryPage")],
+  [/^\/lojas/, () => import("./pages/StoresPage")],
+  [/^\/lixeira/, () => import("./pages/TrashPage")],
+  [/^\/ponto-legal/, () => import("./pages/admin/PontoLegalPage")],
+  [/^\/ponto/, () => import("./pages/promoter/PromoterClockPage")],
+  [/^\/espelho-ponto/, () => import("./pages/admin/TimesheetMirrorPage")],
+  [/^\/banco-de-horas/, () => import("./pages/admin/TeamTimeBankPage")],
+  [/^\/arquivos-historicos/, () => import("./pages/admin/TimesheetArchivePage")],
+  [/^\/check-in-out/, () => import("./pages/admin/CheckInOutPage")],
+  [/^\/cartao-ponto/, () => import("./pages/admin/TimesheetPage")],
+  [/^\/ferias/, () => import("./pages/admin/VacationsPage")],
+  [/^\/meus-comprovantes/, () => import("./pages/promoter/MyReceiptsPage")],
+  [/^\/meu-espelho/, () => import("./pages/promoter/MyMirrorPage")],
+  [/^\/meus-dados/, () => import("./pages/promoter/MyDataPage")],
+  [/^\/lgpd/, () => import("./pages/admin/LgpdPage")],
+  [/^\/minhas-ferias/, () => import("./pages/promoter/MyVacationsPage")],
+  [/^\/admin\/usuarios/, () => import("./pages/AdminUsersPage")],
+  [/^\/meus-modulos/, () => import("./pages/CompanyModulesPage")],
+  [/^\/minha-conta/, () => import("./pages/MyAccountPage")],
+  [/^\/auditoria/, () => import("./pages/AuditPage")],
+];
+function preloadCurrentRoute() {
+  if (typeof window === "undefined") return;
+  try {
+    const path = window.location.pathname;
+    let loader = ROUTE_PRELOADS.find(([re]) => re.test(path))?.[1];
+    if (!loader && path === "/") {
+      // Tela inicial depende do perfil salvo no aparelho (sem perfil: página pública, que já carrega sozinha).
+      const role = JSON.parse(localStorage.getItem("promotores-saas-auth-user") || "null")?.role;
+      if (role === "promoter" || role === "user" || role === "operator" || role === "technician") loader = () => import("./pages/promoter/PromoterDashboard");
+      else if (role === "company_admin" || role === "admin" || role === "supervisor") loader = () => import("./pages/operations/OperationsDashboard");
+    }
+    void loader?.().catch(() => undefined);
+  } catch { /* só otimização */ }
+}
+preloadCurrentRoute();
 import { useAuth } from "./_core/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -57,6 +101,7 @@ import { useStoreSync } from "@/hooks/useStoreSync";
 import { useClientSync } from "@/hooks/useClientSync";
 import type { EntitlementKey } from "@shared/entitlements";
 import { useEffect } from "react";
+import { installSpaNavigation } from "@/lib/spaNavigation";
 
 
 /** Se a assinatura passou da tolerância, só mostra a tela de pagamento (exceto admin da plataforma). */
@@ -317,6 +362,27 @@ function Router() {
   );
 }
 
+/**
+ * Pede junto com o login (no mesmo lote) as consultas que as telas protegidas esperam antes de abrir:
+ * assinatura (SubscriptionGate) e módulos liberados (FeatureProtected). Mesmas chaves e condições dessas telas,
+ * então elas só reaproveitam o resultado. Antes eram 3 idas ao servidor em fila antes da tela começar a carregar.
+ */
+function WarmStart() {
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
+  trpc.billing.access.useQuery(undefined, {
+    enabled: Boolean(user && user.role !== "platform_admin" && user.companyId),
+    staleTime: 30_000,
+    retry: false,
+  });
+  trpc.entitlements.mine.useQuery(undefined, {
+    enabled: Boolean(user && user.role !== "platform_admin"),
+    retry: false,
+  });
+  useEffect(() => installSpaNavigation(navigate), [navigate]);
+  return null;
+}
+
 function App() {
   useOutboxSync();
   useStoreSync();
@@ -332,6 +398,7 @@ function App() {
             <PwaStatusBar />
             <PwaInstallOverlay />
             <SwUpdatePrompt />
+            <WarmStart />
             <Suspense fallback={<LoadingScreen />}>
               <Router />
             </Suspense>

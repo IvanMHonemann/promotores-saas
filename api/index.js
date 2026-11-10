@@ -6741,7 +6741,16 @@ async function moveStorePhotosToTrash(db, accountId, photos, actor) {
     await tx.delete(storePhotos).where(and13(eq13(storePhotos.companyId, accountId), sql17`${storePhotos.id} IN (${sql17.join(photos.map((p) => sql17`${p.id}`), sql17`, `)})`));
   });
 }
-async function ensureStorePhotosTable(db) {
+function ensureStorePhotosTable(db) {
+  if (!storePhotosTableReady) {
+    storePhotosTableReady = createStorePhotosTable(db).catch((err) => {
+      storePhotosTableReady = null;
+      throw err;
+    });
+  }
+  return storePhotosTableReady;
+}
+async function createStorePhotosTable(db) {
   try {
     await db.execute(`CREATE TABLE IF NOT EXISTS store_photos (
       id int AUTO_INCREMENT NOT NULL,
@@ -6809,7 +6818,7 @@ async function expireOldStorePhotos() {
   }
   return { deleted, errors };
 }
-var RETENTION_DAYS, TRASH_DAYS, GALLERY_ONLY, storePhotosRouter;
+var RETENTION_DAYS, TRASH_DAYS, storePhotosTableReady, GALLERY_ONLY, storePhotosRouter;
 var init_storePhotos = __esm({
   "server/modules/storePhotos.ts"() {
     "use strict";
@@ -6826,6 +6835,7 @@ var init_storePhotos = __esm({
     init_storeAccess();
     RETENTION_DAYS = 60;
     TRASH_DAYS = 5;
+    storePhotosTableReady = null;
     GALLERY_ONLY = sql17`(store_photos.idempotencyKey IS NULL OR (store_photos.idempotencyKey NOT LIKE 'ci-%' AND store_photos.idempotencyKey NOT LIKE 'visit-%'))`;
     storePhotosRouter = router({
       /** Lista lojas com contagem de fotos e última atividade. */

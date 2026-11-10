@@ -50,7 +50,20 @@ async function moveStorePhotosToTrash(db: any, accountId: number, photos: Array<
   });
 }
 
-async function ensureStorePhotosTable(db: any) {
+/**
+ * Garante a tabela uma vez por processo. Antes rodava CREATE TABLE + ALTER TABLE a CADA consulta de fotos;
+ * no TiDB cada ALTER vira um job de DDL na fila do cluster (~1 s cada quando várias chegam juntas), então
+ * telas com várias consultas de fotos (check-in/out, galeria da loja) esperavam 1–3 s só nessa fila.
+ */
+let storePhotosTableReady: Promise<void> | null = null;
+function ensureStorePhotosTable(db: any): Promise<void> {
+  if (!storePhotosTableReady) {
+    storePhotosTableReady = createStorePhotosTable(db).catch((err) => { storePhotosTableReady = null; throw err; });
+  }
+  return storePhotosTableReady;
+}
+
+async function createStorePhotosTable(db: any) {
   try {
     await db.execute(`CREATE TABLE IF NOT EXISTS store_photos (
       id int AUTO_INCREMENT NOT NULL,

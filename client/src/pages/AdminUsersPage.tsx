@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, Loader2, Pencil, Plus, Shield, Store, UserPlus, UsersRound } from "lucide-react";
+import { Copy, KeyRound, Loader2, MessageCircle, Pencil, Plus, Shield, Store, UserPlus, UsersRound } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
@@ -259,6 +259,7 @@ function MemberPanel({ member, stores, weekly, weeklyReady, storesReady, selfId,
           <Badge className={member.active ? "bg-emerald-500/20 text-emerald-100" : "bg-rose-500/30 text-rose-100"}>{member.active ? "Ativo" : "Inativo"}</Badge>
         </CardHeader>
         <CardContent className="space-y-3">
+          {member.active && member.id !== selfId && <ShareAccess name={member.userName} email={member.email} />}
           <div className="grid gap-3 sm:grid-cols-2">
             <div><Label>Nome</Label><Input value={userName} onChange={(e) => setUserName(e.target.value)} className={inp} /></div>
             <div><Label>E-mail</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inp} /></div>
@@ -370,6 +371,39 @@ function StorePicker({ stores, selected, onToggle }: { stores: Array<{ id: numbe
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/** Texto pronto para mandar o acesso pelo WhatsApp (sem senha: a senha inicial é passada pelo admin). */
+function accessMessage(name: string, email: string) {
+  const first = name.trim().split(/\s+/)[0] || name;
+  return [
+    `Olá, ${first}! Seu acesso ao GondUp está pronto.`,
+    "",
+    "1. Abra https://gondup.com no Chrome do celular",
+    `2. Entre com o e-mail: ${email}`,
+    "3. Use a senha inicial que eu te passei (ou toque em \"Esqueci minha senha\")",
+    "4. Toque em \"Baixar aplicativo\" para instalar o app na tela inicial",
+  ].join("\n");
+}
+
+function ShareAccess({ name, email }: { name: string; email: string }) {
+  const text = accessMessage(name, email);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); toast.success("Texto copiado. Cole no WhatsApp ou onde preferir."); }
+    catch { toast.error("Não foi possível copiar. Use o botão do WhatsApp."); }
+  };
+  return (
+    <div className="rounded-xl border border-emerald-300/25 bg-emerald-400/5 p-3">
+      <p className="text-sm font-semibold text-emerald-100">Enviar o acesso para {name.split(" ")[0]}</p>
+      <p className="mt-0.5 text-xs text-slate-300">Mensagem pronta com o link e o e-mail de login (a senha não vai no texto).</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <a href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-emerald-500 px-3 text-sm font-bold text-white hover:bg-emerald-400">
+          <MessageCircle className="h-4 w-4" /> Enviar pelo WhatsApp
+        </a>
+        <Button type="button" variant="outline" className="h-10 border-white/20 text-white" onClick={() => void copy()}><Copy className="mr-1.5 h-4 w-4" /> Copiar texto</Button>
       </div>
     </div>
   );

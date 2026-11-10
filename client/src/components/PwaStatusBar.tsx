@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/button";
 import { beginNativeInstallFromGesture, useInstallPrompt, useOnlineStatus, type PwaDebugInfo } from "@/pwa/hooks";
 
 const IOS_HINT_KEY = "promotores_saas_ios_install_hint_dismissed";
+/** Até quando o botão flutuante "Baixar aplicativo" fica oculto (o item do menu continua). */
+const INSTALL_PILL_HIDDEN_KEY = "gondup_install_pill_hidden_until";
+const INSTALL_PILL_HIDE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function PwaDebugPanel() {
   const [info, setInfo] = useState<PwaDebugInfo | null>(null);
@@ -56,6 +59,16 @@ export function PwaStatusBar() {
   } = useInstallPrompt();
   const [showIosGuide, setShowIosGuide] = useState(false);
   const [showAndroidGuide, setShowAndroidGuide] = useState(false);
+  const [pillHidden, setPillHidden] = useState(() => {
+    try {
+      if (typeof window === "undefined" || new URLSearchParams(window.location.search).get("pwadebug") === "1") return false;
+      return Date.now() < Number(window.localStorage.getItem(INSTALL_PILL_HIDDEN_KEY) || 0);
+    } catch { return false; }
+  });
+  const hidePill = () => {
+    setPillHidden(true);
+    try { window.localStorage.setItem(INSTALL_PILL_HIDDEN_KEY, String(Date.now() + INSTALL_PILL_HIDE_MS)); } catch { /* ignore */ }
+  };
   const [iosHintVisible, setIosHintVisible] = useState(false);
 
   useEffect(() => {
@@ -99,8 +112,8 @@ export function PwaStatusBar() {
         <span>{isOnline ? "Online" : "Offline — dados locais"}</span>
       </div>
 
-      {showInstallOffer && !isInstalling && !showReady && (
-        <div className="pwa-install-cta fixed bottom-3 left-3 z-40 print:hidden">
+      {showInstallOffer && !isInstalling && !showReady && !pillHidden && (
+        <div className="pwa-install-cta fixed bottom-3 left-3 z-40 flex items-center gap-1 print:hidden">
           <Button
             size="sm"
             data-testid="pwa-install-button"
@@ -109,6 +122,16 @@ export function PwaStatusBar() {
           >
             <Download className="h-4 w-4" /> Baixar aplicativo
           </Button>
+          <button
+            type="button"
+            data-testid="pwa-install-hide"
+            aria-label="Ocultar o botão Baixar aplicativo (continua no menu)"
+            title="Ocultar (continua no menu)"
+            onClick={hidePill}
+            className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-slate-900/90 text-slate-200 shadow-lg hover:bg-slate-800"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 

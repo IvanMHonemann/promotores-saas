@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Share, Wifi, WifiOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { beginNativeInstallFromGesture, useInstallPrompt, useOnlineStatus, type PwaDebugInfo } from "@/pwa/hooks";
@@ -45,6 +45,39 @@ function PwaDebugPanel() {
       <p className="mt-1 break-all text-amber-200/70">{info.userAgent}</p>
     </div>
   );
+}
+
+
+/**
+ * Esconde o botão flutuante enquanto ele estiver por cima de algo marcado com data-fab-avoid
+ * (ex.: a linha Entrada/Intervalo/Retorno/Saída do ponto). Volta assim que a pessoa rola a tela.
+ * Não muda nada no fluxo de instalação.
+ */
+function useCoversProtected(enabled: boolean) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [covers, setCovers] = useState(false);
+  useEffect(() => {
+    if (!enabled) { setCovers(false); return; }
+    let raf = 0;
+    const check = () => {
+      raf = 0;
+      const el = ref.current;
+      if (!el) return;
+      const a = el.getBoundingClientRect();
+      const hit = Array.from(document.querySelectorAll<HTMLElement>("[data-fab-avoid]")).some((n) => {
+        const b = n.getBoundingClientRect();
+        return b.width > 0 && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      });
+      setCovers(hit);
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(check); };
+    schedule();
+    const t = window.setInterval(schedule, 1500); // conteúdo carregado depois (ex.: ponto do dia)
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => { window.clearInterval(t); window.removeEventListener("scroll", schedule); window.removeEventListener("resize", schedule); if (raf) cancelAnimationFrame(raf); };
+  }, [enabled]);
+  return { ref, covers };
 }
 
 export function PwaStatusBar() {
@@ -99,6 +132,8 @@ export function PwaStatusBar() {
     setShowAndroidGuide(true);
   };
 
+  const fab = useCoversProtected(showInstallOffer && !isInstalling && !showReady && !pillHidden);
+
   return (
     <>
       <PwaDebugPanel />
@@ -113,7 +148,11 @@ export function PwaStatusBar() {
       </div>
 
       {showInstallOffer && !isInstalling && !showReady && !pillHidden && (
-        <div className="pwa-install-cta fixed bottom-3 left-3 z-40 flex items-center gap-1 print:hidden">
+        <div
+          ref={fab.ref}
+          data-covers-protected={fab.covers ? "true" : undefined}
+          className={`pwa-install-cta fixed bottom-3 left-3 z-40 flex items-center gap-1 transition-opacity duration-200 print:hidden ${fab.covers ? "pointer-events-none opacity-0" : "opacity-100"}`}
+        >
           <Button
             size="sm"
             data-testid="pwa-install-button"

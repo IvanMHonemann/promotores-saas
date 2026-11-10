@@ -129,14 +129,16 @@ export default function TimesheetPage() {
                           {ev.notes?.includes("automática") && <span className="ml-2 rounded bg-amber-400/20 px-1.5 py-0.5 text-xs text-amber-200">Auto</span>}
                           {(ev.offline || ev.notes?.includes("[MARCACAO-OFFLINE]")) && <span title={`Registrado offline. Recebido pelo servidor às ${new Date(ev.serverTime).toLocaleString("pt-BR")}`} className="ml-2 rounded bg-sky-400/20 px-1.5 py-0.5 text-xs text-sky-200">Registrado offline</span>}
                           {ev.notes?.includes("[ALERTA-RELOGIO]") && <span title="Possível alteração do relógio do aparelho. Confira com o promotor." className="ml-2 rounded bg-rose-400/20 px-1.5 py-0.5 text-xs text-rose-200">Relógio suspeito</span>}
+                          {ev.notes?.includes("[NOVA-JORNADA-MESMO-DIA]") && <span title="Nova entrada registrada depois da saída no mesmo dia. Confira com o promotor." className="ml-2 rounded bg-amber-400/25 px-1.5 py-0.5 text-xs font-semibold text-amber-100">Nova jornada</span>}
                           {ev.notes?.includes("[SEQUENCIA-OFFLINE]") && <span title="Marcação offline fora da sequência esperada" className="ml-2 rounded bg-amber-400/20 px-1.5 py-0.5 text-xs text-amber-200">Fora de sequência</span>}
                           {ev.disregard ? (
                             <button type="button" onClick={() => { setDisregardReason(""); setDisregardTarget({ ev, mode: "reconsider" }); }} className="ml-2 inline-flex min-h-9 items-center gap-1 rounded-lg border border-teal-300/40 px-2 text-xs font-semibold text-teal-200 hover:bg-teal-400/10" aria-label={`Reconsiderar ${labels[ev.eventType] || "batida"} das ${fmtTime(ev)}`}>
                               <RotateCcw className="h-3.5 w-3.5" /> Reconsiderar
                             </button>
                           ) : (
-                            <button type="button" onClick={() => { setDisregardReason(""); setDisregardTarget({ ev, mode: "disregard" }); }} className="ml-2 inline-flex min-h-9 items-center gap-1 rounded-lg border border-white/15 px-2 text-xs text-slate-300 hover:bg-white/5" aria-label={`Desconsiderar ${labels[ev.eventType] || "batida"} das ${fmtTime(ev)}`}>
-                              <Ban className="h-3.5 w-3.5" /> Desconsiderar
+                            <button type="button" onClick={() => { setDisregardReason(""); setDisregardTarget({ ev, mode: "disregard" }); }} title="Desconsiderar esta batida (pede justificativa)" className="ml-1 grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-white/5 hover:text-slate-200" aria-label={`Desconsiderar ${labels[ev.eventType] || "batida"} das ${fmtTime(ev)}`}>
+                              {/* Discreto de propósito: é exceção, e a confirmação com justificativa continua obrigatória. */}
+                              <Ban className="h-4 w-4" />
                             </button>
                           )}
                         </span>

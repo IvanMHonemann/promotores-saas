@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { daysUntil, todayInZone } from "@shared/expiry";
-import { AlertTriangle, ClipboardList, Clock3, Loader2, MapPin } from "lucide-react";
+import { AlertTriangle, Camera, ClipboardList, Clock3, Loader2, MapPin, PackagePlus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
@@ -233,6 +233,14 @@ export default function PromoterDashboard() {
                       <p className="mt-2 text-xs font-semibold text-teal-200">
                         Check-in feito às {formatVisitClock(visit.actualStart) || "—"}
                       </p>
+                      <div className={`mt-3 grid gap-2 ${hasProducts ? "grid-cols-2" : "grid-cols-1"}`}>
+                        <a href={`/lojas/${store.id}`} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 text-sm font-semibold text-white hover:bg-white/15">
+                          <Camera className="h-4 w-4 text-teal-300" /> Fotos da loja
+                        </a>
+                        {hasProducts && <a href={`/produtos?loja=${store.id}&novo=1`} className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 px-3 text-sm font-semibold text-white hover:bg-white/15">
+                          <PackagePlus className="h-4 w-4 text-amber-300" /> Validades
+                        </a>}
+                      </div>
                       <Button className="mt-3 w-full bg-amber-500 text-slate-950 hover:bg-amber-400" onClick={() => setCheckIn({ action: "complete", visitId: visit.id, storeId: store.id, storeName: store.name, storeAddress: store.address || null })} disabled={!canManageVisits}>
                         Check-out (foto da fachada)
                       </Button>

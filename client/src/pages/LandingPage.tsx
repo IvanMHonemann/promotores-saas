@@ -389,7 +389,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="contato" className="relative z-10 mx-auto max-w-6xl px-5 pb-20 sm:px-8">
+      <section id="contato" className="relative z-10 mx-auto max-w-6xl px-5 pb-10 sm:px-8">
         <div className="overflow-hidden rounded-[2rem] border border-teal-300/20 bg-[linear-gradient(135deg,rgba(45,212,191,0.16),rgba(5,11,20,0.9)_42%,rgba(8,47,73,0.55))] px-6 py-12 text-center sm:px-12">
           <h2 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Coloque sua operação de campo no mesmo ritmo da gestão.</h2>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-slate-300">
@@ -407,21 +407,33 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <footer className="relative z-10 border-t border-white/8 px-5 pb-28 pt-8 sm:pb-8">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-300 sm:flex-row">
-          <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
-            <BrandLogo variant="dark" height={28} />
-            <a
-              href="https://instagram.com/gondup.app"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Instagram do GondUp (@gondup.app)"
-              className="inline-flex items-center gap-1.5 text-slate-400 transition hover:text-white"
-            >
-              <Instagram className="h-4 w-4" aria-hidden="true" />
-              <span>@gondup.app</span>
-            </a>
+      <section aria-label="Instagram do GondUp" className="relative z-10 mx-auto max-w-6xl px-5 pb-10 sm:px-8">
+        <div className="flex flex-col items-center gap-5 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.035] px-6 py-8 text-center sm:flex-row sm:justify-between sm:px-8 sm:py-7 sm:text-left">
+          <div className="flex flex-col items-center gap-4 sm:flex-row">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(45deg,#f58529,#dd2a7b_50%,#8134af)] text-white shadow-lg shadow-fuchsia-900/30">
+              <Instagram className="h-7 w-7" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-lg font-bold tracking-tight text-white sm:text-xl">Siga nossa página no Instagram</p>
+              <p className="mt-1 text-base font-semibold text-slate-200">@gondup.app</p>
+            </div>
           </div>
+          <a
+            href="https://instagram.com/gondup.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Seguir @gondup.app no Instagram"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[linear-gradient(90deg,#f58529,#dd2a7b,#8134af)] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-fuchsia-900/25 transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 sm:w-auto"
+          >
+            <Instagram className="h-4 w-4" aria-hidden="true" />
+            Seguir @gondup.app
+          </a>
+        </div>
+      </section>
+
+      <footer className="relative z-10 border-t border-white/8 px-5 pb-32 pt-8">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-slate-300 sm:flex-row">
+          <BrandLogo variant="dark" height={28} />
           <p>GondUp · Gestão inteligente de equipes de campo</p>
           <div className="flex flex-wrap items-center justify-center gap-5">
             <button className="hover:text-white" onClick={() => navigate("/login")}>Entrar</button>

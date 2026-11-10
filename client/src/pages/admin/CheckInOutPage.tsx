@@ -40,48 +40,20 @@ function PhotoThumb({ photoId, label }: { photoId: number; label: string }) {
   );
 }
 
-function VisitPhotos({ storeId, visitId, startTime, endTime }: { storeId: number; visitId: number; startTime?: string | Date | null; endTime?: string | Date | null }) {
-  // Full day range in America/Sao_Paulo so the query does not truncate at UTC midnight
-  const ref = startTime || endTime;
-  let from: string | undefined;
-  let to: string | undefined;
-  if (ref) {
-    const d = new Date(ref);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    from = `${y}-${m}-${day}T00:00:00-03:00`;
-    to = `${y}-${m}-${day}T23:59:59-03:00`;
-  }
-
-  const photos = trpc.storePhotos.listByStore.useQuery(
-    { storeId, from, to },
-    { enabled: Boolean(storeId && from), staleTime: 30000 },
-  );
-
+function VisitPhotos({ visitId, startTime, endTime }: { storeId?: number; visitId: number; startTime?: string | Date | null; endTime?: string | Date | null }) {
+  // Fotos de fachada ficam só com a visita (fora da galeria da loja): busca direto pela visita.
+  const photos = trpc.storePhotos.listVisitFacade.useQuery({ visitId }, { staleTime: 30000 });
   const list = photos.data || [];
-  const byVisit = list.filter((p) => p.visitId === visitId);
-  const others = list.filter((p) => !p.visitId || p.visitId !== visitId);
 
-  // Prefer photos linked to the visit; otherwise pick the closest in time to check-in / check-out.
-  const pickClosest = (target: string | Date | null | undefined) => {
-    if (!target || others.length === 0) return null;
+  // Se o promotor refez a foto, fica a mais próxima do horário do check-in/check-out.
+  const closest = (items: typeof list, target: string | Date | null | undefined) => {
+    if (items.length === 0) return null;
+    if (!target) return items[0];
     const t = new Date(target).getTime();
-    let best = others[0];
-    let bestDiff = Math.abs(new Date(best.capturedAt).getTime() - t);
-    for (const p of others.slice(1)) {
-      const d = Math.abs(new Date(p.capturedAt).getTime() - t);
-      if (d < bestDiff) {
-        best = p;
-        bestDiff = d;
-      }
-    }
-    // Only accept if within 15 minutes
-    return bestDiff < 15 * 60 * 1000 ? best : null;
+    return items.reduce((best, p) => (Math.abs(new Date(p.capturedAt).getTime() - t) < Math.abs(new Date(best.capturedAt).getTime() - t) ? p : best));
   };
-
-  const checkinPhoto = byVisit.find((p) => startTime && Math.abs(new Date(p.capturedAt).getTime() - new Date(startTime).getTime()) < 15 * 60 * 1000) || pickClosest(startTime);
-  const checkoutPhoto = byVisit.find((p) => endTime && Math.abs(new Date(p.capturedAt).getTime() - new Date(endTime).getTime()) < 15 * 60 * 1000) || pickClosest(endTime);
+  const checkinPhoto = closest(list.filter((p) => p.action === "start"), startTime);
+  const checkoutPhoto = endTime ? closest(list.filter((p) => p.action === "complete"), endTime) : null;
 
   if (photos.isLoading) return <p className="text-xs text-slate-400">Carregando fotos...</p>;
   if (!checkinPhoto && !checkoutPhoto) return <p className="text-xs text-slate-500">Nenhuma foto de fachada encontrada para esta visita.</p>;

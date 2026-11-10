@@ -6571,6 +6571,23 @@ var init_platformCompanies = __esm({
   }
 });
 
+// shared/facadePhotos.ts
+function isFacadePhotoKey(key) {
+  return typeof key === "string" && FACADE_KEY_PREFIXES.some((p) => key.startsWith(p));
+}
+function facadePhotoAction(key) {
+  if (!isFacadePhotoKey(key)) return null;
+  const m = /^(?:ci|visit)-\d+-(start|complete)-/.exec(String(key));
+  return m ? m[1] : null;
+}
+var FACADE_KEY_PREFIXES;
+var init_facadePhotos = __esm({
+  "shared/facadePhotos.ts"() {
+    "use strict";
+    FACADE_KEY_PREFIXES = ["ci-", "visit-"];
+  }
+});
+
 // server/_core/rateLimit.ts
 function checkRateLimit(key, bucket = "api") {
   const limit = LIMITS[bucket] || LIMITS.api;
@@ -6792,11 +6809,12 @@ async function expireOldStorePhotos() {
   }
   return { deleted, errors };
 }
-var RETENTION_DAYS, TRASH_DAYS, storePhotosRouter;
+var RETENTION_DAYS, TRASH_DAYS, GALLERY_ONLY, storePhotosRouter;
 var init_storePhotos = __esm({
   "server/modules/storePhotos.ts"() {
     "use strict";
     init_mediaKeys();
+    init_facadePhotos();
     init_uploadLimits();
     init_schema();
     init_schema_original();
@@ -6808,6 +6826,7 @@ var init_storePhotos = __esm({
     init_storeAccess();
     RETENTION_DAYS = 60;
     TRASH_DAYS = 5;
+    GALLERY_ONLY = sql17`(store_photos.idempotencyKey IS NULL OR (store_photos.idempotencyKey NOT LIKE 'ci-%' AND store_photos.idempotencyKey NOT LIKE 'visit-%'))`;
     storePhotosRouter = router({
       /** Lista lojas com contagem de fotos e última atividade. */
       listStoresWithStats: commercialFeatureProcedure("fieldOperations").input(z9.object({ search: z9.string().optional(), city: z9.string().optional() }).optional()).query(async ({ ctx, input }) => {
@@ -6836,8 +6855,8 @@ var init_storePhotos = __esm({
             address: stores.address,
             latitude: stores.latitude,
             longitude: stores.longitude,
-            photoCount: sql17`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
-            lastActivity: sql17`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`
+            photoCount: sql17`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded' AND ${GALLERY_ONLY}${ownPhotos})`,
+            lastActivity: sql17`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND ${GALLERY_ONLY}${ownPhotos})`
           }).from(stores).where(and13(...conditions)).orderBy(desc5(stores.updatedAt));
           return rows4;
         } catch (err) {
@@ -6855,7 +6874,7 @@ var init_storePhotos = __esm({
         await ensureStorePhotosTable(db);
         const memberId = scopeMemberId(ctx);
         const own = memberId !== null ? sql17` AND promoterId = ${memberId}` : sql17``;
-        const res = await db.execute(sql17`SELECT COUNT(*) AS c, MAX(capturedAt) AS lastAt FROM store_photos WHERE companyId = ${ctx.accountId} AND storeId IS NULL AND uploadStatus = 'uploaded'${own}`);
+        const res = await db.execute(sql17`SELECT COUNT(*) AS c, MAX(capturedAt) AS lastAt FROM store_photos WHERE companyId = ${ctx.accountId} AND storeId IS NULL AND uploadStatus = 'uploaded' AND ${GALLERY_ONLY}${own}`);
         const row2 = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0] ?? {};
         return { count: Number(row2.c ?? 0), lastActivity: row2.lastAt ?? null };
       }),
@@ -6873,7 +6892,7 @@ var init_storePhotos = __esm({
         await ensureStorePhotosTable(db);
         await ensureStoreClientsSchema(db);
         const memberId = scopeMemberId(ctx);
-        const conditions = [eq13(storePhotos.companyId, ctx.accountId)];
+        const conditions = [eq13(storePhotos.companyId, ctx.accountId), GALLERY_ONLY];
         if (input.storeId) {
           await assertStoreAccess(db, ctx, input.storeId);
           conditions.push(eq13(storePhotos.storeId, input.storeId));
@@ -6908,6 +6927,23 @@ var init_storePhotos = __esm({
           promoterName: sql17`(SELECT userName FROM member_accounts WHERE member_accounts.id = store_photos.promoterId AND member_accounts.companyId = ${ctx.accountId})`
         }).from(storePhotos).where(and13(...conditions)).orderBy(desc5(storePhotos.capturedAt));
         return photos;
+      }),
+      /** Fotos de fachada (check-in/check-out) de uma visita. Ficam só aqui, fora da galeria da loja. */
+      listVisitFacade: commercialFeatureProcedure("fieldOperations").input(z9.object({ visitId: z9.number().int().positive() })).query(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError13({ code: "INTERNAL_SERVER_ERROR", message: "Banco indispon\xEDvel." });
+        await ensureStorePhotosTable(db);
+        const memberId = scopeMemberId(ctx);
+        const conditions = [
+          eq13(storePhotos.companyId, ctx.accountId),
+          // Fotos antigas (antes de 23/10) podem ter ficado sem visitId: a chave também diz a visita.
+          sql17`(${storePhotos.visitId} = ${input.visitId} OR ${storePhotos.idempotencyKey} LIKE ${`ci-${input.visitId}-%`} OR ${storePhotos.idempotencyKey} LIKE ${`visit-${input.visitId}-%`})`,
+          eq13(storePhotos.uploadStatus, "uploaded"),
+          sql17`NOT ${GALLERY_ONLY}`
+        ];
+        if (memberId !== null) conditions.push(eq13(storePhotos.promoterId, memberId));
+        const rows4 = await db.select({ id: storePhotos.id, visitId: storePhotos.visitId, capturedAt: storePhotos.capturedAt, idempotencyKey: storePhotos.idempotencyKey }).from(storePhotos).where(and13(...conditions)).orderBy(desc5(storePhotos.capturedAt));
+        return rows4.map((r) => ({ id: r.id, visitId: r.visitId, capturedAt: r.capturedAt, action: facadePhotoAction(r.idempotencyKey) }));
       }),
       /** Cria registro de foto com idempotência. Upload do arquivo é feito separadamente. */
       create: commercialFeatureProcedure("fieldOperations").input(z9.object({

@@ -3,6 +3,7 @@ import { AlertTriangle, Camera, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { enqueueVisit } from "@/lib/visitQueue";
+import { facadePhotoKey } from "@shared/facadePhotos";
 import { enqueuePhoto } from "@/lib/photoQueue";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -146,11 +147,8 @@ export function VisitCheckIn({
         ...prepared,
         capturedAt: new Date().toISOString(),
         // nova foto = nova chave; retentativas da MESMA foto reutilizam a chave e não duplicam no servidor
-        idempotencyKey:
-          `ci-${visitId}-${action}-${crypto.randomUUID().replace(/-/g, "")}`.slice(
-            0,
-            64
-          ),
+        // Prefixo "ci-" marca foto de fachada: fica só com a visita, fora da galeria da loja.
+        idempotencyKey: facadePhotoKey(visitId, action, crypto.randomUUID().replace(/-/g, "")),
       };
       replaceShot(nextShot);
       // A câmera nativa já confirmou a escolha "Manter" antes de disparar onFile.

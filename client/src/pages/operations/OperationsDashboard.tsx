@@ -170,8 +170,11 @@ export default function OperationsDashboard() {
 
 function Overview({ hasProducts = false, isSupervisor = false, setupSteps = [], setupReady = false, accessLoading = false, isPromoter, todayVisits = [], metrics, visitsFailed, hasFieldOperations, hasVisitCheckIn, hasTimeTracking, presence = [], presenceLoading, presenceFailed, timeZone, corrections, isCompanyAdmin, reviewNotes, setReviewNotes, approve, approveMany, reviewPending, alerts = [], alertsLoading, alertsError }: any) {
   const activePromoters = presence.filter((entry: CompanyPresenceEntry) => entry.active).length;
+  // Com pedido de correção pendente, o cartão sobe para o topo: é o que precisa de ação do admin hoje.
+  const hasPendingCorrections = Boolean(isCompanyAdmin && hasTimeTracking && (corrections || []).length > 0);
   return (
     <div className="space-y-6">
+      {hasPendingCorrections && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} approveMany={approveMany} reviewPending={reviewPending} />}
       {isPromoter && hasFieldOperations && <Card id="roteiro" className="border-teal-300/30 bg-teal-300/5"><CardHeader><CardTitle className="flex items-center gap-2 text-white"><ClipboardList className="text-teal-300" />Meu roteiro de hoje</CardTitle></CardHeader><CardContent className="space-y-2">{visitsFailed && <p role="alert" className="text-sm text-rose-200">Não foi possível carregar o roteiro de hoje.</p>}{!visitsFailed && !todayVisits.length && <p className="text-sm text-slate-300">Você não tem visitas programadas para hoje.</p>}{todayVisits.map(({ visit, store }: any, index: number) => <div key={visit.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-3"><div><p className="text-xs font-semibold text-teal-300">Parada {index + 1}</p><p className="font-bold text-white">{store.name}</p><p className="text-sm text-slate-300">{store.city}{store.address ? ` · ${store.address}` : ""}</p></div>{hasVisitCheckIn && <Badge variant="outline">{visit.status === "in_progress" ? "Em andamento" : visit.status === "completed" ? "Concluída" : "Pendente"}</Badge>}</div>)}</CardContent></Card>}
       <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/30 p-5 sm:p-7">
         <p className="text-xs font-bold uppercase tracking-[.18em] text-teal-300">Visão geral</p>
@@ -239,7 +242,8 @@ function Overview({ hasProducts = false, isSupervisor = false, setupSteps = [], 
         </a>}
       </div>}
 
-      {isCompanyAdmin && hasTimeTracking && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} approveMany={approveMany} reviewPending={reviewPending} />}
+      {/* Sem pendências: o cartão fica no fim, como antes. */}
+      {!hasPendingCorrections && isCompanyAdmin && hasTimeTracking && <CorrectionCard corrections={corrections} reviewNotes={reviewNotes} setReviewNotes={setReviewNotes} approve={approve} approveMany={approveMany} reviewPending={reviewPending} />}
     </div>
   );
 }

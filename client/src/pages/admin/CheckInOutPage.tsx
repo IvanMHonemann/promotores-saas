@@ -4,6 +4,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
+import { todayInZone } from "@shared/expiry";
 
 const VISIT_STATUS_LABEL: Record<string, string> = { pending: "Pendente", in_progress: "Em andamento", completed: "Concluída", not_done: "Não realizada", cancelled: "Cancelada" };
 
@@ -104,7 +105,7 @@ function OfflineMark({ mark }: { mark?: { offline: boolean; receivedAt: string; 
 }
 
 export default function CheckInOutPage() {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayInZone());
   const visits = trpc.operations.visits.list.useQuery({ date }, { staleTime: 30000 });
   const promoters = trpc.operations.promoters.list.useQuery(undefined, { staleTime: 60000 });
   const visitIds = (visits.data || []).map(({ visit }) => visit.id);

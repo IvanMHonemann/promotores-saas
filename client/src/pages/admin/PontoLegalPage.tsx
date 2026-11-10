@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { currentMonthSP, downloadBase64, fmtDateTimeSP } from "@/lib/downloadBase64";
 import { isCompanyActionableWarning, simplifyExportWarning, simplifyIntegrityProblem } from "@/lib/pontoLegalCopy";
+import { todayInZone } from "@shared/expiry";
 
 function Item({ ok, title, hint }: { ok: boolean; title: string; hint: string }) {
   return (
@@ -27,7 +28,7 @@ export default function PontoLegalPage() {
   const aej = trpc.pontoLegal.exportAej.useMutation();
   const firstDay = `${currentMonthSP(-1)}-01`;
   const [from, setFrom] = useState(firstDay);
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(todayInZone());
   const [month, setMonth] = useState(currentMonthSP(-1));
   const acc = trpc.pontoLegal.mirrorAcceptances.useQuery({ month });
   const [warnings, setWarnings] = useState<string[]>([]);

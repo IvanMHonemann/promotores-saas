@@ -6,6 +6,7 @@ import { enqueueVisit } from "@/lib/visitQueue";
 import { enqueuePhoto } from "@/lib/photoQueue";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { farFromStore, formatDistance } from "@shared/geo";
 import { ADDRESS_TIMEOUT_MS, applyWatermark, resolveStampAddress, stampLines } from "@/lib/photoStamp";
 import {
   errorMessage,
@@ -25,6 +26,9 @@ type Props = {
   storeName: string;
   /** Endereço cadastrado da loja, usado no carimbo se o GPS vier incompleto. */
   storeAddress?: string | null;
+  /** Localização da loja (pelo endereço). Sem ela, não há aviso de distância. */
+  storeLatitude?: number | null;
+  storeLongitude?: number | null;
   onDone: () => void;
   onCancel: () => void;
   sandbox?: boolean;
@@ -41,6 +45,8 @@ export function VisitCheckIn({
   storeId,
   storeName,
   storeAddress,
+  storeLatitude,
+  storeLongitude,
   onDone,
   onCancel,
   sandbox = false,
@@ -60,6 +66,9 @@ export function VisitCheckIn({
   const [loc, setLoc] = useState<{ gps: GpsFix | null; address: string } | null>(null);
   const [locFailed, setLocFailed] = useState(false);
   const locRef = useRef<{ gps: GpsFix | null; address: string } | null>(null);
+  // Aviso (nunca bloqueio) quando o GPS indica que o promotor está longe da loja no check-in.
+  const [farAsk, setFarAsk] = useState<number | null>(null);
+  const farAckRef = useRef(false);
   const locate = () => {
     setLocFailed(false);
     const deadline = Date.now() + ADDRESS_TIMEOUT_MS;
@@ -107,7 +116,21 @@ export function VisitCheckIn({
       toast.error("Aguarde a localização e o endereço antes de tirar a foto.");
       return;
     }
+    if (action === "start" && !farAckRef.current) {
+      const gps = locRef.current.gps;
+      const far = farFromStore({ latitude: storeLatitude, longitude: storeLongitude }, gps ? { lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy } : null);
+      if (far != null) {
+        setFarAsk(far);
+        return;
+      }
+    }
     inputRef.current?.click();
+  };
+
+  const continueFar = () => {
+    farAckRef.current = true;
+    setFarAsk(null);
+    inputRef.current?.click(); // ainda dentro do toque do botão: a câmera abre normalmente
   };
 
   // Redimensiona/comprime já na captura para agilizar o envio e evitar excesso de memória com fotos de 12 MP+.
@@ -356,6 +379,20 @@ export function VisitCheckIn({
             role="status"
           >
             <Loader2 className="h-4 w-4 animate-spin" /> Processando foto...
+          </div>
+        ) : !shot && farAsk != null ? (
+          <div data-testid="far-from-store-warning" className="mt-4 space-y-3 rounded-xl border border-amber-300/50 bg-amber-400/10 p-4" role="alertdialog" aria-labelledby="far-title">
+            <p id="far-title" className="flex items-center gap-2 text-base font-bold text-amber-100">
+              <AlertTriangle className="h-5 w-5 shrink-0" /> Você parece estar longe da loja
+            </p>
+            <p className="text-sm text-amber-50">
+              Seu GPS indica {formatDistance(farAsk)} de <strong>{storeName}</strong>. Confira se está na loja certa.
+            </p>
+            <p className="text-xs text-amber-100/80">Você pode continuar normalmente; a distância fica registrada na visita.</p>
+            <Button onClick={continueFar} className={`w-full gap-2 text-slate-950 ${accent}`}>
+              <Camera className="h-5 w-5" /> Estou na loja, continuar
+            </Button>
+            <Button onClick={onCancel} variant="outline" className="w-full">Cancelar check-in</Button>
           </div>
         ) : !shot ? (
           <div className="mt-4 space-y-2">

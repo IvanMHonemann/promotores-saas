@@ -77,6 +77,15 @@ export default function StoresPage() {
     if (!(await confirmAction({ title: `Remover a loja "${store.name}"?`, description: `As fotos e o histórico continuam guardados.${productNote}`, confirmLabel: "Remover loja" }))) return;
     void run("Removendo loja...", () => archiveStore.mutateAsync({ id: store.id })).catch(() => {});
   };
+  // Lojas com endereço e sem localização no mapa (o aviso de "longe da loja" no check-in precisa dela).
+  const missingCoords = serverList.filter((s: any) => s.address?.trim() && (s.latitude == null || s.longitude == null)).length;
+  const geocodeMissing = trpc.operations.stores.geocodeMissing.useMutation({
+    onSuccess: (r) => {
+      toast.success(r.found ? `Localização encontrada para ${r.found} de ${r.checked} loja(s).` : "Nenhuma loja encontrada no mapa pelo endereço. Informe rua e número (edite a loja) ou cole a localização do Google Maps.");
+      void stores.refetch();
+    },
+    onError: (e) => toast.error(e.message || "Não foi possível buscar a localização agora."),
+  });
   const closeForm = () => { setFormOpen(false); setEditingId(null); setEditingStore(null); };
   const onStoreSaved = () => { setPendingStores(listStores()); closeForm(); void stores.refetch(); };
 
@@ -98,6 +107,15 @@ export default function StoresPage() {
             </Button>
           )}
         </div>
+
+        {isCompanyAdmin && online && missingCoords > 0 && !formOpen && (
+          <div data-testid="stores-missing-coords" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-slate-900/60 p-3 text-xs text-slate-300">
+            <span>{missingCoords} loja{missingCoords !== 1 ? "s" : ""} sem localização no mapa (usada no aviso de check-in longe da loja).</span>
+            <Button size="sm" variant="outline" className="border-white/20 text-white" disabled={geocodeMissing.isPending} onClick={() => void run("Buscando localização pelo endereço...", () => geocodeMissing.mutateAsync()).catch(() => {})}>
+              <MapPin className="mr-1 h-4 w-4" /> Buscar pelo endereço
+            </Button>
+          </div>
+        )}
 
         {canCreateStore && formOpen && (
           <StoreForm key={editingId ?? "new"} editing={editingId ? editingStore : null} onClose={closeForm} onSaved={onStoreSaved} />

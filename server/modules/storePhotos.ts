@@ -133,6 +133,8 @@ export const storePhotosRouter = router({
             city: stores.city,
             state: stores.state,
             address: stores.address,
+            latitude: stores.latitude,
+            longitude: stores.longitude,
             photoCount: sql<number>`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
             lastActivity: sql<string | null>`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`,
           })
@@ -144,7 +146,7 @@ export const storePhotosRouter = router({
         // Se a tabela store_photos ainda não existe, lista só as lojas.
         if (String(err?.message || "").includes("store_photos") || err?.code === "ER_NO_SUCH_TABLE") {
           const rows = await db
-            .select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address })
+            .select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address, latitude: stores.latitude, longitude: stores.longitude })
             .from(stores)
             .where(and(...conditions))
             .orderBy(desc(stores.updatedAt));

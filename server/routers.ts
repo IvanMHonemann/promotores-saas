@@ -25,7 +25,8 @@ import * as db from "./db";
 import * as memberAuth from "./memberAuth";
 import * as emailService from "./email";
 import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory, listPromoterActivities } from "./audit";
-import { reverseGeocodeAddress, reverseGeocodeBr } from "./geocoding";
+import { geocodeStoreAddress, reverseGeocodeAddress, reverseGeocodeBr } from "./geocoding";
+import { distanceMeters, isValidLatLng } from "@shared/geo";
 import { scopeMemberId, assertStoreAccess, setPromoterStoreAssignments, getPromoterStoreAssignments } from "./storeAccess";
 import { ENTITLEMENT_KEYS, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
 import { getCompanyEntitlementBase, getMemberEntitlementSnapshot } from "./entitlements";
@@ -811,15 +812,55 @@ export const appRouter = router({
       list: commercialFeatureProcedure("fieldOperations").input(z.object({ search: z.string().optional() }).optional()).query(({ ctx, input }) => db.listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
       create: commercialFeatureProcedure("fieldOperations").input(z.object({ name: z.string().min(2), city: z.string().min(2), address: z.string().optional(), state: z.string().length(2).optional(), cep: z.string().optional(), code: z.string().optional(), latitude: z.number().optional(), longitude: z.number().optional(), notes: z.string().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
-        return db.createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
+        // Localização pelo endereço (aviso de "longe da loja" no check-in). Falha aqui nunca impede o cadastro.
+        let coords: { latitude?: number; longitude?: number } = {};
+        if (!isValidLatLng(input.latitude, input.longitude) && input.address?.trim()) {
+          const geo = await geocodeStoreAddress({ address: input.address, city: input.city, state: input.state }).catch(() => null);
+          if (geo) coords = { latitude: geo.latitude, longitude: geo.longitude };
+        }
+        return db.createOperationalStore({ ...input, ...coords, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
       }),
-      update: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), name: z.string().trim().min(2).max(255).optional(), city: z.string().trim().min(2).max(255).optional(), state: z.string().trim().length(2).optional().or(z.literal("")), address: z.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
+      update: commercialFeatureProcedure("fieldOperations").input(z.object({ id: z.number().int().positive(), name: z.string().trim().min(2).max(255).optional(), city: z.string().trim().min(2).max(255).optional(), state: z.string().trim().length(2).optional().or(z.literal("")), address: z.string().trim().max(500).optional(), latitude: z.number().min(-90).max(90).nullable().optional(), longitude: z.number().min(-180).max(180).nullable().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem editar lojas." });
-        const { id, ...patch } = input;
-        const ok = await db.updateOperationalStore(ctx.accountId, id, { ...patch, state: patch.state === undefined ? undefined : (patch.state ? patch.state.toUpperCase() : null) as any });
+        const { id, latitude, longitude, ...rest } = input;
+        const current = await db.getOperationalStore(ctx.accountId, id);
+        if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada." });
+        const patch: Record<string, unknown> = { ...rest, state: rest.state === undefined ? undefined : (rest.state ? rest.state.toUpperCase() : null) };
+        let located: "manual" | "address" | "not_found" | "unchanged" = "unchanged";
+        if (latitude !== undefined || longitude !== undefined) {
+          // Coordenadas informadas pelo administrador (ou removidas com null).
+          const valid = isValidLatLng(latitude, longitude);
+          if (!valid && !(latitude === null && longitude === null)) throw new TRPCError({ code: "BAD_REQUEST", message: "Localização inválida. Use o formato -29.6386, -51.0047." });
+          patch.latitude = valid ? latitude : null;
+          patch.longitude = valid ? longitude : null;
+          located = "manual";
+        } else {
+          const changed = (k: "address" | "city" | "state") => patch[k] !== undefined && String(patch[k] ?? "").trim().toLowerCase() !== String((current as any)[k] ?? "").trim().toLowerCase();
+          if (changed("address") || changed("city") || changed("state")) {
+            // Endereço mudou: a localização antiga não vale mais.
+            const geo = await geocodeStoreAddress({ address: (patch.address as string | undefined) ?? current.address, city: (patch.city as string | undefined) ?? current.city, state: (patch.state as string | null | undefined) ?? current.state }).catch(() => null);
+            patch.latitude = geo?.latitude ?? null;
+            patch.longitude = geo?.longitude ?? null;
+            located = geo ? "address" : "not_found";
+          }
+        }
+        const ok = await db.updateOperationalStore(ctx.accountId, id, patch as any);
         if (!ok) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada." });
-        await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", entityId: id, description: `Loja editada: ${patch.name ?? `#${id}`}`, newData: patch });
-        return { success: true as const };
+        await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", entityId: id, description: `Loja editada: ${rest.name ?? `#${id}`}`, newData: patch });
+        return { success: true as const, located, latitude: (patch.latitude as number | null | undefined) ?? current.latitude ?? null, longitude: (patch.longitude as number | null | undefined) ?? current.longitude ?? null };
+      }),
+      // Busca a localização pelo endereço das lojas desta empresa que ainda não têm (poucas por vez; Nominatim 1/s).
+      geocodeMissing: companyAdminProcedure.mutation(async ({ ctx }) => {
+        const pending = await db.listStoresMissingCoordinates(ctx.accountId, 8);
+        let found = 0;
+        for (const store of pending) {
+          const geo = await geocodeStoreAddress(store).catch(() => null);
+          if (!geo) continue;
+          await db.updateOperationalStore(ctx.accountId, store.id, { latitude: geo.latitude, longitude: geo.longitude });
+          found += 1;
+        }
+        if (found) await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", description: `Localização pelo endereço encontrada para ${found} loja(s)` });
+        return { checked: pending.length, found };
       }),
       archive: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const store = await db.archiveOperationalStore(ctx.accountId, input.id);
@@ -953,7 +994,12 @@ export const appRouter = router({
           }
         }
 
-        const started = await db.updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: when.effectiveTime, startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
+        // Distância do GPS até a loja (só registro/auditoria; o check-in nunca é bloqueado por distância).
+        const storeLat = owned.store?.latitude, storeLng = owned.store?.longitude;
+        const distance = isValidLatLng(storeLat, storeLng) && isValidLatLng(input.latitude, input.longitude)
+          ? Math.round(distanceMeters({ lat: storeLat as number, lng: storeLng as number }, { lat: input.latitude as number, lng: input.longitude as number }))
+          : undefined;
+        const started = await db.updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: when.effectiveTime, startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy, ...(distance !== undefined ? { distanceMeters: distance } : {}) });
         if (input.clientId) await recordSubmission({ companyId: ctx.accountId, memberAccountId: ctx.memberAccountId ?? null, clientId: input.clientId, kind: "visit_start", entityId: input.id, deviceTime: input.deviceTime ? new Date(input.deviceTime) : null, offline: when.offline, alert: when.clockAlert ?? when.timeNote });
         return started;
       }),

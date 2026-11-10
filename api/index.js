@@ -1420,6 +1420,7 @@ __export(db_exports, {
   getInventoryProduct: () => getInventoryProduct,
   getLatestCompanySubscription: () => getLatestCompanySubscription,
   getMemberFeatureModes: () => getMemberFeatureModes,
+  getOperationalStore: () => getOperationalStore,
   getPool: () => getPool,
   getSetting: () => getSetting,
   getSubscriptionPlanById: () => getSubscriptionPlanById,
@@ -1434,6 +1435,7 @@ __export(db_exports, {
   listOperationalStores: () => listOperationalStores,
   listOperationalVisits: () => listOperationalVisits,
   listPaymentsForCompany: () => listPaymentsForCompany,
+  listStoresMissingCoordinates: () => listStoresMissingCoordinates,
   listSubscriptionPlans: () => listSubscriptionPlans,
   listTrash: () => listTrash,
   listWeeklyRouteSchedules: () => listWeeklyRouteSchedules,
@@ -2215,6 +2217,17 @@ async function updateOperationalStore(companyId, id2, patch) {
   const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== void 0));
   if (Object.keys(clean).length) await database2.update(stores).set(clean).where(where);
   return true;
+}
+async function getOperationalStore(companyId, id2) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  const rows4 = await database2.select().from(stores).where(and2(eq2(stores.id, id2), eq2(stores.companyId, requireAccountId(companyId)), eq2(stores.active, true))).limit(1);
+  return rows4[0];
+}
+async function listStoresMissingCoordinates(companyId, limit = 10) {
+  const database2 = await getDb();
+  if (!database2) throw new Error("Database not connected");
+  return database2.select({ id: stores.id, name: stores.name, address: stores.address, city: stores.city, state: stores.state }).from(stores).where(and2(eq2(stores.companyId, requireAccountId(companyId)), eq2(stores.active, true), isNull(stores.latitude), sql2`${stores.address} IS NOT NULL AND TRIM(${stores.address}) <> ''`)).orderBy(stores.id).limit(limit);
 }
 async function archiveOperationalStore(companyId, id2) {
   const database2 = await getDb();
@@ -6821,13 +6834,15 @@ var init_storePhotos = __esm({
             city: stores.city,
             state: stores.state,
             address: stores.address,
+            latitude: stores.latitude,
+            longitude: stores.longitude,
             photoCount: sql17`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
             lastActivity: sql17`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`
           }).from(stores).where(and13(...conditions)).orderBy(desc5(stores.updatedAt));
           return rows4;
         } catch (err) {
           if (String(err?.message || "").includes("store_photos") || err?.code === "ER_NO_SUCH_TABLE") {
-            const rows4 = await db.select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address }).from(stores).where(and13(...conditions)).orderBy(desc5(stores.updatedAt));
+            const rows4 = await db.select({ id: stores.id, name: stores.name, city: stores.city, state: stores.state, address: stores.address, latitude: stores.latitude, longitude: stores.longitude }).from(stores).where(and13(...conditions)).orderBy(desc5(stores.updatedAt));
             return rows4.map((r) => ({ ...r, photoCount: 0, lastActivity: null }));
           }
           throw err;
@@ -10575,6 +10590,104 @@ async function reverseGeocodeBr(latitude, longitude, fetchImpl = fetch) {
   }
   return address;
 }
+var forwardCache = /* @__PURE__ */ new Map();
+var FORWARD_BUDGET_MS = 9e3;
+function norm(s) {
+  return String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+function firstNumber(s) {
+  const m = String(s ?? "").match(/\d+/);
+  return m ? String(Number(m[0])) : null;
+}
+function splitStreetNumber(address) {
+  const first = String(address ?? "").split(/\s[-–]\s/)[0].trim();
+  const m = first.match(/^(.*?)(?:,\s*|\bn[º°o]\.?\s*|\s)(\d{1,5})\s*[a-z]?\s*$/i);
+  if (!m) return null;
+  const street = m[1].replace(/[,\s]+$/, "").trim();
+  if (street.length < 3 || !/[a-zà-ú]/i.test(street)) return null;
+  return { street, number: String(Number(m[2])) };
+}
+function matches(c, number, city) {
+  return c.number === number && norm(c.city) === norm(city) && Number.isFinite(c.lat) && Number.isFinite(c.lng);
+}
+async function nominatimSearch(params, fetchImpl) {
+  const run = nominatimQueue.then(async () => {
+    const wait = 1100 - (Date.now() - lastNominatimAt);
+    if (wait > 0) await delay(wait);
+    lastNominatimAt = Date.now();
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    for (const [k, v] of Object.entries({ ...params, format: "jsonv2", addressdetails: "1", limit: "3", countrycodes: "br", "accept-language": "pt-BR", email: "contato@gondup.com.br" })) url.searchParams.set(k, v);
+    const res = await fetchImpl(url.toString(), { headers: { accept: "application/json", "user-agent": NOMINATIM_UA }, signal: AbortSignal.timeout(6e3) });
+    if (!res.ok) {
+      console.warn(`[geocoding] Nominatim busca HTTP ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    return (Array.isArray(data) ? data : []).map((r) => ({
+      lat: Number(r.lat),
+      lng: Number(r.lon),
+      number: firstNumber(r.address?.house_number),
+      city: r.address?.city || r.address?.town || r.address?.municipality || r.address?.village || ""
+    }));
+  });
+  nominatimQueue = run.then(() => void 0, () => void 0);
+  return run;
+}
+async function photonSearch(q, fetchImpl) {
+  const url = new URL("https://photon.komoot.io/api/");
+  url.searchParams.set("q", q);
+  url.searchParams.set("limit", "5");
+  const res = await fetchImpl(url.toString(), { headers: { accept: "application/json", "user-agent": NOMINATIM_UA }, signal: AbortSignal.timeout(5e3) });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.features || []).filter((f) => String(f.properties?.countrycode || "").toUpperCase() === "BR").map((f) => ({ lat: Number(f.geometry?.coordinates?.[1]), lng: Number(f.geometry?.coordinates?.[0]), number: firstNumber(f.properties?.housenumber), city: f.properties?.city || "" }));
+}
+async function geocodeStoreAddress(input, fetchImpl = fetch) {
+  const parts = splitStreetNumber(input.address);
+  const city = String(input.city ?? "").trim();
+  if (!parts || city.length < 2) return null;
+  const state = String(input.state ?? "").trim();
+  const key = norm(`${parts.street}|${parts.number}|${city}|${state}`);
+  const hit = forwardCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+  const started = Date.now();
+  const attempts = [
+    async () => ({ source: "nominatim", list: await nominatimSearch({ street: `${parts.number} ${parts.street}`, city, ...state ? { state } : {}, country: "Brasil" }, fetchImpl) }),
+    async () => ({ source: "nominatim", list: await nominatimSearch({ q: `${parts.street}, ${parts.number}, ${city}${state ? `, ${state}` : ""}, Brasil` }, fetchImpl) }),
+    async () => ({ source: "photon", list: await photonSearch(`${parts.street} ${parts.number} ${city}${state ? ` ${state}` : ""}`, fetchImpl) })
+  ];
+  let value = null;
+  let anyAnswered = false;
+  for (const attempt of attempts) {
+    if (Date.now() - started > FORWARD_BUDGET_MS) break;
+    try {
+      const { list, source } = await attempt();
+      anyAnswered = true;
+      const found = list.find((c) => matches(c, parts.number, city));
+      if (found) {
+        value = { latitude: found.lat, longitude: found.lng, source };
+        break;
+      }
+    } catch (error) {
+      console.warn("[geocoding] busca do endere\xE7o da loja falhou", error instanceof Error ? error.name : "erro");
+    }
+  }
+  if (value || anyAnswered) forwardCache.set(key, { value, expiresAt: Date.now() + BR_TTL_MS });
+  return value;
+}
+
+// shared/geo.ts
+function isValidLatLng(lat, lng) {
+  return typeof lat === "number" && typeof lng === "number" && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+}
+function distanceMeters(a, b) {
+  const R = 6371e3;
+  const toRad = (d) => d * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
 
 // server/routers.ts
 init_storeAccess();
@@ -11620,15 +11733,52 @@ var appRouter = router({
       list: commercialFeatureProcedure("fieldOperations").input(z13.object({ search: z13.string().optional() }).optional()).query(({ ctx, input }) => listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
       create: commercialFeatureProcedure("fieldOperations").input(z13.object({ name: z13.string().min(2), city: z13.string().min(2), address: z13.string().optional(), state: z13.string().length(2).optional(), cep: z13.string().optional(), code: z13.string().optional(), latitude: z13.number().optional(), longitude: z13.number().optional(), notes: z13.string().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
-        return createOperationalStore({ ...input, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
+        let coords = {};
+        if (!isValidLatLng(input.latitude, input.longitude) && input.address?.trim()) {
+          const geo = await geocodeStoreAddress({ address: input.address, city: input.city, state: input.state }).catch(() => null);
+          if (geo) coords = { latitude: geo.latitude, longitude: geo.longitude };
+        }
+        return createOperationalStore({ ...input, ...coords, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
       }),
-      update: commercialFeatureProcedure("fieldOperations").input(z13.object({ id: z13.number().int().positive(), name: z13.string().trim().min(2).max(255).optional(), city: z13.string().trim().min(2).max(255).optional(), state: z13.string().trim().length(2).optional().or(z13.literal("")), address: z13.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
+      update: commercialFeatureProcedure("fieldOperations").input(z13.object({ id: z13.number().int().positive(), name: z13.string().trim().min(2).max(255).optional(), city: z13.string().trim().min(2).max(255).optional(), state: z13.string().trim().length(2).optional().or(z13.literal("")), address: z13.string().trim().max(500).optional(), latitude: z13.number().min(-90).max(90).nullable().optional(), longitude: z13.number().min(-180).max(180).nullable().optional() })).mutation(async ({ ctx, input }) => {
         if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem editar lojas." });
-        const { id: id2, ...patch } = input;
-        const ok = await updateOperationalStore(ctx.accountId, id2, { ...patch, state: patch.state === void 0 ? void 0 : patch.state ? patch.state.toUpperCase() : null });
+        const { id: id2, latitude, longitude, ...rest } = input;
+        const current = await getOperationalStore(ctx.accountId, id2);
+        if (!current) throw new TRPCError18({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+        const patch = { ...rest, state: rest.state === void 0 ? void 0 : rest.state ? rest.state.toUpperCase() : null };
+        let located = "unchanged";
+        if (latitude !== void 0 || longitude !== void 0) {
+          const valid2 = isValidLatLng(latitude, longitude);
+          if (!valid2 && !(latitude === null && longitude === null)) throw new TRPCError18({ code: "BAD_REQUEST", message: "Localiza\xE7\xE3o inv\xE1lida. Use o formato -29.6386, -51.0047." });
+          patch.latitude = valid2 ? latitude : null;
+          patch.longitude = valid2 ? longitude : null;
+          located = "manual";
+        } else {
+          const changed = (k) => patch[k] !== void 0 && String(patch[k] ?? "").trim().toLowerCase() !== String(current[k] ?? "").trim().toLowerCase();
+          if (changed("address") || changed("city") || changed("state")) {
+            const geo = await geocodeStoreAddress({ address: patch.address ?? current.address, city: patch.city ?? current.city, state: patch.state ?? current.state }).catch(() => null);
+            patch.latitude = geo?.latitude ?? null;
+            patch.longitude = geo?.longitude ?? null;
+            located = geo ? "address" : "not_found";
+          }
+        }
+        const ok = await updateOperationalStore(ctx.accountId, id2, patch);
         if (!ok) throw new TRPCError18({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
-        await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", entityId: id2, description: `Loja editada: ${patch.name ?? `#${id2}`}`, newData: patch });
-        return { success: true };
+        await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", entityId: id2, description: `Loja editada: ${rest.name ?? `#${id2}`}`, newData: patch });
+        return { success: true, located, latitude: patch.latitude ?? current.latitude ?? null, longitude: patch.longitude ?? current.longitude ?? null };
+      }),
+      // Busca a localização pelo endereço das lojas desta empresa que ainda não têm (poucas por vez; Nominatim 1/s).
+      geocodeMissing: companyAdminProcedure.mutation(async ({ ctx }) => {
+        const pending = await listStoresMissingCoordinates(ctx.accountId, 8);
+        let found = 0;
+        for (const store of pending) {
+          const geo = await geocodeStoreAddress(store).catch(() => null);
+          if (!geo) continue;
+          await updateOperationalStore(ctx.accountId, store.id, { latitude: geo.latitude, longitude: geo.longitude });
+          found += 1;
+        }
+        if (found) await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", description: `Localiza\xE7\xE3o pelo endere\xE7o encontrada para ${found} loja(s)` });
+        return { checked: pending.length, found };
       }),
       archive: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const store = await archiveOperationalStore(ctx.accountId, input.id);
@@ -11761,7 +11911,9 @@ var appRouter = router({
             });
           }
         }
-        const started = await updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: when.effectiveTime, startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy });
+        const storeLat = owned.store?.latitude, storeLng = owned.store?.longitude;
+        const distance = isValidLatLng(storeLat, storeLng) && isValidLatLng(input.latitude, input.longitude) ? Math.round(distanceMeters({ lat: storeLat, lng: storeLng }, { lat: input.latitude, lng: input.longitude })) : void 0;
+        const started = await updateOperationalVisit(ctx.accountId, input.id, { status: "in_progress", actualStart: when.effectiveTime, startLatitude: input.latitude, startLongitude: input.longitude, startAccuracy: input.accuracy, ...distance !== void 0 ? { distanceMeters: distance } : {} });
         if (input.clientId) await recordSubmission({ companyId: ctx.accountId, memberAccountId: ctx.memberAccountId ?? null, clientId: input.clientId, kind: "visit_start", entityId: input.id, deviceTime: input.deviceTime ? new Date(input.deviceTime) : null, offline: when.offline, alert: when.clockAlert ?? when.timeNote });
         return started;
       }),

@@ -349,3 +349,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 body[data-page="landing"] .pwa-online-pill { display: none !important; }
 /* Dentro do app o topo já mostra Online/Offline/pendentes: evita indicador duplicado. */
 body:has(.saas-page) .pwa-online-pill { display: none !important; }
+
+/* Com o botão flutuante "Baixar aplicativo" na tela, sobra espaço no fim da página para rolar tudo acima dele. */
+body:has(.pwa-install-cta) .saas-page { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); }

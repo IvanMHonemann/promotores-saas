@@ -304,7 +304,7 @@ export function PunchPanel() {
 
         {error && <p role="alert" className="mt-3 rounded-xl border border-rose-300/40 bg-rose-400/15 p-3 text-sm font-semibold text-rose-100">{error}</p>}
 
-        <ol className="mt-5 grid grid-cols-4 gap-2" aria-label="Marcações de hoje">
+        <ol data-fab-avoid className="mt-5 grid grid-cols-4 gap-2" aria-label="Marcações de hoje">
           {STEPS.map((step) => {
             const ev = byType[step.type];
             const done = Boolean(ev);

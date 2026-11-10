@@ -1,4 +1,5 @@
 import { detectImageMime, guardedStorageDelete, isTenantMediaKey, safeKeySegment } from "../mediaKeys";
+import { facadePhotoAction } from "../../shared/facadePhotos";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "../../shared/uploadLimits";
 import { z } from "zod";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
@@ -89,6 +90,14 @@ async function ensureStorePhotosTable(db: any) {
   }
 }
 
+/**
+ * Fotos de fachada do check-in/check-out ficam só com a visita: NUNCA aparecem na galeria da loja.
+ * O VisitCheckIn grava com chave "ci-<visita>-<start|complete>-..." (antes de 28/10: "visit-<visita>-<ação>-...").
+ * As fotos da galeria usam chave hexadecimal (PhotoCapture), então não colidem com esses prefixos.
+ * Condição SQL: só fotos da galeria (exclui as de fachada). Prefixos iguais a shared/facadePhotos.ts.
+ */
+const GALLERY_ONLY = sql`(store_photos.idempotencyKey IS NULL OR (store_photos.idempotencyKey NOT LIKE 'ci-%' AND store_photos.idempotencyKey NOT LIKE 'visit-%'))`;
+
 /** Confere que o cliente pertence à loja/empresa e grava o vínculo da foto (coluna criada sob demanda). */
 async function assertStoreClient(db: any, companyId: number, storeId: number, storeClientId: number) {
   await ensureStoreClientsSchema(db);
@@ -135,8 +144,8 @@ export const storePhotosRouter = router({
             address: stores.address,
             latitude: stores.latitude,
             longitude: stores.longitude,
-            photoCount: sql<number>`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded'${ownPhotos})`,
-            lastActivity: sql<string | null>`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId}${ownPhotos})`,
+            photoCount: sql<number>`(SELECT COUNT(*) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND store_photos.uploadStatus = 'uploaded' AND ${GALLERY_ONLY}${ownPhotos})`,
+            lastActivity: sql<string | null>`(SELECT MAX(capturedAt) FROM store_photos WHERE store_photos.storeId = stores.id AND store_photos.companyId = ${ctx.accountId} AND ${GALLERY_ONLY}${ownPhotos})`,
           })
           .from(stores)
           .where(and(...conditions))
@@ -164,7 +173,7 @@ export const storePhotosRouter = router({
       await ensureStorePhotosTable(db);
       const memberId = scopeMemberId(ctx);
       const own = memberId !== null ? sql` AND promoterId = ${memberId}` : sql``;
-      const res: any = await db.execute(sql`SELECT COUNT(*) AS c, MAX(capturedAt) AS lastAt FROM store_photos WHERE companyId = ${ctx.accountId} AND storeId IS NULL AND uploadStatus = 'uploaded'${own}`);
+      const res: any = await db.execute(sql`SELECT COUNT(*) AS c, MAX(capturedAt) AS lastAt FROM store_photos WHERE companyId = ${ctx.accountId} AND storeId IS NULL AND uploadStatus = 'uploaded' AND ${GALLERY_ONLY}${own}`);
       const row = (Array.isArray(res?.[0]) ? res[0] : Array.isArray(res) ? res : res?.rows ?? [])[0] ?? {};
       return { count: Number(row.c ?? 0), lastActivity: row.lastAt ?? null };
     }),
@@ -187,7 +196,8 @@ export const storePhotosRouter = router({
       await ensureStoreClientsSchema(db);
       const memberId = scopeMemberId(ctx);
 
-      const conditions: any[] = [eq(storePhotos.companyId, ctx.accountId)];
+      // Galeria da loja: fotos de fachada (check-in/check-out) nunca entram aqui.
+      const conditions: any[] = [eq(storePhotos.companyId, ctx.accountId), GALLERY_ONLY];
       if (input.storeId) {
         await assertStoreAccess(db, ctx, input.storeId);
         conditions.push(eq(storePhotos.storeId, input.storeId));
@@ -230,6 +240,30 @@ export const storePhotosRouter = router({
         .orderBy(desc(storePhotos.capturedAt));
 
       return photos;
+    }),
+
+  /** Fotos de fachada (check-in/check-out) de uma visita. Ficam só aqui, fora da galeria da loja. */
+  listVisitFacade: commercialFeatureProcedure("fieldOperations")
+    .input(z.object({ visitId: z.number().int().positive() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco indisponível." });
+      await ensureStorePhotosTable(db);
+      const memberId = scopeMemberId(ctx);
+      const conditions: any[] = [
+        eq(storePhotos.companyId, ctx.accountId),
+        // Fotos antigas (antes de 23/10) podem ter ficado sem visitId: a chave também diz a visita.
+        sql`(${storePhotos.visitId} = ${input.visitId} OR ${storePhotos.idempotencyKey} LIKE ${`ci-${input.visitId}-%`} OR ${storePhotos.idempotencyKey} LIKE ${`visit-${input.visitId}-%`})`,
+        eq(storePhotos.uploadStatus, "uploaded"),
+        sql`NOT ${GALLERY_ONLY}`,
+      ];
+      if (memberId !== null) conditions.push(eq(storePhotos.promoterId, memberId));
+      const rows = await db
+        .select({ id: storePhotos.id, visitId: storePhotos.visitId, capturedAt: storePhotos.capturedAt, idempotencyKey: storePhotos.idempotencyKey })
+        .from(storePhotos)
+        .where(and(...conditions))
+        .orderBy(desc(storePhotos.capturedAt));
+      return rows.map((r: any) => ({ id: r.id, visitId: r.visitId, capturedAt: r.capturedAt, action: facadePhotoAction(r.idempotencyKey) }));
     }),
 
   /** Cria registro de foto com idempotência. Upload do arquivo é feito separadamente. */

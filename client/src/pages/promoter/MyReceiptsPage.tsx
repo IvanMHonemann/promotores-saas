@@ -37,7 +37,7 @@ export default function MyReceiptsPage() {
           <CardContent className="flex gap-3 p-4 text-sm text-teal-50">
             <ShieldCheck className="h-5 w-5 shrink-0 text-teal-300" />
             <p>
-              O comprovante prova que você registrou o ponto naquele horário. Ele traz o <b>número da batida</b>
+              O comprovante prova que você registrou o ponto naquele horário. Ele traz o <b>número da batida</b>{" "}
               e um <b>código de segurança</b>: se alguém mudasse o registro depois, o código deixaria de conferir. Guarde os que achar importantes —
               o PDF pode ser baixado a qualquer momento nesta tela.
             </p>

@@ -98,9 +98,13 @@ export function PunchPanel() {
 
   const last = today[today.length - 1] as any;
   const lastType = (last?.eventType as PunchType | undefined) ?? undefined;
+  // Marcações da jornada atual (a partir da última entrada): se a pessoa voltou a trabalhar depois
+  // da saída, os círculos mostram só a jornada nova, sem misturar a saída da jornada anterior.
   const byType = useMemo(() => {
     const map: Partial<Record<PunchType, any>> = {};
-    for (const e of today as any[]) map[e.eventType as PunchType] = e; // a última de cada tipo vale
+    let start = 0;
+    (today as any[]).forEach((e, i) => { if (e.eventType === "clock_in") start = i; });
+    for (const e of (today as any[]).slice(start)) map[e.eventType as PunchType] = e; // a última de cada tipo vale
     return map;
   }, [today]);
 
@@ -118,18 +122,23 @@ export function PunchPanel() {
   // Após break_end a saída já é o botão principal.
   const canFinish = lastType === "clock_in";
 
-  // Tempo trabalhado: entrada → intervalo, e retorno → saída (ou agora, se ainda aberta).
+  // Tempo trabalhado no dia: soma todos os trechos trabalhados (entrada/retorno → intervalo/saída),
+  // inclusive de mais de uma jornada no mesmo dia; trecho ainda aberto conta até agora.
   const workedMs = useMemo(() => {
-    const entry = byType.clock_in ? eventTime(byType.clock_in).getTime() : null;
-    if (entry == null) return 0;
-    const exit = byType.clock_out ? eventTime(byType.clock_out).getTime() : now.getTime();
-    const breakStart = byType.break_start ? eventTime(byType.break_start).getTime() : null;
-    const breakEnd = byType.break_end ? eventTime(byType.break_end).getTime() : null;
-    if (breakStart == null) return Math.max(0, exit - entry);
-    let total = Math.max(0, breakStart - entry);
-    if (breakEnd != null && breakEnd >= breakStart) total += Math.max(0, exit - breakEnd);
+    let total = 0;
+    let openAt: number | null = null;
+    for (const e of today as any[]) {
+      const t = eventTime(e).getTime();
+      if (e.eventType === "clock_in" || e.eventType === "break_end") {
+        if (openAt == null) openAt = t;
+      } else if (e.eventType === "break_start" || e.eventType === "clock_out") {
+        if (openAt != null) total += Math.max(0, t - openAt);
+        openAt = null;
+      }
+    }
+    if (openAt != null) total += Math.max(0, now.getTime() - openAt);
     return total;
-  }, [byType, now]);
+  }, [today, now]);
 
   const punch = async (action: Action) => {
     if (busy) return;
@@ -192,7 +201,8 @@ export function PunchPanel() {
   };
 
   const loading = shift.isLoading || history.isLoading;
-  const dateLabel = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  const dateLabelRaw = now.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  const dateLabel = dateLabelRaw.charAt(0).toUpperCase() + dateLabelRaw.slice(1); // "Segunda-feira, 9 de novembro"
   const status = closed
     ? { text: "Jornada encerrada", dot: "bg-slate-300", chip: "border-slate-400/30 bg-slate-400/10 text-slate-100" }
     : onBreak
@@ -216,7 +226,7 @@ export function PunchPanel() {
       <div className="p-5 sm:p-6">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-medium capitalize text-slate-200">{dateLabel}</p>
+            <p className="text-sm font-medium text-slate-200">{dateLabel}</p>
             <p className="mt-1 flex items-baseline gap-1.5 font-black tabular-nums text-white">
               <span className="text-5xl sm:text-6xl">{hhmm(now)}</span>
               <span className="text-lg font-bold text-teal-300">{String(now.getSeconds()).padStart(2, "0")}</span>

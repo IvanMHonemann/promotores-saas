@@ -137,8 +137,9 @@ export default function PromoterDashboard() {
         </header>
 
         {access.isLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
-        {!access.isLoading && <PromoterGuide hasTimeTracking={hasTimeTracking} hasFieldOperations={hasFieldOperations} hasVisitCheckIn={hasVisitCheckIn} />}
+        {/* Ponto primeiro: o botão de Entrada fica no topo da tela; o guia vem logo abaixo ("aqui em cima"). */}
         {hasTimeTracking && <PunchPanel />}
+        {!access.isLoading && <PromoterGuide hasTimeTracking={hasTimeTracking} hasFieldOperations={hasFieldOperations} hasVisitCheckIn={hasVisitCheckIn} />}
 
         {hasFieldOperations && hasVisitCheckIn && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
           <div className="rounded-2xl border border-amber-300/40 bg-amber-300/15 p-4 text-sm font-medium text-amber-50">
@@ -301,12 +302,13 @@ function VisitTimer({ startTime }: { startTime: string | Date | null }) {
     const start = new Date(startTime).getTime();
     const tick = () => {
       const diff = Date.now() - start;
-      const mins = Math.floor(diff / 60000);
-      const secs = Math.floor((diff % 60000) / 1000);
-      setElapsed(`${mins}:${secs.toString().padStart(2, "0")}`);
+      const totalMin = Math.max(0, Math.floor(diff / 60000));
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      setElapsed(h > 0 ? `${h}h ${String(m).padStart(2, "0")}min` : `${m} min`);
     };
     tick();
-    const id = setInterval(tick, 1000);
+    const id = setInterval(tick, 15000);
     return () => clearInterval(id);
   }, [startTime]);
   if (!startTime) return null;

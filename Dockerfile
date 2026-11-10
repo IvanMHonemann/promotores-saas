@@ -7,6 +7,12 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 # O build do Vite precisa de mais heap que o padrão em servidores com 2 GB (usa a swap se preciso).
 ARG BUILD_MAX_OLD_SPACE=3072
+# Sentry no navegador (opcional): a chave pública (DSN) entra no JS no momento do build.
+# Vazio = Sentry do navegador desligado (Vercel/testes continuam iguais).
+ARG VITE_SENTRY_DSN=""
+ARG VITE_SENTRY_ENVIRONMENT=""
+ENV VITE_SENTRY_DSN=${VITE_SENTRY_DSN}
+ENV VITE_SENTRY_ENVIRONMENT=${VITE_SENTRY_ENVIRONMENT}
 RUN NODE_OPTIONS=--max-old-space-size=${BUILD_MAX_OLD_SPACE} pnpm run build
 
 FROM node:22-bookworm-slim AS runtime

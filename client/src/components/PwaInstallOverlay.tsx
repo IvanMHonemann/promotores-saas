@@ -9,6 +9,19 @@ export function PwaInstallOverlay() {
 
   if (typeof document === "undefined") return null;
 
+  const openApp = () => {
+    const target = window.location.origin + "/login";
+    try {
+      const w = window.open(target, "_blank", "noopener,noreferrer");
+      if (w) {
+        setTimeout(() => { try { w.close(); } catch { /* ignore */ } }, 300);
+        dismissReady();
+        return;
+      }
+    } catch { /* ignore */ }
+    window.location.href = target;
+  };
+
   // Mostra o overlay imediatamente no clique (prompting) e durante o progresso real.
   const showProgress = phase === "prompting" || phase === "progress" || isInstalling;
   if (!showProgress && !showReady) return null;
@@ -48,7 +61,14 @@ export function PwaInstallOverlay() {
             <p className="mt-3 text-sm leading-relaxed text-slate-300">
               Clique em <strong>Abrir App</strong> ou verifique no seu celular.
             </p>
-            <Button data-testid="pwa-install-close" className="mt-4 w-full bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={() => dismissReady()}>
+            <Button
+              data-testid="pwa-install-open"
+              className="mt-4 w-full bg-gradient-to-r from-teal-400 to-emerald-400 font-bold text-slate-950 hover:from-teal-300 hover:to-emerald-300"
+              onClick={openApp}
+            >
+              Abrir App
+            </Button>
+            <Button data-testid="pwa-install-close" variant="ghost" className="mt-2 w-full text-slate-400 hover:text-white" onClick={() => dismissReady()}>
               Fechar
             </Button>
           </div>

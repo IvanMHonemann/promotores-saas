@@ -93,6 +93,7 @@ function preloadCurrentRoute() {
 }
 preloadCurrentRoute();
 import { useAuth } from "./_core/hooks/useAuth";
+import { isStandaloneDisplay } from "./pwa/hooks";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
@@ -274,6 +275,16 @@ function FeatureProtected({ featureKey, children }: { featureKey: EntitlementKey
 function RootRoute() {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
+
+  // No app instalado (PWA standalone): nunca mostra a landing. Vai direto para login se não autenticado.
+  if (typeof window !== "undefined" && isStandaloneDisplay() && !user) {
+    if (window.location.pathname !== "/login") {
+      window.location.replace("/login");
+      return <LoadingScreen />;
+    }
+    return <LoginPage />;
+  }
+
   if (!user) return <LandingPage />;
   if (user.role === "platform_admin") return <PlatformDashboard />;
   if (user.role === "promoter") return <SubscriptionGate><PromoterDashboard /></SubscriptionGate>;

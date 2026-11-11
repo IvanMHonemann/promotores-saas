@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock3,
+  Download,
   Fingerprint,
   Instagram,
   MapPinned,
@@ -22,6 +23,7 @@ import ContactChat from "@/components/ContactChat";
 import LandingPromoVideo from "@/components/LandingPromoVideo";
 import FloatingContactButton from "@/components/FloatingContactButton";
 import { useEffect, useState } from "react";
+import { useInstallPrompt } from "@/pwa/hooks";
 
 
 const navLinks = [
@@ -141,6 +143,40 @@ function scrollTo(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function SmartAppButton({ size = "default" as const, className = "" }: { size?: "default" | "lg"; className?: string }) {
+  const { alreadyInstalled, isStandalone, isIosInstallable, isInstalling, beginNativeInstallFromGesture } = useInstallPrompt();
+
+  const onClick = () => {
+    if (alreadyInstalled || isStandalone) {
+      // Tenta abrir o app. Em Android o Chrome pode focar a PWA existente; senão o usuário abre pelo ícone.
+      window.location.href = "/login";
+      return;
+    }
+    const result = beginNativeInstallFromGesture();
+    if (result === "prompting" || result === "busy") return;
+    if (isIosInstallable) {
+      alert("No iPhone: toque em Compartilhar e depois em \"Adicionar à Tela de Início\".");
+      return;
+    }
+    alert("No Chrome: toque no menu ⋮ e escolha \"Instalar app\" (ou Adicionar à tela inicial).");
+  };
+
+  const label = alreadyInstalled || isStandalone ? "Abrir App" : isInstalling ? "Baixando…" : "Baixar App";
+  const Icon = alreadyInstalled || isStandalone ? Smartphone : Download;
+
+  return (
+    <Button
+      size={size}
+      onClick={onClick}
+      disabled={isInstalling}
+      className={`bg-gradient-to-r from-teal-400 to-emerald-400 font-bold text-slate-950 shadow-lg shadow-teal-500/30 hover:from-teal-300 hover:to-emerald-300 disabled:opacity-70 ${className}`}
+    >
+      <Icon className="mr-2 h-4 w-4" />
+      {label}
+    </Button>
+  );
+}
+
 export default function LandingPage() {
   const [, navigate] = useLocation();
 
@@ -181,9 +217,7 @@ export default function LandingPage() {
             )}
           </nav>
           <div className="flex items-center gap-2">
-            <Button variant="outline" className="border-teal-400/50 bg-teal-400/10 text-teal-200 hover:bg-teal-400/20 hover:text-white" onClick={() => navigate("/login")}>
-              Entrar
-            </Button>
+            <SmartAppButton className="px-5 py-2 text-sm" />
             <Button className="bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={openContact}>
               Fale conosco
             </Button>
@@ -400,9 +434,7 @@ export default function LandingPage() {
               Fale conosco
               <ArrowRight className="h-4 w-4" />
             </Button>
-            <Button size="lg" variant="outline" className="border-white/15 bg-white/5 px-6 text-white hover:bg-white/10" onClick={() => navigate("/login")}>
-              Já sou cliente
-            </Button>
+            <SmartAppButton size="lg" className="px-6" />
           </div>
         </div>
       </section>
@@ -436,7 +468,10 @@ export default function LandingPage() {
           <BrandLogo variant="dark" height={28} />
           <p>GondUp · Gestão inteligente de equipes de campo</p>
           <div className="flex flex-wrap items-center justify-center gap-5">
-            <button className="hover:text-white" onClick={() => navigate("/login")}>Entrar</button>
+            <button className="hover:text-white" onClick={() => {
+              // Same logic as SmartAppButton for consistency
+              window.location.href = "/login";
+            }}>Abrir App / Entrar</button>
             <button className="hover:text-white" onClick={() => navigate("/termos")}>Termos de Uso</button>
             <button className="hover:text-white" onClick={() => navigate("/privacidade")}>Privacidade</button>
           </div>

@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X, Archive, ChevronDown, ChevronsLeft, Palmtree } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useInstallPrompt } from "@/pwa/hooks";
-import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
 import { trpc } from "@/lib/trpc";
@@ -30,32 +28,6 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
   children?: NavItem[];
 };
-
-function InstallButton() {
-  const { showInstallOffer, alreadyInstalled, isInstalling, isIosInstallable, beginNativeInstallFromGesture } = useInstallPrompt();
-  if (alreadyInstalled || !showInstallOffer) return null;
-  const onClick = () => {
-    const result = beginNativeInstallFromGesture();
-    if (result === "prompting" || result === "busy") return;
-    if (isIosInstallable) {
-      alert("No iPhone: toque em Compartilhar e depois em Adicionar à Tela de Início.");
-      return;
-    }
-    alert("No Chrome: toque no menu ⋮ e escolha Instalar app (ou Adicionar à tela inicial).");
-  };
-  return (
-    <button
-      type="button"
-      data-testid="sidebar-install-button"
-      disabled={isInstalling}
-      onClick={onClick}
-      className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 px-4 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-teal-500/20 transition hover:from-teal-300 hover:to-emerald-300 disabled:opacity-60"
-    >
-      <Download className="h-4 w-4" />
-      {isInstalling ? "Baixando..." : "Baixar aplicativo"}
-    </button>
-  );
-}
 
 export function SidebarNav() {
   const { user, logout } = useAuth();
@@ -217,7 +189,6 @@ export function SidebarNav() {
             {renderGroup(company.account, true)}
           </div>
         )}
-        <InstallButton />
       </div>
     </aside>
   </>;

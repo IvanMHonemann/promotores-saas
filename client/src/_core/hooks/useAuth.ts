@@ -120,9 +120,12 @@ export function useAuth(options?: UseAuthOptions) {
       utils.auth.me.setData(undefined, null);
       window.dispatchEvent(new Event("promotores-saas:logout"));
       if (!isOffline) await utils.auth.me.invalidate();
-      // Volta para a landing (login no modal da página inicial)
+      // No app instalado volta para o login; no navegador volta para a landing.
       if (typeof window !== "undefined") {
-        window.location.replace("/");
+        const standalone =
+          window.matchMedia("(display-mode: standalone)").matches ||
+          Boolean((window.navigator as { standalone?: boolean }).standalone);
+        window.location.replace(standalone ? "/login" : "/");
       }
     }
   }, [cachedUser, isOffline, logoutMutation, utils]);

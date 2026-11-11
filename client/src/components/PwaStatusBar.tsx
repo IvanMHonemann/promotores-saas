@@ -132,7 +132,7 @@ export function PwaStatusBar() {
     setShowAndroidGuide(true);
   };
 
-  const fab = useCoversProtected(showInstallOffer && !isInstalling && !showReady && !pillHidden);
+  const fab = useCoversProtected(false);
 
   return (
     <>
@@ -146,42 +146,6 @@ export function PwaStatusBar() {
         {isOnline ? <Wifi className="h-3.5 w-3.5 shrink-0" /> : <WifiOff className="h-3.5 w-3.5 shrink-0" />}
         <span>{isOnline ? "Online" : "Offline — dados locais"}</span>
       </div>
-
-      {showInstallOffer && !isInstalling && !showReady && !pillHidden && (
-        <div
-          ref={fab.ref}
-          data-covers-protected={fab.covers ? "true" : undefined}
-          className={`pwa-install-cta fixed bottom-3 left-3 z-40 flex items-center gap-1 transition-opacity duration-200 print:hidden ${fab.covers ? "pointer-events-none opacity-0" : "opacity-100"}`}
-        >
-          <Button
-            size="sm"
-            data-testid="pwa-install-button"
-            className="h-9 gap-1.5 rounded-full bg-teal-400 px-3.5 text-xs font-bold text-slate-950 shadow-lg shadow-teal-900/30 hover:bg-teal-300"
-            onClick={onInstallClick}
-          >
-            <Download className="h-4 w-4" /> Baixar aplicativo
-          </Button>
-          <button
-            type="button"
-            data-testid="pwa-install-hide"
-            aria-label="Ocultar o botão Baixar aplicativo (continua no menu)"
-            title="Ocultar (continua no menu)"
-            onClick={hidePill}
-            className="grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-slate-900/90 text-slate-200 shadow-lg hover:bg-slate-800"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {alreadyInstalled && !isStandalone && !isInstalling && !showReady && (
-        <div
-          data-testid="pwa-already-installed"
-          className="pwa-install-cta fixed bottom-3 left-3 z-40 max-w-[min(100vw-1.5rem,18rem)] rounded-2xl border border-teal-300/30 bg-slate-900/95 px-3 py-2 text-[11px] font-semibold text-teal-100 shadow-lg print:hidden"
-        >
-          App já instalado — abra pelo ícone GondUp
-        </div>
-      )}
 
       {iosHintVisible && isIosInstallable && (
         <div className="fixed bottom-16 left-3 right-3 z-[70] mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-xl print:hidden sm:left-3 sm:right-auto">

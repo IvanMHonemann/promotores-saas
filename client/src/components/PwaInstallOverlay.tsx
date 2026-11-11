@@ -45,14 +45,8 @@ export function PwaInstallOverlay() {
         <div data-testid="pwa-install-ready" className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center print:hidden">
           <div className="w-full max-w-sm rounded-2xl border border-teal-300/30 bg-slate-900 p-5 text-white shadow-2xl">
             <p className="text-base font-bold">Aplicativo instalado</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-300">
-              {installStep || "Pronto! O GondUp foi instalado."}
-            </p>
-            <p className="mt-3 text-sm leading-relaxed text-teal-100">
-              Toque no ícone <strong>GondUp</strong> na sua tela inicial (ou em <strong>Abrir</strong> no aviso do Chrome).
-            </p>
-            <p className="mt-2 text-xs text-slate-400">
-              O site no navegador não consegue abrir o app instalado sozinho — isso é limitação do Chrome no Android.
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">
+              Clique em <strong>Abrir App</strong> ou verifique no seu celular.
             </p>
             <Button data-testid="pwa-install-close" className="mt-4 w-full bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={() => dismissReady()}>
               Fechar

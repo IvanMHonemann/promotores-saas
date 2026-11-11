@@ -5,14 +5,17 @@ import { useInstallPrompt } from "@/pwa/hooks";
 
 /** Overlay de instalação no body — independente do botão Baixar / landing / saas-page. */
 export function PwaInstallOverlay() {
-  const { isInstalling, installStep, showReady, dismissReady } = useInstallPrompt();
+  const { isInstalling, installStep, showReady, dismissReady, phase } = useInstallPrompt();
 
   if (typeof document === "undefined") return null;
-  if (!isInstalling && !showReady) return null;
+
+  // Mostra o overlay imediatamente no clique (prompting) e durante o progresso real.
+  const showProgress = phase === "prompting" || phase === "progress" || isInstalling;
+  if (!showProgress && !showReady) return null;
 
   return createPortal(
     <>
-      {isInstalling && (
+      {showProgress && (
         <div data-testid="pwa-install-progress" className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-4 print:hidden">
           <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 text-white shadow-2xl">
             <div className="mb-4 flex items-center gap-3">
@@ -38,7 +41,7 @@ export function PwaInstallOverlay() {
         </div>
       )}
 
-      {showReady && !isInstalling && (
+      {showReady && !showProgress && (
         <div data-testid="pwa-install-ready" className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-4 sm:items-center print:hidden">
           <div className="w-full max-w-sm rounded-2xl border border-teal-300/30 bg-slate-900 p-5 text-white shadow-2xl">
             <p className="text-base font-bold">Aplicativo instalado</p>

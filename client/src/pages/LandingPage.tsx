@@ -234,9 +234,6 @@ export default function LandingPage() {
           </nav>
           <div className="flex items-center gap-2">
             <SmartAppButton className="px-5 py-2 text-sm" />
-            <Button className="bg-teal-400 text-slate-950 hover:bg-teal-300" onClick={openContact}>
-              Fale conosco
-            </Button>
           </div>
         </div>
       </header>

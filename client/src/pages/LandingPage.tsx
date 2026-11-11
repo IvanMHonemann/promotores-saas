@@ -275,45 +275,55 @@ export default function LandingPage() {
         <div className="relative">
           <div className="absolute -inset-6 rounded-[2.2rem] bg-teal-400/10 blur-2xl" />
           <article className="relative overflow-hidden rounded-[1.8rem] border border-white/10 bg-slate-950/80 shadow-2xl shadow-teal-950/40 backdrop-blur">
-            <div className="flex items-center justify-between border-b border-white/8 px-5 py-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-300">Exemplo ilustrativo</p>
-                <p className="mt-1 text-lg font-bold text-white">Painel de campo</p>
-              </div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Exemplo
-              </span>
+            <div className="px-5 pt-5 pb-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-300">Ponto com GPS</p>
+              <p className="mt-1 text-lg font-bold text-white">Bata o ponto e siga o roteiro</p>
             </div>
-            <div className="grid grid-cols-2 gap-3 p-5">
-              <div className="rounded-2xl border border-white/8 bg-white/5 p-4">
-                <p className="text-xs text-slate-300">Visitas do dia</p>
-                <p className="mt-2 text-3xl font-black text-white">42</p>
-                <p className="mt-1 text-xs text-teal-300">31 concluídas</p>
-              </div>
-              <div className="rounded-2xl border border-white/8 bg-white/5 p-4">
-                <p className="text-xs text-slate-300">Promotores ativos</p>
-                <p className="mt-2 text-3xl font-black text-white">18</p>
-                <p className="mt-1 text-xs text-cyan-300">12 em loja agora</p>
-              </div>
-            </div>
-            <div className="space-y-2 px-5 pb-5">
-              {[
-                { name: "Mercado Central", status: "Em visita", detail: "Checklist 4/6" },
-                { name: "Rede Norte — Loja 12", status: "Ponto aberto", detail: "GPS 18 m" },
-                { name: "Atacado Sul", status: "Evidência enviada", detail: "há 4 min" },
-              ].map((row) => (
-                <div key={row.name} className="flex items-center justify-between rounded-xl border border-white/6 bg-white/[0.03] px-4 py-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{row.name}</p>
-                    <p className="text-xs text-slate-300">{row.detail}</p>
-                  </div>
-                  <span className="text-xs font-medium text-teal-200">{row.status}</span>
+            <div className="px-5 pb-5">
+              <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-5">
+                <div className="flex items-start justify-between">
+                  <p className="text-sm text-slate-300">Terça-feira, 10 de novembro</p>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    Entrada não registrada
+                  </span>
                 </div>
-              ))}
+                <p className="mt-3 text-5xl font-black tracking-tight text-white">11:59<span className="ml-1 text-xl font-bold text-teal-300">06</span></p>
+                <div className="mt-4 flex items-center justify-between rounded-xl bg-amber-400/10 px-4 py-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-200/80">Novembro de 2026</p>
+                    <p className="font-bold text-amber-100">Horas a compensar</p>
+                  </div>
+                  <p className="text-sm font-semibold text-amber-100">15h 58min</p>
+                </div>
+                <button type="button" className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-teal-400 to-emerald-400 py-4 text-base font-black text-slate-950 shadow-lg shadow-teal-500/20">
+                  →] Bater entrada
+                </button>
+                <p className="mt-3 text-center text-xs text-slate-400">Inicia sua jornada de hoje · o GPS é pedido ao tocar</p>
+                <div className="mt-5 grid grid-cols-4 gap-2 text-center">
+                  {[
+                    { label: "Entrada", active: true },
+                    { label: "Intervalo", active: false },
+                    { label: "Retorno", active: false },
+                    { label: "Saída", active: false },
+                  ].map((s) => (
+                    <div key={s.label}>
+                      <div className={`mx-auto grid h-8 w-8 place-items-center rounded-full border-2 ${s.active ? "border-teal-300 bg-teal-300/20" : "border-slate-600"}`}>
+                        <span className={`h-2 w-2 rounded-full ${s.active ? "bg-teal-300" : "bg-slate-600"}`} />
+                      </div>
+                      <p className="mt-1.5 text-[11px] font-medium text-slate-300">{s.label}</p>
+                      <p className="text-[10px] text-slate-500">--:--</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                <p className="text-sm text-slate-300">Histórico, localização e correções</p>
+                <span className="text-xs font-semibold text-teal-300">Cartão ponto</span>
+              </div>
             </div>
           </article>
-          <p className="relative mt-3 text-center text-xs text-slate-300">Números e lojas fictícios, apenas para ilustrar o painel.</p>
+          <p className="relative mt-3 text-center text-xs text-slate-300">Tela real do ponto do promotor — GPS, sequência e espelho no mesmo lugar.</p>
         </div>
       </section>
 

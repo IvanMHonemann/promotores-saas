@@ -146,12 +146,28 @@ function scrollTo(id: string) {
 function SmartAppButton({ size = "default" as const, className = "" }: { size?: "default" | "lg"; className?: string }) {
   const { alreadyInstalled, isStandalone, isIosInstallable, isInstalling, beginNativeInstallFromGesture } = useInstallPrompt();
 
+  const openInstalledApp = () => {
+    // Tenta abrir o PWA instalado. Em Android Chrome o launch_handler + window.open
+    // costuma focar o app existente. Fallback para a mesma origem.
+    const target = window.location.origin + "/login";
+    try {
+      const w = window.open(target, "_blank", "noopener,noreferrer");
+      if (w) {
+        // Se abriu uma janela, tenta fechar se for o mesmo contexto (alguns browsers ignoram)
+        setTimeout(() => { try { w.close(); } catch { /* ignore */ } }, 300);
+        return;
+      }
+    } catch { /* ignore */ }
+    // Fallback: navega (em alguns dispositivos isso foca o app instalado)
+    window.location.href = target;
+  };
+
   const onClick = () => {
     if (alreadyInstalled || isStandalone) {
-      // Tenta abrir o app. Em Android o Chrome pode focar a PWA existente; senão o usuário abre pelo ícone.
-      window.location.href = "/login";
+      openInstalledApp();
       return;
     }
+    // Mesmo fluxo do botão antigo: dispara o prompt nativo e o overlay de progresso
     const result = beginNativeInstallFromGesture();
     if (result === "prompting" || result === "busy") return;
     if (isIosInstallable) {

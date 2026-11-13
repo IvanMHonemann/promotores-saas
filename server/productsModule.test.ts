@@ -98,7 +98,7 @@ describe("módulo por empresa", () => {
     const off = buildCompanyGroups("company_admin", (k) => k !== "products").groups.flatMap((g) => g.items.map((i) => i.href));
     expect(off).not.toContain("/produtos");
     expect(src("client/src/App.tsx")).toContain('<Route path="/produtos"><CommercialProtected><FeatureProtected featureKey="products">');
-    expect(src("client/src/components/SidebarNav.tsx")).toContain('hasFeature("products") ? [{ href: "/produtos"');
+    expect(src("client/src/lib/sidebarGroups.ts")).toContain('hasFeature("products") ? [{ href: "/produtos"');
   });
   it("todas as rotas do servidor exigem o módulo products", () => {
     const full = src("server/modules/products.ts");

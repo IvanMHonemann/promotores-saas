@@ -1,0 +1,30 @@
+import{Q as S,T as z,aG as j,g as q,s as K,a as Q,b as Z,t as H,q as J,_ as u,l as F,c as X,F as Y,K as tt,a4 as et,e as rt,z as at,G as it}from"./mermaid.core-B7Ax5alR.js";import{p as nt}from"./chunk-4BX2VUAB-BuNjtrWP.js";import{p as ot}from"./treemap-KMMF4GRG-Bp7Aii0M.js";import{d as I}from"./arc-qxqoco86.js";import{o as st}from"./ordinal-Cboi1Yqb.js";import"./index-BhWUXBna.js";import"./purify.es-CAi2OJFm.js";import"./PlatformDashboard-CiFTQX_L.js";import"./badge-Bxm8QV0M.js";import"./DashboardLayout-CuL7jMXb.js";import"./circle-x-WurG5vKC.js";import"./PaymentReminderBanner-D1_HaI9B.js";import"./message-circle-LF3wWO3P.js";import"./download-vdwAIUiH.js";import"./Combination-B4kqTkkh.js";import"./key-round-CLRPKgXD.js";import"./BrandLogo-CszUrK7c.js";import"./file-text-XB_js9lX.js";import"./circle-check-CzhJhP6p.js";import"./shield-check-DOBvGVUa.js";import"./send-DNeCt2vT.js";import"./textarea-Du266CzY.js";import"./dialog-B3f2VknQ.js";import"./useComposition-DiOF8ObE.js";import"./index-BdQq_4o_.js";import"./imageCompress-gICoTnOH.js";import"./image-DjMdJT0L.js";import"./user-CAu7074i.js";import"./activity-BkvVzLoo.js";import"./search-CNMdxzHl.js";import"./play-C0EXtUfp.js";import"./clipboard-check-D5b8pWsh.js";import"./_baseUniq-qmC03YAQ.js";import"./_basePickBy-BQSSLeV-.js";import"./clone-DHMHLpMa.js";import"./init-Gi6I4Gst.js";function lt(t,r){return r<t?-1:r>t?1:r>=t?0:NaN}function ct(t){return t}function pt(){var t=ct,r=lt,g=null,x=S(0),o=S(z),l=S(0);function s(e){var i,c=(e=j(e)).length,m,y,h=0,p=new Array(c),n=new Array(c),v=+x.apply(this,arguments),w=Math.min(z,Math.max(-z,o.apply(this,arguments)-v)),f,C=Math.min(Math.abs(w)/c,l.apply(this,arguments)),$=C*(w<0?-1:1),d;for(i=0;i<c;++i)(d=n[p[i]=i]=+t(e[i],i,e))>0&&(h+=d);for(r!=null?p.sort(function(A,D){return r(n[A],n[D])}):g!=null&&p.sort(function(A,D){return g(e[A],e[D])}),i=0,y=h?(w-c*$)/h:0;i<c;++i,v=f)m=p[i],d=n[m],f=v+(d>0?d*y:0)+$,n[m]={data:e[m],index:i,value:d,startAngle:v,endAngle:f,padAngle:C};return n}return s.value=function(e){return arguments.length?(t=typeof e=="function"?e:S(+e),s):t},s.sortValues=function(e){return arguments.length?(r=e,g=null,s):r},s.sort=function(e){return arguments.length?(g=e,r=null,s):g},s.startAngle=function(e){return arguments.length?(x=typeof e=="function"?e:S(+e),s):x},s.endAngle=function(e){return arguments.length?(o=typeof e=="function"?e:S(+e),s):o},s.padAngle=function(e){return arguments.length?(l=typeof e=="function"?e:S(+e),s):l},s}var ut=it.pie,G={sections:new Map,showData:!1},T=G.sections,N=G.showData,mt=structuredClone(ut),dt=u(()=>structuredClone(mt),"getConfig"),gt=u(()=>{T=new Map,N=G.showData,at()},"clear"),ft=u(({label:t,value:r})=>{if(r<0)throw new Error(`"${t}" has invalid value: ${r}. Negative values are not allowed in pie charts. All slice values must be >= 0.`);T.has(t)||(T.set(t,r),F.debug(`added new section: ${t}, with value: ${r}`))},"addSection"),ht=u(()=>T,"getSections"),vt=u(t=>{N=t},"setShowData"),St=u(()=>N,"getShowData"),L={getConfig:dt,clear:gt,setDiagramTitle:J,getDiagramTitle:H,setAccTitle:Z,getAccTitle:Q,setAccDescription:K,getAccDescription:q,addSection:ft,getSections:ht,setShowData:vt,getShowData:St},xt=u((t,r)=>{nt(t,r),r.setShowData(t.showData),t.sections.map(r.addSection)},"populateDb"),yt={parse:u(async t=>{const r=await ot("pie",t);F.debug(r),xt(r,L)},"parse")},wt=u(t=>`
+  .pieCircle{
+    stroke: ${t.pieStrokeColor};
+    stroke-width : ${t.pieStrokeWidth};
+    opacity : ${t.pieOpacity};
+  }
+  .pieOuterCircle{
+    stroke: ${t.pieOuterStrokeColor};
+    stroke-width: ${t.pieOuterStrokeWidth};
+    fill: none;
+  }
+  .pieTitleText {
+    text-anchor: middle;
+    font-size: ${t.pieTitleTextSize};
+    fill: ${t.pieTitleTextColor};
+    font-family: ${t.fontFamily};
+  }
+  .slice {
+    font-family: ${t.fontFamily};
+    fill: ${t.pieSectionTextColor};
+    font-size:${t.pieSectionTextSize};
+    // fill: white;
+  }
+  .legend text {
+    fill: ${t.pieLegendTextColor};
+    font-family: ${t.fontFamily};
+    font-size: ${t.pieLegendTextSize};
+  }
+`,"getStyles"),At=wt,Dt=u(t=>{const r=[...t.values()].reduce((o,l)=>o+l,0),g=[...t.entries()].map(([o,l])=>({label:o,value:l})).filter(o=>o.value/r*100>=1).sort((o,l)=>l.value-o.value);return pt().value(o=>o.value)(g)},"createPieArcs"),Ct=u((t,r,g,x)=>{F.debug(`rendering pie chart
+`+t);const o=x.db,l=X(),s=Y(o.getConfig(),l.pie),e=40,i=18,c=4,m=450,y=m,h=tt(r),p=h.append("g");p.attr("transform","translate("+y/2+","+m/2+")");const{themeVariables:n}=l;let[v]=et(n.pieOuterStrokeWidth);v??=2;const w=s.textPosition,f=Math.min(y,m)/2-e,C=I().innerRadius(0).outerRadius(f),$=I().innerRadius(f*w).outerRadius(f*w);p.append("circle").attr("cx",0).attr("cy",0).attr("r",f+v/2).attr("class","pieOuterCircle");const d=o.getSections(),A=Dt(d),D=[n.pie1,n.pie2,n.pie3,n.pie4,n.pie5,n.pie6,n.pie7,n.pie8,n.pie9,n.pie10,n.pie11,n.pie12];let b=0;d.forEach(a=>{b+=a});const W=A.filter(a=>(a.data.value/b*100).toFixed(0)!=="0"),E=st(D);p.selectAll("mySlices").data(W).enter().append("path").attr("d",C).attr("fill",a=>E(a.data.label)).attr("class","pieCircle"),p.selectAll("mySlices").data(W).enter().append("text").text(a=>(a.data.value/b*100).toFixed(0)+"%").attr("transform",a=>"translate("+$.centroid(a)+")").style("text-anchor","middle").attr("class","slice"),p.append("text").text(o.getDiagramTitle()).attr("x",0).attr("y",-400/2).attr("class","pieTitleText");const O=[...d.entries()].map(([a,M])=>({label:a,value:M})),k=p.selectAll(".legend").data(O).enter().append("g").attr("class","legend").attr("transform",(a,M)=>{const R=i+c,B=R*O.length/2,V=12*i,U=M*R-B;return"translate("+V+","+U+")"});k.append("rect").attr("width",i).attr("height",i).style("fill",a=>E(a.label)).style("stroke",a=>E(a.label)),k.append("text").attr("x",i+c).attr("y",i-c).text(a=>o.getShowData()?`${a.label} [${a.value}]`:a.label);const _=Math.max(...k.selectAll("text").nodes().map(a=>a?.getBoundingClientRect().width??0)),P=y+e+i+c+_;h.attr("viewBox",`0 0 ${P} ${m}`),rt(h,m,P,s.useMaxWidth)},"draw"),$t={draw:Ct},le={parser:yt,db:L,renderer:$t,styles:At};export{le as diagram};

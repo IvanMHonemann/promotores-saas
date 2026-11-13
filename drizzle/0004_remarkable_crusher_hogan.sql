@@ -1,0 +1,1 @@
+ALTER TABLE `member_accounts` ADD `recoveryCodeHash` varchar(255);

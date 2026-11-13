@@ -1,0 +1,1 @@
+import{j as n,n as s}from"./index-BhWUXBna.js";function g({className:a,height:o=56}){return n.jsx("img",{src:o<=36?"/gondup-logo-sm.png":"/gondup-logo.png",alt:"GondUp",className:s("block h-auto w-auto max-w-full object-contain",a),style:{maxHeight:o},draggable:!1,decoding:"async"})}export{g as B};

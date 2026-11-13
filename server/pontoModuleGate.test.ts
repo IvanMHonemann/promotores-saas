@@ -23,14 +23,16 @@ describe("módulo ponto desligado — menu e rotas", () => {
 
   it("FeatureProtected e menu do promotor cobrem todas as rotas TIME_TRACKING_PATHS", () => {
     const app = src("client/src/App.tsx");
+    const groups = src("client/src/lib/sidebarGroups.ts");
     const nav = src("client/src/components/SidebarNav.tsx");
     for (const path of TIME_TRACKING_PATHS) {
       expect(app, path).toContain(`path="${path}"`);
       expect(app, path).toContain('featureKey="timeTracking"');
     }
-    expect(nav).toContain('hasFeature("timeTracking")');
-    expect(nav).toContain("/meus-comprovantes");
-    expect(nav).toContain("/meu-espelho");
+    expect(groups).toContain('hasFeature("timeTracking")');
+    expect(groups).toContain("/meus-comprovantes");
+    expect(groups).toContain("/meu-espelho");
+    expect(nav).toContain("buildPromoterNav");
   });
 
   it("empresa com override timeTracking=false não recebe o módulo", () => {

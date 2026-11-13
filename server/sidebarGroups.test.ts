@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCompanyGroups, isItemActive } from "../client/src/lib/sidebarGroups";
+import { buildCompanyGroups, buildPromoterNav, isItemActive } from "../client/src/lib/sidebarGroups";
 
 const all = () => true;
 const labels = (r: ReturnType<typeof buildCompanyGroups>) => r.groups.map((g) => [g.title, g.items.map((i) => i.label)]);
@@ -41,5 +41,57 @@ describe("menu lateral da empresa", () => {
     expect(isItemActive("/#inicio", "/", "#inicio")).toBe(true);
     expect(isItemActive("/#inicio", "/lojas", "")).toBe(false);
     expect(isItemActive("/lojas", "/lojas/12", "")).toBe(true);
+    expect(isItemActive("/ponto", "/ponto", "")).toBe(true);
+    expect(isItemActive("/ponto", "/ponto", "#correcoes")).toBe(false);
+    expect(isItemActive("/ponto#correcoes", "/ponto", "#correcoes")).toBe(true);
+    expect(isItemActive("/ponto#correcoes", "/ponto", "")).toBe(false);
+    expect(isItemActive("/", "/", "")).toBe(true);
+    expect(isItemActive("/", "/", "#roteiro")).toBe(false);
+    expect(isItemActive("/#roteiro", "/", "#roteiro")).toBe(true);
+  });
+});
+
+describe("menu lateral do promotor", () => {
+  const all = () => true;
+  const labelsOf = (items: ReturnType<typeof buildPromoterNav>) => items.map((i) => i.label);
+  const ponto = (items: ReturnType<typeof buildPromoterNav>) => items.find((i) => i.label === "Cartão ponto");
+
+  it("agrupa as funções de ponto no dropdown Cartão ponto e mantém o restante na ordem", () => {
+    const items = buildPromoterNav(all);
+    expect(labelsOf(items)).toEqual([
+      "Painel inicial",
+      "Produtos e validades",
+      "Cartão ponto",
+      "Minhas férias",
+      "Meus dados (LGPD)",
+      "Lojas",
+      "Meu roteiro",
+      "Lixeira",
+    ]);
+    expect(ponto(items)?.children?.map((c) => [c.label, c.href])).toEqual([
+      ["Cartão ponto", "/ponto"],
+      ["Correções de ponto", "/ponto#correcoes"],
+      ["Meus comprovantes", "/meus-comprovantes"],
+      ["Meu espelho do mês", "/meu-espelho"],
+    ]);
+  });
+
+  it("sem ponto, some o dropdown e Minhas férias", () => {
+    const items = buildPromoterNav((k) => k !== "timeTracking");
+    expect(labelsOf(items)).toEqual([
+      "Painel inicial",
+      "Produtos e validades",
+      "Meus dados (LGPD)",
+      "Lojas",
+      "Meu roteiro",
+      "Lixeira",
+    ]);
+    expect(items.some((i) => i.children?.length)).toBe(false);
+  });
+
+  it("sem produtos, some Produtos e validades", () => {
+    const items = buildPromoterNav((k) => k === "timeTracking");
+    expect(labelsOf(items)).not.toContain("Produtos e validades");
+    expect(ponto(items)?.children).toHaveLength(4);
   });
 });

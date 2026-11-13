@@ -8,7 +8,7 @@ import type { EntitlementKey } from "@shared/entitlements";
 import { setSidebarCollapsed, useSidebarCollapsed } from "@/lib/sidebarState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLocation } from "wouter";
-import { buildCompanyGroups, isItemActive, loadGroupState, saveGroupState, type NavGroup } from "@/lib/sidebarGroups";
+import { buildCompanyGroups, buildPromoterNav, isItemActive, loadGroupState, saveGroupState, type NavGroup, type PromoterNavItem } from "@/lib/sidebarGroups";
 
 const groupIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard, store: MapPin, calendar: CalendarDays, camera: Camera, package: Package, users: UsersRound,
@@ -51,6 +51,12 @@ export function SidebarNav() {
   const hasFeature = (key: EntitlementKey) => Boolean(entitlements.data?.effective?.[key]);
   const toggle = (label: string) => setExpanded((prev) => ({ ...prev, [label]: !prev[label] }));
 
+  const toNavItem = (item: PromoterNavItem): NavItem => ({
+    href: item.href,
+    label: item.label,
+    icon: groupIcons[item.icon] || LayoutDashboard,
+    children: item.children?.map(toNavItem),
+  });
   const links: NavItem[] = role === "platform_admin"
     ? [
         { href: "/", label: "Visão geral", icon: LayoutDashboard },
@@ -64,21 +70,7 @@ export function SidebarNav() {
         { href: "/plataforma/ia", label: "Suporte com IA", icon: Sparkles },
       ]
     : role === "promoter"
-      ? [
-          { href: "/", label: "Painel inicial", icon: LayoutDashboard },
-          ...(hasFeature("products") ? [{ href: "/produtos", label: "Produtos e validades", icon: Package }] : []),
-          ...(hasFeature("timeTracking") ? [
-            { href: "/ponto", label: "Cartão ponto", icon: Clock3 },
-            { href: "/ponto#correcoes", label: "Correções de ponto", icon: ClipboardList },
-            { href: "/meus-comprovantes", label: "Meus comprovantes", icon: FileText },
-            { href: "/meu-espelho", label: "Meu espelho do mês", icon: FileText },
-            { href: "/minhas-ferias", label: "Minhas férias", icon: Palmtree },
-          ] : []),
-          { href: "/meus-dados", label: "Meus dados (LGPD)", icon: ShieldAlert },
-          { href: "/lojas", label: "Lojas", icon: MapPin },
-          { href: "/#roteiro", label: "Meu roteiro", icon: ClipboardList },
-          { href: "/lixeira", label: "Lixeira", icon: Trash2 },
-        ]
+      ? buildPromoterNav((k) => hasFeature(k as EntitlementKey)).map(toNavItem)
       : [];
 
   const close = () => setOpen(false);
@@ -134,14 +126,17 @@ export function SidebarNav() {
         {!loadingModules && company && company.groups.map((g) => renderGroup(g))}
         {!loadingModules && links.map((item) => {
           if (item.children && item.children.length > 0) {
-            const isOpen = !!expanded[item.label];
+            const childActive = item.children.some((child) => child.href && isItemActive(child.href, pathname, hash));
+            // Fecha por padrão (menu mais curto); abre sozinho na rota do grupo, como no menu da empresa.
+            const isOpen = childActive || !!expanded[item.label];
             const Icon = item.icon;
             return (
               <div key={item.label}>
                 <button
                   type="button"
                   onClick={() => toggle(item.label)}
-                  className="flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold text-slate-300 transition hover:bg-white/[.06] hover:text-white"
+                  aria-expanded={isOpen}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold transition ${childActive ? "text-white" : "text-slate-300 hover:bg-white/[.06] hover:text-white"}`}
                 >
                   <Icon className="h-[18px] w-[18px] text-teal-300" />
                   <span className="flex-1 text-left">{item.label}</span>
@@ -151,12 +146,14 @@ export function SidebarNav() {
                   <div className="ml-8 mt-1 space-y-1">
                     {item.children.map((child) => {
                       const ChildIcon = child.icon;
+                      const active = Boolean(child.href && isItemActive(child.href, pathname, hash));
                       return (
                         <a
                           key={child.href || child.label}
                           href={child.href}
                           onClick={close}
-                          className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-white/[.06] hover:text-white"
+                          aria-current={active ? "page" : undefined}
+                          className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${active ? "bg-teal-300/15 text-white" : "text-slate-300 hover:bg-white/[.06] hover:text-white"}`}
                         >
                           {ChildIcon && <ChildIcon className="h-4 w-4 text-teal-300" />}
                           {child.label}
@@ -169,12 +166,14 @@ export function SidebarNav() {
             );
           }
           const Icon = item.icon;
+          const active = Boolean(item.href && isItemActive(item.href, pathname, hash));
           return (
             <a
               key={item.href}
               href={item.href}
               onClick={close}
-              className="flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold text-slate-300 transition hover:bg-white/[.06] hover:text-white"
+              aria-current={active ? "page" : undefined}
+              className={`flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold transition ${active ? "bg-teal-300/15 text-white" : "text-slate-300 hover:bg-white/[.06] hover:text-white"}`}
             >
               <Icon className="h-[18px] w-[18px] text-teal-300" />
               {item.label}

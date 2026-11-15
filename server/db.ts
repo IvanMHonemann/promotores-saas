@@ -487,6 +487,7 @@ export async function replaceMemberFeatureModes(input: {
 export async function listSubscriptionPlans() {
   const database = await getDb();
   if (!database) return [];
+  await ensureAdditionalUserPriceColumn();
   const plans = await database.select().from(subscriptionPlans).orderBy(desc(subscriptionPlans.createdAt));
   return attachPlanFeatureKeys(database, plans);
 }
@@ -499,6 +500,7 @@ export async function createSubscriptionPlan(data: {
   maxUsers?: number | null;
   maxClients?: number | null;
   maxExtinguishers?: number | null;
+  additionalUserPrice?: string | null;
   featureKeys: EntitlementKey[];
   availableForNew?: boolean;
 }) {
@@ -527,6 +529,7 @@ export async function updateSubscriptionPlan(id: number, data: Partial<{
   maxUsers: number | null;
   maxClients: number | null;
   maxExtinguishers: number | null;
+  additionalUserPrice: string | null;
   featureKeys: EntitlementKey[];
   availableForNew: boolean;
   active: boolean;
@@ -810,6 +813,22 @@ export async function recordPaymentEvent(data: {
   return { id: Number((result as any).insertId), duplicate: false as const };
 }
 
+
+/** Coluna do adicional por funcionário extra; segura para rodar várias vezes. */
+export async function ensureAdditionalUserPriceColumn() {
+  const database = await getDb();
+  if (!database) return;
+  try {
+    const [cols]: any = await database.execute(`SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'subscription_plans'`);
+    const names = new Set((cols as any[]).map((c) => String(c.COLUMN_NAME ?? c.column_name).toLowerCase()));
+    if (!names.has("additionaluserprice")) {
+      await database.execute(`ALTER TABLE subscription_plans ADD COLUMN additionalUserPrice decimal(12,2) NULL`);
+    }
+  } catch (error) {
+    console.warn("[db] ensureAdditionalUserPriceColumn", error instanceof Error ? error.message : error);
+  }
+}
+
 export async function listAvailablePlansForCompanies() {
   const plans = await listSubscriptionPlans();
   return plans.filter((plan: any) => plan.active && plan.availableForNew).sort((a: any, b: any) => Number(a.price) - Number(b.price));
@@ -818,23 +837,31 @@ export async function listAvailablePlansForCompanies() {
 export async function ensureSeedPlans() {
   const database = await getDb();
   if (!database) return;
+  await ensureAdditionalUserPriceColumn();
 
   // Catálogo oficial: cria os 3 planos novos se ainda não existirem.
-  // Não altera assinaturas, empresas, valores negociados nem módulos de planos já existentes.
+  // Atualiza só maxUsers e o adicional dos planos oficiais; não mexe em empresas nem módulos.
   const existing = await database.select().from(subscriptionPlans);
   const byName = new Map(existing.map((p) => [planNameKey(String(p.name)), p]));
 
   for (const plan of COMMERCIAL_PLANS) {
     const row = byName.get(planNameKey(plan.name));
-    if (row) continue;
+    if (row) {
+      await database.update(subscriptionPlans).set({
+        maxUsers: plan.includedUsers,
+        additionalUserPrice: plan.additionalUserPrice,
+      }).where(eq(subscriptionPlans.id, row.id));
+      continue;
+    }
     const [result] = await database.insert(subscriptionPlans).values({
       name: plan.name,
       description: plan.description,
       price: plan.price,
       billingCycle: plan.billingCycle,
-      maxUsers: null,
+      maxUsers: plan.includedUsers,
       maxClients: null,
       maxExtinguishers: null,
+      additionalUserPrice: plan.additionalUserPrice,
       availableForNew: true,
       active: true,
     });

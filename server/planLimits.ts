@@ -5,6 +5,17 @@ import { sql, eq } from "drizzle-orm";
 import { clients } from "../drizzle/schema.original";
 import { ENTITLEMENT_KEYS, type EntitlementKey } from "../shared/entitlements";
 import { assertCompanyFeatureAccess, getCompanyEntitlementBase } from "./entitlements";
+import {
+  EXTRA_USERS_KEY,
+  countBillableStaff,
+  effectiveUserLimit,
+  parseExtraUsers,
+  staffLimitAppliesToRole,
+  staffUsageLabel,
+  suggestedMonthlyAmount,
+  userLimitReachedMessage,
+} from "../shared/staffLimit";
+
 
 export type EffectivePlan = {
   id: number | null;
@@ -56,7 +67,51 @@ async function countClients(companyId: number): Promise<number> {
 
 async function countUsers(companyId: number): Promise<number> {
   const list = await memberAuth.listMemberAccounts(companyId);
-  return Array.isArray(list) ? list.length : 0;
+  return countBillableStaff(Array.isArray(list) ? list : []);
+}
+
+export async function resolveExtraUsers(companyId: number): Promise<number> {
+  const raw = await db.getSetting(EXTRA_USERS_KEY, companyId, "0");
+  return parseExtraUsers(raw);
+}
+
+export type StaffUsage = {
+  current: number;
+  extraUsers: number;
+  included: number | null;
+  limit: number | null;
+  unlimited: boolean;
+  planName: string | null;
+  planPrice: string | null;
+  additionalUserPrice: string | null;
+  suggestedMonthlyAmount: string | null;
+  label: string;
+};
+
+export async function getStaffUsage(companyId: number): Promise<StaffUsage> {
+  const resolved = await db.resolveCompanyPlan(companyId);
+  const plan = resolved.plan as any;
+  const extraUsers = await resolveExtraUsers(companyId);
+  const members = await memberAuth.listMemberAccounts(companyId);
+  const current = countBillableStaff(Array.isArray(members) ? members : []);
+  const included = plan?.maxUsers == null ? null : Number(plan.maxUsers);
+  const limit = effectiveUserLimit({ maxUsers: included, extraUsers });
+  const additionalUserPrice = plan?.additionalUserPrice != null ? String(plan.additionalUserPrice) : null;
+  const planPrice = plan?.price != null ? String(plan.price) : null;
+  return {
+    current,
+    extraUsers,
+    included,
+    limit,
+    unlimited: limit == null,
+    planName: plan?.name ? String(plan.name) : null,
+    planPrice,
+    additionalUserPrice,
+    suggestedMonthlyAmount: planPrice != null
+      ? suggestedMonthlyAmount({ planPrice, extraUsers, additionalUserPrice })
+      : null,
+    label: staffUsageLabel(current, limit, extraUsers),
+  };
 }
 
 export async function assertClientLimit(companyId: number) {
@@ -73,18 +128,18 @@ export async function assertClientLimit(companyId: number) {
   return plan;
 }
 
-export async function assertUserLimit(companyId: number) {
-  const plan = await getEffectivePlan(companyId);
-  if (plan.maxUsers == null) return plan;
-  const current = await countUsers(companyId);
-  if (current >= plan.maxUsers) {
+export async function assertUserLimit(companyId: number, role?: string | null) {
+  if (role != null && !staffLimitAppliesToRole(role)) return getStaffUsage(companyId);
+  const usage = await getStaffUsage(companyId);
+  if (usage.limit == null) return usage;
+  if (usage.current >= usage.limit) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: `Limite de usuários do plano ${plan.name} atingido (${plan.maxUsers}). Faça upgrade para adicionar outro usuário.`,
-      cause: { code: "PLAN_LIMIT", resource: "users", limit: plan.maxUsers, current },
+      message: userLimitReachedMessage(usage.limit),
+      cause: { code: "PLAN_LIMIT", resource: "users", limit: usage.limit, current: usage.current },
     });
   }
-  return plan;
+  return usage;
 }
 
 export async function assertAlertsFeature(companyId: number) {

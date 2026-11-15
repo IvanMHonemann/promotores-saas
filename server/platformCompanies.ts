@@ -5,6 +5,8 @@ import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { companies, companySubscriptions, memberAccounts, memberSessions, payments, subscriptionPlans, systemSettings } from "../drizzle/schema.original";
 import { MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, BILLING_DAY_KEY, markCompanyPaid, resolveMonthlyAmount, resolveGraceDays, ensureBillingDay } from "./paymentReminder";
+import { EXTRA_USERS_KEY, effectiveUserLimit, parseExtraUsers, staffUsageLabel, suggestedMonthlyAmount } from "../shared/staffLimit";
+
 import { DEFAULT_OVERDUE_GRACE_DAYS } from "./subscriptionAccess";
 
 const BR = "-03:00";
@@ -20,13 +22,14 @@ async function database() {
 
 export async function listCompaniesOverview() {
   const d = await database();
+  await db.ensureAdditionalUserPriceColumn();
   const [rows, plans, pays, counts, admins, flags] = await Promise.all([
     d.select().from(companies).orderBy(companies.name),
     d.select().from(subscriptionPlans),
     d.execute(sql`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
-    d.execute(sql`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
+    d.execute(sql`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos, SUM(CASE WHEN active = 1 AND role = 'promoter' THEN 1 ELSE 0 END) AS staff FROM member_accounts GROUP BY companyId`),
     d.execute(sql`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
-    d.select().from(systemSettings).where(inArray(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY])),
+    d.select().from(systemSettings).where(inArray(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, EXTRA_USERS_KEY])),
   ]);
   const planById = new Map(plans.map((p) => [p.id, p]));
   const map = <T,>(r: any, key = "companyId") => new Map<number, T>(((r as any)[0] as any[]).map((x) => [Number(x[key]), x as T]));
@@ -36,12 +39,26 @@ export async function listCompaniesOverview() {
     const plan = c.planId ? planById.get(c.planId) : null;
     const monthlyAmount = flagBy.get(`${c.id}:${MONTHLY_AMOUNT_KEY}`) || (plan?.price != null ? String(plan.price) : null);
     const blockAfter = flagBy.get(`${c.id}:${BLOCK_AFTER_OVERDUE_KEY}`);
+    const extraUsers = parseExtraUsers(flagBy.get(`${c.id}:${EXTRA_USERS_KEY}`));
+    const planMaxUsers = plan?.maxUsers == null ? null : Number(plan.maxUsers);
+    const additionalUserPrice = (plan as any)?.additionalUserPrice != null ? String((plan as any).additionalUserPrice) : null;
+    const staffCurrent = Number(countBy.get(c.id)?.staff ?? 0);
+    const staffLimit = effectiveUserLimit({ maxUsers: planMaxUsers, extraUsers });
     return {
       id: c.id, name: c.name, active: c.active, createdAt: c.createdAt,
       archivedAt: flagBy.get(`${c.id}:archived_at`) ?? null,
       blockedReason: flagBy.get(`${c.id}:blocked_reason`) ?? null,
       planId: c.planId ?? null, planName: plan?.name ?? null, planPrice: plan?.price ?? null,
       monthlyAmount,
+      additionalUserPrice,
+      planMaxUsers,
+      extraUsers,
+      staffCurrent,
+      staffLimit,
+      staffUsageLabel: staffUsageLabel(staffCurrent, staffLimit, extraUsers),
+      suggestedMonthlyAmount: plan?.price != null
+        ? suggestedMonthlyAmount({ planPrice: plan.price, extraUsers, additionalUserPrice })
+        : null,
       blockAfterOverdueDays: blockAfter != null && blockAfter !== "" ? Number(blockAfter) : DEFAULT_OVERDUE_GRACE_DAYS,
       subscriptionStatus: c.subscriptionStatus ?? null,
       startedAt: c.subscriptionStartedAt ?? null, expiresAt: c.subscriptionExpiresAt ?? null, graceUntil: c.gracePeriodEndsAt ?? null,
@@ -185,9 +202,13 @@ export async function setCompanyBilling(input: {
   monthlyAmount?: string | null;
   blockAfterOverdueDays?: number | null;
   dueDate?: string | null;
+  extraUsers?: number | null;
 }) {
   const company = await db.getCompanyById(input.companyId);
   if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+  if (input.extraUsers != null) {
+    await db.setSetting(EXTRA_USERS_KEY, String(parseExtraUsers(input.extraUsers)), input.companyId);
+  }
   if (input.monthlyAmount != null && input.monthlyAmount !== "") {
     if (!/^\d{1,10}(\.\d{1,2})?$/.test(input.monthlyAmount) || Number(input.monthlyAmount) <= 0) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "Valor mensal inválido." });
@@ -220,7 +241,12 @@ export async function setCompanyBilling(input: {
     // Âncora do dia de cobrança (ex.: 31) para não perder o dia ao atravessar meses curtos.
     await db.setSetting(BILLING_DAY_KEY, String(Number(input.dueDate.slice(8, 10))), input.companyId);
   }
-  return { success: true as const, monthlyAmount: await resolveMonthlyAmount(input.companyId), graceDays: await resolveGraceDays(input.companyId) };
+  return {
+    success: true as const,
+    monthlyAmount: await resolveMonthlyAmount(input.companyId),
+    graceDays: await resolveGraceDays(input.companyId),
+    extraUsers: parseExtraUsers(await db.getSetting(EXTRA_USERS_KEY, input.companyId, "0")),
+  };
 }
 
 export { markCompanyPaid, resolveMonthlyAmount, resolveGraceDays };

@@ -517,6 +517,7 @@ export const appRouter = router({
         if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
         if (!company.active) throw new TRPCError({ code: "BAD_REQUEST", message: "Não é possível criar usuário em uma empresa bloqueada." });
         try {
+          await planLimits.assertUserLimit(input.companyId, input.role);
           const created = await memberAuth.createCompanyUser(input);
           void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usuário criado pelo administrador geral: ${input.userName}`, newData: { companyId: input.companyId, email: input.email, role: input.role } });
           return created;
@@ -559,12 +560,22 @@ export const appRouter = router({
         })();
         return created;
       }),
-    setActive: platformProcedure.input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => { await memberAuth.setMemberActive(input.id, input.active); void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Administrador geral ${input.active ? "liberou" : "bloqueou"} o usuário #${input.id}` }); return { success: true } as const; }),
+    setActive: platformProcedure.input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => {
+      if (input.active) {
+        const members = await memberAuth.listMemberAccounts();
+        const target = members.find((m) => m.id === input.id);
+        if (target && !target.active) await planLimits.assertUserLimit(target.companyId, target.role);
+      }
+      await memberAuth.setMemberActive(input.id, input.active);
+      void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Administrador geral ${input.active ? "liberou" : "bloqueou"} o usuário #${input.id}` });
+      return { success: true } as const;
+    }),
     resetPassword: platformProcedure.input(z.object({ id: z.number().int().positive(), newPassword: z.string().min(8) })).mutation(async ({ input }) => { await memberAuth.resetMemberPassword(input.id, input.newPassword); return { success: true } as const; }),
   }),
 
   companyUsers: router({
     list: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => memberAuth.listMemberAccounts(ctx.accountId)),
+    staffUsage: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => planLimits.getStaffUsage(ctx.accountId)),
     permissions: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const members = await memberAuth.listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
@@ -599,7 +610,7 @@ export const appRouter = router({
     }),
     create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole, storeIds: z.array(z.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
       try {
-        await planLimits.assertUserLimit(ctx.accountId);
+        await planLimits.assertUserLimit(ctx.accountId, input.role);
         const { storeIds, ...userInput } = input;
         const created = await memberAuth.createCompanyUser({ ...userInput, companyId: ctx.accountId });
         if (input.role === "promoter" && storeIds && storeIds.length > 0) {
@@ -626,7 +637,7 @@ export const appRouter = router({
         })();
         return created;
       }
-      catch (error: any) { if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já está cadastrado." }); console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message }); if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError({ code: "BAD_REQUEST", message: "A empresa selecionada não existe mais. Atualize a página e tente novamente." }); if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados está com a estrutura de usuários desatualizada. A implantação precisa concluir a migração." }); throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível criar o usuário. Verifique os dados e tente novamente." }); }
+      catch (error: any) { if (error instanceof TRPCError) throw error; if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já está cadastrado." }); console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message }); if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError({ code: "BAD_REQUEST", message: "A empresa selecionada não existe mais. Atualize a página e tente novamente." }); if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados está com a estrutura de usuários desatualizada. A implantação precisa concluir a migração." }); throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível criar o usuário. Verifique os dados e tente novamente." }); }
     }),
     update: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), userName: z.string().min(2).optional(), email: z.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
       if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError({ code: "BAD_REQUEST", message: "O administrador não pode remover o próprio nível administrativo." });
@@ -693,6 +704,11 @@ export const appRouter = router({
     }),
     setActive: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => {
       if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError({ code: "BAD_REQUEST", message: "O administrador não pode desativar a própria sessão." });
+      if (input.active) {
+        const members = await memberAuth.listMemberAccounts(ctx.accountId);
+        const target = members.find((m) => m.id === input.id);
+        if (target && !target.active) await planLimits.assertUserLimit(ctx.accountId, target.role);
+      }
       await memberAuth.setMemberActive(input.id, input.active, ctx.accountId);
       void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Usuário ${input.active ? "ativado" : "desativado"} #${input.id}`, newData: { active: input.active } });
       return { success: true } as const;

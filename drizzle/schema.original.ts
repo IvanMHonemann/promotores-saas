@@ -248,6 +248,7 @@ export const subscriptionPlans = mysqlTable("subscription_plans", {
   maxUsers: int("maxUsers"),
   maxClients: int("maxClients"),
   maxExtinguishers: int("maxExtinguishers"),
+  additionalUserPrice: decimal("additionalUserPrice", { precision: 12, scale: 2 }),
   availableForNew: boolean("availableForNew").notNull().default(true),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

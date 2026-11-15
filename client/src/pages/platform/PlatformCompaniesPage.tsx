@@ -11,6 +11,7 @@ import { PasswordInput } from "@/components/PasswordInput";
 import { trpc } from "@/lib/trpc";
 import { ENTITLEMENT_CATALOG, type EntitlementKey } from "@shared/entitlements";
 import { isSelectablePlan, nextPaidPeriod, planSelectLabel } from "@shared/commercialPlans";
+import { effectiveUserLimit, parseExtraUsers, staffUsageLabel, suggestedMonthlyAmount } from "@shared/staffLimit";
 import { toast } from "sonner";
 import { confirmAction } from "@/components/ConfirmDialog";
 
@@ -130,6 +131,7 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
   const [grace, setGrace] = useState(String((c as any).blockAfterOverdueDays ?? 5));
   const [monthlyAmount, setMonthlyAmount] = useState(String((c as any).monthlyAmount ?? c.planPrice ?? ""));
   const [payAmount, setPayAmount] = useState(String((c as any).monthlyAmount ?? c.planPrice ?? ""));
+  const [extraUsers, setExtraUsers] = useState(String((c as any).extraUsers ?? 0));
   const [payDate, setPayDate] = useState(today());
   const [payType, setPayType] = useState<"PIX" | "BOLETO" | "CREDIT_CARD" | "UNDEFINED">("PIX");
   const [saving, setSaving] = useState(false);
@@ -138,15 +140,34 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
   const st = stateOf(c);
   const planOptions = (plans.data || []).filter((p: any) => isSelectablePlan(p, c.planId));
   const paidPeriod = nextPaidPeriod(iso(c.expiresAt) || null, today());
+  const extrasN = parseExtraUsers(extraUsers);
+  const selectedPlan = (plans.data || []).find((p: any) => String(p.id) === planId) ?? null;
+  const liveLimit = effectiveUserLimit({
+    maxUsers: selectedPlan ? (selectedPlan.maxUsers == null ? null : Number(selectedPlan.maxUsers)) : (c as any).planMaxUsers,
+    extraUsers: extrasN,
+  });
+  const liveSuggested = selectedPlan
+    ? suggestedMonthlyAmount({ planPrice: selectedPlan.price, extraUsers: extrasN, additionalUserPrice: selectedPlan.additionalUserPrice })
+    : ((c as any).suggestedMonthlyAmount ?? "");
+
+  const applySuggested = (plan: any, extras: number) => {
+    if (!plan) return;
+    const suggested = suggestedMonthlyAmount({ planPrice: plan.price, extraUsers: extras, additionalUserPrice: plan.additionalUserPrice });
+    setMonthlyAmount(suggested);
+    setPayAmount(suggested);
+  };
 
   const onPlanChange = (id: string) => {
     setPlanId(id);
     const selected = (plans.data || []).find((p: any) => String(p.id) === id);
-    if (selected) {
-      const price = Number(selected.price).toFixed(2);
-      setMonthlyAmount(price);
-      setPayAmount(price);
-    }
+    applySuggested(selected, extrasN);
+  };
+
+  const onExtrasChange = (raw: string) => {
+    const cleaned = raw.replace(/\D/g, "");
+    setExtraUsers(cleaned);
+    const selected = (plans.data || []).find((p: any) => String(p.id) === planId);
+    applySuggested(selected, parseExtraUsers(cleaned));
   };
 
   const saveAll = async () => {
@@ -159,6 +180,7 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
         monthlyAmount: /^\d+(\.\d{1,2})?$/.test(monthlyAmount) ? monthlyAmount : undefined,
         blockAfterOverdueDays: Number(grace || 5),
         dueDate: endsAt || undefined,
+        extraUsers: extrasN,
       });
       await setPlan.mutateAsync({
         companyId: c.id,
@@ -207,8 +229,13 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
       <div className="grid gap-3 sm:grid-cols-2">
         <div><Label>Plano</Label><select value={planId} onChange={(e) => onPlanChange(e.target.value)} className={sel}><option value="">Selecione…</option>{planOptions.map((p: any) => <option key={p.id} value={p.id}>{planSelectLabel(p)}</option>)}</select></div>
         <div><Label>Situação</Label><select value={status} onChange={(e) => setStatus(e.target.value as any)} className={sel}>{Object.entries(STATUS_LABEL).filter(([k]) => k !== "test").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+        <div><Label>Funcionários extras</Label><Input inputMode="numeric" value={extraUsers} onChange={(e) => onExtrasChange(e.target.value)} className={inp} placeholder="0" /><p className="mt-1 text-[11px] text-slate-400">Soma ao limite incluso do plano. Só os promotores ativos entram na cota; supervisores e o administrador não contam.</p></div>
         <div><Label>Valor mensal negociado (R$)</Label><Input inputMode="decimal" value={monthlyAmount} onChange={(e) => { const v = e.target.value.replace(",", "."); setMonthlyAmount(v); setPayAmount(v); }} className={inp} placeholder="Ex.: 199.90" /></div>
         <div><Label>Bloquear após atraso (dias)</Label><Input inputMode="numeric" value={grace} onChange={(e) => setGrace(e.target.value.replace(/\D/g, ""))} className={inp} /><p className="mt-1 text-[11px] text-slate-400">Padrão 5. Nesse período o admin vê aviso vermelho; depois só a tela de Pix.</p></div>
+      </div>
+      <div className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-200">
+        <p>Uso atual: <span className="font-medium">{staffUsageLabel(Number((c as any).staffCurrent ?? 0), liveLimit, extrasN)}</span></p>
+        {liveSuggested && <p className="mt-1 text-xs text-slate-400">Valor mensal sugerido: {money(liveSuggested)} (preço do plano + extras × adicional). Você pode ajustar o valor negociado.</p>}
       </div>
       <div className="rounded-lg bg-white/5 px-3 py-2 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">

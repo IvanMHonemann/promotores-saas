@@ -69,7 +69,6 @@ describe("menu lateral do promotor", () => {
       "Lixeira",
     ]);
     expect(ponto(items)?.children?.map((c) => [c.label, c.href])).toEqual([
-      ["Cartão ponto", "/ponto"],
       ["Correções de ponto", "/ponto#correcoes"],
       ["Meus comprovantes", "/meus-comprovantes"],
       ["Meu espelho do mês", "/meu-espelho"],
@@ -92,6 +91,6 @@ describe("menu lateral do promotor", () => {
   it("sem produtos, some Produtos e validades", () => {
     const items = buildPromoterNav((k) => k === "timeTracking");
     expect(labelsOf(items)).not.toContain("Produtos e validades");
-    expect(ponto(items)?.children).toHaveLength(4);
+    expect(ponto(items)?.children).toHaveLength(3);
   });
 });

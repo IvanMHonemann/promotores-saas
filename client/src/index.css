@@ -352,3 +352,39 @@ body:has(.saas-page) .pwa-online-pill { display: none !important; }
 
 /* Com o botão flutuante "Baixar aplicativo" na tela, sobra espaço no fim da página para rolar tudo acima dele. */
 body:has(.pwa-install-cta) .saas-page { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); }
+
+/*
+  Contraste dos botões verdes.
+  No tema escuro, .text-slate-950 vira #f8fafc. Nos botões teal-300/400
+  (fundo claro da marca) o texto branco fica ilegível (cerca de 1,4:1).
+  Nestes botões o texto volta a ser o slate-950 original.
+  Nos botões pensados com texto branco (emerald-500/600, teal-600), o fundo
+  é escurecido para atingir WCAG AA (>= 4,5:1). Hover e disabled acompanham.
+*/
+body:has(.saas-page) :is(button, a, [data-slot="button"], [role="button"]):is(.bg-teal-200, .bg-teal-300, .bg-teal-400, .bg-teal-500),
+.saas-page :is(button, a, [data-slot="button"], [role="button"]):is(.bg-teal-200, .bg-teal-300, .bg-teal-400, .bg-teal-500) {
+  color: #020617;
+}
+body:has(.saas-page) :is(button, a, [data-slot="button"], [role="button"])[class*="disabled:text-slate-400"]:disabled,
+.saas-page :is(button, a, [data-slot="button"], [role="button"])[class*="disabled:text-slate-400"]:disabled {
+  color: #94a3b8;
+}
+
+:is(button, a, [data-slot="button"], [role="button"]):is(.bg-emerald-500, .bg-emerald-600) {
+  background-color: #047857; /* emerald-700, 5,48:1 no branco */
+  color: #ffffff;
+}
+:is(button, a, [data-slot="button"], [role="button"]):is(.bg-emerald-500, .bg-emerald-600):hover:not(:disabled) {
+  background-color: #065f46; /* emerald-800, 7,68:1 */
+}
+:is(button, a, [data-slot="button"], [role="button"]).bg-teal-600 {
+  background-color: #0f766e; /* teal-700, 5,47:1 no branco */
+  color: #ffffff;
+}
+:is(button, a, [data-slot="button"], [role="button"]).bg-teal-600:hover:not(:disabled) {
+  background-color: #115e59; /* teal-800, 7,58:1 */
+}
+:is(button, a, [data-slot="button"], [role="button"]):is(.bg-emerald-500, .bg-emerald-600, .bg-teal-600):disabled {
+  opacity: 0.6;
+  filter: saturate(0.5);
+}

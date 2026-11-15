@@ -127,8 +127,10 @@ export function SidebarNav() {
         {!loadingModules && links.map((item) => {
           if (item.children && item.children.length > 0) {
             const childActive = item.children.some((child) => child.href && isItemActive(child.href, pathname, hash));
+            // A tela /ponto não tem mais subitem próprio, mas ainda pertence ao grupo.
+            const groupActive = childActive || pathname === "/ponto" || pathname.startsWith("/ponto/");
             // Fecha por padrão (menu mais curto); abre sozinho na rota do grupo, como no menu da empresa.
-            const isOpen = childActive || !!expanded[item.label];
+            const isOpen = groupActive || !!expanded[item.label];
             const Icon = item.icon;
             return (
               <div key={item.label}>
@@ -136,7 +138,7 @@ export function SidebarNav() {
                   type="button"
                   onClick={() => toggle(item.label)}
                   aria-expanded={isOpen}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold transition ${childActive ? "text-white" : "text-slate-300 hover:bg-white/[.06] hover:text-white"}`}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-semibold transition ${groupActive ? "text-white" : "text-slate-300 hover:bg-white/[.06] hover:text-white"}`}
                 >
                   <Icon className="h-[18px] w-[18px] text-teal-300" />
                   <span className="flex-1 text-left">{item.label}</span>

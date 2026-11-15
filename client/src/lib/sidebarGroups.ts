@@ -68,7 +68,6 @@ export function buildPromoterNav(hasFeature: (key: string) => boolean): Promoter
         label: "Cartão ponto",
         icon: "clock",
         children: [
-          { href: "/ponto", label: "Cartão ponto", icon: "clock" },
           { href: "/ponto#correcoes", label: "Correções de ponto", icon: "audit" },
           { href: "/meus-comprovantes", label: "Meus comprovantes", icon: "file" },
           { href: "/meu-espelho", label: "Meu espelho do mês", icon: "file" },

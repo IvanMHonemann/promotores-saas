@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/PasswordInput";
 import { trpc } from "@/lib/trpc";
 import { ENTITLEMENT_CATALOG, type EntitlementKey } from "@shared/entitlements";
+import { isSelectablePlan, nextPaidPeriod, planSelectLabel } from "@shared/commercialPlans";
 import { toast } from "sonner";
 import { confirmAction } from "@/components/ConfirmDialog";
 
@@ -111,10 +112,9 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
   const ok = (msg: string) => () => { toast.success(msg); onChanged(); };
   const fail = (e: { message: string }) => toast.error(e.message);
   const rename = trpc.platformCompanies.rename.useMutation({ onSuccess: ok("Nome atualizado."), onError: fail });
-  const setPlan = trpc.platformCompanies.setPlan.useMutation({ onSuccess: ok("Plano e validade salvos."), onError: fail });
+  const setPlan = trpc.platformCompanies.setPlan.useMutation({ onError: fail });
   const pay = trpc.platformCompanies.registerPayment.useMutation({ onSuccess: ok("Pagamento registrado e validade atualizada."), onError: fail });
-  const markPaid = trpc.platformCompanies.markPaid.useMutation({ onSuccess: ok("Marcado como pago: validade avançou 1 mês."), onError: fail });
-  const setBilling = trpc.platformCompanies.setBilling.useMutation({ onSuccess: ok("Cobrança atualizada."), onError: fail });
+  const setBilling = trpc.platformCompanies.setBilling.useMutation({ onError: fail });
   const delPay = trpc.platformCompanies.deletePayment.useMutation({ onSuccess: ok("Pagamento excluído."), onError: fail });
   const block = trpc.platformCompanies.setBlocked.useMutation({ onSuccess: ok("Situação atualizada."), onError: fail });
   const archive = trpc.platformCompanies.archive.useMutation({ onSuccess: ok("Empresa atualizada."), onError: fail });
@@ -124,14 +124,76 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
   const [name, setName] = useState(c.name);
   const [planId, setPlanId] = useState(String(c.planId ?? ""));
   const [status, setStatus] = useState(c.subscriptionStatus ?? "active");
-  const [startsAt, setStartsAt] = useState(iso(c.startedAt) || today());
+  const [startsAt] = useState(iso(c.startedAt) || today());
   const [endsAt, setEndsAt] = useState(iso(c.expiresAt));
+  const [editingDue, setEditingDue] = useState(false);
   const [grace, setGrace] = useState(String((c as any).blockAfterOverdueDays ?? 5));
   const [monthlyAmount, setMonthlyAmount] = useState(String((c as any).monthlyAmount ?? c.planPrice ?? ""));
+  const [payAmount, setPayAmount] = useState(String((c as any).monthlyAmount ?? c.planPrice ?? ""));
+  const [payDate, setPayDate] = useState(today());
+  const [payType, setPayType] = useState<"PIX" | "BOLETO" | "CREDIT_CARD" | "UNDEFINED">("PIX");
+  const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState(c.blockedReason ?? "");
-  const [pay_, setPay] = useState({ amount: c.planPrice ? String(c.planPrice) : "", paymentDate: today(), periodFrom: today(), periodTo: "", billingType: "PIX" as const });
   const [confirm, setConfirm] = useState("");
   const st = stateOf(c);
+  const planOptions = (plans.data || []).filter((p: any) => isSelectablePlan(p, c.planId));
+  const paidPeriod = nextPaidPeriod(iso(c.expiresAt) || null, today());
+
+  const onPlanChange = (id: string) => {
+    setPlanId(id);
+    const selected = (plans.data || []).find((p: any) => String(p.id) === id);
+    if (selected) {
+      const price = Number(selected.price).toFixed(2);
+      setMonthlyAmount(price);
+      setPayAmount(price);
+    }
+  };
+
+  const saveAll = async () => {
+    if (!planId) return toast.info("Selecione um plano.");
+    if (monthlyAmount && !/^\d+(\.\d{1,2})?$/.test(monthlyAmount)) return toast.info("Valor mensal inválido.");
+    setSaving(true);
+    try {
+      await setBilling.mutateAsync({
+        companyId: c.id,
+        monthlyAmount: /^\d+(\.\d{1,2})?$/.test(monthlyAmount) ? monthlyAmount : undefined,
+        blockAfterOverdueDays: Number(grace || 5),
+        dueDate: endsAt || undefined,
+      });
+      await setPlan.mutateAsync({
+        companyId: c.id,
+        planId: Number(planId),
+        status: status as any,
+        startsAt: startsAt || today(),
+        endsAt: endsAt || null,
+        graceDays: Number(grace || 5),
+      });
+      toast.success("Plano e pagamento salvos.");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e?.message || "Não foi possível salvar.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const registerPay = () => {
+    if (!c.planId) return toast.info("Salve o plano da empresa antes de registrar o pagamento.");
+    if (!/^\d+(\.\d{1,2})?$/.test(payAmount)) return toast.info("Informe o valor pago.");
+    const until = new Date(`${paidPeriod.periodTo}T12:00:00-03:00`).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    void confirmAction({
+      title: `Registrar pagamento de ${money(payAmount)} para ${c.name}? A validade será estendida até ${until}.`,
+      confirmLabel: "Registrar pagamento",
+    }).then((okConfirm) => okConfirm && pay.mutate({
+      companyId: c.id,
+      amount: payAmount,
+      paymentDate: payDate,
+      periodFrom: paidPeriod.periodFrom,
+      periodTo: paidPeriod.periodTo,
+      billingType: payType,
+      planId: c.planId,
+    }));
+  };
 
   return <div className="space-y-4">
     <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2"><CardTitle className="flex items-center gap-2 text-lg"><Pencil className="h-4 w-4 text-teal-300" />{c.name}</CardTitle><Badge className={st.tone}>{st.label}</Badge></CardHeader><CardContent className="space-y-3 text-sm">
@@ -141,37 +203,38 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
       <Button onClick={() => enterCompany(c.id, c.name, () => enterAs.mutateAsync({ companyId: c.id }))} disabled={Boolean(c.archivedAt)} variant="outline" className="h-auto min-h-10 whitespace-normal border-fuchsia-300/40 text-left text-fuchsia-200"><LogIn className="mr-2 h-4 w-4" />Acessar como esta empresa (editar tudo)</Button>
     </CardContent></Card>
 
-    <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarCheck className="h-4 w-4 text-teal-300" />Plano e validade</CardTitle></CardHeader><CardContent className="space-y-3">
+    <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarCheck className="h-4 w-4 text-teal-300" />Plano e pagamento</CardTitle></CardHeader><CardContent className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <div><Label>Plano</Label><select value={planId} onChange={(e) => setPlanId(e.target.value)} className={sel}><option value="">Selecione…</option>{(plans.data || []).map((p: any) => <option key={p.id} value={p.id}>{p.name} — {money(p.price)}/{p.billingCycle === "yearly" ? "ano" : "mês"}{p.active === false ? " (inativo)" : ""}</option>)}</select></div>
+        <div><Label>Plano</Label><select value={planId} onChange={(e) => onPlanChange(e.target.value)} className={sel}><option value="">Selecione…</option>{planOptions.map((p: any) => <option key={p.id} value={p.id}>{planSelectLabel(p)}</option>)}</select></div>
         <div><Label>Situação</Label><select value={status} onChange={(e) => setStatus(e.target.value as any)} className={sel}>{Object.entries(STATUS_LABEL).filter(([k]) => k !== "test").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-        <div><Label>Válido a partir de</Label><Input type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className={inp} /></div>
-        <div><Label>Válido até (inclusive) — vencimento</Label><Input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className={inp} /></div>
-        <div><Label>Valor mensal negociado (R$)</Label><Input inputMode="decimal" value={monthlyAmount} onChange={(e) => setMonthlyAmount(e.target.value.replace(",", "."))} className={inp} placeholder="Ex.: 199.90" /></div>
+        <div><Label>Valor mensal negociado (R$)</Label><Input inputMode="decimal" value={monthlyAmount} onChange={(e) => { const v = e.target.value.replace(",", "."); setMonthlyAmount(v); setPayAmount(v); }} className={inp} placeholder="Ex.: 199.90" /></div>
         <div><Label>Bloquear após atraso (dias)</Label><Input inputMode="numeric" value={grace} onChange={(e) => setGrace(e.target.value.replace(/\D/g, ""))} className={inp} /><p className="mt-1 text-[11px] text-slate-400">Padrão 5. Nesse período o admin vê aviso vermelho; depois só a tela de Pix.</p></div>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Button disabled={!planId || !startsAt || setPlan.isPending} onClick={() => setPlan.mutate({ companyId: c.id, planId: Number(planId), status: status as any, startsAt, endsAt: endsAt || null, graceDays: Number(grace || 5) })} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar plano e validade</Button>
-        <Button disabled={setBilling.isPending || !monthlyAmount || !/^\d+(\.\d{1,2})?$/.test(monthlyAmount)} onClick={() => setBilling.mutate({ companyId: c.id, monthlyAmount, blockAfterOverdueDays: Number(grace || 5), dueDate: endsAt || null })} variant="outline" className="border-white/25 text-white">Salvar valor e tolerância</Button>
-        <Button disabled={markPaid.isPending || !c.planId} onClick={() => { void confirmAction({ title: `Marcar ${c.name} como pago? A validade avança 1 mês e o aviso de Pix some.`, confirmLabel: "Confirmar pagamento" }).then((ok) => ok && markPaid.mutate({ companyId: c.id, amount: monthlyAmount || undefined, graceDays: Number(grace || 5) })); }} className="bg-emerald-500 text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4" />Marcar como pago</Button>
+      <div className="rounded-lg bg-white/5 px-3 py-2 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p>Vencimento atual: <span className="font-medium">{endsAt ? day(`${endsAt}T12:00:00-03:00`) : "Sem vencimento"}</span></p>
+          <Button type="button" size="sm" variant="outline" className="border-white/25 text-white" onClick={() => setEditingDue((v) => !v)}>{editingDue ? "Ocultar data" : "Alterar data"}</Button>
+        </div>
+        {editingDue && <div className="mt-2 max-w-xs"><Label>Nova data de vencimento</Label><Input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className={inp} /></div>}
       </div>
-      <p className="text-xs text-slate-400">Depois do vencimento + tolerância, a empresa só vê a tela de Pix/WhatsApp até você marcar como pago.</p>
+      <Button disabled={!planId || saving || setPlan.isPending || setBilling.isPending} onClick={() => void saveAll()} className="bg-teal-300 text-slate-950 hover:bg-teal-200">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Salvar</Button>
+      <p className="text-xs text-slate-400">Depois do vencimento + tolerância, a empresa só vê a tela de Pix/WhatsApp até você registrar o pagamento.</p>
+
+      <div className="space-y-3 border-t border-white/10 pt-4">
+        <p className="flex items-center gap-2 text-sm font-semibold"><Wallet className="h-4 w-4 text-teal-300" />Registrar pagamento</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div><Label>Valor pago (R$)</Label><Input inputMode="decimal" value={payAmount} onChange={(e) => setPayAmount(e.target.value.replace(",", "."))} className={inp} /></div>
+          <div><Label>Pago em</Label><Input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className={inp} /></div>
+          <div><Label>Forma</Label><select value={payType} onChange={(e) => setPayType(e.target.value as any)} className={sel}><option value="PIX">Pix</option><option value="BOLETO">Boleto</option><option value="CREDIT_CARD">Cartão</option><option value="UNDEFINED">Outra</option></select></div>
+        </div>
+        <p className="text-xs text-slate-400">A validade será estendida automaticamente de {day(`${paidPeriod.periodFrom}T12:00:00-03:00`)} até {day(`${paidPeriod.periodTo}T12:00:00-03:00`)} (hoje ou o vencimento atual, o que for maior, mais 1 mês).</p>
+        <Button disabled={pay.isPending || !c.planId || !/^\d+(\.\d{1,2})?$/.test(payAmount)} onClick={registerPay} className="h-auto min-h-10 bg-emerald-500 text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4 shrink-0" />Registrar pagamento</Button>
+        {!c.planId && <p className="text-xs text-amber-200">Salve o plano da empresa acima antes de registrar o pagamento.</p>}
+        <div className="space-y-1 border-t border-white/10 pt-3 text-sm">{(payments.data || []).map((p: any) => <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2"><span>{money(p.amount)} · pago em {day(p.paymentDate)} · {p.status}</span><Button size="sm" variant="ghost" className="text-rose-200" onClick={() => { void confirmAction({ title: "Excluir este registro de pagamento?", confirmLabel: "Confirmar" }).then((okConfirm) => okConfirm && delPay.mutate({ companyId: c.id, paymentId: p.id })); }}><Trash2 className="h-4 w-4" /></Button></div>)}{!payments.data?.length && <p className="text-slate-400">Nenhum pagamento registrado.</p>}</div>
+      </div>
     </CardContent></Card>
 
     <CompanyFeaturesCard companyId={c.id} />
-
-    <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Wallet className="h-4 w-4 text-teal-300" />Pagamentos</CardTitle></CardHeader><CardContent className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div><Label>Valor pago (R$)</Label><Input inputMode="decimal" value={pay_.amount} onChange={(e) => setPay({ ...pay_, amount: e.target.value.replace(",", ".") })} className={inp} /></div>
-        <div><Label>Pago em</Label><Input type="date" value={pay_.paymentDate} onChange={(e) => setPay({ ...pay_, paymentDate: e.target.value })} className={inp} /></div>
-        <div><Label>Plano válido de</Label><Input type="date" value={pay_.periodFrom} onChange={(e) => setPay({ ...pay_, periodFrom: e.target.value })} className={inp} /></div>
-        <div><Label>Plano válido até</Label><Input type="date" value={pay_.periodTo} onChange={(e) => setPay({ ...pay_, periodTo: e.target.value })} className={inp} /></div>
-        <div><Label>Forma</Label><select value={pay_.billingType} onChange={(e) => setPay({ ...pay_, billingType: e.target.value as any })} className={sel}><option value="PIX">Pix</option><option value="BOLETO">Boleto</option><option value="CREDIT_CARD">Cartão</option><option value="UNDEFINED">Outra</option></select></div>
-      </div>
-      <Button disabled={pay.isPending || !c.planId || !/^\d+(\.\d{1,2})?$/.test(pay_.amount) || !pay_.periodTo} onClick={() => pay.mutate({ companyId: c.id, amount: pay_.amount, paymentDate: pay_.paymentDate, periodFrom: pay_.periodFrom, periodTo: pay_.periodTo, billingType: pay_.billingType, planId: Number(planId) || c.planId })} className="h-auto min-h-10 whitespace-normal bg-emerald-500 text-left text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4 shrink-0" />Registrar pagamento e liberar até a data</Button>
-      {!c.planId && <p className="text-xs text-amber-200">Defina o plano da empresa acima antes de registrar o pagamento.</p>}
-      <div className="space-y-1 border-t border-white/10 pt-3 text-sm">{(payments.data || []).map((p: any) => <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2"><span>{money(p.amount)} · pago em {day(p.paymentDate)} · {p.status}</span><Button size="sm" variant="ghost" className="text-rose-200" onClick={() => { void confirmAction({ title: "Excluir este registro de pagamento?", confirmLabel: "Confirmar" }).then((ok) => ok && delPay.mutate({ companyId: c.id, paymentId: p.id })); }}><Trash2 className="h-4 w-4" /></Button></div>)}{!payments.data?.length && <p className="text-slate-400">Nenhum pagamento registrado.</p>}</div>
-    </CardContent></Card>
 
     <Card className="border-rose-300/20 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Ban className="h-4 w-4 text-rose-300" />Bloqueio e exclusão</CardTitle></CardHeader><CardContent className="space-y-3">
       {c.archivedAt ? <div className="space-y-3">

@@ -1181,7 +1181,7 @@ function resolveEntitlements(input) {
     return [key, Boolean(companyEnabled && roleCeiling.has(key) && requested)];
   }));
 }
-var ENTITLEMENT_KEYS, PLAN_FEATURES, ALL_FEATURES, SUPERVISOR_CEILING, PROMOTER_CEILING, ROLE_FEATURE_CEILING, ROLE_FEATURE_DEFAULTS;
+var ENTITLEMENT_KEYS, ALL_FEATURES, SUPERVISOR_CEILING, PROMOTER_CEILING, ROLE_FEATURE_CEILING, ROLE_FEATURE_DEFAULTS;
 var init_entitlements = __esm({
   "shared/entitlements.ts"() {
     "use strict";
@@ -1199,11 +1199,6 @@ var init_entitlements = __esm({
       "backup",
       "offline"
     ];
-    PLAN_FEATURES = {
-      start: ["dashboard", "clients", "pointsOfSale", "alerts", "products"],
-      profissional: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "teamManagement"],
-      empresarial: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "teamManagement", "backup", "offline"]
-    };
     ALL_FEATURES = [...ENTITLEMENT_KEYS];
     SUPERVISOR_CEILING = [
       "dashboard",
@@ -1228,6 +1223,72 @@ var init_entitlements = __esm({
       supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products"],
       promoter: ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn", "products"]
     };
+  }
+});
+
+// shared/commercialPlans.ts
+function planNameKey(name) {
+  return String(name ?? "").toLowerCase().trim();
+}
+function isLegacyPlanName(name) {
+  return LEGACY_PLAN_NAME_KEYS.includes(planNameKey(name));
+}
+var LEGACY_PLAN_NAME_KEYS, PONTO_FEATURES, MERCHANDISING_FEATURES, COMMERCIAL_PLANS;
+var init_commercialPlans = __esm({
+  "shared/commercialPlans.ts"() {
+    "use strict";
+    init_entitlements();
+    LEGACY_PLAN_NAME_KEYS = ["start", "profissional", "empresarial", "basico", "b\xE1sico", "ilimitado"];
+    PONTO_FEATURES = [
+      "dashboard",
+      "timeTracking",
+      "teamManagement",
+      "reports",
+      "backup",
+      "offline"
+    ];
+    MERCHANDISING_FEATURES = [
+      "dashboard",
+      "clients",
+      "pointsOfSale",
+      "alerts",
+      "fieldOperations",
+      "visitCheckIn",
+      "products",
+      "reports",
+      "teamManagement",
+      "backup",
+      "offline"
+    ];
+    COMMERCIAL_PLANS = [
+      {
+        name: "GONDUP Ponto",
+        description: "At\xE9 20 funcion\xE1rios. Adicional de R$ 8,00 por funcion\xE1rio. Registro de ponto com GPS, corre\xE7\xF5es, comprovantes e espelho do m\xEAs.",
+        price: "199.90",
+        billingCycle: "monthly",
+        includedUsers: 20,
+        additionalUserPrice: "8.00",
+        featureKeys: PONTO_FEATURES
+      },
+      {
+        name: "GONDUP Merchandising",
+        description: "At\xE9 20 promotores. Adicional de R$ 8,00 por promotor. Check-in/check-out com GPS, fotos, validades e alertas.",
+        price: "179.90",
+        billingCycle: "monthly",
+        includedUsers: 20,
+        additionalUserPrice: "8.00",
+        featureKeys: MERCHANDISING_FEATURES
+      },
+      {
+        name: "GONDUP Completo",
+        description: "At\xE9 20 funcion\xE1rios. Adicional de R$ 12,00 por funcion\xE1rio. GONDUP Ponto + GONDUP Merchandising, os dois planos em um s\xF3.",
+        price: "350.00",
+        billingCycle: "monthly",
+        includedUsers: 20,
+        additionalUserPrice: "12.00",
+        featureKeys: [...ENTITLEMENT_KEYS]
+      }
+    ];
   }
 });
 
@@ -2073,60 +2134,37 @@ async function listAvailablePlansForCompanies() {
 async function ensureSeedPlans() {
   const database2 = await getDb();
   if (!database2) return;
-  const catalog = [
-    {
-      name: "Start",
-      description: "Ideal para quem est\xE1 come\xE7ando",
-      price: "59.90",
-      billingCycle: "monthly",
-      maxUsers: 1,
-      maxClients: 1e3,
-      maxExtinguishers: 3e3,
-      featureKeys: [...PLAN_FEATURES.start],
-      availableForNew: true,
-      active: true
-    },
-    {
-      name: "Profissional",
-      description: "Para equipes em opera\xE7\xE3o",
-      price: "99.90",
-      billingCycle: "monthly",
-      maxUsers: 5,
-      maxClients: null,
-      maxExtinguishers: 1e4,
-      featureKeys: [...PLAN_FEATURES.profissional],
-      availableForNew: true,
-      active: true
-    },
-    {
-      name: "Empresarial",
-      description: "Para opera\xE7\xE3o maior e crescimento",
-      price: "169.90",
-      billingCycle: "monthly",
-      maxUsers: 10,
+  const existing = await database2.select().from(subscriptionPlans);
+  const byName = new Map(existing.map((p) => [planNameKey(String(p.name)), p]));
+  for (const plan of COMMERCIAL_PLANS) {
+    const row2 = byName.get(planNameKey(plan.name));
+    if (row2) continue;
+    const [result] = await database2.insert(subscriptionPlans).values({
+      name: plan.name,
+      description: plan.description,
+      price: plan.price,
+      billingCycle: plan.billingCycle,
+      maxUsers: null,
       maxClients: null,
       maxExtinguishers: null,
-      featureKeys: [...PLAN_FEATURES.empresarial],
       availableForNew: true,
       active: true
-    }
-  ];
-  const existing = await database2.select().from(subscriptionPlans);
-  const byName = new Map(existing.map((p) => [String(p.name).toLowerCase().trim(), p]));
-  for (const plan of catalog) {
-    const key = plan.name.toLowerCase();
-    const row2 = byName.get(key);
-    if (row2) continue;
-    const { featureKeys, ...planFields } = plan;
-    const [result] = await database2.insert(subscriptionPlans).values(planFields);
+    });
     const id2 = Number(result.insertId);
     if (id2) {
       try {
-        await replaceSubscriptionPlanFeatures(database2, id2, featureKeys);
+        await replaceSubscriptionPlanFeatures(database2, id2, [...plan.featureKeys]);
       } catch (error) {
         if (!isMissingEntitlementsTable(error)) throw error;
       }
     }
+  }
+  const legacyIds = existing.filter((p) => isLegacyPlanName(String(p.name)) && (p.active || p.availableForNew)).map((p) => p.id);
+  if (legacyIds.length) {
+    await database2.update(subscriptionPlans).set({
+      active: false,
+      availableForNew: false
+    }).where(inArray(subscriptionPlans.id, legacyIds));
   }
   await ensureVisitCheckInFeature();
   await ensureProductsFeature();
@@ -2765,6 +2803,7 @@ var init_db = __esm({
     init_expiry();
     init_routeSchedule();
     init_entitlements();
+    init_commercialPlans();
     init_schema();
     _db = null;
     _dbUrl = null;
@@ -11338,7 +11377,10 @@ var appRouter = router({
       })
     }),
     plans: router({
-      list: platformProcedure.query(() => listSubscriptionPlans()),
+      list: platformProcedure.query(async () => {
+        await ensureSeedPlans();
+        return listSubscriptionPlans();
+      }),
       create: platformProcedure.input(z13.object({
         name: z13.string().min(2),
         description: z13.string().optional().nullable(),

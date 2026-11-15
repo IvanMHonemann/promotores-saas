@@ -368,7 +368,10 @@ export const appRouter = router({
         }),
     }),
     plans: router({
-      list: platformProcedure.query(() => db.listSubscriptionPlans()),
+      list: platformProcedure.query(async () => {
+        await db.ensureSeedPlans();
+        return db.listSubscriptionPlans();
+      }),
       create: platformProcedure.input(z.object({
         name: z.string().min(2),
         description: z.string().optional().nullable(),

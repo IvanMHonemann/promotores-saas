@@ -325,6 +325,7 @@ var init_schema_original = __esm({
       maxUsers: int("maxUsers"),
       maxClients: int("maxClients"),
       maxExtinguishers: int("maxExtinguishers"),
+      additionalUserPrice: decimal("additionalUserPrice", { precision: 12, scale: 2 }),
       availableForNew: boolean("availableForNew").notNull().default(true),
       active: boolean("active").notNull().default(true),
       createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -875,6 +876,7 @@ var init_schema = __esm({
       maxUsers: int2("maxUsers"),
       maxClients: int2("maxClients"),
       maxExtinguishers: int2("maxExtinguishers"),
+      additionalUserPrice: decimal2("additionalUserPrice", { precision: 12, scale: 2 }),
       availableForNew: boolean2("availableForNew").notNull().default(true),
       active: boolean2("active").notNull().default(true),
       createdAt: timestamp2("createdAt").defaultNow().notNull(),
@@ -1467,6 +1469,7 @@ __export(db_exports, {
   deleteInventoryProducts: () => deleteInventoryProducts,
   deleteOperationalRoute: () => deleteOperationalRoute,
   deleteWeeklyRouteSchedule: () => deleteWeeklyRouteSchedule,
+  ensureAdditionalUserPriceColumn: () => ensureAdditionalUserPriceColumn,
   ensureInventoryProductsSchema: () => ensureInventoryProductsSchema,
   ensureOwnerScopeColumns: () => ensureOwnerScopeColumns,
   ensureProductsFeature: () => ensureProductsFeature,
@@ -1911,6 +1914,7 @@ async function replaceMemberFeatureModes(input) {
 async function listSubscriptionPlans() {
   const database2 = await getDb();
   if (!database2) return [];
+  await ensureAdditionalUserPriceColumn();
   const plans = await database2.select().from(subscriptionPlans).orderBy(desc(subscriptionPlans.createdAt));
   return attachPlanFeatureKeys(database2, plans);
 }
@@ -2127,6 +2131,19 @@ async function recordPaymentEvent(data) {
   });
   return { id: Number(result.insertId), duplicate: false };
 }
+async function ensureAdditionalUserPriceColumn() {
+  const database2 = await getDb();
+  if (!database2) return;
+  try {
+    const [cols] = await database2.execute(`SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'subscription_plans'`);
+    const names = new Set(cols.map((c) => String(c.COLUMN_NAME ?? c.column_name).toLowerCase()));
+    if (!names.has("additionaluserprice")) {
+      await database2.execute(`ALTER TABLE subscription_plans ADD COLUMN additionalUserPrice decimal(12,2) NULL`);
+    }
+  } catch (error) {
+    console.warn("[db] ensureAdditionalUserPriceColumn", error instanceof Error ? error.message : error);
+  }
+}
 async function listAvailablePlansForCompanies() {
   const plans = await listSubscriptionPlans();
   return plans.filter((plan) => plan.active && plan.availableForNew).sort((a, b) => Number(a.price) - Number(b.price));
@@ -2134,19 +2151,27 @@ async function listAvailablePlansForCompanies() {
 async function ensureSeedPlans() {
   const database2 = await getDb();
   if (!database2) return;
+  await ensureAdditionalUserPriceColumn();
   const existing = await database2.select().from(subscriptionPlans);
   const byName = new Map(existing.map((p) => [planNameKey(String(p.name)), p]));
   for (const plan of COMMERCIAL_PLANS) {
     const row2 = byName.get(planNameKey(plan.name));
-    if (row2) continue;
+    if (row2) {
+      await database2.update(subscriptionPlans).set({
+        maxUsers: plan.includedUsers,
+        additionalUserPrice: plan.additionalUserPrice
+      }).where(eq2(subscriptionPlans.id, row2.id));
+      continue;
+    }
     const [result] = await database2.insert(subscriptionPlans).values({
       name: plan.name,
       description: plan.description,
       price: plan.price,
       billingCycle: plan.billingCycle,
-      maxUsers: null,
+      maxUsers: plan.includedUsers,
       maxClients: null,
       maxExtinguishers: null,
+      additionalUserPrice: plan.additionalUserPrice,
       availableForNew: true,
       active: true
     });
@@ -6373,6 +6398,53 @@ var init_paymentReminder = __esm({
   }
 });
 
+// shared/staffLimit.ts
+function staffLimitAppliesToRole(role) {
+  const key = String(role ?? "").toLowerCase().trim();
+  return key === "promoter";
+}
+function countsTowardStaffLimit(member) {
+  if (member.active === false || member.active === 0 || member.active == null) return false;
+  return staffLimitAppliesToRole(member.role);
+}
+function countBillableStaff(members) {
+  return members.filter(countsTowardStaffLimit).length;
+}
+function effectiveUserLimit(input) {
+  if (input.maxUsers == null || !Number.isFinite(Number(input.maxUsers))) return null;
+  const included = Math.max(0, Math.floor(Number(input.maxUsers)));
+  const extras = Math.max(0, Math.floor(Number(input.extraUsers ?? 0)));
+  return included + extras;
+}
+function parseExtraUsers(value) {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n;
+}
+function suggestedMonthlyAmount(input) {
+  const base = Number(input.planPrice ?? 0);
+  const extra = parseExtraUsers(input.extraUsers);
+  const add = Number(input.additionalUserPrice ?? 0);
+  const total = (Number.isFinite(base) ? base : 0) + extra * (Number.isFinite(add) ? add : 0);
+  return total.toFixed(2);
+}
+function staffUsageLabel(current, limit, extraUsers = 0) {
+  if (limit == null) return `${current} funcion\xE1rios (sem limite)`;
+  const extras = parseExtraUsers(extraUsers);
+  if (extras > 0) return `${current} de ${limit} funcion\xE1rios (${extras} extras)`;
+  return `${current} de ${limit} funcion\xE1rios`;
+}
+function userLimitReachedMessage(limit) {
+  return `Seu plano permite at\xE9 ${limit} funcion\xE1rios. Fale com o suporte para liberar mais.`;
+}
+var EXTRA_USERS_KEY;
+var init_staffLimit = __esm({
+  "shared/staffLimit.ts"() {
+    "use strict";
+    EXTRA_USERS_KEY = "extra_users";
+  }
+});
+
 // server/platformCompanies.ts
 var platformCompanies_exports = {};
 __export(platformCompanies_exports, {
@@ -6400,13 +6472,14 @@ async function database() {
 }
 async function listCompaniesOverview() {
   const d = await database();
+  await ensureAdditionalUserPriceColumn();
   const [rows4, plans, pays, counts, admins, flags] = await Promise.all([
     d.select().from(companies).orderBy(companies.name),
     d.select().from(subscriptionPlans),
     d.execute(sql15`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
-    d.execute(sql15`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos FROM member_accounts GROUP BY companyId`),
+    d.execute(sql15`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos, SUM(CASE WHEN active = 1 AND role = 'promoter' THEN 1 ELSE 0 END) AS staff FROM member_accounts GROUP BY companyId`),
     d.execute(sql15`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
-    d.select().from(systemSettings).where(inArray12(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY]))
+    d.select().from(systemSettings).where(inArray12(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, EXTRA_USERS_KEY]))
   ]);
   const planById = new Map(plans.map((p) => [p.id, p]));
   const map = (r, key = "companyId") => new Map(r[0].map((x) => [Number(x[key]), x]));
@@ -6416,6 +6489,11 @@ async function listCompaniesOverview() {
     const plan = c.planId ? planById.get(c.planId) : null;
     const monthlyAmount = flagBy.get(`${c.id}:${MONTHLY_AMOUNT_KEY}`) || (plan?.price != null ? String(plan.price) : null);
     const blockAfter = flagBy.get(`${c.id}:${BLOCK_AFTER_OVERDUE_KEY}`);
+    const extraUsers = parseExtraUsers(flagBy.get(`${c.id}:${EXTRA_USERS_KEY}`));
+    const planMaxUsers = plan?.maxUsers == null ? null : Number(plan.maxUsers);
+    const additionalUserPrice = plan?.additionalUserPrice != null ? String(plan.additionalUserPrice) : null;
+    const staffCurrent = Number(countBy.get(c.id)?.staff ?? 0);
+    const staffLimit = effectiveUserLimit({ maxUsers: planMaxUsers, extraUsers });
     return {
       id: c.id,
       name: c.name,
@@ -6427,6 +6505,13 @@ async function listCompaniesOverview() {
       planName: plan?.name ?? null,
       planPrice: plan?.price ?? null,
       monthlyAmount,
+      additionalUserPrice,
+      planMaxUsers,
+      extraUsers,
+      staffCurrent,
+      staffLimit,
+      staffUsageLabel: staffUsageLabel(staffCurrent, staffLimit, extraUsers),
+      suggestedMonthlyAmount: plan?.price != null ? suggestedMonthlyAmount({ planPrice: plan.price, extraUsers, additionalUserPrice }) : null,
       blockAfterOverdueDays: blockAfter != null && blockAfter !== "" ? Number(blockAfter) : DEFAULT_OVERDUE_GRACE_DAYS,
       subscriptionStatus: c.subscriptionStatus ?? null,
       startedAt: c.subscriptionStartedAt ?? null,
@@ -6566,6 +6651,9 @@ async function purgeCompany(companyId, confirmName) {
 async function setCompanyBilling(input) {
   const company = await getCompanyById(input.companyId);
   if (!company) throw new TRPCError11({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+  if (input.extraUsers != null) {
+    await setSetting(EXTRA_USERS_KEY, String(parseExtraUsers(input.extraUsers)), input.companyId);
+  }
   if (input.monthlyAmount != null && input.monthlyAmount !== "") {
     if (!/^\d{1,10}(\.\d{1,2})?$/.test(input.monthlyAmount) || Number(input.monthlyAmount) <= 0) {
       throw new TRPCError11({ code: "BAD_REQUEST", message: "Valor mensal inv\xE1lido." });
@@ -6592,7 +6680,12 @@ async function setCompanyBilling(input) {
     });
     await setSetting(BILLING_DAY_KEY, String(Number(input.dueDate.slice(8, 10))), input.companyId);
   }
-  return { success: true, monthlyAmount: await resolveMonthlyAmount(input.companyId), graceDays: await resolveGraceDays(input.companyId) };
+  return {
+    success: true,
+    monthlyAmount: await resolveMonthlyAmount(input.companyId),
+    graceDays: await resolveGraceDays(input.companyId),
+    extraUsers: parseExtraUsers(await getSetting(EXTRA_USERS_KEY, input.companyId, "0"))
+  };
 }
 var BR, endOfDay, startOfDay, addDaysDate;
 var init_platformCompanies = __esm({
@@ -6602,6 +6695,7 @@ var init_platformCompanies = __esm({
     init_db();
     init_schema_original();
     init_paymentReminder();
+    init_staffLimit();
     init_subscriptionAccess();
     BR = "-03:00";
     endOfDay = (d) => /* @__PURE__ */ new Date(`${d}T23:59:59${BR}`);
@@ -9594,7 +9688,8 @@ var platformCompaniesRouter = router({
     companyId: id,
     monthlyAmount: z8.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
     blockAfterOverdueDays: z8.number().int().min(0).max(60).nullish(),
-    dueDate: dateStr4.nullish()
+    dueDate: dateStr4.nullish(),
+    extraUsers: z8.number().int().min(0).max(1e4).nullish()
   })).mutation(async ({ ctx, input }) => {
     const r = await setCompanyBilling(input);
     log(ctx, input.companyId, "update", `Atualizou cobran\xE7a da empresa #${input.companyId}`, input);
@@ -10311,6 +10406,7 @@ async function verifyMemberPassword(memberAccountId, password) {
 init_schema_original();
 init_entitlements();
 init_entitlements2();
+init_staffLimit();
 import { sql as sql21, eq as eq16 } from "drizzle-orm";
 async function getEffectivePlan(companyId) {
   const base = await getCompanyEntitlementBase(companyId);
@@ -10326,22 +10422,45 @@ async function getEffectivePlan(companyId) {
     features
   };
 }
-async function countUsers(companyId) {
-  const list = await listMemberAccounts(companyId);
-  return Array.isArray(list) ? list.length : 0;
+async function resolveExtraUsers(companyId) {
+  const raw = await getSetting(EXTRA_USERS_KEY, companyId, "0");
+  return parseExtraUsers(raw);
 }
-async function assertUserLimit(companyId) {
-  const plan = await getEffectivePlan(companyId);
-  if (plan.maxUsers == null) return plan;
-  const current = await countUsers(companyId);
-  if (current >= plan.maxUsers) {
+async function getStaffUsage(companyId) {
+  const resolved = await resolveCompanyPlan(companyId);
+  const plan = resolved.plan;
+  const extraUsers = await resolveExtraUsers(companyId);
+  const members = await listMemberAccounts(companyId);
+  const current = countBillableStaff(Array.isArray(members) ? members : []);
+  const included = plan?.maxUsers == null ? null : Number(plan.maxUsers);
+  const limit = effectiveUserLimit({ maxUsers: included, extraUsers });
+  const additionalUserPrice = plan?.additionalUserPrice != null ? String(plan.additionalUserPrice) : null;
+  const planPrice = plan?.price != null ? String(plan.price) : null;
+  return {
+    current,
+    extraUsers,
+    included,
+    limit,
+    unlimited: limit == null,
+    planName: plan?.name ? String(plan.name) : null,
+    planPrice,
+    additionalUserPrice,
+    suggestedMonthlyAmount: planPrice != null ? suggestedMonthlyAmount({ planPrice, extraUsers, additionalUserPrice }) : null,
+    label: staffUsageLabel(current, limit, extraUsers)
+  };
+}
+async function assertUserLimit(companyId, role) {
+  if (role != null && !staffLimitAppliesToRole(role)) return getStaffUsage(companyId);
+  const usage = await getStaffUsage(companyId);
+  if (usage.limit == null) return usage;
+  if (usage.current >= usage.limit) {
     throw new TRPCError17({
       code: "FORBIDDEN",
-      message: `Limite de usu\xE1rios do plano ${plan.name} atingido (${plan.maxUsers}). Fa\xE7a upgrade para adicionar outro usu\xE1rio.`,
-      cause: { code: "PLAN_LIMIT", resource: "users", limit: plan.maxUsers, current }
+      message: userLimitReachedMessage(usage.limit),
+      cause: { code: "PLAN_LIMIT", resource: "users", limit: usage.limit, current: usage.current }
     });
   }
-  return plan;
+  return usage;
 }
 
 // server/routers.ts
@@ -11526,6 +11645,7 @@ var appRouter = router({
         if (!company) throw new TRPCError18({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
         if (!company.active) throw new TRPCError18({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
         try {
+          await assertUserLimit(input.companyId, input.role);
           const created = await createCompanyUser(input);
           void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usu\xE1rio criado pelo administrador geral: ${input.userName}`, newData: { companyId: input.companyId, email: input.email, role: input.role } });
           return created;
@@ -11566,6 +11686,11 @@ var appRouter = router({
       return created;
     }),
     setActive: platformProcedure.input(z13.object({ id: z13.number().int().positive(), active: z13.boolean() })).mutation(async ({ ctx, input }) => {
+      if (input.active) {
+        const members = await listMemberAccounts();
+        const target = members.find((m) => m.id === input.id);
+        if (target && !target.active) await assertUserLimit(target.companyId, target.role);
+      }
       await setMemberActive(input.id, input.active);
       void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Administrador geral ${input.active ? "liberou" : "bloqueou"} o usu\xE1rio #${input.id}` });
       return { success: true };
@@ -11577,6 +11702,7 @@ var appRouter = router({
   }),
   companyUsers: router({
     list: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => listMemberAccounts(ctx.accountId)),
+    staffUsage: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => getStaffUsage(ctx.accountId)),
     permissions: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive() })).query(async ({ ctx, input }) => {
       const members = await listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
@@ -11611,7 +11737,7 @@ var appRouter = router({
     }),
     create: companyAdminFeatureProcedure("teamManagement").input(z13.object({ userName: z13.string().min(2), email: z13.string().email(), password: z13.string().min(8), role: companyUserRole, storeIds: z13.array(z13.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
       try {
-        await assertUserLimit(ctx.accountId);
+        await assertUserLimit(ctx.accountId, input.role);
         const { storeIds, ...userInput } = input;
         const created = await createCompanyUser({ ...userInput, companyId: ctx.accountId });
         if (input.role === "promoter" && storeIds && storeIds.length > 0) {
@@ -11638,6 +11764,7 @@ var appRouter = router({
         })();
         return created;
       } catch (error) {
+        if (error instanceof TRPCError18) throw error;
         if (error?.code === "ER_DUP_ENTRY") throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
         console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message });
         if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError18({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
@@ -11710,6 +11837,11 @@ var appRouter = router({
     }),
     setActive: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), active: z13.boolean() })).mutation(async ({ ctx, input }) => {
       if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError18({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode desativar a pr\xF3pria sess\xE3o." });
+      if (input.active) {
+        const members = await listMemberAccounts(ctx.accountId);
+        const target = members.find((m) => m.id === input.id);
+        if (target && !target.active) await assertUserLimit(ctx.accountId, target.role);
+      }
       await setMemberActive(input.id, input.active, ctx.accountId);
       void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Usu\xE1rio ${input.active ? "ativado" : "desativado"} #${input.id}`, newData: { active: input.active } });
       return { success: true };

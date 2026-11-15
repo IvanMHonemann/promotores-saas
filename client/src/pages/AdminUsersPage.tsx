@@ -45,6 +45,7 @@ export default function AdminUsersPage() {
   const { user } = useAuth();
   const utils = trpc.useUtils();
   const list = trpc.companyUsers.list.useQuery(undefined, { staleTime: 10000 });
+  const usage = trpc.companyUsers.staffUsage.useQuery(undefined, { staleTime: 10000 });
   const access = trpc.entitlements.mine.useQuery(undefined, { staleTime: 60000 });
   const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
   const stores = trpc.operations.stores.list.useQuery(undefined, { staleTime: 30000, enabled: hasFieldOperations, retry: false });
@@ -59,6 +60,7 @@ export default function AdminUsersPage() {
   const selected = (list.data || []).find((m) => m.id === selectedId) as Member | undefined;
   const refresh = () => {
     void utils.companyUsers.list.invalidate();
+    void utils.companyUsers.staffUsage.invalidate();
     void utils.operations.routes.weekly.invalidate();
     void utils.operations.promoters.list.invalidate();
   };
@@ -74,6 +76,14 @@ export default function AdminUsersPage() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
+            {usage.data && (
+              <div className="rounded-lg bg-white/5 px-3 py-2 text-sm text-slate-200">
+                <p>Uso do plano: <span className="font-medium">{usage.data.label}</span></p>
+                {!usage.data.unlimited && usage.data.limit != null && usage.data.current >= usage.data.limit && (
+                  <p className="mt-1 text-amber-200">Seu plano permite até {usage.data.limit} funcionários. Fale com o suporte para liberar mais.</p>
+                )}
+              </div>
+            )}
             <Input aria-label="Buscar usuário" placeholder="Buscar por nome ou e-mail" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-sm border-white/15 bg-slate-950/60 text-white" />
             {list.isLoading && <p className="flex items-center gap-2 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" />Carregando...</p>}
             {list.isError && <p role="alert" className="text-sm text-rose-200">{list.error.message}</p>}

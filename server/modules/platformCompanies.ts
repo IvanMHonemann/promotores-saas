@@ -50,6 +50,7 @@ export const platformCompaniesRouter = router({
     monthlyAmount: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/).nullish(),
     blockAfterOverdueDays: z.number().int().min(0).max(60).nullish(),
     dueDate: dateStr.nullish(),
+    extraUsers: z.number().int().min(0).max(10000).nullish(),
   })).mutation(async ({ ctx, input }) => {
     const r = await pc.setCompanyBilling(input);
     log(ctx, input.companyId, "update", `Atualizou cobrança da empresa #${input.companyId}`, input);

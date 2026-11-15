@@ -27,7 +27,8 @@ import {
 import { ensureStoreOwnersTable, recordStoreOwner, storeVisibleToMember } from "./storeAccess";
 import { todayInZone, addDays } from "../shared/expiry";
 import { duplicateOccurrenceIds } from "../shared/routeSchedule";
-import { ENTITLEMENT_KEYS, PLAN_FEATURES, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
+import { ENTITLEMENT_KEYS, type EntitlementKey, type PermissionMode } from "../shared/entitlements";
+import { COMMERCIAL_PLANS, isLegacyPlanName, planNameKey } from "../shared/commercialPlans";
 import { stores as operationalStores, routes as operationalRoutes, visits as operationalVisits, weeklyRouteSchedules, inventoryProducts } from "../drizzle/schema";
 let _db: ReturnType<typeof drizzle> | null = null;
 let _dbUrl: string | null = null;
@@ -818,63 +819,44 @@ export async function ensureSeedPlans() {
   const database = await getDb();
   if (!database) return;
 
-  const catalog = [
-    {
-      name: "Start",
-      description: "Ideal para quem está começando",
-      price: "59.90",
-      billingCycle: "monthly" as const,
-      maxUsers: 1,
-      maxClients: 1000,
-      maxExtinguishers: 3000,
-      featureKeys: [...PLAN_FEATURES.start],
-      availableForNew: true,
-      active: true,
-    },
-    {
-      name: "Profissional",
-      description: "Para equipes em operação",
-      price: "99.90",
-      billingCycle: "monthly" as const,
-      maxUsers: 5,
-      maxClients: null,
-      maxExtinguishers: 10000,
-      featureKeys: [...PLAN_FEATURES.profissional],
-      availableForNew: true,
-      active: true,
-    },
-    {
-      name: "Empresarial",
-      description: "Para operação maior e crescimento",
-      price: "169.90",
-      billingCycle: "monthly" as const,
-      maxUsers: 10,
+  // Catálogo oficial: cria os 3 planos novos se ainda não existirem.
+  // Não altera assinaturas, empresas, valores negociados nem módulos de planos já existentes.
+  const existing = await database.select().from(subscriptionPlans);
+  const byName = new Map(existing.map((p) => [planNameKey(String(p.name)), p]));
+
+  for (const plan of COMMERCIAL_PLANS) {
+    const row = byName.get(planNameKey(plan.name));
+    if (row) continue;
+    const [result] = await database.insert(subscriptionPlans).values({
+      name: plan.name,
+      description: plan.description,
+      price: plan.price,
+      billingCycle: plan.billingCycle,
+      maxUsers: null,
       maxClients: null,
       maxExtinguishers: null,
-      featureKeys: [...PLAN_FEATURES.empresarial],
       availableForNew: true,
       active: true,
-    },
-  ];
-
-  const existing = await database.select().from(subscriptionPlans);
-  const byName = new Map(existing.map((p) => [String(p.name).toLowerCase().trim(), p]));
-
-  for (const plan of catalog) {
-    const key = plan.name.toLowerCase();
-    const row = byName.get(key);
-    if (row) continue;
-    const { featureKeys, ...planFields } = plan;
-    const [result] = await database.insert(subscriptionPlans).values(planFields);
+    });
     const id = Number((result as any).insertId);
     if (id) {
       try {
-        await replaceSubscriptionPlanFeatures(database, id, featureKeys);
+        await replaceSubscriptionPlanFeatures(database, id, [...plan.featureKeys]);
       } catch (error) {
         if (!isMissingEntitlementsTable(error)) throw error;
       }
     }
   }
+
+  // Desativa somente os planos antigos conhecidos; nunca apaga (DELETE é bloqueado por assinaturas).
+  const legacyIds = existing.filter((p) => isLegacyPlanName(String(p.name)) && (p.active || p.availableForNew)).map((p) => p.id);
+  if (legacyIds.length) {
+    await database.update(subscriptionPlans).set({
+      active: false,
+      availableForNew: false,
+    }).where(inArray(subscriptionPlans.id, legacyIds));
+  }
+
   await ensureVisitCheckInFeature();
   await ensureProductsFeature();
 }

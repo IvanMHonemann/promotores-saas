@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Ban, Building2, CalendarCheck, CheckCircle2, LogIn, Loader2, Pencil, RotateCcw, Trash2, Wallet } from "lucide-react";
+import { Ban, Building2, CalendarCheck, CheckCircle2, LogIn, Loader2, Pencil, Plus, RotateCcw, Trash2, UserPlus, Wallet } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { enterCompany } from "@/components/ActingAsBanner";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/PasswordInput";
 import { trpc } from "@/lib/trpc";
 import { ENTITLEMENT_CATALOG, type EntitlementKey } from "@shared/entitlements";
 import { toast } from "sonner";
@@ -18,6 +19,7 @@ const inp = "mt-1 border-white/15 bg-slate-950/60 text-white";
 const day = (v: unknown) => (v ? new Date(v as any).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—");
 const iso = (v: unknown) => (v ? new Date(v as any).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : "");
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+const DEFAULT_COMPANY_FEATURES: EntitlementKey[] = ["dashboard", "fieldOperations", "timeTracking"];
 const money = (v: unknown) => Number(v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 type Company = NonNullable<ReturnType<typeof useCompanies>["data"]>[number];
@@ -36,24 +38,71 @@ export default function PlatformCompaniesPage() {
   const [q, setQ] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
   const rows = useMemo(() => (list.data || []).filter((c) => (showArchived ? true : !c.archivedAt) && c.name.toLowerCase().includes(q.trim().toLowerCase())), [list.data, q, showArchived]);
   const selected = (list.data || []).find((c) => c.id === selectedId) ?? null;
   const refresh = () => { void utils.platformCompanies.overview.invalidate(); void utils.platformCompanies.payments.invalidate(); void utils.platformPayments.list.invalidate(); void utils.platform.companies.list.invalidate(); };
 
-  return <DashboardLayout title="Empresas" description="Módulos, validade, bloqueio e exclusão de cada empresa." refreshing={list.isFetching} onRefresh={refresh}>
+  return <DashboardLayout title="Empresas" description="Crie empresas e gerencie módulos, validade, bloqueio e exclusão." refreshing={list.isFetching} onRefresh={refresh}>
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-      <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5 text-teal-300" />Empresas ({rows.length})</CardTitle></CardHeader><CardContent className="space-y-3">
+      <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3"><CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5 text-teal-300" />Empresas ({rows.length})</CardTitle><Button size="sm" className="bg-teal-300 text-slate-950 hover:bg-teal-200" onClick={() => { setCreating(true); setSelectedId(null); }}><Plus className="h-4 w-4" /> Nova empresa</Button></CardHeader><CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-3"><Input aria-label="Buscar empresa" placeholder="Buscar por nome" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs border-white/15 bg-slate-950/60 text-white" /><label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />Mostrar excluídas</label></div>
         {list.isLoading && <p className="flex items-center gap-2 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" />Carregando...</p>}
         {list.isError && <p role="alert" className="text-sm text-rose-200">{list.error.message}</p>}
-        <div className="space-y-2">{rows.map((c) => { const st = stateOf(c); return <button key={c.id} onClick={() => { setSelectedId(c.id); if (window.innerWidth < 1280) window.setTimeout(() => document.getElementById("empresa-selecionada")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }} className={`w-full rounded-xl border p-3 text-left transition ${selectedId === c.id ? "border-teal-300/60 bg-teal-300/10" : "border-white/10 bg-slate-950/40 hover:border-white/25"}`}>
+        <div className="space-y-2">{rows.map((c) => { const st = stateOf(c); return <button key={c.id} type="button" onClick={() => { setSelectedId(c.id); setCreating(false); if (window.innerWidth < 1280) window.setTimeout(() => document.getElementById("empresa-selecionada")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }} className={`w-full rounded-xl border p-3 text-left transition ${selectedId === c.id ? "border-teal-300/60 bg-teal-300/10" : "border-white/10 bg-slate-950/40 hover:border-white/25"}`}>
           <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{c.name}</p><Badge className={st.tone}>{st.label}</Badge></div>
           <p className="mt-1 text-xs text-slate-400">{c.planName ?? "Sem plano"} · válido até {day(c.expiresAt)} · último pagamento {day(c.lastPayment)} · {c.activeUsers}/{c.users} usuários</p>
         </button>; })}</div>
       </CardContent></Card>
-      {selected ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CompanyPanel key={selected.id} company={selected} onChanged={refresh} /></div> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir.</CardContent></Card>}
+      {creating ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CreateCompanyCard onCancel={() => setCreating(false)} onCreated={(id) => { setCreating(false); setSelectedId(id); refresh(); }} /></div> : selected ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CompanyPanel key={selected.id} company={selected} onChanged={refresh} /></div> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir, ou cadastre uma nova.</CardContent></Card>}
     </div>
   </DashboardLayout>;
+}
+
+function CreateCompanyCard({ onCancel, onCreated }: { onCancel: () => void; onCreated: (companyId: number) => void }) {
+  const [form, setForm] = useState({ companyName: "", userName: "", email: "", password: "", featureKeys: DEFAULT_COMPANY_FEATURES });
+  const create = trpc.platform.companies.create.useMutation({
+    onSuccess: (data) => { toast.success(`Empresa criada. Código de recuperação: ${data.recoveryCode}`, { duration: 12000 }); onCreated(data.companyId); },
+    onError: (e) => toast.error(e.message),
+  });
+  const toggle = (key: EntitlementKey) => setForm((prev) => ({ ...prev, featureKeys: prev.featureKeys.includes(key) ? prev.featureKeys.filter((k) => k !== key) : [...prev.featureKeys, key] }));
+  const submit = () => {
+    if (form.companyName.trim().length < 2) return toast.info("Informe o nome da empresa.");
+    if (form.userName.trim().length < 2) return toast.info("Informe o nome do administrador.");
+    if (!form.email.trim()) return toast.info("Informe o e-mail de acesso.");
+    if (form.password.length < 8) return toast.info("A senha precisa ter ao menos 8 caracteres.");
+    create.mutate({ companyName: form.companyName.trim(), userName: form.userName.trim(), email: form.email.trim(), password: form.password, featureKeys: form.featureKeys });
+  };
+  return (
+    <Card className="border-white/10 bg-slate-900/70 text-white">
+      <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><UserPlus className="h-4 w-4 text-teal-300" />Nova empresa</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <div><Label htmlFor="nova-empresa-nome">Nome da empresa</Label><Input id="nova-empresa-nome" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} placeholder="Ex.: Empresa ABC" className={inp} /></div>
+        <div>
+          <Label>Módulos liberados</Label>
+          <div className="mt-1 grid gap-1 rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm">
+            {ENTITLEMENT_CATALOG.map((f) => (
+              <label key={f.key} className="flex items-center gap-2">
+                <input type="checkbox" checked={form.featureKeys.includes(f.key)} onChange={() => toggle(f.key)} />
+                {f.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div><Label htmlFor="nova-empresa-admin">Nome do administrador</Label><Input id="nova-empresa-admin" value={form.userName} onChange={(e) => setForm({ ...form, userName: e.target.value })} placeholder="Nome do responsável" className={inp} /></div>
+        <div><Label htmlFor="nova-empresa-email">E-mail de acesso</Label><Input id="nova-empresa-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="usuario@empresa.com" className={inp} /></div>
+        <div>
+          <Label htmlFor="nova-empresa-senha">Senha inicial</Label>
+          <PasswordInput id="nova-empresa-senha" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mínimo de 8 caracteres" className={`${inp} border-slate-700 bg-slate-950 text-white`} />
+          <p className="mt-1 text-xs text-slate-400">A senha é armazenada protegida e não poderá ser visualizada depois.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={create.isPending} onClick={submit} className="bg-teal-300 text-slate-950 hover:bg-teal-200">{create.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}Criar empresa</Button>
+          <Button variant="outline" className="border-white/20 text-white" onClick={onCancel}>Cancelar</Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: () => void }) {

@@ -271,8 +271,8 @@ function Overview({ total, active, attention, activeUsers, onNavigate, gpsStatus
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <QuickAction icon={ShieldAlert} title="Erros ao vivo" text="Verifique bugs, rotas e sensores em tempo real." onClick={() => onNavigate("code-scanner")} />
-          <QuickAction icon={Building2} title="Empresas" text="Plano, validade, pagamentos e acesso de cada empresa." onClick={() => onNavigate("companies")} />
-          <QuickAction icon={UsersRound} title="Usuários" text="Todos os usuários de todas as empresas." onClick={() => { window.location.href = "/admin/usuarios"; }} />
+          <QuickAction icon={Building2} title="Empresas" text="Crie empresas e gerencie plano, validade, pagamentos e acesso." onClick={() => onNavigate("companies")} />
+          <QuickAction icon={UsersRound} title="Usuários" text="Crie usuários e gerencie os acessos de todas as empresas." onClick={() => { window.location.href = "/admin/usuarios"; }} />
           <QuickAction icon={ClipboardCheck} title="Testar ponto eletrônico" text="Simule uma jornada completa." highlight onClick={() => onNavigate("time")} />
           <QuickAction icon={Sparkles} title="Suporte com IA" text="Converse com a inteligência artificial da plataforma." onClick={() => onNavigate("ai-support")} />
         </div>

@@ -7,7 +7,7 @@ export const LEGAL_TEXTS: Record<"termos" | "privacidade", Array<{ h: string; p:
    "h": "1. Partes e objeto",
    "p": [
     "Estes Termos de Uso (“Termos”) regem a contratação e o uso do GondUp, plataforma online de gestão de equipes de campo (roteiros, visitas a lojas, validade de produtos e registro eletrônico de ponto).",
-    "O serviço é oferecido por Ivan Mateus Honemann, nome fantasia GondUp, com atuação em Sapiranga/RS, CNPJ [PREENCHER], endereço [PREENCHER], e-mail de contato contato@gondup.com.br (“GondUp” ou “Fornecedor”).",
+    "O serviço é oferecido por Ivan Mateus Honemann, nome fantasia GondUp, com atuação em Sapiranga/RS, CNPJ [PREENCHER], endereço [PREENCHER], e-mail de contato ivan.honemann@gmail.com (“GondUp” ou “Fornecedor”).",
     "A empresa que contrata o serviço é o “Cliente”. As pessoas cadastradas pelo Cliente (administrador, supervisor, promotor e demais perfis) são os “Usuários”.",
     "O GondUp concede ao Cliente uma licença de uso do software como serviço (SaaS), não exclusiva, intransferível e revogável nos termos deste documento. Não há venda do software, do código-fonte, da marca ou de quaisquer direitos de propriedade intelectual do Fornecedor."
    ]
@@ -109,7 +109,7 @@ export const LEGAL_TEXTS: Record<"termos" | "privacidade", Array<{ h: string; p:
    "h": "1. Quem somos",
    "p": [
     "Esta Política de Privacidade descreve como o GondUp trata dados pessoais, em conformidade com a Lei nº 13.709/2018 (LGPD).",
-    "O serviço é oferecido por Ivan Mateus Honemann, nome fantasia GondUp, com atuação em Sapiranga/RS, CNPJ [PREENCHER], endereço [PREENCHER], e-mail de contato contato@gondup.com.br (“GondUp”). Este é o canal para questões de privacidade, até que seja indicado um encarregado (DPO) ou outro canal específico."
+    "O serviço é oferecido por Ivan Mateus Honemann, nome fantasia GondUp, com atuação em Sapiranga/RS, CNPJ [PREENCHER], endereço [PREENCHER], e-mail de contato ivan.honemann@gmail.com (“GondUp”). Este é o canal para questões de privacidade, até que seja indicado um encarregado (DPO) ou outro canal específico."
    ]
   },
   {
@@ -177,7 +177,7 @@ export const LEGAL_TEXTS: Record<"termos" | "privacidade", Array<{ h: string; p:
    "h": "8. Direitos dos titulares",
    "p": [
     "O titular pode pedir confirmação e acesso, correção, anonimização ou eliminação do que não for de guarda obrigatória, portabilidade, informação sobre compartilhamento e revisão de decisões automatizadas (LGPD, art. 18).",
-    "O trabalhador pode fazer o pedido no aplicativo, em “Meus dados (LGPD)”, ou por meio da empresa empregadora, que é a controladora e a responsável por responder. O GondUp, como operador, encaminha à empresa os pedidos que receber. O canal de contato do GondUp é contato@gondup.com.br."
+    "O trabalhador pode fazer o pedido no aplicativo, em “Meus dados (LGPD)”, ou por meio da empresa empregadora, que é a controladora e a responsável por responder. O GondUp, como operador, encaminha à empresa os pedidos que receber. O canal de contato do GondUp é ivan.honemann@gmail.com."
    ]
   },
   {

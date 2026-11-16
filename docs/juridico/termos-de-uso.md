@@ -9,7 +9,7 @@ subtitle: "Versão 1.0 — vigente desde 16/11/2026"
 
 Estes Termos de Uso (“Termos”) regem a contratação e o uso do GondUp, plataforma online de gestão de equipes de campo (roteiros, visitas a lojas, validade de produtos e registro eletrônico de ponto).
 
-O serviço é oferecido por **Ivan Mateus Honemann**, nome fantasia **GondUp**, com atuação em Sapiranga/RS, CNPJ [PREENCHER], endereço [PREENCHER], e-mail de contato contato@gondup.com.br (“GondUp” ou “Fornecedor”).
+O serviço é oferecido por **Ivan Mateus Honemann**, nome fantasia **GondUp**, com atuação em Sapiranga/RS, CNPJ [PREENCHER], endereço [PREENCHER], e-mail de contato ivan.honemann@gmail.com (“GondUp” ou “Fornecedor”).
 
 A empresa que contrata o serviço é o “Cliente”. As pessoas cadastradas pelo Cliente (administrador, supervisor, promotor e demais perfis) são os “Usuários”.
 

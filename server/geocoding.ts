@@ -30,7 +30,7 @@ const inFlight = new Map<string, Promise<string | null>>();
 let requestQueue: Promise<void> = Promise.resolve();
 let lastRequestStartedAt = 0;
 
-const NOMINATIM_UA = "GondUp/1.0 (https://gondup.com.br; contato@gondup.com.br)";
+const NOMINATIM_UA = "GondUp/1.0 (https://gondup.com.br; ivan.honemann@gmail.com)";
 
 function coordinateKey(latitude: number, longitude: number) {
   return `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
@@ -136,7 +136,7 @@ async function nominatimParts(
     const wait = 1100 - (Date.now() - lastNominatimAt);
     if (wait > 0) await delay(wait);
     lastNominatimAt = Date.now();
-    const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR&email=contato@gondup.com.br`;
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR&email=ivan.honemann@gmail.com`;
     const res = await fetchImpl(url, {
       headers: { accept: "application/json", "user-agent": NOMINATIM_UA },
       signal: AbortSignal.timeout(6_000),
@@ -365,7 +365,7 @@ async function nominatimSearch(params: Record<string, string>, fetchImpl: typeof
     if (wait > 0) await delay(wait);
     lastNominatimAt = Date.now();
     const url = new URL("https://nominatim.openstreetmap.org/search");
-    for (const [k, v] of Object.entries({ ...params, format: "jsonv2", addressdetails: "1", limit: "3", countrycodes: "br", "accept-language": "pt-BR", email: "contato@gondup.com.br" })) url.searchParams.set(k, v);
+    for (const [k, v] of Object.entries({ ...params, format: "jsonv2", addressdetails: "1", limit: "3", countrycodes: "br", "accept-language": "pt-BR", email: "ivan.honemann@gmail.com" })) url.searchParams.set(k, v);
     const res = await fetchImpl(url.toString(), { headers: { accept: "application/json", "user-agent": NOMINATIM_UA }, signal: AbortSignal.timeout(6_000) });
     if (!res.ok) { console.warn(`[geocoding] Nominatim busca HTTP ${res.status}`); return []; }
     const data = (await res.json()) as Array<{ lat?: string; lon?: string; address?: Record<string, string> }>;

@@ -26,7 +26,7 @@ describe("textos legais 1.0", () => {
     expect(termos).toMatch(/12 meses/);
     expect(termos).toMatch(/Portaria MTP 671\/2021/);
     expect(termos).toMatch(/Sapiranga\/RS/);
-    expect(termos).toMatch(/contato@gondup\.com\.br/);
+    expect(termos).toMatch(/ivan\.honemann@gmail\.com/);
     expect(termos).toMatch(/\[PREENCHER\]/);
     expect(termos).not.toMatch(/R\$ 350/);
     expect(termos).not.toMatch(/199,90/);
@@ -43,7 +43,7 @@ describe("textos legais 1.0", () => {
     expect(priv).toMatch(/e-mail transacional/i);
     expect(priv).toMatch(/5 anos/);
     expect(priv).toMatch(/Cookies/);
-    expect(priv).toMatch(/contato@gondup\.com\.br/);
+    expect(priv).toMatch(/ivan\.honemann@gmail\.com/);
     expect(priv).not.toMatch(/Vercel/);
   });
 });

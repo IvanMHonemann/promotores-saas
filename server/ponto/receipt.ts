@@ -54,8 +54,8 @@ export function buildReceiptData(input: {
   const marked = e.deviceTime || e.serverTime;
   const fmt = (d: Date) => new Intl.DateTimeFormat("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(d);
   const pendingNotes: string[] = [];
-  if (!input.employer.document) pendingNotes.push("CNPJ/CPF da empresa ainda não cadastrado — peça ao administrador para completar em Espelho de ponto → Dados da empresa.");
-  if (!e.workerCpf) pendingNotes.push("Seu CPF ainda não está no cadastro — peça ao administrador para completar.");
+  if (!input.employer.document) pendingNotes.push("CNPJ/CPF da empresa ainda não cadastrado — peça ao administrador para completar em Dados da empresa.");
+  if (!e.workerCpf) pendingNotes.push("Seu CPF ainda não está no cadastro — peça ao administrador para completar em Promotores e equipe.");
   // Pendências do dono do sistema (INPI, certificado) não aparecem para o funcionário/empresa.
   const gps = e.latitude != null && e.longitude != null ? `GPS ${Number(e.latitude).toFixed(6)}, ${Number(e.longitude).toFixed(6)}` : "";
   return {

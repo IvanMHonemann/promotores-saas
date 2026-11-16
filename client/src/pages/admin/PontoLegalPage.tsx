@@ -69,17 +69,17 @@ export default function PontoLegalPage() {
                 <Item
                   ok={s.employerDocument}
                   title="CNPJ ou CPF da empresa"
-                  hint={s.employerDocument ? (s.employerName || "cadastrado") : "ainda falta — cadastre em Espelho de ponto → Dados da empresa"}
+                  hint={s.employerDocument ? (s.employerName || "cadastrado") : "ainda falta — cadastre em Dados da empresa"}
                 />
                 <Item
                   ok={Boolean(s.employerAddress)}
                   title="Endereço / local de trabalho"
-                  hint={s.employerAddress ? "cadastrado" : "ainda falta — cadastre em Espelho de ponto → Dados da empresa"}
+                  hint={s.employerAddress ? "cadastrado" : "ainda falta — cadastre em Dados da empresa"}
                 />
                 <Item
                   ok={(s.workersMissingCpf ?? 0) === 0}
                   title="CPF dos funcionários"
-                  hint={(s.workersMissingCpf ?? 0) === 0 ? "todos com CPF no cadastro" : `${s.workersMissingCpf} ainda sem CPF — complete no Espelho de ponto (perfil do funcionário)`}
+                  hint={(s.workersMissingCpf ?? 0) === 0 ? "todos com CPF no cadastro" : `${s.workersMissingCpf} ainda sem CPF — complete em Promotores e equipe`}
                 />
                 <Item
                   ok={(s.workersMissingSchedule ?? 0) === 0}
@@ -96,7 +96,7 @@ export default function PontoLegalPage() {
             <CardHeader><CardTitle className="text-base">Cadastro para AFD, AEJ, comprovante e espelho</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
               {s.readiness.ok ? <p className="text-emerald-200">Tudo cadastrado.</p> : <>
-                <p className="text-slate-300">Os arquivos saem mesmo assim, mas com campos em branco ou zerados — o que enfraquece a prova. Complete em <a href="/espelho-ponto" className="font-bold text-teal-300 underline">Espelho de ponto → Dados para o espelho</a>.</p>
+                <p className="text-slate-300">Os arquivos saem mesmo assim, mas com campos em branco ou zerados — o que enfraquece a prova. Complete em <a href="/dados-empresa" className="font-bold text-teal-300 underline">Dados da empresa</a> e em Promotores e equipe.</p>
                 {s.readiness.company.length > 0 && <p><b>Empresa:</b> falta {s.readiness.company.join(", ")}.</p>}
                 {s.readiness.people.length > 0 && <ul className="list-disc pl-5 text-xs">{s.readiness.people.slice(0, 30).map((p: any) => <li key={p.memberId}><b>{p.name}</b>: falta {p.missing.join(", ")}</li>)}{s.readiness.people.length > 30 && <li>…e mais {s.readiness.people.length - 30}</li>}</ul>}
               </>}

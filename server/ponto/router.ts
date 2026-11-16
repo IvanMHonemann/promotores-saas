@@ -17,6 +17,7 @@ import { activeDisregards, ensurePunchLedger, toLedgerRow, DEFAULT_TZ, supersede
 import { buildAej, buildAfd, onlyDigits, sha256, toAejSequence, toLatin1, verifyLedger, formatD, type AejMark, type AejWorker } from "./repFormat";
 import { buildReceiptData, buildReceiptPdf, receiptEmailHtml } from "./receipt";
 import { sendEmail } from "../email";
+import { getLaborIdentity, getLegalSnapshotForCompany } from "../companyRegistry";
 import { latestClockChecks, runClockCheck, MAX_DRIFT_MS } from "./clock";
 
 const TZ = DEFAULT_TZ;
@@ -42,11 +43,9 @@ async function readJson<T>(key: string, companyId: number): Promise<T | null> {
 }
 
 async function employerOf(companyId: number) {
-  const database = await db.getDb();
-  const company = database ? (await database.select({ name: companies.name }).from(companies).where(eq(companies.id, companyId)).limit(1))[0] : null;
-  const legal = await readJson<LegalProfile>("company_legal_profile", companyId);
-  const document = onlyDigits(legal?.document) || null;
-  return { name: (legal?.legalName || company?.name || "").trim(), document, workplace: (legal?.establishment || legal?.address || "").trim() || null };
+  const snap = await getLegalSnapshotForCompany(companyId);
+  const document = onlyDigits(snap.legal.document) || null;
+  return { name: (snap.legal.legalName || snap.name || "").trim(), document, workplace: (snap.legal.establishment || snap.legal.address || "").trim() || null };
 }
 
 const isAdminRole = (ctx: any) => ["company_admin", "supervisor"].includes(String(ctx.user?.role || ""));
@@ -114,7 +113,8 @@ function fileResponse(content: string, fileName: string) {
 
 /** O que falta cadastrar para AFD/AEJ/comprovante/espelho saírem completos. */
 export async function dataReadiness(companyId: number) {
-  const legal = await readJson<LegalProfile>("company_legal_profile", companyId);
+  const snap = await getLegalSnapshotForCompany(companyId);
+  const legal = snap.legal;
   const company: string[] = [];
   if (!(legal?.legalName || "").trim()) company.push("Razão social");
   const doc = onlyDigits(legal?.document);
@@ -125,7 +125,8 @@ export async function dataReadiness(companyId: number) {
   const members = database ? (await database.select({ id: memberAccounts.id, name: memberAccounts.userName, role: memberAccounts.role, active: memberAccounts.active }).from(memberAccounts).where(eq(memberAccounts.companyId, companyId))).filter((m) => m.role !== "company_admin" && m.active) : [];
   const people: Array<{ memberId: number; name: string; missing: string[] }> = [];
   for (const m of members) {
-    const l = await readJson<LaborProfile>(`labor_profile:${m.id}`, companyId);
+    const identity = await getLaborIdentity(companyId, m.id);
+    const l = { ...(await readJson<LaborProfile>(`labor_profile:${m.id}`, companyId)), cpf: identity.cpf || undefined, pis: identity.pis || undefined, jobTitle: identity.jobTitle || undefined, admissionDate: identity.admissionDate || undefined };
     const missing: string[] = [];
     if (!l?.cpf) missing.push("CPF"); else if (!isValidCpf(l.cpf)) missing.push("CPF válido");
     if (!(l?.jobTitle || "").trim()) missing.push("Cargo");
@@ -334,7 +335,7 @@ export const pontoLegalRouter = router({
         punches: rows.map((r) => ({ nsr: Number(r.nsr), markedAt: r.deviceTime || r.serverTime, recordedAt: r.serverTime, cpf: r.workerCpf, timeZone: r.timeZone || TZ, collector: r.collectorId || "02", offline: Boolean(r.offline), hash: r.recordHash! })),
       });
       const warnings = [
-        ...(!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto → Dados da empresa."] : []),
+        ...(!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Dados da empresa."] : []),
         ...(rows.some((r) => !r.workerCpf) ? [`${rows.filter((r) => !r.workerCpf).length} batida(s) sem CPF do funcionário. Complete o cadastro no Espelho de ponto (vale para as próximas batidas).`] : []),
       ];
       void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "afd", description: `Gerou AFD ${input.from} a ${input.to} (${rows.length} marcações)`, newData: { from: input.from, to: input.to, count: rows.length } } as any);
@@ -399,10 +400,10 @@ export const pontoLegalRouter = router({
       const aej = buildAej({ employer: { document: employer.document || "", name: employer.name }, inpiNumber: dev.inpiNumber, from: input.from, to: input.to, generatedAt: new Date(), timeZone: TZ,
         ptrp: { version: dev.version, developerDocument: dev.document, developerName: dev.name, developerEmail: dev.email }, workers });
       const warnings = [
-        ...(!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto → Dados da empresa."] : []),
-        ...(missingCpf.length ? [`Sem CPF no cadastro: ${missingCpf.slice(0, 10).join(", ")}${missingCpf.length > 10 ? "…" : ""}. Complete no Espelho de ponto.`] : []),
+        ...(!employer.document ? ["Falta o CNPJ (ou CPF) da empresa. Cadastre em Dados da empresa."] : []),
+        ...(missingCpf.length ? [`Sem CPF no cadastro: ${missingCpf.slice(0, 10).join(", ")}${missingCpf.length > 10 ? "…" : ""}. Complete no cadastro do funcionário (Promotores e equipe).`] : []),
         ...(workers.some((w) => !w.contract) ? ["Há funcionário sem horário de trabalho cadastrado. Preencha a jornada no Espelho de ponto."] : []),
-        ...(missingSchedule.length ? [`Sem horário de entrada e saída cadastrado: ${missingSchedule.slice(0, 10).join(", ")}${missingSchedule.length > 10 ? "…" : ""}. Complete no Espelho de ponto.`] : []),
+        ...(missingSchedule.length ? [`Sem horário de entrada e saída cadastrado: ${missingSchedule.slice(0, 10).join(", ")}${missingSchedule.length > 10 ? "…" : ""}. Complete no cadastro do funcionário (Promotores e equipe).`] : []),
       ];
       void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "aej", description: `Gerou AEJ ${input.from} a ${input.to} (${workers.length} funcionário(s))`, newData: { from: input.from, to: input.to } } as any);
       return { ...fileResponse(aej.content, aej.fileName), count: workers.length, warnings };

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Clock3, KeyRound, Minus, TrendingDown, TrendingUp, UserRound } from "lucide-react";
+import { Building2, Clock3, KeyRound, Minus, TrendingDown, TrendingUp, UserRound } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { hasPersonalTimeClock } from "@shared/personalPonto";
 import { isCompanyManager } from "@shared/companyAccess";
@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
+import { MemberRegistryFields, registryFromMember } from "@/components/registry/MemberRegistryFields";
+import { emptyMemberRegistry, type MemberRegistry } from "@shared/registryFields";
 
 const roleLabels: Record<string, string> = {
   platform_admin: "Administrador geral",
@@ -37,6 +39,24 @@ export default function MyAccountPage() {
   const showPersonalTimeBank = hasPersonalTimeClock(user?.role);
   const summary = trpc.timeTracking.myTimeSummary.useQuery(undefined, {
     enabled: Boolean(user && showPersonalTimeBank && canViewTimeBank),
+  });
+  const profile = trpc.registry.myProfile.useQuery(undefined, { enabled: Boolean(user) && !isPlatformAdmin });
+  const [identity, setIdentity] = useState<MemberRegistry>(emptyMemberRegistry());
+  const [newEmail, setNewEmail] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  useEffect(() => {
+    if (profile.data && profile.data.kind === "member") {
+      setIdentity(registryFromMember(profile.data.registry));
+      setNewEmail(profile.data.email || user?.email || "");
+    }
+  }, [profile.data, user?.email]);
+  const saveIdentity = trpc.registry.saveMyIdentity.useMutation({
+    onSuccess: () => { toast.success("Seus dados cadastrais foram salvos."); void profile.refetch(); },
+    onError: (error) => toast.error(error.message),
+  });
+  const changeEmail = trpc.registry.changeMyEmail.useMutation({
+    onSuccess: () => { toast.success("E-mail atualizado."); setEmailPassword(""); void profile.refetch(); },
+    onError: (error) => toast.error(error.message || "Não foi possível alterar o e-mail."),
   });
   const changePassword = trpc.auth.changePassword.useMutation({
     onSuccess: () => {
@@ -154,8 +174,8 @@ export default function MyAccountPage() {
                     <p className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-3 font-medium text-slate-950">{user?.name || "Não informado"}</p>
                   </div>
                   <div>
-                    <Label className="font-semibold text-slate-700">E-mail</Label>
-                    <p className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-3 font-medium text-slate-950">{user?.email || "Não informado"}</p>
+                    <Label className="font-semibold text-slate-700">E-mail atual</Label>
+                    <p className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-3 font-medium text-slate-950">{profile.data && profile.data.kind === "member" ? profile.data.email : (user?.email || "Não informado")}</p>
                   </div>
                   <div>
                     <Label className="font-semibold text-slate-700">Perfil de acesso</Label>
@@ -218,6 +238,66 @@ export default function MyAccountPage() {
             </div>
           </div>
         </section>
+
+        {!isPlatformAdmin && (
+          <section id="dados-cadastrais" className="scroll-mt-6 space-y-3">
+            <h2 className="text-lg font-bold text-white">Dados cadastrais</h2>
+            {(user?.role === "company_admin" || user?.role === "supervisor") && (
+              <a href="/dados-empresa" className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm font-semibold text-teal-200 hover:bg-white/5">
+                <span className="flex items-center gap-2"><Building2 className="h-4 w-4" />Dados da empresa (CNPJ, endereço e contato)</span>
+                <span aria-hidden>→</span>
+              </a>
+            )}
+            <Card className="border-slate-200 bg-white shadow-xl">
+              <CardHeader>
+                <CardTitle className="text-slate-950">Seus dados pessoais</CardTitle>
+                {user?.role === "promoter" && (
+                  <p className="text-sm font-normal text-slate-600">CPF, PIS, RG, cargo e admissão só o administrador pode alterar. Você pode atualizar o e-mail e a senha nesta página.</p>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <MemberRegistryFields
+                  value={identity}
+                  onChange={profile.data && "canEditRegistry" in profile.data && profile.data.canEditRegistry ? setIdentity : undefined}
+                  disabled={!(profile.data && "canEditRegistry" in profile.data && profile.data.canEditRegistry)}
+                  inputClassName="mt-1 border-slate-300 bg-white text-slate-950"
+                />
+                {profile.data && "canEditRegistry" in profile.data && profile.data.canEditRegistry && (
+                  <Button disabled={saveIdentity.isPending} onClick={() => saveIdentity.mutate(identity)} className="bg-teal-300 font-bold text-slate-950 hover:bg-teal-200">
+                    {saveIdentity.isPending ? "Salvando…" : "Salvar meus dados"}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="border-slate-200 bg-white shadow-xl">
+              <CardHeader>
+                <CardTitle className="text-slate-950">Alterar e-mail</CardTitle>
+                <p className="text-sm font-normal text-slate-600">Informe o novo e-mail e a senha atual para confirmar.</p>
+              </CardHeader>
+              <CardContent>
+                <form
+                  className="space-y-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    changeEmail.mutate({ email: newEmail, currentPassword: emailPassword });
+                  }}
+                >
+                  <div>
+                    <Label htmlFor="new-email" className="font-semibold text-slate-700">Novo e-mail</Label>
+                    <Input id="new-email" type="email" required value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className="mt-1 border-slate-300 bg-white text-slate-950" />
+                  </div>
+                  <div>
+                    <Label htmlFor="email-password" className="font-semibold text-slate-700">Senha atual</Label>
+                    <Input id="email-password" type="password" required autoComplete="current-password" value={emailPassword} onChange={(e) => setEmailPassword(e.target.value)} className="mt-1 border-slate-300 bg-white text-slate-950" />
+                  </div>
+                  <Button type="submit" disabled={changeEmail.isPending} className="bg-teal-300 font-bold text-slate-950 hover:bg-teal-200">
+                    {changeEmail.isPending ? "Salvando…" : "Salvar e-mail"}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </section>
+        )}
       </div>
     </DashboardLayout>
   );

@@ -10,6 +10,7 @@ import { platformCompaniesRouter } from "./modules/platformCompanies";
 import { announcementsRouter } from "./modules/platformAnnouncements";
 import { legalRouter } from "./legal";
 import { liveErrorsRouter } from "./liveErrors";
+import { companyRegistryRouter, memberRegistryInput, saveMemberRegistry } from "./companyRegistry";
 import { storePhotosRouter } from "./modules/storePhotos";
 import { storeClientsRouter } from "./modules/storeClients";
 import { productsRouter } from "./modules/products";
@@ -56,6 +57,7 @@ export const appRouter = router({
   system: systemRouter,
   timeTracking: timeTrackingRouter,
   timesheetMirror: timesheetMirrorRouter,
+  registry: companyRegistryRouter,
   pontoLegal: pontoLegalRouter,
   lgpd: lgpdRouter,
   timesheetArchive: timesheetArchiveRouter,
@@ -622,15 +624,18 @@ export const appRouter = router({
       void auditFromCtx(ctx, { action: "settings_change", module: "users", entityType: "user_permissions", entityId: target.id, entityLabel: target.userName, description: `Permissões de módulos atualizadas para ${target.userName}`, oldData: before.effective, newData: after.effective });
       return { success: true as const };
     }),
-    create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole, storeIds: z.array(z.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
+    create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole, storeIds: z.array(z.number().int().positive()).optional(), registry: memberRegistryInput.optional() })).mutation(async ({ ctx, input }) => {
       try {
         assertSupervisorPromoterOnly(ctx.user.role, input.role);
         await planLimits.assertUserLimit(ctx.accountId, input.role);
-        const { storeIds, ...userInput } = input;
+        const { storeIds, registry: _registry, ...userInput } = input;
         const created = await memberAuth.createCompanyUser({ ...userInput, companyId: ctx.accountId });
         if (input.role === "promoter" && storeIds && storeIds.length > 0) {
           const database = await db.getDb();
           await setPromoterStoreAssignments(database, ctx.accountId, created.accountId, storeIds);
+        }
+        if (input.registry) {
+          await saveMemberRegistry(ctx.accountId, created.accountId, input.registry);
         }
         void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usuário criado: ${input.userName} (${input.role})`, newData: { userName: input.userName, email: input.email, role: input.role, id: created.accountId } });
         void (async () => {
@@ -654,7 +659,7 @@ export const appRouter = router({
       }
       catch (error: any) { if (error instanceof TRPCError) throw error; if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já está cadastrado." }); console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message }); if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError({ code: "BAD_REQUEST", message: "A empresa selecionada não existe mais. Atualize a página e tente novamente." }); if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados está com a estrutura de usuários desatualizada. A implantação precisa concluir a migração." }); throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível criar o usuário. Verifique os dados e tente novamente." }); }
     }),
-    update: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), userName: z.string().min(2).optional(), email: z.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
+    update: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), userName: z.string().min(2).optional(), email: z.string().email().optional(), role: companyUserRole.optional(), registry: memberRegistryInput.optional() })).mutation(async ({ ctx, input }) => {
       if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError({ code: "BAD_REQUEST", message: "O administrador não pode remover o próprio nível administrativo." });
       const usersBefore = await memberAuth.listMemberAccounts(ctx.accountId);
       const beforeUser = usersBefore.find((u) => u.id === input.id) || null;
@@ -665,6 +670,9 @@ export const appRouter = router({
       } catch (error: any) {
         if (error?.message === "A empresa precisa manter pelo menos um administrador ativo.") throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
         throw error;
+      }
+      if (input.registry) {
+        await saveMemberRegistry(ctx.accountId, input.id, input.registry);
       }
       const usersAfter = await memberAuth.listMemberAccounts(ctx.accountId);
       const afterUser = usersAfter.find((u) => u.id === input.id) || null;
@@ -689,6 +697,7 @@ export const appRouter = router({
       workEndTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
       weeklyRoutes: z.array(z.object({ weekday: z.number().int().min(0).max(6), storeIds: z.array(z.number().int().positive()).min(1) })).max(7).optional(),
       storeIds: z.array(z.number().int().positive()).optional(),
+      registry: memberRegistryInput.optional(),
     })).mutation(async ({ ctx, input }) => {
       if (input.workStartTime && input.workEndTime && input.workEndTime <= input.workStartTime) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao início." });
@@ -711,6 +720,9 @@ export const appRouter = router({
         if (input.storeIds !== undefined) {
           const database = await db.getDb();
           await setPromoterStoreAssignments(database, ctx.accountId, input.id, input.storeIds);
+        }
+        if (input.registry) {
+          await saveMemberRegistry(ctx.accountId, input.id, input.registry);
         }
       } catch (error: any) {
         if (error?.code === "ER_DUP_ENTRY") throw new TRPCError({ code: "CONFLICT", message: "Este e-mail ou matrícula já está em uso." });

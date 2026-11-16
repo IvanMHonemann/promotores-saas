@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Clock3, KeyRound, Minus, TrendingDown, TrendingUp, UserRound } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { hasPersonalTimeClock } from "@shared/personalPonto";
+import { isCompanyManager } from "@shared/companyAccess";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ export default function MyAccountPage() {
   });
   const canViewTimeBank = Boolean(entitlements.data?.effective?.timeTracking);
   // Administrador da empresa não bate ponto: sem banco de horas pessoal (só o da equipe, no menu).
-  const isCompanyAdmin = user?.role === "company_admin";
+  const isCompanyAdmin = isCompanyManager(user?.role);
   const showPersonalTimeBank = hasPersonalTimeClock(user?.role);
   const summary = trpc.timeTracking.myTimeSummary.useQuery(undefined, {
     enabled: Boolean(user && showPersonalTimeBank && canViewTimeBank),

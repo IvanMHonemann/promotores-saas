@@ -152,7 +152,7 @@ function UsersRoute() {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (user?.role === "platform_admin") return <PlatformUsersPage />;
-  return <AdminProtected><FeatureProtected featureKey="teamManagement"><AdminUsersPage /></FeatureProtected></AdminProtected>;
+  return <CompanyManagerProtected><FeatureProtected featureKey="teamManagement"><AdminUsersPage /></FeatureProtected></CompanyManagerProtected>;
 }
 
 function AdminProtected({ children }: { children: React.ReactNode }) {
@@ -167,6 +167,13 @@ function CompanyAdminProtected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user || user.role !== "company_admin") return <RedirectHome />;
+  return <SubscriptionGate>{children}</SubscriptionGate>;
+}
+
+function CompanyManagerProtected({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user || (user.role !== "company_admin" && user.role !== "supervisor")) return <RedirectHome />;
   return <SubscriptionGate>{children}</SubscriptionGate>;
 }
 
@@ -341,18 +348,18 @@ function Router() {
       <Route path="/lojas"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoresPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lixeira"><CommercialProtected><TrashPage /></CommercialProtected></Route>
       <Route path="/ponto"><PromoterProtected><FeatureProtected featureKey="timeTracking"><PromoterClockPage /></FeatureProtected></PromoterProtected></Route>
-      <Route path="/espelho-ponto"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetMirrorPage /></FeatureProtected></CompanyAdminProtected></Route>
-      <Route path="/banco-de-horas/:memberId"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TeamTimeBankPage /></FeatureProtected></CompanyAdminProtected></Route>
-      <Route path="/banco-de-horas"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TeamTimeBankPage /></FeatureProtected></CompanyAdminProtected></Route>
-      <Route path="/arquivos-historicos"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetArchivePage /></FeatureProtected></CompanyAdminProtected></Route>
-      <Route path="/check-in-out"><CompanyAdminProtected><FeatureProtected featureKey="visitCheckIn"><CheckInOutPage /></FeatureProtected></CompanyAdminProtected></Route>
-      <Route path="/cartao-ponto"><AdminProtected><FeatureProtected featureKey="timeTracking"><TimesheetPage /></FeatureProtected></AdminProtected></Route>
-      <Route path="/ferias"><AdminProtected><FeatureProtected featureKey="timeTracking"><VacationsPage /></FeatureProtected></AdminProtected></Route>
+      <Route path="/espelho-ponto"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><TimesheetMirrorPage /></FeatureProtected></CompanyManagerProtected></Route>
+      <Route path="/banco-de-horas/:memberId"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><TeamTimeBankPage /></FeatureProtected></CompanyManagerProtected></Route>
+      <Route path="/banco-de-horas"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><TeamTimeBankPage /></FeatureProtected></CompanyManagerProtected></Route>
+      <Route path="/arquivos-historicos"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><TimesheetArchivePage /></FeatureProtected></CompanyManagerProtected></Route>
+      <Route path="/check-in-out"><CompanyManagerProtected><FeatureProtected featureKey="visitCheckIn"><CheckInOutPage /></FeatureProtected></CompanyManagerProtected></Route>
+      <Route path="/cartao-ponto"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><TimesheetPage /></FeatureProtected></CompanyManagerProtected></Route>
+      <Route path="/ferias"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><VacationsPage /></FeatureProtected></CompanyManagerProtected></Route>
       <Route path="/meus-comprovantes"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyReceiptsPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/meu-espelho"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyMirrorPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/meus-dados"><PromoterProtected><MyDataPage /></PromoterProtected></Route>
-      <Route path="/lgpd"><CompanyAdminProtected><LgpdPage /></CompanyAdminProtected></Route>
-      <Route path="/ponto-legal"><CompanyAdminProtected><FeatureProtected featureKey="timeTracking"><PontoLegalPage /></FeatureProtected></CompanyAdminProtected></Route>
+      <Route path="/lgpd"><CompanyManagerProtected><LgpdPage /></CompanyManagerProtected></Route>
+      <Route path="/ponto-legal"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><PontoLegalPage /></FeatureProtected></CompanyManagerProtected></Route>
       <Route path="/minhas-ferias"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyVacationsPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/empresas"><PlatformProtected><PlatformCompaniesPage /></PlatformProtected></Route>
@@ -365,7 +372,7 @@ function Router() {
       <Route path="/admin/usuarios"><UsersRoute /></Route>
       <Route path="/meus-modulos"><CompanyAdminProtected><CompanyModulesPage /></CompanyAdminProtected></Route>
       <Route path="/minha-conta"><AdminProtected><MyAccountPage /></AdminProtected></Route>
-      <Route path="/auditoria"><CompanyAdminProtected><FeatureProtected featureKey="reports"><AuditPage /></FeatureProtected></CompanyAdminProtected></Route>
+      <Route path="/auditoria"><CompanyManagerProtected><FeatureProtected featureKey="reports"><AuditPage /></FeatureProtected></CompanyManagerProtected></Route>
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

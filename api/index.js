@@ -1212,6 +1212,7 @@ var init_entitlements = __esm({
       "visitCheckIn",
       "products",
       "reports",
+      "teamManagement",
       "offline"
     ];
     PROMOTER_CEILING = ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn", "products"];
@@ -1222,7 +1223,7 @@ var init_entitlements = __esm({
     };
     ROLE_FEATURE_DEFAULTS = {
       company_admin: ALL_FEATURES,
-      supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products"],
+      supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "teamManagement"],
       promoter: ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn", "products"]
     };
   }
@@ -3071,7 +3072,7 @@ var init_entitlements2 = __esm({
 // server/_core/trpc.ts
 import { initTRPC, TRPCError as TRPCError3 } from "@trpc/server";
 import superjson from "superjson";
-var t, router, publicProcedure, requireUser, requireCompanyUser, requireCompanyAdmin, requirePlatformAdmin, protectedProcedure, requireCompanyMemberNoBillingGate, companyBillingProcedure, requireEntitlement, commercialFeatureProcedure, companyAdminFeatureProcedure, companyAdminProcedure, platformProcedure, adminProcedure;
+var t, router, publicProcedure, requireUser, requireCompanyUser, requireCompanyAdmin, requireCompanyManager, requirePlatformAdmin, protectedProcedure, requireCompanyMemberNoBillingGate, companyBillingProcedure, requireEntitlement, commercialFeatureProcedure, companyAdminFeatureProcedure, companyAdminProcedure, companyManagerProcedure, platformProcedure, adminProcedure;
 var init_trpc = __esm({
   "server/_core/trpc.ts"() {
     "use strict";
@@ -3110,6 +3111,14 @@ var init_trpc = __esm({
       if (user.role !== "company_admin" || !opts.ctx.accountId) throw new TRPCError3({ code: "FORBIDDEN", message: "Somente o administrador da empresa pode executar esta opera\xE7\xE3o." });
       return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
     });
+    requireCompanyManager = t.middleware(async (opts) => {
+      const user = opts.ctx.user;
+      if (!user) throw new TRPCError3({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+      if (user.role !== "company_admin" && user.role !== "supervisor" || !opts.ctx.accountId) {
+        throw new TRPCError3({ code: "FORBIDDEN", message: "Somente o administrador ou o supervisor da empresa pode executar esta opera\xE7\xE3o." });
+      }
+      return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
+    });
     requirePlatformAdmin = t.middleware(async (opts) => {
       const user = opts.ctx.user;
       if (!user) throw new TRPCError3({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
@@ -3145,8 +3154,9 @@ var init_trpc = __esm({
       return opts.next({ ctx: { ...opts.ctx, user, accountId: companyId } });
     });
     commercialFeatureProcedure = (featureKey) => t.procedure.use(requireCompanyUser).use(requireEntitlement(featureKey));
-    companyAdminFeatureProcedure = (featureKey) => t.procedure.use(requireCompanyAdmin).use(requireCompanyUser).use(requireEntitlement(featureKey));
+    companyAdminFeatureProcedure = (featureKey) => t.procedure.use(requireCompanyManager).use(requireCompanyUser).use(requireEntitlement(featureKey));
     companyAdminProcedure = t.procedure.use(requireCompanyAdmin);
+    companyManagerProcedure = t.procedure.use(requireCompanyManager);
     platformProcedure = t.procedure.use(requirePlatformAdmin);
     adminProcedure = platformProcedure;
   }
@@ -8138,7 +8148,10 @@ function punchOrderError(existing, change, timeZone = "America/Sao_Paulo") {
 }
 
 // shared/personalPonto.ts
-var ADMIN_NO_PUNCH_MESSAGE = "O administrador da empresa n\xE3o registra ponto. Use as telas de ponto da equipe.";
+var ADMIN_NO_PUNCH_MESSAGE = "O administrador da empresa e o supervisor n\xE3o registram ponto. Use as telas de ponto da equipe.";
+function hasPersonalTimeClock(role) {
+  return Boolean(role) && role !== "company_admin" && role !== "supervisor" && role !== "platform_admin";
+}
 
 // server/modules/timeTracking.ts
 init_ledger();
@@ -8414,7 +8427,7 @@ var timeTrackingRouter = router({
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) throw new TRPCError7({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
-    if (ctx.user?.role === "company_admin") throw new TRPCError7({ code: "FORBIDDEN", message: ADMIN_NO_PUNCH_MESSAGE });
+    if (!hasPersonalTimeClock(ctx.user?.role)) throw new TRPCError7({ code: "FORBIDDEN", message: ADMIN_NO_PUNCH_MESSAGE });
     if (!Number.isFinite(input.latitude) || !Number.isFinite(input.longitude) || !Number.isFinite(input.accuracy) || input.locationStatus !== "success") {
       throw new TRPCError7({ code: "BAD_REQUEST", message: "O ponto s\xF3 pode ser registrado ap\xF3s obter uma localiza\xE7\xE3o GPS v\xE1lida." });
     }
@@ -8655,7 +8668,7 @@ var timeTrackingRouter = router({
     const companyId = ctx.accountId;
     const memberId = ctx.memberAccountId;
     if (!companyId || !memberId) throw new TRPCError7({ code: "FORBIDDEN", message: "Usu\xE1rio de empresa n\xE3o identificado." });
-    if (ctx.user?.role === "company_admin") throw new TRPCError7({ code: "FORBIDDEN", message: ADMIN_NO_PUNCH_MESSAGE });
+    if (!hasPersonalTimeClock(ctx.user?.role)) throw new TRPCError7({ code: "FORBIDDEN", message: ADMIN_NO_PUNCH_MESSAGE });
     const database2 = await getDb();
     if (!database2) throw new TRPCError7({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
     const jType = input.justificationType || "normal";
@@ -9589,26 +9602,26 @@ var lgpdRouter = router({
     return { fileName: z14.fileName, base64: z14.buffer.toString("base64") };
   }),
   // ------------------------------------------------------------- administrador
-  requests: companyAdminProcedure.input(z6.object({ status: z6.enum(["open", "all"]).default("open") }).optional()).query(async ({ ctx, input }) => {
+  requests: companyManagerProcedure.input(z6.object({ status: z6.enum(["open", "all"]).default("open") }).optional()).query(async ({ ctx, input }) => {
     await ensureLgpdTables();
     const companyId = Number(ctx.accountId);
     return rows(sql13`SELECT r.id, r.memberAccountId, m.userName AS name, r.kind, r.message, r.status, r.createdAt, r.resolvedAt, r.resolvedBy, r.resolution
       FROM lgpd_requests r LEFT JOIN member_accounts m ON m.id = r.memberAccountId WHERE r.companyId = ${companyId} ${input?.status === "all" ? sql13`` : sql13`AND r.status = 'open'`} ORDER BY r.id DESC LIMIT 200`);
   }),
-  acknowledgements: companyAdminProcedure.query(async ({ ctx }) => {
+  acknowledgements: companyManagerProcedure.query(async ({ ctx }) => {
     await ensureLgpdTables();
     return rows(sql13`SELECT m.id AS memberId, m.userName AS name, m.active, MAX(CASE WHEN a.noticeVersion = ${PRIVACY_NOTICE_VERSION} THEN a.acknowledgedAt END) AS acknowledgedAt
       FROM member_accounts m LEFT JOIN privacy_acknowledgements a ON a.memberAccountId = m.id AND a.companyId = m.companyId
       WHERE m.companyId = ${Number(ctx.accountId)} AND m.role = 'promoter' GROUP BY m.id, m.userName, m.active ORDER BY m.userName`);
   }),
-  plan: companyAdminProcedure.query(() => ANONYMIZE_PLAN),
-  exportMember: companyAdminProcedure.input(z6.object({ memberId: z6.number().int().positive() })).mutation(async ({ ctx, input }) => {
+  plan: companyManagerProcedure.query(() => ANONYMIZE_PLAN),
+  exportMember: companyManagerProcedure.input(z6.object({ memberId: z6.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const companyId = Number(ctx.accountId);
     const z14 = await buildSubjectExportZip(companyId, input.memberId);
     void auditFromCtx(ctx, { action: "export", module: "lgpd", entityType: "subject_export", entityId: input.memberId, description: "Exportou todos os dados pessoais de um titular (LGPD art. 18)" });
     return { fileName: z14.fileName, base64: z14.buffer.toString("base64"), summary: z14.summary };
   }),
-  anonymizeMember: companyAdminProcedure.input(z6.object({ memberId: z6.number().int().positive(), confirm: z6.literal("ANONIMIZAR"), requestId: z6.number().int().positive().optional(), reason: z6.string().trim().min(5).max(500) })).mutation(async ({ ctx, input }) => {
+  anonymizeMember: companyManagerProcedure.input(z6.object({ memberId: z6.number().int().positive(), confirm: z6.literal("ANONIMIZAR"), requestId: z6.number().int().positive().optional(), reason: z6.string().trim().min(5).max(500) })).mutation(async ({ ctx, input }) => {
     const companyId = Number(ctx.accountId);
     await ensureLgpdTables();
     const { pseudonym } = await anonymizeSubject(companyId, input.memberId);
@@ -9619,7 +9632,7 @@ var lgpdRouter = router({
     void auditFromCtx(ctx, { action: "delete", module: "lgpd", entityType: "subject_anonymization", entityId: input.memberId, entityLabel: pseudonym, description: `Anonimizou dados pessoais do titular #${input.memberId} (ponto preservado por obriga\xE7\xE3o legal). Motivo: ${input.reason}`, newData: { plan: ANONYMIZE_PLAN, requestId: input.requestId ?? null } });
     return { success: true, pseudonym };
   }),
-  resolveRequest: companyAdminProcedure.input(z6.object({ id: z6.number().int().positive(), status: z6.enum(["done", "rejected"]), resolution: z6.string().trim().min(3).max(2e3) })).mutation(async ({ ctx, input }) => {
+  resolveRequest: companyManagerProcedure.input(z6.object({ id: z6.number().int().positive(), status: z6.enum(["done", "rejected"]), resolution: z6.string().trim().min(3).max(2e3) })).mutation(async ({ ctx, input }) => {
     await ensureLgpdTables();
     const database2 = await getDb();
     if (!database2) throw new TRPCError9({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indispon\xEDvel." });
@@ -9803,7 +9816,7 @@ init_products2();
 init_rateLimit();
 import { z as z13 } from "zod";
 import { parse as parseCookie } from "cookie";
-import { TRPCError as TRPCError18 } from "@trpc/server";
+import { TRPCError as TRPCError19 } from "@trpc/server";
 
 // server/authThrottle.ts
 import { createHash as createHash3 } from "node:crypto";
@@ -10465,6 +10478,18 @@ async function assertUserLimit(companyId, role) {
 
 // server/routers.ts
 init_db();
+
+// server/supervisorTeam.ts
+import { TRPCError as TRPCError18 } from "@trpc/server";
+var SUPERVISOR_PROMOTER_ONLY_MESSAGE = "O supervisor s\xF3 pode cadastrar e editar promotores.";
+function assertSupervisorPromoterOnly(actorRole, targetRole) {
+  if (actorRole !== "supervisor") return;
+  if (targetRole !== "promoter") {
+    throw new TRPCError18({ code: "FORBIDDEN", message: SUPERVISOR_PROMOTER_ONLY_MESSAGE });
+  }
+}
+
+// server/routers.ts
 init_email();
 init_audit();
 
@@ -11249,7 +11274,7 @@ var appRouter = router({
           effectiveFeatureKeys: [...ENTITLEMENT_KEYS]
         };
       }
-      if (!ctx.memberAccountId) throw new TRPCError18({ code: "FORBIDDEN", message: "Usu\xE1rio da empresa n\xE3o encontrado." });
+      if (!ctx.memberAccountId) throw new TRPCError19({ code: "FORBIDDEN", message: "Usu\xE1rio da empresa n\xE3o encontrado." });
       return getMemberEntitlementSnapshot(ctx.accountId, ctx.memberAccountId, ctx.user.role);
     })
   }),
@@ -11266,7 +11291,7 @@ var appRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const signupKey = `signup:${getClientIp(ctx.req)}`;
       if (await isThrottled(signupKey)) {
-        throw new TRPCError18({ code: "TOO_MANY_REQUESTS", message: "Muitos cadastros deste endere\xE7o. Tente novamente em alguns minutos." });
+        throw new TRPCError19({ code: "TOO_MANY_REQUESTS", message: "Muitos cadastros deste endere\xE7o. Tente novamente em alguns minutos." });
       }
       await registerThrottleFailure(signupKey);
       try {
@@ -11312,7 +11337,7 @@ var appRouter = router({
         return { success: true, ...created };
       } catch (error) {
         if (error?.code === "ER_DUP_ENTRY") {
-          throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          throw new TRPCError19({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
         }
         throw error;
       }
@@ -11321,18 +11346,18 @@ var appRouter = router({
       const ip = getClientIp(ctx.req);
       const limit = checkRateLimit(ip, "login");
       if (!limit.ok) {
-        throw new TRPCError18({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde um minuto." });
+        throw new TRPCError19({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde um minuto." });
       }
       const principal = await authenticateMember(input.email, input.password);
       if (!principal) {
         void auditFromCtx(ctx, { action: "login_failed", module: "auth", entityType: "session", description: `Tentativa de login falhou para ${input.email}`, newData: { email: input.email } });
-        throw new TRPCError18({ code: "UNAUTHORIZED", message: "E-mail ou senha inv\xE1lidos." });
+        throw new TRPCError19({ code: "UNAUTHORIZED", message: "E-mail ou senha inv\xE1lidos." });
       }
       if (principal.kind === "company") {
         const company = await getCompanyById(principal.account.companyId);
         if (!company || company.active === false) {
           const reason = company ? await getSetting("blocked_reason", company.id, "") : "";
-          throw new TRPCError18({ code: "FORBIDDEN", message: reason || "Acesso da empresa bloqueado. Entre em contato com o suporte." });
+          throw new TRPCError19({ code: "FORBIDDEN", message: reason || "Acesso da empresa bloqueado. Entre em contato com o suporte." });
         }
       }
       const session = await createSession(principal);
@@ -11371,7 +11396,7 @@ var appRouter = router({
     }),
     recoverPassword: publicProcedure.input(z13.object({ email: z13.string().email(), recoveryCode: z13.string().min(1), newPassword: z13.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ input }) => {
       const recovered = await recoverPassword(input.email, input.recoveryCode, input.newPassword);
-      if (!recovered) throw new TRPCError18({ code: "UNAUTHORIZED", message: "E-mail ou c\xF3digo de recupera\xE7\xE3o inv\xE1lido." });
+      if (!recovered) throw new TRPCError19({ code: "UNAUTHORIZED", message: "E-mail ou c\xF3digo de recupera\xE7\xE3o inv\xE1lido." });
       return { success: true, recoveryCode: recovered.recoveryCode };
     }),
     /** "Esqueci minha senha": resposta sempre igual (não revela se o e-mail existe). */
@@ -11388,30 +11413,30 @@ var appRouter = router({
     }),
     resetPasswordWithToken: publicProcedure.input(z13.object({ token: z13.string().min(10).max(2e3), newPassword: z13.string().min(8, "A nova senha deve ter pelo menos 8 caracteres").max(200) })).mutation(async ({ input }) => {
       const ok = await resetPasswordWithToken(input.token, input.newPassword);
-      if (!ok) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Link inv\xE1lido ou expirado. Pe\xE7a um novo link." });
+      if (!ok) throw new TRPCError19({ code: "UNAUTHORIZED", message: "Link inv\xE1lido ou expirado. Pe\xE7a um novo link." });
       return { success: true };
     }),
     changePassword: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError19({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).input(z13.object({ currentPassword: z13.string().min(1), newPassword: z13.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") })).mutation(async ({ ctx, input }) => {
       const changed = ctx.user.role === "platform_admin" ? await changePlatformPassword(ctx.platformAdminId ?? ctx.user.id, input.currentPassword, input.newPassword) : await changeMemberPassword(ctx.memberAccountId ?? Math.abs(ctx.user.id), input.currentPassword, input.newPassword);
-      if (!changed) throw new TRPCError18({ code: "UNAUTHORIZED", message: "A senha atual est\xE1 incorreta." });
+      if (!changed) throw new TRPCError19({ code: "UNAUTHORIZED", message: "A senha atual est\xE1 incorreta." });
       return { success: true };
     }),
     updateProfile: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError19({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).input(z13.object({
       userName: z13.string().min(2).optional(),
       avatarDataUrl: z13.string().max(4e5).optional().nullable()
     })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role === "platform_admin") {
-        throw new TRPCError18({ code: "BAD_REQUEST", message: "Perfil de plataforma n\xE3o usa esta rota." });
+        throw new TRPCError19({ code: "BAD_REQUEST", message: "Perfil de plataforma n\xE3o usa esta rota." });
       }
       const memberId = ctx.memberAccountId ?? Math.abs(ctx.user.id);
       const companyId = ctx.accountId;
-      if (!companyId) throw new TRPCError18({ code: "FORBIDDEN", message: "Empresa n\xE3o identificada." });
+      if (!companyId) throw new TRPCError19({ code: "FORBIDDEN", message: "Empresa n\xE3o identificada." });
       let userName = ctx.user.name || "";
       if (input.userName) {
         const updated = await updateMemberProfile(memberId, { userName: input.userName });
@@ -11423,7 +11448,7 @@ var appRouter = router({
           await setSetting(key, "", companyId);
         } else {
           if (!input.avatarDataUrl.startsWith("data:image/")) {
-            throw new TRPCError18({ code: "BAD_REQUEST", message: "Imagem de perfil inv\xE1lida." });
+            throw new TRPCError19({ code: "BAD_REQUEST", message: "Imagem de perfil inv\xE1lida." });
           }
           await setSetting(key, input.avatarDataUrl, companyId);
         }
@@ -11431,7 +11456,7 @@ var appRouter = router({
       return { success: true, userName };
     }),
     profileExtras: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError19({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).query(async ({ ctx }) => {
       if (ctx.user.role === "platform_admin" || !ctx.accountId) {
@@ -11443,20 +11468,20 @@ var appRouter = router({
       return { avatarDataUrl: avatar || null, alertDays };
     }),
     regenerateRecoveryCode: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError19({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).input(z13.object({ currentPassword: z13.string().min(1) })).mutation(async ({ ctx, input }) => {
       if (ctx.user.role === "platform_admin") {
-        throw new TRPCError18({ code: "BAD_REQUEST", message: "Indispon\xEDvel para admin da plataforma nesta tela." });
+        throw new TRPCError19({ code: "BAD_REQUEST", message: "Indispon\xEDvel para admin da plataforma nesta tela." });
       }
       const memberId = ctx.memberAccountId ?? Math.abs(ctx.user.id);
       const ok = await verifyMemberPassword(memberId, input.currentPassword);
-      if (!ok) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Senha atual incorreta." });
+      if (!ok) throw new TRPCError19({ code: "UNAUTHORIZED", message: "Senha atual incorreta." });
       const result = await regenerateMemberRecoveryCode(memberId);
       return { success: true, recoveryCode: result.recoveryCode };
     }),
     logoutAllSessions: publicProcedure.use(async (opts) => {
-      if (!opts.ctx.user) throw new TRPCError18({ code: "UNAUTHORIZED", message: "Please login (10001)" });
+      if (!opts.ctx.user) throw new TRPCError19({ code: "UNAUTHORIZED", message: "Please login (10001)" });
       return opts.next({ ctx: { ...opts.ctx, user: opts.ctx.user } });
     }).mutation(async ({ ctx }) => {
       if (ctx.user.role === "platform_admin") return { success: true };
@@ -11487,10 +11512,10 @@ var appRouter = router({
         })).max(AI_MAX_ATTACHMENTS).optional()
       })).mutation(async ({ input }) => {
         const attachments = input.attachments ?? [];
-        if (aiAttachmentsSize(attachments) > AI_MAX_TOTAL_CHARS) throw new TRPCError18({ code: "PAYLOAD_TOO_LARGE", message: "Os anexos passaram do limite de envio (cerca de 4 MB no total). Envie menos arquivos ou arquivos menores." });
+        if (aiAttachmentsSize(attachments) > AI_MAX_TOTAL_CHARS) throw new TRPCError19({ code: "PAYLOAD_TOO_LARGE", message: "Os anexos passaram do limite de envio (cerca de 4 MB no total). Envie menos arquivos ou arquivos menores." });
         for (const file of attachments) {
-          if (file.kind === "image" && !AI_IMAGE_TYPES.includes(file.mimeType)) throw new TRPCError18({ code: "BAD_REQUEST", message: `Formato de imagem n\xE3o aceito: ${file.name}.` });
-          if (file.kind === "text" && file.data.length > AI_MAX_TEXT_CHARS) throw new TRPCError18({ code: "BAD_REQUEST", message: `O arquivo ${file.name} \xE9 grande demais.` });
+          if (file.kind === "image" && !AI_IMAGE_TYPES.includes(file.mimeType)) throw new TRPCError19({ code: "BAD_REQUEST", message: `Formato de imagem n\xE3o aceito: ${file.name}.` });
+          if (file.kind === "text" && file.data.length > AI_MAX_TEXT_CHARS) throw new TRPCError19({ code: "BAD_REQUEST", message: `O arquivo ${file.name} \xE9 grande demais.` });
         }
         return runPersistentGemini(input.prompt, input.history ?? [], attachments);
       })
@@ -11586,10 +11611,10 @@ var appRouter = router({
         return { success: true };
       }),
       start: platformProcedure.input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional() })).mutation(({ ctx, input }) => {
-        if (input.id !== 1) throw new TRPCError18({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
+        if (input.id !== 1) throw new TRPCError19({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
         const session = getPlatformTestSession(key);
-        if (session.status === "completed") throw new TRPCError18({ code: "BAD_REQUEST", message: "Reinicie a sess\xE3o de sandbox para testar novamente." });
+        if (session.status === "completed") throw new TRPCError19({ code: "BAD_REQUEST", message: "Reinicie a sess\xE3o de sandbox para testar novamente." });
         session.status = "in_progress";
         session.lastLatitude = input.latitude ?? null;
         session.lastLongitude = input.longitude ?? null;
@@ -11597,10 +11622,10 @@ var appRouter = router({
         return { visitId: 1, storeId: 1, storeName: "Loja de teste do administrador geral", ...session };
       }),
       complete: platformProcedure.input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional() })).mutation(({ ctx, input }) => {
-        if (input.id !== 1) throw new TRPCError18({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
+        if (input.id !== 1) throw new TRPCError19({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
         const session = getPlatformTestSession(key);
-        if (session.status !== "in_progress") throw new TRPCError18({ code: "BAD_REQUEST", message: "Fa\xE7a o check-in antes do check-out." });
+        if (session.status !== "in_progress") throw new TRPCError19({ code: "BAD_REQUEST", message: "Fa\xE7a o check-in antes do check-out." });
         session.status = "completed";
         session.lastLatitude = input.latitude ?? null;
         session.lastLongitude = input.longitude ?? null;
@@ -11608,7 +11633,7 @@ var appRouter = router({
         return { visitId: 1, storeId: 1, storeName: "Loja de teste do administrador geral", ...session };
       }),
       uploadPhoto: platformProcedure.input(z13.object({ storeId: z13.number().int().positive().optional().nullable(), visitId: z13.number().int().positive().optional(), capturedAt: z13.string(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional(), imageBase64: z13.string().min(100).max(6e6), mimeType: z13.string().default("image/jpeg"), idempotencyKey: z13.string().min(8).max(64) })).mutation(({ ctx, input }) => {
-        if (input.visitId !== void 0 && input.visitId !== 1) throw new TRPCError18({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
+        if (input.visitId !== void 0 && input.visitId !== 1) throw new TRPCError19({ code: "NOT_FOUND", message: "Sess\xE3o de sandbox n\xE3o encontrada." });
         const key = platformTestKey(ctx.platformAdminId, ctx.user.id);
         const session = getPlatformTestSession(key);
         session.photoCount += 1;
@@ -11629,7 +11654,7 @@ var appRouter = router({
           await replaceCompanyFeatureOverrides({ companyId: created.companyId, overrides, updatedByPlatformAdminId: ctx.platformAdminId ?? null, reason: "Definido na cria\xE7\xE3o da empresa" });
           return created;
         } catch (error) {
-          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError19({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
           throw error;
         }
       }),
@@ -11642,15 +11667,15 @@ var appRouter = router({
       list: platformProcedure.query(() => listMemberAccounts()),
       create: platformProcedure.input(z13.object({ companyId: z13.number().int().positive(), userName: z13.string().min(2), email: z13.string().email(), password: z13.string().min(8), role: companyUserRole })).mutation(async ({ input, ctx }) => {
         const company = await getCompanyById(input.companyId);
-        if (!company) throw new TRPCError18({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
-        if (!company.active) throw new TRPCError18({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
+        if (!company) throw new TRPCError19({ code: "NOT_FOUND", message: "Empresa n\xE3o encontrada." });
+        if (!company.active) throw new TRPCError19({ code: "BAD_REQUEST", message: "N\xE3o \xE9 poss\xEDvel criar usu\xE1rio em uma empresa bloqueada." });
         try {
           await assertUserLimit(input.companyId, input.role);
           const created = await createCompanyUser(input);
           void auditFromCtx(ctx, { action: "create", module: "users", entityType: "user", entityId: created.accountId, entityLabel: input.userName, description: `Usu\xE1rio criado pelo administrador geral: ${input.userName}`, newData: { companyId: input.companyId, email: input.email, role: input.role } });
           return created;
         } catch (error) {
-          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          if (error?.code === "ER_DUP_ENTRY") throw new TRPCError19({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
           throw error;
         }
       })
@@ -11702,11 +11727,17 @@ var appRouter = router({
   }),
   companyUsers: router({
     list: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => listMemberAccounts(ctx.accountId)),
-    staffUsage: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => getStaffUsage(ctx.accountId)),
+    staffUsage: companyAdminFeatureProcedure("teamManagement").query(async ({ ctx }) => {
+      const usage = await getStaffUsage(ctx.accountId);
+      if (ctx.user.role === "company_admin") return usage;
+      const { planPrice, additionalUserPrice, suggestedMonthlyAmount: suggestedMonthlyAmount2, ...safe } = usage;
+      return safe;
+    }),
     permissions: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive() })).query(async ({ ctx, input }) => {
       const members = await listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
-      if (!target) throw new TRPCError18({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!target) throw new TRPCError19({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, target.role);
       return getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role);
     }),
     setPermissions: companyAdminFeatureProcedure("teamManagement").input(z13.object({
@@ -11715,18 +11746,19 @@ var appRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const members = await listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
-      if (!target) throw new TRPCError18({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      if (!target) throw new TRPCError19({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, target.role);
       const modes = Object.fromEntries(input.permissions.map(({ featureKey, mode }) => [featureKey, mode]));
       if (target.role === "company_admin" && modes.teamManagement === "deny") {
-        throw new TRPCError18({ code: "BAD_REQUEST", message: "A permiss\xE3o de gest\xE3o da equipe n\xE3o pode ser bloqueada individualmente para um administrador da empresa." });
+        throw new TRPCError19({ code: "BAD_REQUEST", message: "A permiss\xE3o de gest\xE3o da equipe n\xE3o pode ser bloqueada individualmente para um administrador da empresa." });
       }
       const base = await getCompanyEntitlementBase(ctx.accountId);
       for (const [featureKey, mode] of Object.entries(modes)) {
         if (mode === "allow" && !base.companyFeatures[featureKey]) {
-          throw new TRPCError18({ code: "BAD_REQUEST", message: `O m\xF3dulo ${featureKey} n\xE3o est\xE1 liberado para esta empresa.` });
+          throw new TRPCError19({ code: "BAD_REQUEST", message: `O m\xF3dulo ${featureKey} n\xE3o est\xE1 liberado para esta empresa.` });
         }
         if (mode === "allow" && !ROLE_FEATURE_CEILING[target.role].includes(featureKey)) {
-          throw new TRPCError18({ code: "BAD_REQUEST", message: `O papel ${target.role} n\xE3o permite liberar o m\xF3dulo ${featureKey}.` });
+          throw new TRPCError19({ code: "BAD_REQUEST", message: `O papel ${target.role} n\xE3o permite liberar o m\xF3dulo ${featureKey}.` });
         }
       }
       const before = await getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role);
@@ -11737,6 +11769,7 @@ var appRouter = router({
     }),
     create: companyAdminFeatureProcedure("teamManagement").input(z13.object({ userName: z13.string().min(2), email: z13.string().email(), password: z13.string().min(8), role: companyUserRole, storeIds: z13.array(z13.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
       try {
+        assertSupervisorPromoterOnly(ctx.user.role, input.role);
         await assertUserLimit(ctx.accountId, input.role);
         const { storeIds, ...userInput } = input;
         const created = await createCompanyUser({ ...userInput, companyId: ctx.accountId });
@@ -11764,22 +11797,24 @@ var appRouter = router({
         })();
         return created;
       } catch (error) {
-        if (error instanceof TRPCError18) throw error;
-        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
+        if (error instanceof TRPCError19) throw error;
+        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError19({ code: "CONFLICT", message: "Este e-mail j\xE1 est\xE1 cadastrado." });
         console.error("[companyUsers.create] database error", { code: error?.code, errno: error?.errno, sqlMessage: error?.sqlMessage, message: error?.message });
-        if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError18({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
-        if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError18({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados est\xE1 com a estrutura de usu\xE1rios desatualizada. A implanta\xE7\xE3o precisa concluir a migra\xE7\xE3o." });
-        throw new TRPCError18({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar o usu\xE1rio. Verifique os dados e tente novamente." });
+        if (error?.code === "ER_NO_REFERENCED_ROW_2" || error?.code === "ER_NO_REFERENCED_ROW") throw new TRPCError19({ code: "BAD_REQUEST", message: "A empresa selecionada n\xE3o existe mais. Atualize a p\xE1gina e tente novamente." });
+        if (error?.code === "ER_BAD_FIELD_ERROR" || error?.code === "ER_NO_SUCH_TABLE") throw new TRPCError19({ code: "INTERNAL_SERVER_ERROR", message: "O banco de dados est\xE1 com a estrutura de usu\xE1rios desatualizada. A implanta\xE7\xE3o precisa concluir a migra\xE7\xE3o." });
+        throw new TRPCError19({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel criar o usu\xE1rio. Verifique os dados e tente novamente." });
       }
     }),
     update: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), userName: z13.string().min(2).optional(), email: z13.string().email().optional(), role: companyUserRole.optional() })).mutation(async ({ ctx, input }) => {
-      if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError18({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode remover o pr\xF3prio n\xEDvel administrativo." });
+      if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError19({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode remover o pr\xF3prio n\xEDvel administrativo." });
       const usersBefore = await listMemberAccounts(ctx.accountId);
       const beforeUser = usersBefore.find((u) => u.id === input.id) || null;
+      assertSupervisorPromoterOnly(ctx.user.role, beforeUser?.role);
+      if (input.role) assertSupervisorPromoterOnly(ctx.user.role, input.role);
       try {
         await updateCompanyUser(input.id, ctx.accountId, { userName: input.userName, email: input.email, role: input.role });
       } catch (error) {
-        if (error?.message === "A empresa precisa manter pelo menos um administrador ativo.") throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
+        if (error?.message === "A empresa precisa manter pelo menos um administrador ativo.") throw new TRPCError19({ code: "BAD_REQUEST", message: error.message });
         throw error;
       }
       const usersAfter = await listMemberAccounts(ctx.accountId);
@@ -11789,6 +11824,10 @@ var appRouter = router({
       return { success: true };
     }),
     getPromoterStores: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive() })).query(async ({ ctx, input }) => {
+      const users3 = await listMemberAccounts(ctx.accountId);
+      const target = users3.find((member) => member.id === input.id);
+      if (!target) throw new TRPCError19({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, target.role);
       const database2 = await getDb();
       return getPromoterStoreAssignments(database2, ctx.accountId, input.id);
     }),
@@ -11803,11 +11842,12 @@ var appRouter = router({
       storeIds: z13.array(z13.number().int().positive()).optional()
     })).mutation(async ({ ctx, input }) => {
       if (input.workStartTime && input.workEndTime && input.workEndTime <= input.workStartTime) {
-        throw new TRPCError18({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao in\xEDcio." });
+        throw new TRPCError19({ code: "BAD_REQUEST", message: "O fim da jornada precisa ser posterior ao in\xEDcio." });
       }
       const usersBefore = await listMemberAccounts(ctx.accountId);
       const before = usersBefore.find((member) => member.id === input.id);
-      if (!before || before.role !== "promoter") throw new TRPCError18({ code: "NOT_FOUND", message: "Promotor n\xE3o encontrado nesta empresa." });
+      if (!before || before.role !== "promoter") throw new TRPCError19({ code: "NOT_FOUND", message: "Promotor n\xE3o encontrado nesta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, before.role);
       try {
         await updatePromoterManagement({
           companyId: ctx.accountId,
@@ -11824,9 +11864,9 @@ var appRouter = router({
           await setPromoterStoreAssignments(database2, ctx.accountId, input.id, input.storeIds);
         }
       } catch (error) {
-        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError18({ code: "CONFLICT", message: "Este e-mail ou matr\xEDcula j\xE1 est\xE1 em uso." });
+        if (error?.code === "ER_DUP_ENTRY") throw new TRPCError19({ code: "CONFLICT", message: "Este e-mail ou matr\xEDcula j\xE1 est\xE1 em uso." });
         if (error?.message?.includes("n\xE3o pertence") || error?.message?.includes("inativas") || error?.message?.includes("programa\xE7\xE3o") || error?.message?.includes("dia programado")) {
-          throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
+          throw new TRPCError19({ code: "BAD_REQUEST", message: error.message });
         }
         throw error;
       }
@@ -11836,10 +11876,13 @@ var appRouter = router({
       return { success: true };
     }),
     setActive: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), active: z13.boolean() })).mutation(async ({ ctx, input }) => {
-      if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError18({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode desativar a pr\xF3pria sess\xE3o." });
+      if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError19({ code: "BAD_REQUEST", message: "O administrador n\xE3o pode desativar a pr\xF3pria sess\xE3o." });
+      const membersForGuard = await listMemberAccounts(ctx.accountId);
+      const existing = membersForGuard.find((m) => m.id === input.id);
+      if (!existing) throw new TRPCError19({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, existing.role);
       if (input.active) {
-        const members = await listMemberAccounts(ctx.accountId);
-        const target = members.find((m) => m.id === input.id);
+        const target = existing;
         if (target && !target.active) await assertUserLimit(ctx.accountId, target.role);
       }
       await setMemberActive(input.id, input.active, ctx.accountId);
@@ -11848,7 +11891,9 @@ var appRouter = router({
     }),
     resetPassword: companyAdminFeatureProcedure("teamManagement").input(z13.object({ id: z13.number().int().positive(), newPassword: z13.string().min(8) })).mutation(async ({ ctx, input }) => {
       const users3 = await listMemberAccounts(ctx.accountId);
-      if (!users3.some((account) => account.id === input.id)) throw new TRPCError18({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      const target = users3.find((account) => account.id === input.id);
+      if (!target) throw new TRPCError19({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o pertence a esta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, target.role);
       await resetMemberPassword(input.id, input.newPassword);
       return { success: true };
     })
@@ -11891,7 +11936,7 @@ var appRouter = router({
       return await inventoryAlertsFor2(ctx);
     } catch (error) {
       console.error("[inventoryAlerts] falha ao consultar validades", error);
-      throw new TRPCError18({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel consultar as validades." });
+      throw new TRPCError19({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel consultar as validades." });
     }
   }),
   // Endereço para carimbo de foto/ponto (qualquer membro da empresa). Feito no servidor com cache.
@@ -11926,20 +11971,20 @@ var appRouter = router({
   /** Planos e assinatura da empresa (acesso mesmo com bloqueio para regularização). */
   billing: router({
     access: companyBillingProcedure.query(async ({ ctx }) => ({ ...await checkSubscriptionAccess(ctx.accountId), supportMessage: MANUAL_BILLING_MESSAGE })),
-    plans: companyBillingProcedure.query(async () => {
+    plans: companyAdminProcedure.query(async () => {
       await ensureSeedPlans();
       const all = await listSubscriptionPlans();
       return all.filter((p) => p.active !== false);
     }),
-    mySubscription: companyBillingProcedure.query(async ({ ctx }) => {
+    mySubscription: companyAdminProcedure.query(async ({ ctx }) => {
       const resolved = await resolveCompanyPlan(ctx.accountId);
       const effective = await getEffectivePlan(ctx.accountId);
       const plan = resolved.plan ? { ...resolved.plan, ...effective, id: effective.id ?? resolved.plan.id, name: effective.name } : effective;
       return { ...resolved, plan, effective };
     }),
-    payments: companyBillingProcedure.query(async ({ ctx }) => listPaymentsForCompany(ctx.accountId)),
+    payments: companyAdminProcedure.query(async ({ ctx }) => listPaymentsForCompany(ctx.accountId)),
     /** Aviso de vencimento + Pix para o administrador da empresa (e tela de bloqueio). */
-    paymentReminder: companyBillingProcedure.query(async ({ ctx }) => {
+    paymentReminder: companyAdminProcedure.query(async ({ ctx }) => {
       const { getPaymentReminder: getPaymentReminder2 } = await Promise.resolve().then(() => (init_paymentReminder(), paymentReminder_exports));
       return getPaymentReminder2(ctx.accountId);
     })
@@ -11950,14 +11995,14 @@ var appRouter = router({
   operations: router({
     promoters: router({
       list: commercialFeatureProcedure("fieldOperations").query(async ({ ctx }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Promotores n\xE3o podem consultar a lista da equipe." });
+        if (ctx.user.role === "promoter") throw new TRPCError19({ code: "FORBIDDEN", message: "Promotores n\xE3o podem consultar a lista da equipe." });
         return (await listMemberAccounts(ctx.accountId)).filter((member) => member.role === "promoter" && member.active).map(({ id: id2, userName, role, active }) => ({ id: id2, userName, role, active }));
       })
     }),
     stores: router({
       list: commercialFeatureProcedure("fieldOperations").input(z13.object({ search: z13.string().optional() }).optional()).query(({ ctx, input }) => listOperationalStores(ctx.accountId, input?.search, scopeMemberId(ctx))),
       create: commercialFeatureProcedure("fieldOperations").input(z13.object({ name: z13.string().min(2), city: z13.string().min(2), address: z13.string().optional(), state: z13.string().length(2).optional(), cep: z13.string().optional(), code: z13.string().optional(), latitude: z13.number().optional(), longitude: z13.number().optional(), notes: z13.string().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
+        if (ctx.user.role === "promoter") throw new TRPCError19({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem cadastrar lojas." });
         let coords = {};
         if (!isValidLatLng(input.latitude, input.longitude) && input.address?.trim()) {
           const geo = await geocodeStoreAddress({ address: input.address, city: input.city, state: input.state }).catch(() => null);
@@ -11966,15 +12011,15 @@ var appRouter = router({
         return createOperationalStore({ ...input, ...coords, companyId: ctx.accountId, active: true }, ctx.memberAccountId ?? null);
       }),
       update: commercialFeatureProcedure("fieldOperations").input(z13.object({ id: z13.number().int().positive(), name: z13.string().trim().min(2).max(255).optional(), city: z13.string().trim().min(2).max(255).optional(), state: z13.string().trim().length(2).optional().or(z13.literal("")), address: z13.string().trim().max(500).optional(), latitude: z13.number().min(-90).max(90).nullable().optional(), longitude: z13.number().min(-180).max(180).nullable().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem editar lojas." });
+        if (ctx.user.role === "promoter") throw new TRPCError19({ code: "FORBIDDEN", message: "Apenas administradores e supervisores podem editar lojas." });
         const { id: id2, latitude, longitude, ...rest } = input;
         const current = await getOperationalStore(ctx.accountId, id2);
-        if (!current) throw new TRPCError18({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+        if (!current) throw new TRPCError19({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
         const patch = { ...rest, state: rest.state === void 0 ? void 0 : rest.state ? rest.state.toUpperCase() : null };
         let located = "unchanged";
         if (latitude !== void 0 || longitude !== void 0) {
           const valid2 = isValidLatLng(latitude, longitude);
-          if (!valid2 && !(latitude === null && longitude === null)) throw new TRPCError18({ code: "BAD_REQUEST", message: "Localiza\xE7\xE3o inv\xE1lida. Use o formato -29.6386, -51.0047." });
+          if (!valid2 && !(latitude === null && longitude === null)) throw new TRPCError19({ code: "BAD_REQUEST", message: "Localiza\xE7\xE3o inv\xE1lida. Use o formato -29.6386, -51.0047." });
           patch.latitude = valid2 ? latitude : null;
           patch.longitude = valid2 ? longitude : null;
           located = "manual";
@@ -11988,12 +12033,12 @@ var appRouter = router({
           }
         }
         const ok = await updateOperationalStore(ctx.accountId, id2, patch);
-        if (!ok) throw new TRPCError18({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+        if (!ok) throw new TRPCError19({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
         await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", entityId: id2, description: `Loja editada: ${rest.name ?? `#${id2}`}`, newData: patch });
         return { success: true, located, latitude: patch.latitude ?? current.latitude ?? null, longitude: patch.longitude ?? current.longitude ?? null };
       }),
       // Busca a localização pelo endereço das lojas desta empresa que ainda não têm (poucas por vez; Nominatim 1/s).
-      geocodeMissing: companyAdminProcedure.mutation(async ({ ctx }) => {
+      geocodeMissing: companyManagerProcedure.mutation(async ({ ctx }) => {
         const pending = await listStoresMissingCoordinates(ctx.accountId, 8);
         let found = 0;
         for (const store of pending) {
@@ -12005,9 +12050,9 @@ var appRouter = router({
         if (found) await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", description: `Localiza\xE7\xE3o pelo endere\xE7o encontrada para ${found} loja(s)` });
         return { checked: pending.length, found };
       }),
-      archive: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      archive: companyManagerProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const store = await archiveOperationalStore(ctx.accountId, input.id);
-        if (!store) throw new TRPCError18({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
+        if (!store) throw new TRPCError19({ code: "NOT_FOUND", message: "Loja n\xE3o encontrada." });
         await auditFromCtx(ctx, { action: "delete", module: "stores", entityType: "store", entityId: input.id, description: `Loja removida da lista: ${store.name}` });
         return { success: true };
       })
@@ -12034,53 +12079,53 @@ var appRouter = router({
         const rows4 = await listWeeklyRouteSchedules(ctx.accountId);
         return ownerId === null ? rows4 : rows4.filter((row2) => row2.promoterId === ownerId);
       }),
-      saveWeekly: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive().optional(), name: z13.string().trim().min(2).max(255), weekday: z13.number().int().min(0).max(6), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+      saveWeekly: companyManagerProcedure.input(z13.object({ id: z13.number().int().positive().optional(), name: z13.string().trim().min(2).max(255), weekday: z13.number().int().min(0).max(6), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
         const members = await listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
-        if (!promoter) throw new TRPCError18({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        if (!promoter) throw new TRPCError19({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         try {
           const saved = await saveWeeklyRouteSchedule({ ...input, companyId: ctx.accountId });
           void auditFromCtx(ctx, { action: input.id ? "update" : "create", module: "routes", entityType: "weekly_route", entityId: saved?.id, entityLabel: input.name, description: `Roteiro semanal salvo: ${input.name} (${promoter.userName})`, newData: input });
           return saved;
         } catch (error) {
-          if (error instanceof WeeklyRouteConflictError) throw new TRPCError18({ code: "CONFLICT", message: error.message });
-          if (error?.message?.includes("n\xE3o pertencem") || error?.message?.includes("ao menos uma loja")) throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
+          if (error instanceof WeeklyRouteConflictError) throw new TRPCError19({ code: "CONFLICT", message: error.message });
+          if (error?.message?.includes("n\xE3o pertencem") || error?.message?.includes("ao menos uma loja")) throw new TRPCError19({ code: "BAD_REQUEST", message: error.message });
           throw error;
         }
       }),
-      deleteWeekly: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      deleteWeekly: companyManagerProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const result = await deleteWeeklyRouteSchedule(ctx.accountId, input.id);
-        if (!result.success) throw new TRPCError18({ code: "NOT_FOUND", message: "Roteiro n\xE3o encontrado." });
+        if (!result.success) throw new TRPCError19({ code: "NOT_FOUND", message: "Roteiro n\xE3o encontrado." });
         void auditFromCtx(ctx, { action: "delete", module: "routes", entityType: "weekly_route", entityId: input.id, description: `Roteiro semanal exclu\xEDdo: #${input.id}` });
         return result;
       }),
       create: commercialFeatureProcedure("fieldOperations").input(z13.object({ name: z13.string().min(2), date: z13.string().min(8), promoterId: z13.number().int().positive(), storeIds: z13.array(z13.number().int().positive()).min(1), teamId: z13.number().int().positive().optional(), notes: z13.string().optional() })).mutation(async ({ ctx, input }) => {
-        if (ctx.user.role === "promoter") throw new TRPCError18({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
+        if (ctx.user.role === "promoter") throw new TRPCError19({ code: "FORBIDDEN", message: "Promotores n\xE3o podem criar roteiros." });
         const members = await listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
-        if (!promoter) throw new TRPCError18({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+        if (!promoter) throw new TRPCError19({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         const { storeIds, ...route } = input;
         return createOperationalRouteWithVisits({ route: { ...route, date: /* @__PURE__ */ new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" }, storeIds });
       }),
-      update: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive(), name: z13.string().optional(), promoterId: z13.number().int().positive().optional(), date: z13.string().optional(), storeIds: z13.array(z13.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
+      update: companyManagerProcedure.input(z13.object({ id: z13.number().int().positive(), name: z13.string().optional(), promoterId: z13.number().int().positive().optional(), date: z13.string().optional(), storeIds: z13.array(z13.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
         const { id: id2, ...data } = input;
         if (data.promoterId) {
           const members = await listMemberAccounts(ctx.accountId);
           const promoter = members.find((member) => member.id === data.promoterId && member.role === "promoter" && member.active);
-          if (!promoter) throw new TRPCError18({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
+          if (!promoter) throw new TRPCError19({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
         }
         try {
           return await updateOperationalRoute(ctx.accountId, id2, data);
         } catch (error) {
-          if (error instanceof RouteValidationError) throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
+          if (error instanceof RouteValidationError) throw new TRPCError19({ code: "BAD_REQUEST", message: error.message });
           throw error;
         }
       }),
-      delete: companyAdminProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      delete: companyManagerProcedure.input(z13.object({ id: z13.number().int().positive() })).mutation(async ({ ctx, input }) => {
         try {
           return await deleteOperationalRoute(ctx.accountId, input.id);
         } catch (error) {
-          if (error instanceof RouteValidationError) throw new TRPCError18({ code: "BAD_REQUEST", message: error.message });
+          if (error instanceof RouteValidationError) throw new TRPCError19({ code: "BAD_REQUEST", message: error.message });
           throw error;
         }
       })
@@ -12111,7 +12156,7 @@ var appRouter = router({
         if (input.clientId) {
           const prior = await findSubmission(ctx.accountId, input.clientId);
           if (prior) {
-            if (prior.kind !== "visit_start" || prior.entityId !== input.id) throw new TRPCError18({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
+            if (prior.kind !== "visit_start" || prior.entityId !== input.id) throw new TRPCError19({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
             const [again] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: promoterId ?? void 0 });
             if (again) return again;
           }
@@ -12122,15 +12167,15 @@ var appRouter = router({
           await autoCloseStaleVisits(ctx.accountId, promoterId, today);
         }
         const [owned] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: promoterId ?? void 0 });
-        if (!owned) throw new TRPCError18({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
-        if (promoterId !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError18({ code: "FORBIDDEN", message: "Visita n\xE3o pertence ao promotor autenticado." });
+        if (!owned) throw new TRPCError19({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        if (promoterId !== null && owned.visit.promoterId !== ctx.memberAccountId) throw new TRPCError19({ code: "FORBIDDEN", message: "Visita n\xE3o pertence ao promotor autenticado." });
         if (owned.visit.status !== "pending") return owned;
         if (promoterId != null) {
           const todayVisits = await listOperationalVisits(ctx.accountId, { promoterId, date: today });
           const openVisit = todayVisits.find((v) => v.visit.status === "in_progress" && v.visit.id !== input.id);
           if (openVisit) {
             const storeName = openVisit.store?.name || "a loja atual";
-            throw new TRPCError18({
+            throw new TRPCError19({
               code: "CONFLICT",
               message: `N\xE3o \xE9 poss\xEDvel fazer check-in em outra loja. Realize o check-out em "${storeName}" primeiro.`
             });
@@ -12144,10 +12189,10 @@ var appRouter = router({
       }),
       complete: commercialFeatureProcedure("visitCheckIn").input(z13.object({ id: z13.number().int().positive(), latitude: z13.number().optional(), longitude: z13.number().optional(), accuracy: z13.number().optional(), notes: z13.string().optional(), ...offlineVisitFields })).mutation(async ({ ctx, input }) => {
         const [owned] = await listOperationalVisits(ctx.accountId, { id: input.id, promoterId: scopeMemberId(ctx) ?? void 0 });
-        if (!owned) throw new TRPCError18({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
+        if (!owned) throw new TRPCError19({ code: "NOT_FOUND", message: "Visita n\xE3o encontrada para esta empresa." });
         if (input.clientId) {
           const prior = await findSubmission(ctx.accountId, input.clientId);
-          if (prior && (prior.kind !== "visit_complete" || prior.entityId !== input.id)) throw new TRPCError18({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
+          if (prior && (prior.kind !== "visit_complete" || prior.entityId !== input.id)) throw new TRPCError19({ code: "CONFLICT", message: "Chave de envio j\xE1 usada em outro registro." });
           if (prior) return owned;
         }
         if (owned.visit.status === "completed") return owned;
@@ -12227,7 +12272,7 @@ var appRouter = router({
     }),
     byId: companyAdminFeatureProcedure("reports").input(z13.object({ id: z13.number().int().positive() })).query(async ({ ctx, input }) => {
       const row2 = await getAuditLogById(input.id, ctx.accountId);
-      if (!row2) throw new TRPCError18({ code: "NOT_FOUND", message: "Registro de auditoria n\xE3o encontrado." });
+      if (!row2) throw new TRPCError19({ code: "NOT_FOUND", message: "Registro de auditoria n\xE3o encontrado." });
       return row2;
     }),
     entityHistory: commercialFeatureProcedure("reports").input(z13.object({

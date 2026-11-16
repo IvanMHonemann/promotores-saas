@@ -116,9 +116,9 @@ export default function AdminUsersPage() {
           </CardContent>
         </Card>
         {creating ? (
-          <CreateUserCard stores={stores.data || []} onCancel={() => setCreating(false)} onCreated={(id) => { setCreating(false); setSelectedId(id); refresh(); }} />
+          <CreateUserCard actorRole={user?.role} stores={stores.data || []} onCancel={() => setCreating(false)} onCreated={(id) => { setCreating(false); setSelectedId(id); refresh(); }} />
         ) : selected ? (
-          <MemberPanel key={selected.id} member={selected} stores={stores.data} weekly={weekly.data} weeklyReady={!hasFieldOperations || weekly.isSuccess || weekly.isError} storesReady={!hasFieldOperations || stores.isSuccess || stores.isError} selfId={selfMemberId(user?.id)} onChanged={refresh} />
+          <MemberPanel key={selected.id} actorRole={user?.role} member={selected} stores={stores.data} weekly={weekly.data} weeklyReady={!hasFieldOperations || weekly.isSuccess || weekly.isError} storesReady={!hasFieldOperations || stores.isSuccess || stores.isError} selfId={selfMemberId(user?.id)} onChanged={refresh} />
         ) : (
           <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300">
             <CardContent className="p-8 text-center text-sm">Selecione um usuário para editar dados, permissões e roteiro, ou cadastre um novo.</CardContent>
@@ -129,8 +129,9 @@ export default function AdminUsersPage() {
   );
 }
 
-function CreateUserCard({ stores, onCancel, onCreated }: { stores: Array<{ id: number; name: string }>; onCancel: () => void; onCreated: (id: number) => void }) {
+function CreateUserCard({ actorRole, stores, onCancel, onCreated }: { actorRole?: string; stores: Array<{ id: number; name: string }>; onCancel: () => void; onCreated: (id: number) => void }) {
   const [form, setForm] = useState({ userName: "", email: "", password: "", role: "promoter" as CompanyRole, storeIds: [] as number[] });
+  const promoterOnly = actorRole === "supervisor";
   const create = trpc.companyUsers.create.useMutation({
     onSuccess: (data) => { toast.success("Usuário criado. Um e-mail com o acesso foi enviado."); onCreated(data.accountId); },
     onError: (e) => toast.error(e.message),
@@ -144,8 +145,8 @@ function CreateUserCard({ stores, onCancel, onCreated }: { stores: Array<{ id: n
       userName: form.userName.trim(),
       email: form.email.trim(),
       password: form.password,
-      role: form.role,
-      storeIds: form.role === "promoter" ? form.storeIds : undefined,
+      role: promoterOnly ? "promoter" : form.role,
+      storeIds: (promoterOnly || form.role === "promoter") ? form.storeIds : undefined,
     });
   };
   return (
@@ -155,6 +156,7 @@ function CreateUserCard({ stores, onCancel, onCreated }: { stores: Array<{ id: n
         <div><Label>Nome</Label><Input value={form.userName} onChange={(e) => setForm({ ...form, userName: e.target.value })} className={inp} /></div>
         <div><Label>E-mail</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inp} /></div>
         <div><Label>Senha inicial</Label><PasswordInput value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={`${inp} border-slate-700 bg-slate-950 text-white`} /></div>
+        {!promoterOnly && (
         <div>
           <Label>Papel</Label>
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as CompanyRole })} className={sel}>
@@ -163,7 +165,8 @@ function CreateUserCard({ stores, onCancel, onCreated }: { stores: Array<{ id: n
             <option value="company_admin">Administrador</option>
           </select>
         </div>
-        {form.role === "promoter" && (
+        )}
+        {(promoterOnly || form.role === "promoter") && (
           <StorePicker stores={stores} selected={form.storeIds} onToggle={toggleStore} />
         )}
         <div className="flex flex-wrap gap-2">
@@ -175,15 +178,16 @@ function CreateUserCard({ stores, onCancel, onCreated }: { stores: Array<{ id: n
   );
 }
 
-function MemberPanel({ member, stores, weekly, weeklyReady, storesReady, selfId, onChanged }: { member: Member; stores?: Array<{ id: number; name: string }>; weekly?: Array<{ promoterId?: number; weekday: number; storeIds: number[] }>; weeklyReady: boolean; storesReady: boolean; selfId: number | null; onChanged: () => void }) {
+function MemberPanel({ actorRole, member, stores, weekly, weeklyReady, storesReady, selfId, onChanged }: { actorRole?: string; member: Member; stores?: Array<{ id: number; name: string }>; weekly?: Array<{ promoterId?: number; weekday: number; storeIds: number[] }>; weeklyReady: boolean; storesReady: boolean; selfId: number | null; onChanged: () => void }) {
   const fail = (e: { message: string }) => toast.error(e.message);
   const update = trpc.companyUsers.update.useMutation({ onSuccess: () => { toast.success("Usuário atualizado."); onChanged(); }, onError: fail });
   const setActive = trpc.companyUsers.setActive.useMutation({ onSuccess: () => { toast.success("Situação atualizada."); onChanged(); }, onError: fail });
   const resetPassword = trpc.companyUsers.resetPassword.useMutation({ onSuccess: () => { toast.success("Senha redefinida."); setNewPassword(""); }, onError: fail });
   const updatePromoter = trpc.companyUsers.updatePromoterManagement.useMutation({ onSuccess: () => { toast.success("Cadastro do promotor salvo."); onChanged(); }, onError: fail });
   const setPermissions = trpc.companyUsers.setPermissions.useMutation({ onSuccess: () => toast.success("Permissões salvas."), onError: fail });
-  const assigned = trpc.companyUsers.getPromoterStores.useQuery({ id: member.id }, { enabled: member.role === "promoter", staleTime: 10000 });
-  const snapshot = trpc.companyUsers.permissions.useQuery({ id: member.id }, { staleTime: 15000 });
+  const canEdit = actorRole !== "supervisor" || member.role === "promoter";
+  const assigned = trpc.companyUsers.getPromoterStores.useQuery({ id: member.id }, { enabled: canEdit && member.role === "promoter", staleTime: 10000 });
+  const snapshot = trpc.companyUsers.permissions.useQuery({ id: member.id }, { enabled: canEdit, staleTime: 15000 });
 
   const [userName, setUserName] = useState(member.userName);
   const [email, setEmail] = useState(member.email);
@@ -269,11 +273,12 @@ function MemberPanel({ member, stores, weekly, weeklyReady, storesReady, selfId,
           <Badge className={member.active ? "bg-emerald-500/20 text-emerald-100" : "bg-rose-500/30 text-rose-100"}>{member.active ? "Ativo" : "Inativo"}</Badge>
         </CardHeader>
         <CardContent className="space-y-3">
-          {member.active && member.id !== selfId && <ShareAccess name={member.userName} email={member.email} />}
+          {!canEdit && <p className="rounded-lg bg-white/5 p-3 text-sm text-slate-300">O supervisor só pode cadastrar e editar promotores. Este cadastro é só consulta.</p>}
+          {canEdit && member.active && member.id !== selfId && <ShareAccess name={member.userName} email={member.email} />}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div><Label>Nome</Label><Input value={userName} onChange={(e) => setUserName(e.target.value)} className={inp} /></div>
-            <div><Label>E-mail</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inp} /></div>
-            {member.role !== "promoter" && (
+            <div><Label>Nome</Label><Input value={userName} onChange={(e) => setUserName(e.target.value)} className={inp} disabled={!canEdit} /></div>
+            <div><Label>E-mail</Label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inp} disabled={!canEdit} /></div>
+            {canEdit && member.role !== "promoter" && (
               <div>
                 <Label>Papel</Label>
                 <select value={role} onChange={(e) => setRole(e.target.value as CompanyRole)} className={sel} disabled={isSelf}>
@@ -291,7 +296,7 @@ function MemberPanel({ member, stores, weekly, weeklyReady, storesReady, selfId,
               </>
             )}
           </div>
-          <Button disabled={update.isPending || updatePromoter.isPending} onClick={saveProfile} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar cadastro</Button>
+          {canEdit && <Button disabled={update.isPending || updatePromoter.isPending} onClick={saveProfile} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar cadastro</Button>}
         </CardContent>
       </Card>
 
@@ -327,7 +332,7 @@ function MemberPanel({ member, stores, weekly, weeklyReady, storesReady, selfId,
         </>
       )}
 
-      <Card className="border-white/10 bg-slate-900/70 text-white">
+      {canEdit && <Card className="border-white/10 bg-slate-900/70 text-white">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Shield className="h-4 w-4 text-teal-300" />Permissões de módulos</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
           {snapshot.isLoading && <p className="text-slate-400">Carregando...</p>}
@@ -344,9 +349,9 @@ function MemberPanel({ member, stores, weekly, weeklyReady, storesReady, selfId,
           ))}
           <Button disabled={setPermissions.isPending} onClick={savePerms} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar permissões</Button>
         </CardContent>
-      </Card>
+      </Card>}
 
-      <Card className="border-white/10 bg-slate-900/70 text-white">
+      {canEdit && <Card className="border-white/10 bg-slate-900/70 text-white">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4 text-teal-300" />Acesso</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-end gap-2">
@@ -362,7 +367,7 @@ function MemberPanel({ member, stores, weekly, weeklyReady, storesReady, selfId,
             {member.active ? "Desativar usuário" : "Reativar usuário"}
           </Button>
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }

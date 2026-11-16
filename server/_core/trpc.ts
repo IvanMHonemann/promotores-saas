@@ -44,6 +44,15 @@ const requireCompanyAdmin = t.middleware(async opts => {
   return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
 });
 
+const requireCompanyManager = t.middleware(async opts => {
+  const user = opts.ctx.user;
+  if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
+  if ((user.role !== "company_admin" && user.role !== "supervisor") || !opts.ctx.accountId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Somente o administrador ou o supervisor da empresa pode executar esta operação." });
+  }
+  return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
+});
+
 const requirePlatformAdmin = t.middleware(async opts => {
   const user = opts.ctx.user;
   if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
@@ -86,9 +95,11 @@ export const commercialFeatureProcedure = (featureKey: EntitlementKey) =>
   t.procedure.use(requireCompanyUser).use(requireEntitlement(featureKey));
 
 export const companyAdminFeatureProcedure = (featureKey: EntitlementKey) =>
-  t.procedure.use(requireCompanyAdmin).use(requireCompanyUser).use(requireEntitlement(featureKey));
+  t.procedure.use(requireCompanyManager).use(requireCompanyUser).use(requireEntitlement(featureKey));
 
+export const companyManagerFeatureProcedure = companyAdminFeatureProcedure;
 export const companyAdminProcedure = t.procedure.use(requireCompanyAdmin);
+export const companyManagerProcedure = t.procedure.use(requireCompanyManager);
 export const adminCommercialProcedure = companyAdminProcedure;
 export const platformProcedure = t.procedure.use(requirePlatformAdmin);
 export const adminProcedure = platformProcedure;

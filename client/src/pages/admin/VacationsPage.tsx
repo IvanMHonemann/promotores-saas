@@ -12,6 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { todayInZone } from "@shared/expiry";
+import { MESES_PT, capitalizePt } from "@shared/ptBrDate";
+import { DateInput } from "@/components/PtBrDateFields";
 
 const statusLabel = (s: string, start: string, end: string) => {
   if (s === "cancelled") return "Cancelada";
@@ -110,17 +112,17 @@ export default function VacationsPage() {
             <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Ano inteiro</SelectItem>
-              {Array.from({ length: 12 }, (_, i) => <SelectItem key={i + 1} value={String(i + 1)}>{new Date(2000, i).toLocaleString("pt-BR", { month: "long" })}</SelectItem>)}
+              {MESES_PT.map((name, i) => <SelectItem key={name} value={String(i + 1)}>{capitalizePt(name)}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
 
         <Card className="border-white/10 bg-slate-900/70 text-white">
-          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarDays className="h-4 w-4 text-teal-300" />Calendário {month === "all" ? year : `${new Date(2000, Number(month) - 1).toLocaleString("pt-BR", { month: "long" })} ${year}`}</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarDays className="h-4 w-4 text-teal-300" />Calendário {month === "all" ? year : `${capitalizePt(MESES_PT[Number(month) - 1] || "")} ${year}`}</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
             {(month === "all" ? Array.from({ length: 12 }, (_, i) => i + 1) : [month]).map((m) => (
               <div key={m} className="rounded-lg border border-white/10 p-3">
-                <p className="mb-2 font-semibold text-teal-200">{new Date(2000, m - 1).toLocaleString("pt-BR", { month: "long" })}</p>
+                <p className="mb-2 font-semibold text-teal-200">{capitalizePt(MESES_PT[m - 1] || "")}</p>
                 {(byMonth[m] || []).length === 0 ? <p className="text-slate-400">Nenhuma férias.</p> : (byMonth[m] || []).map((r) => (
                   <div key={r.id} className="flex items-center justify-between py-1">
                     <span>{r.memberName}</span>
@@ -191,8 +193,8 @@ export default function VacationsPage() {
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Início</Label><Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></div>
-              <div><Label>Término</Label><Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /></div>
+              <div><Label>Início</Label><DateInput value={form.startDate} onChange={(startDate) => setForm({ ...form, startDate })} className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-white" /></div>
+              <div><Label>Término</Label><DateInput value={form.endDate} onChange={(endDate) => setForm({ ...form, endDate })} className="mt-1 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-white" /></div>
             </div>
             <p className="text-sm text-teal-300">{days ? `${days} dias corridos` : ""}</p>
             <div><Label>Observações</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>

@@ -14,10 +14,14 @@ describe("menu lateral da empresa", () => {
     ]);
     expect(r.account.items.map((i) => i.label)).toEqual(["LGPD e privacidade", "Meus módulos", "Lixeira"]);
   });
-  it("supervisor não vê grupos vazios nem itens de admin", () => {
+  it("supervisor vê as mesmas telas do admin, sem Meus módulos", () => {
     const r = buildCompanyGroups("supervisor", all);
-    expect(r.groups.map((g) => g.title)).toEqual(["Operação", "Equipe e ponto"]);
-    expect(r.account.items.map((i) => i.label)).toEqual(["Lixeira"]);
+    expect(labels(r)).toEqual([
+      ["Operação", ["Visão geral", "Lojas", "Roteiros", "Check-in / Check-out", "Produtos e validades"]],
+      ["Equipe e ponto", ["Promotores e equipe", "Cartão-ponto", "Banco de horas", "Espelho de ponto", "Férias"]],
+      ["Relatórios", ["Auditoria", "Ponto: prova legal", "Arquivos históricos"]],
+    ]);
+    expect(r.account.items.map((i) => i.label)).toEqual(["LGPD e privacidade", "Lixeira"]);
   });
   it("respeita módulos contratados", () => {
     const r = buildCompanyGroups("company_admin", (k) => k === "teamManagement");

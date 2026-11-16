@@ -10,12 +10,12 @@ import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } fr
 import { formatGroupedCorrectionTitle, groupCorrectionItems } from "@shared/correctionGroups";
 import { todayInZone } from "@shared/expiry";
 import { confirmWithInput } from "@/components/ConfirmDialog";
+import { MonthSelect } from "@/components/PtBrDateFields";
+import { formatMonthYearPT } from "@shared/ptBrDate";
 
 /** "2026-11" → "novembro de 2026". */
 function monthLabel(ym: string) {
-  const [y, m] = ym.split("-").map(Number);
-  if (!y || !m) return ym;
-  return new Date(y, m - 1, 15).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return formatMonthYearPT(ym);
 }
 
 const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Intervalo", break_end: "Retorno", clock_out: "Saída" };
@@ -65,19 +65,20 @@ export default function TimesheetPage() {
           <Card className="border-white/10 bg-slate-900/70 text-white">
             <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Users className="h-4 w-4 text-teal-300" />Promotores</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              {(promoters.data || []).map((p: any) => (
+              {promoters.isLoading && <p className="text-sm text-slate-400">Carregando promotores...</p>}
+              {!promoters.isLoading && (promoters.data || []).map((p: any) => (
                 <button key={p.id} type="button" onClick={() => setSelectedId(p.id)} className={`w-full rounded-lg px-3 py-2 text-left text-sm ${selectedId === p.id ? "bg-teal-400 text-slate-950" : "bg-slate-950/40 text-slate-200 hover:bg-slate-950/60"}`}>
                   {p.userName}
                 </button>
               ))}
-              {!promoters.data?.length && <p className="text-sm text-slate-400">Nenhum promotor cadastrado.</p>}
+              {!promoters.isLoading && !promoters.data?.length && <p className="text-sm text-slate-400">Nenhum promotor cadastrado.</p>}
               {!!promoters.data?.length && !selectedId && <p className="pt-1 text-sm text-slate-300">Toque em um promotor para ver as marcações do mês.</p>}
             </CardContent>
           </Card>
           <Card className="border-white/10 bg-slate-900/70 text-white">
             <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Calendar className="h-4 w-4 text-teal-300" />Mês</CardTitle></CardHeader>
             <CardContent>
-              <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-white [color-scheme:dark]" />
+              <MonthSelect value={month} onChange={setMonth} className="w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-white" aria-label="Mês" />
               {selected && <p className="mt-3 text-sm text-slate-300">Selecionado: <span className="font-semibold text-white">{selected.userName}</span></p>}
             </CardContent>
           </Card>

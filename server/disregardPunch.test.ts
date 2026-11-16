@@ -73,7 +73,7 @@ describe("batida desconsiderada: permissões", () => {
   };
   it("promotor não pode desconsiderar nem reconsiderar", async () => {
     withPlan();
-    await expect(caller("promoter").timeTracking.disregardEvent({ eventId: 1, reason: "Duplicada no dia" })).rejects.toThrow(/administrador da empresa/);
+    await expect(caller("promoter").timeTracking.disregardEvent({ eventId: 1, reason: "Duplicada no dia" })).rejects.toThrow(/administrador ou o supervisor da empresa/);
     await expect(caller("promoter").timeTracking.disregardEvent({ eventId: 1, reason: "Duplicada no dia" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller("promoter").timeTracking.reconsiderEvent({ eventId: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });

@@ -50,7 +50,7 @@ describe("tela e servidor de roteiros", () => {
   });
   it("promotor só vê os próprios roteiros semanais", () => {
     expect(routers).toMatch(/weekly: commercialFeatureProcedure\("fieldOperations"\)\.query\(async \(\{ ctx \}\) => \{\s*const ownerId = scopeMemberId\(ctx\);/);
-    expect(routers).toContain("deleteWeekly: companyAdminProcedure");
+    expect(routers).toContain("deleteWeekly: companyManagerProcedure");
   });
   it("visitas feitas não são apagadas ao editar/excluir roteiro e a ordem das lojas é mantida", () => {
     expect(db).toContain("histórico de visita feita nunca é apagado");

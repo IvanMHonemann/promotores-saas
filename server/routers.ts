@@ -17,12 +17,13 @@ import { checkRateLimit, getClientIp } from "./_core/rateLimit";
 import { isThrottled, registerThrottleFailure } from "./authThrottle";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, companyAdminProcedure, companyAdminFeatureProcedure, companyManagerProcedure, commercialFeatureProcedure, companyBillingProcedure, platformProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { checkSubscriptionAccess, MANUAL_BILLING_MESSAGE } from "./subscriptionAccess";
 import * as planLimits from "./planLimits";
 import * as asaas from "./asaas";
 import * as db from "./db";
 import * as memberAuth from "./memberAuth";
+import { assertSupervisorPromoterOnly } from "./supervisorTeam";
 import * as emailService from "./email";
 import { auditFromCtx, diffAuditData, exportAuditLogsCsv, getAuditLogById, listAuditLogs, listEntityAuditHistory, listPromoterActivities } from "./audit";
 import { geocodeStoreAddress, reverseGeocodeAddress, reverseGeocodeBr } from "./geocoding";
@@ -575,11 +576,17 @@ export const appRouter = router({
 
   companyUsers: router({
     list: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => memberAuth.listMemberAccounts(ctx.accountId)),
-    staffUsage: companyAdminFeatureProcedure("teamManagement").query(({ ctx }) => planLimits.getStaffUsage(ctx.accountId)),
+    staffUsage: companyAdminFeatureProcedure("teamManagement").query(async ({ ctx }) => {
+      const usage = await planLimits.getStaffUsage(ctx.accountId);
+      if (ctx.user.role === "company_admin") return usage;
+      const { planPrice, additionalUserPrice, suggestedMonthlyAmount, ...safe } = usage;
+      return safe;
+    }),
     permissions: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const members = await memberAuth.listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
       if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, target.role);
       return getMemberEntitlementSnapshot(ctx.accountId, target.id, target.role as "company_admin" | "supervisor" | "promoter");
     }),
     setPermissions: companyAdminFeatureProcedure("teamManagement").input(z.object({
@@ -589,6 +596,7 @@ export const appRouter = router({
       const members = await memberAuth.listMemberAccounts(ctx.accountId);
       const target = members.find((member) => member.id === input.id);
       if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, target.role);
       const modes = Object.fromEntries(input.permissions.map(({ featureKey, mode }) => [featureKey, mode])) as Partial<Record<EntitlementKey, PermissionMode>>;
       if (target.role === "company_admin" && modes.teamManagement === "deny") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "A permissão de gestão da equipe não pode ser bloqueada individualmente para um administrador da empresa." });
@@ -610,6 +618,7 @@ export const appRouter = router({
     }),
     create: companyAdminFeatureProcedure("teamManagement").input(z.object({ userName: z.string().min(2), email: z.string().email(), password: z.string().min(8), role: companyUserRole, storeIds: z.array(z.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
       try {
+        assertSupervisorPromoterOnly(ctx.user.role, input.role);
         await planLimits.assertUserLimit(ctx.accountId, input.role);
         const { storeIds, ...userInput } = input;
         const created = await memberAuth.createCompanyUser({ ...userInput, companyId: ctx.accountId });
@@ -643,6 +652,8 @@ export const appRouter = router({
       if (input.id === ctx.memberAccountId && input.role && input.role !== "company_admin") throw new TRPCError({ code: "BAD_REQUEST", message: "O administrador não pode remover o próprio nível administrativo." });
       const usersBefore = await memberAuth.listMemberAccounts(ctx.accountId);
       const beforeUser = usersBefore.find((u) => u.id === input.id) || null;
+      assertSupervisorPromoterOnly(ctx.user.role, beforeUser?.role);
+      if (input.role) assertSupervisorPromoterOnly(ctx.user.role, input.role);
       try {
         await memberAuth.updateCompanyUser(input.id, ctx.accountId, { userName: input.userName, email: input.email, role: input.role });
       } catch (error: any) {
@@ -656,6 +667,10 @@ export const appRouter = router({
       return { success: true } as const;
     }),
     getPromoterStores: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
+      const users = await memberAuth.listMemberAccounts(ctx.accountId);
+      const target = users.find((member) => member.id === input.id);
+      if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, target.role);
       const database = await db.getDb();
       return getPromoterStoreAssignments(database, ctx.accountId, input.id);
     }),
@@ -675,6 +690,7 @@ export const appRouter = router({
       const usersBefore = await memberAuth.listMemberAccounts(ctx.accountId);
       const before = usersBefore.find((member) => member.id === input.id);
       if (!before || before.role !== "promoter") throw new TRPCError({ code: "NOT_FOUND", message: "Promotor não encontrado nesta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, before.role);
       try {
         await db.updatePromoterManagement({
           companyId: ctx.accountId,
@@ -704,16 +720,19 @@ export const appRouter = router({
     }),
     setActive: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), active: z.boolean() })).mutation(async ({ ctx, input }) => {
       if (input.id === ctx.memberAccountId && !input.active) throw new TRPCError({ code: "BAD_REQUEST", message: "O administrador não pode desativar a própria sessão." });
+      const membersForGuard = await memberAuth.listMemberAccounts(ctx.accountId);
+      const existing = membersForGuard.find((m) => m.id === input.id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." });
+      assertSupervisorPromoterOnly(ctx.user.role, existing.role);
       if (input.active) {
-        const members = await memberAuth.listMemberAccounts(ctx.accountId);
-        const target = members.find((m) => m.id === input.id);
+        const target = existing;
         if (target && !target.active) await planLimits.assertUserLimit(ctx.accountId, target.role);
       }
       await memberAuth.setMemberActive(input.id, input.active, ctx.accountId);
       void auditFromCtx(ctx, { action: input.active ? "activate" : "deactivate", module: "users", entityType: "user", entityId: input.id, description: `Usuário ${input.active ? "ativado" : "desativado"} #${input.id}`, newData: { active: input.active } });
       return { success: true } as const;
     }),
-    resetPassword: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), newPassword: z.string().min(8) })).mutation(async ({ ctx, input }) => { const users = await memberAuth.listMemberAccounts(ctx.accountId); if (!users.some(account => account.id === input.id)) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." }); await memberAuth.resetMemberPassword(input.id, input.newPassword); return { success: true } as const; }),
+    resetPassword: companyAdminFeatureProcedure("teamManagement").input(z.object({ id: z.number().int().positive(), newPassword: z.string().min(8) })).mutation(async ({ ctx, input }) => { const users = await memberAuth.listMemberAccounts(ctx.accountId); const target = users.find(account => account.id === input.id); if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não pertence a esta empresa." }); assertSupervisorPromoterOnly(ctx.user.role, target.role); await memberAuth.resetMemberPassword(input.id, input.newPassword); return { success: true } as const; }),
   }),
 
   // O dashboard é a tela básica de toda conta autenticada; módulos pagos
@@ -791,13 +810,13 @@ export const appRouter = router({
     /** Planos e assinatura da empresa (acesso mesmo com bloqueio para regularização). */
   billing: router({
     access: companyBillingProcedure.query(async ({ ctx }) => ({ ...(await checkSubscriptionAccess(ctx.accountId)), supportMessage: MANUAL_BILLING_MESSAGE })),
-    plans: companyBillingProcedure.query(async () => {
+    plans: companyAdminProcedure.query(async () => {
       await db.ensureSeedPlans();
       // Upgrade: lista planos ativos (inclui o atual, mesmo se não estiver "availableForNew")
       const all = await db.listSubscriptionPlans();
       return all.filter((p: any) => p.active !== false);
     }),
-    mySubscription: companyBillingProcedure.query(async ({ ctx }) => {
+    mySubscription: companyAdminProcedure.query(async ({ ctx }) => {
       const resolved = await db.resolveCompanyPlan(ctx.accountId);
       const effective = await planLimits.getEffectivePlan(ctx.accountId);
       // Garante módulos/limites efetivos (inclui fallback quando não há planId)
@@ -806,9 +825,9 @@ export const appRouter = router({
         : effective;
       return { ...resolved, plan, effective };
     }),
-    payments: companyBillingProcedure.query(async ({ ctx }) => db.listPaymentsForCompany(ctx.accountId)),
+    payments: companyAdminProcedure.query(async ({ ctx }) => db.listPaymentsForCompany(ctx.accountId)),
     /** Aviso de vencimento + Pix para o administrador da empresa (e tela de bloqueio). */
-    paymentReminder: companyBillingProcedure.query(async ({ ctx }) => {
+    paymentReminder: companyAdminProcedure.query(async ({ ctx }) => {
       const { getPaymentReminder } = await import("./paymentReminder");
       return getPaymentReminder(ctx.accountId);
     }),
@@ -869,7 +888,7 @@ export const appRouter = router({
         return { success: true as const, located, latitude: (patch.latitude as number | null | undefined) ?? current.latitude ?? null, longitude: (patch.longitude as number | null | undefined) ?? current.longitude ?? null };
       }),
       // Busca a localização pelo endereço das lojas desta empresa que ainda não têm (poucas por vez; Nominatim 1/s).
-      geocodeMissing: companyAdminProcedure.mutation(async ({ ctx }) => {
+      geocodeMissing: companyManagerProcedure.mutation(async ({ ctx }) => {
         const pending = await db.listStoresMissingCoordinates(ctx.accountId, 8);
         let found = 0;
         for (const store of pending) {
@@ -881,7 +900,7 @@ export const appRouter = router({
         if (found) await auditFromCtx(ctx, { action: "update", module: "stores", entityType: "store", description: `Localização pelo endereço encontrada para ${found} loja(s)` });
         return { checked: pending.length, found };
       }),
-      archive: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      archive: companyManagerProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const store = await db.archiveOperationalStore(ctx.accountId, input.id);
         if (!store) throw new TRPCError({ code: "NOT_FOUND", message: "Loja não encontrada." });
         await auditFromCtx(ctx, { action: "delete", module: "stores", entityType: "store", entityId: input.id, description: `Loja removida da lista: ${store.name}` });
@@ -912,7 +931,7 @@ export const appRouter = router({
         const rows = await db.listWeeklyRouteSchedules(ctx.accountId);
         return ownerId === null ? rows : rows.filter((row) => row.promoterId === ownerId);
       }),
-      saveWeekly: companyAdminProcedure.input(z.object({ id: z.number().int().positive().optional(), name: z.string().trim().min(2).max(255), weekday: z.number().int().min(0).max(6), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+      saveWeekly: companyManagerProcedure.input(z.object({ id: z.number().int().positive().optional(), name: z.string().trim().min(2).max(255), weekday: z.number().int().min(0).max(6), promoterId: z.number().int().positive(), storeIds: z.array(z.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
         const members = await memberAuth.listMemberAccounts(ctx.accountId);
         const promoter = members.find((member) => member.id === input.promoterId && member.role === "promoter" && member.active);
         if (!promoter) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um promotor ativo da sua empresa." });
@@ -926,7 +945,7 @@ export const appRouter = router({
           throw error;
         }
       }),
-      deleteWeekly: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      deleteWeekly: companyManagerProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
         const result = await db.deleteWeeklyRouteSchedule(ctx.accountId, input.id);
         if (!result.success) throw new TRPCError({ code: "NOT_FOUND", message: "Roteiro não encontrado." });
         void auditFromCtx(ctx, { action: "delete", module: "routes", entityType: "weekly_route", entityId: input.id, description: `Roteiro semanal excluído: #${input.id}` });
@@ -940,7 +959,7 @@ export const appRouter = router({
         const { storeIds, ...route } = input;
         return db.createOperationalRouteWithVisits({ route: { ...route, date: new Date(`${input.date}T00:00:00.000Z`), companyId: ctx.accountId, status: "assigned" }, storeIds });
       }),
-      update: companyAdminProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().optional(), promoterId: z.number().int().positive().optional(), date: z.string().optional(), storeIds: z.array(z.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
+      update: companyManagerProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().optional(), promoterId: z.number().int().positive().optional(), date: z.string().optional(), storeIds: z.array(z.number().int().positive()).optional() })).mutation(async ({ ctx, input }) => {
         const { id, ...data } = input;
         if (data.promoterId) {
           const members = await memberAuth.listMemberAccounts(ctx.accountId);
@@ -954,7 +973,7 @@ export const appRouter = router({
           throw error;
         }
       }),
-      delete: companyAdminProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      delete: companyManagerProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
         try {
           return await db.deleteOperationalRoute(ctx.accountId, input.id);
         } catch (error) {

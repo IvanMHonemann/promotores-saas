@@ -3,6 +3,7 @@ export type GroupItem = { href: string; label: string; icon: string };
 export type NavGroup = { id: string; title: string; items: GroupItem[] };
 
 export function buildCompanyGroups(role: string | undefined, hasFeature: (key: string) => boolean): { groups: NavGroup[]; account: NavGroup } {
+  const manager = role === "company_admin" || role === "supervisor";
   const admin = role === "company_admin";
   const field = hasFeature("fieldOperations");
   const checkIn = hasFeature("visitCheckIn");
@@ -11,24 +12,24 @@ export function buildCompanyGroups(role: string | undefined, hasFeature: (key: s
     { id: "operacao", title: "Operação", items: [
       { href: "/#inicio", label: "Visão geral", icon: "dashboard" },
       ...(field ? [{ href: "/lojas", label: "Lojas", icon: "store" }, { href: "/#roteiros", label: "Roteiros", icon: "calendar" }] : []),
-      ...(field && checkIn && admin && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: "camera" }] : []),
+      ...(field && checkIn && manager && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: "camera" }] : []),
       ...(role && hasFeature("products") ? [{ href: "/produtos", label: "Produtos e validades", icon: "package" }] : []),
     ] },
     { id: "equipe", title: time ? "Equipe e ponto" : "Equipe", items: [
-      ...(admin && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: "users" }] : []),
+      ...(manager && hasFeature("teamManagement") ? [{ href: "/admin/usuarios", label: "Promotores e equipe", icon: "users" }] : []),
       ...(time ? [{ href: "/cartao-ponto", label: "Cartão-ponto", icon: "clock" }] : []),
-      ...(time && admin ? [{ href: "/banco-de-horas", label: "Banco de horas", icon: "clock" }] : []),
-      ...(time && admin ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: "file" }] : []),
+      ...(time && manager ? [{ href: "/banco-de-horas", label: "Banco de horas", icon: "clock" }] : []),
+      ...(time && manager ? [{ href: "/espelho-ponto", label: "Espelho de ponto", icon: "file" }] : []),
       ...(time ? [{ href: "/ferias", label: "Férias", icon: "palm" }] : []),
     ] },
     { id: "relatorios", title: "Relatórios", items: [
-      ...(admin && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: "audit" }] : []),
-      ...(admin && time ? [{ href: "/ponto-legal", label: "Ponto: prova legal", icon: "shield" }] : []),
-      ...(admin && time ? [{ href: "/arquivos-historicos", label: "Arquivos históricos", icon: "archive" }] : []),
+      ...(manager && hasFeature("reports") ? [{ href: "/auditoria", label: "Auditoria", icon: "audit" }] : []),
+      ...(manager && time ? [{ href: "/ponto-legal", label: "Ponto: prova legal", icon: "shield" }] : []),
+      ...(manager && time ? [{ href: "/arquivos-historicos", label: "Arquivos históricos", icon: "archive" }] : []),
     ] },
   ];
   const account: NavGroup = { id: "conta", title: "Conta", items: [
-    ...(admin ? [{ href: "/lgpd", label: "LGPD e privacidade", icon: "shield" }] : []),
+    ...(manager ? [{ href: "/lgpd", label: "LGPD e privacidade", icon: "shield" }] : []),
     ...(admin ? [{ href: "/meus-modulos", label: "Meus módulos", icon: "card" }] : []),
     { href: "/lixeira", label: "Lixeira", icon: "trash" },
   ] };

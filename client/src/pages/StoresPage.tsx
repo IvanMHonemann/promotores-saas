@@ -15,6 +15,7 @@ import { listStores } from "@/lib/storeQueue";
 import StoreForm from "@/components/StoreForm";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { confirmAction } from "@/components/ConfirmDialog";
+import { isCompanyManager } from "@shared/companyAccess";
 
 export default function StoresPage() {
   const { user } = useAuth();
@@ -56,7 +57,7 @@ export default function StoresPage() {
   const { run } = useBusy();
   const utils = trpc.useUtils();
   const [formOpen, setFormOpen] = useState(false);
-  const isCompanyAdmin = user?.role === "company_admin";
+  const isCompanyAdmin = isCompanyManager(user?.role);
   const [editingId, setEditingId] = useState<number | null>(null);
   const archiveStore = trpc.operations.stores.archive.useMutation({
     onSuccess: () => { toast.success("Loja removida da lista. Fotos e histórico continuam guardados."); void stores.refetch(); },

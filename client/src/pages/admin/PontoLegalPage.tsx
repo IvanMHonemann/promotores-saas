@@ -8,6 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { currentMonthSP, downloadBase64, fmtDateTimeSP } from "@/lib/downloadBase64";
 import { isCompanyActionableWarning, simplifyExportWarning, simplifyIntegrityProblem } from "@/lib/pontoLegalCopy";
 import { todayInZone } from "@shared/expiry";
+import { DateInput, MonthSelect } from "@/components/PtBrDateFields";
 
 function Item({ ok, title, hint }: { ok: boolean; title: string; hint: string }) {
   return (
@@ -161,8 +162,8 @@ export default function PontoLegalPage() {
               <b>AEJ</b> — arquivo oficial de jornadas (com correções e inclusões). Entregue ao fiscal ou ao perito quando pedirem.
             </p>
             <div className="flex flex-wrap items-end gap-2">
-              <label className="text-xs">De<br /><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1" /></label>
-              <label className="text-xs">Até<br /><input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1" /></label>
+              <label className="text-xs">De<br /><DateInput value={from} onChange={setFrom} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1 text-sm text-white" /></label>
+              <label className="text-xs">Até<br /><DateInput value={to} onChange={setTo} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1 text-sm text-white" /></label>
               <Button variant="secondary" disabled={afd.isPending} onClick={() => void exportFile("afd")}><Download className="mr-1 h-4 w-4" />Baixar AFD</Button>
               <Button variant="secondary" disabled={aej.isPending} onClick={() => void exportFile("aej")}><Download className="mr-1 h-4 w-4" />Baixar AEJ</Button>
             </div>
@@ -178,7 +179,7 @@ export default function PontoLegalPage() {
         <Card className="border-white/10 bg-slate-900/70">
           <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSignature className="h-4 w-4 text-teal-300" />Quem confirmou o espelho</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1" aria-label="Mês" />
+            <MonthSelect value={month} onChange={setMonth} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1 text-sm text-white" aria-label="Mês" />
             {(acc.data || []).map((r: any) => (
               <div key={r.memberId} className="flex flex-wrap justify-between gap-2 rounded-lg border border-white/10 p-2">
                 <span className="font-semibold">{r.name}{!r.active ? " (inativo)" : ""}</span>

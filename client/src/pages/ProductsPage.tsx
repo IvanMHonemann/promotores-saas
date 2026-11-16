@@ -20,6 +20,7 @@ import { isValidGtin, looksNumeric } from "@shared/barcode";
 import { ALERT_DAY_OPTIONS, formatDateBR, groupByIndustry, isPastDate, isPlausibleExpiry, productsCsv, situationLabel, storeLabel } from "@shared/products";
 import { confirmAction } from "@/components/ConfirmDialog";
 import { toastWithUndo } from "@/lib/undoTrash";
+import { isCompanyManager } from "@shared/companyAccess";
 
 type Product = {
   id: number; productCode: string; description: string; quantity: number; expirationDate: string; price: string | number;
@@ -48,7 +49,7 @@ function downloadCsv(csv: string, filename: string) {
 
 export default function ProductsPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "company_admin";
+  const isAdmin = isCompanyManager(user?.role);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search.trim()), 350); return () => clearTimeout(t); }, [search]);

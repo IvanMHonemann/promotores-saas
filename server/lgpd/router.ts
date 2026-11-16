@@ -7,7 +7,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { zipSync, strToU8 } from "fflate";
-import { companyAdminProcedure, companyBillingProcedure, router } from "../_core/trpc";
+import { companyManagerProcedure, companyBillingProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import {
   checklistResponses, evidences, memberAccounts, memberSessions, promoterProfiles, storePhotos, timeCorrectionRequests, timeEvents, vacationSchedules, visitPhotos, visits,
@@ -232,30 +232,30 @@ export const lgpdRouter = router({
   }),
 
   // ------------------------------------------------------------- administrador
-  requests: companyAdminProcedure.input(z.object({ status: z.enum(["open", "all"]).default("open") }).optional()).query(async ({ ctx, input }) => {
+  requests: companyManagerProcedure.input(z.object({ status: z.enum(["open", "all"]).default("open") }).optional()).query(async ({ ctx, input }) => {
     await ensureLgpdTables();
     const companyId = Number(ctx.accountId);
     return rows(sql`SELECT r.id, r.memberAccountId, m.userName AS name, r.kind, r.message, r.status, r.createdAt, r.resolvedAt, r.resolvedBy, r.resolution
       FROM lgpd_requests r LEFT JOIN member_accounts m ON m.id = r.memberAccountId WHERE r.companyId = ${companyId} ${input?.status === "all" ? sql`` : sql`AND r.status = 'open'`} ORDER BY r.id DESC LIMIT 200`);
   }),
 
-  acknowledgements: companyAdminProcedure.query(async ({ ctx }) => {
+  acknowledgements: companyManagerProcedure.query(async ({ ctx }) => {
     await ensureLgpdTables();
     return rows(sql`SELECT m.id AS memberId, m.userName AS name, m.active, MAX(CASE WHEN a.noticeVersion = ${PRIVACY_NOTICE_VERSION} THEN a.acknowledgedAt END) AS acknowledgedAt
       FROM member_accounts m LEFT JOIN privacy_acknowledgements a ON a.memberAccountId = m.id AND a.companyId = m.companyId
       WHERE m.companyId = ${Number(ctx.accountId)} AND m.role = 'promoter' GROUP BY m.id, m.userName, m.active ORDER BY m.userName`);
   }),
 
-  plan: companyAdminProcedure.query(() => ANONYMIZE_PLAN),
+  plan: companyManagerProcedure.query(() => ANONYMIZE_PLAN),
 
-  exportMember: companyAdminProcedure.input(z.object({ memberId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+  exportMember: companyManagerProcedure.input(z.object({ memberId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const companyId = Number(ctx.accountId);
     const z = await buildSubjectExportZip(companyId, input.memberId);
     void auditFromCtx(ctx, { action: "export", module: "lgpd", entityType: "subject_export", entityId: input.memberId, description: "Exportou todos os dados pessoais de um titular (LGPD art. 18)" } as any);
     return { fileName: z.fileName, base64: z.buffer.toString("base64"), summary: z.summary };
   }),
 
-  anonymizeMember: companyAdminProcedure.input(z.object({ memberId: z.number().int().positive(), confirm: z.literal("ANONIMIZAR"), requestId: z.number().int().positive().optional(), reason: z.string().trim().min(5).max(500) })).mutation(async ({ ctx, input }) => {
+  anonymizeMember: companyManagerProcedure.input(z.object({ memberId: z.number().int().positive(), confirm: z.literal("ANONIMIZAR"), requestId: z.number().int().positive().optional(), reason: z.string().trim().min(5).max(500) })).mutation(async ({ ctx, input }) => {
     const companyId = Number(ctx.accountId);
     await ensureLgpdTables();
     const { pseudonym } = await anonymizeSubject(companyId, input.memberId);
@@ -267,7 +267,7 @@ export const lgpdRouter = router({
     return { success: true as const, pseudonym };
   }),
 
-  resolveRequest: companyAdminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["done", "rejected"]), resolution: z.string().trim().min(3).max(2000) })).mutation(async ({ ctx, input }) => {
+  resolveRequest: companyManagerProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["done", "rejected"]), resolution: z.string().trim().min(3).max(2000) })).mutation(async ({ ctx, input }) => {
     await ensureLgpdTables();
     const database = await db.getDb();
     if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });

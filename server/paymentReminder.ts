@@ -1,6 +1,7 @@
 /** Aviso de vencimento + Pix (sem gateway) para o administrador da empresa. */
 import * as db from "./db";
 import { buildPixBrcode, getDefaultPixConfig } from "@shared/pixBrcode";
+import { paymentReminderMessage } from "@shared/paymentReminderCopy";
 import { DEFAULT_OVERDUE_GRACE_DAYS } from "./subscriptionAccess";
 
 export const PRE_DUE_REMINDER_DAYS = [5, 3, 1] as const;
@@ -224,18 +225,31 @@ export async function getPaymentReminder(companyId: number, now = new Date()): P
       phase: "blocked",
       show: true,
       dismissable: false,
-      message: `O acesso da empresa está bloqueado por falta de pagamento. Venceu em ${dueDateLabel}. Regularize via Pix ou WhatsApp.`,
+      message: paymentReminderMessage({
+        phase: "blocked",
+        amountLabel,
+        dueDate,
+        dueDateLabel,
+        daysUntilDue,
+        daysUntilBlock,
+      }),
     };
   }
 
   if (daysUntilDue < 0) {
-    const left = Math.max(0, daysUntilBlock);
     return {
       ...base,
       phase: "overdue",
       show: true,
       dismissable: false,
-      message: `Pagamento em atraso desde ${dueDateLabel}. O acesso será bloqueado em ${left} dia(s). Pague via Pix ou envie o comprovante no WhatsApp.`,
+      message: paymentReminderMessage({
+        phase: "overdue",
+        amountLabel,
+        dueDate,
+        dueDateLabel,
+        daysUntilDue,
+        daysUntilBlock,
+      }),
     };
   }
 
@@ -245,7 +259,14 @@ export async function getPaymentReminder(companyId: number, now = new Date()): P
       phase: "pre_due",
       show: true,
       dismissable: true,
-      message: `O pagamento de ${amountLabel ?? "sua mensalidade"} vence em ${daysUntilDue} dia(s) (${dueDateLabel}).`,
+      message: paymentReminderMessage({
+        phase: "pre_due",
+        amountLabel,
+        dueDate,
+        dueDateLabel,
+        daysUntilDue,
+        daysUntilBlock,
+      }),
     };
   }
 

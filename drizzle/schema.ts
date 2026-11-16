@@ -707,10 +707,16 @@ export const platformAnnouncements = mysqlTable("platform_announcements", {
   active: boolean("active").notNull().default(true),
   createdByPlatformAdminId: int("createdByPlatformAdminId"),
   updatedByPlatformAdminId: int("updatedByPlatformAdminId"),
+  source: varchar("source", { length: 16 }).notNull().default("platform"),
+  companyId: int("companyId"),
+  createdByMemberAccountId: int("createdByMemberAccountId"),
+  updatedByMemberAccountId: int("updatedByMemberAccountId"),
+  targetMode: varchar("targetMode", { length: 16 }).notNull().default("roles"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
   activeIdx: index("platform_announcements_active_idx").on(table.active, table.startsAt, table.endsAt),
+  sourceCompanyIdx: index("platform_announcements_source_company_idx").on(table.source, table.companyId),
 }));
 
 export type PlatformAnnouncement = typeof platformAnnouncements.$inferSelect;
@@ -733,5 +739,14 @@ export const platformAnnouncementDismissals = mysqlTable("platform_announcement_
 }, (table) => ({
   uniquePair: uniqueIndex("platform_announcement_dismissals_unique").on(table.announcementId, table.memberAccountId),
   memberIdx: index("platform_announcement_dismissals_member_idx").on(table.memberAccountId),
+}));
+
+export const platformAnnouncementMembers = mysqlTable("platform_announcement_members", {
+  id: int("id").autoincrement().primaryKey(),
+  announcementId: int("announcementId").notNull(),
+  memberAccountId: int("memberAccountId").notNull(),
+}, (table) => ({
+  uniquePair: uniqueIndex("platform_announcement_members_unique").on(table.announcementId, table.memberAccountId),
+  memberIdx: index("platform_announcement_members_member_idx").on(table.memberAccountId),
 }));
 

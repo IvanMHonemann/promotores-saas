@@ -73,3 +73,47 @@ describe("permissões dos avisos da plataforma", () => {
     expect(spy).toHaveBeenCalled();
   });
 });
+
+describe("permissões dos avisos da empresa", () => {
+  const payload = {
+    title: "Recado para o Testador",
+    body: "Confira o roteiro de amanhã.",
+    tone: "info" as const,
+    targetMode: "members" as const,
+    memberIds: [10],
+    dismissable: true,
+  };
+
+  it("admin e supervisor criam; promotor não cria e não lista", async () => {
+    const created = { id: 21, title: payload.title, source: "company", companyId: 60001, targetMode: "members", memberIds: [10], roles: ["promoter"] };
+    vi.spyOn(announcements, "createCompanyAnnouncement").mockResolvedValue(created as any);
+    vi.spyOn(announcements, "listCompanyAnnouncements").mockResolvedValue([created] as any);
+    vi.spyOn(announcements, "listCompanyAnnouncementRecipients").mockResolvedValue([{ id: 10, userName: "Testador", role: "promoter" }] as any);
+
+    await expect(companyCaller("promoter").announcements.company.create(payload)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(companyCaller("promoter").announcements.company.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(companyCaller("company_admin", 60001, 1).announcements.company.create(payload)).resolves.toEqual(expect.objectContaining({ id: 21 }));
+    await expect(companyCaller("supervisor", 60001, 2).announcements.company.create(payload)).resolves.toEqual(expect.objectContaining({ id: 21 }));
+    await expect(companyCaller("company_admin", 60001, 1).announcements.company.list()).resolves.toEqual([
+      expect.objectContaining({ id: 21, canManage: true }),
+    ]);
+  });
+
+  it("o servidor recusa IDs de outra empresa e o supervisor não edita aviso alheio", async () => {
+    vi.spyOn(announcements, "createCompanyAnnouncement").mockRejectedValue(new Error("Só é possível avisar promotores e supervisores ativos desta empresa."));
+    vi.spyOn(announcements, "updateCompanyAnnouncement").mockRejectedValue(new Error("Você não tem permissão para gerenciar este aviso."));
+    vi.spyOn(announcements, "deleteCompanyAnnouncement").mockRejectedValue(new Error("Você não tem permissão para gerenciar este aviso."));
+
+    const foreign = { ...payload, memberIds: [99] };
+    await expect(companyCaller("company_admin", 60001, 1).announcements.company.create(foreign)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Só é possível avisar promotores e supervisores ativos desta empresa.",
+    });
+    await expect(companyCaller("supervisor", 60001, 3).announcements.company.update({ id: 21, ...payload })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(companyCaller("supervisor", 90002, 50).announcements.company.delete({ id: 21 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+});

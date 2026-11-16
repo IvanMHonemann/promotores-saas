@@ -70,6 +70,7 @@ export default function PlatformAnnouncementsPage() {
   const companies = trpc.platformCompanies.overview.useQuery(undefined, { staleTime: 60_000 });
   const [form, setForm] = useState<FormState | null>(null);
   const [companyQuery, setCompanyQuery] = useState("");
+  const [originFilter, setOriginFilter] = useState<"all" | "platform" | "company">("all");
   const today = todayIsoSP();
 
   const create = trpc.announcements.create.useMutation({
@@ -160,23 +161,47 @@ export default function PlatformAnnouncementsPage() {
             {list.isLoading && <p className="flex items-center gap-2 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" />Carregando...</p>}
             {list.isError && <p role="alert" className="text-sm text-rose-200">{list.error.message}</p>}
             {!list.isLoading && !list.data?.length && <p className="text-sm text-slate-400">Nenhum aviso cadastrado ainda.</p>}
-            {(list.data || []).map((item) => {
+            <div className="flex flex-wrap gap-2">
+              {([
+                ["all", "Todos"],
+                ["platform", "Plataforma"],
+                ["company", "Empresas"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setOriginFilter(value)}
+                  className={`rounded-full border px-3 py-1 text-sm ${originFilter === value ? "border-teal-300 bg-teal-300 text-slate-950" : "border-white/20 text-slate-200"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {(list.data || []).filter((item) => originFilter === "all" || String((item as any).source || "platform") === originFilter).map((item) => {
               const status = announcementAdminStatus(item as any, today);
-              const audience = item.audienceScope === "all"
-                ? "Todas as empresas"
-                : (item.companyNames?.length ? item.companyNames.join(", ") : `${item.companyIds.length} empresa(s)`);
+              const isCompany = String((item as any).source || "platform") === "company";
+              const audience = isCompany
+                ? ((item as any).companyName ? `Empresa ${(item as any).companyName}` : "Aviso da empresa")
+                : item.audienceScope === "all"
+                  ? "Todas as empresas"
+                  : `${item.companyIds.length} empresa(s)`;
               return (
                 <div key={item.id} className="flex flex-col gap-2 rounded-xl border border-white/10 bg-slate-950/40 p-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">{item.title}</p>
                     <Badge className={statusBadgeClass(status)}>{ANNOUNCEMENT_STATUS_LABELS[status]}</Badge>
                     <Badge className="bg-white/10 text-slate-200">{ANNOUNCEMENT_TONE_LABELS[item.tone]}</Badge>
+                    <Badge className="bg-white/10 text-slate-200">{isCompany ? "Empresa" : "Plataforma"}</Badge>
                   </div>
                   <p className="text-xs text-slate-400">
-                    {audience} · {item.roles.map((role) => ANNOUNCEMENT_ROLE_LABELS[role]).join(", ")}
+                    {audience} · {item.roles.map((role) => ANNOUNCEMENT_ROLE_LABELS[role] || role).join(", ")}
+                    {(item as any).authorName ? ` · ${(item as any).authorName}` : ""}
                     {item.startsAt || item.endsAt ? ` · ${item.startsAt ?? "sem início"} a ${item.endsAt ?? "sem fim"}` : " · sem período limitado"}
                     {item.dismissable ? " · pode dispensar" : " · não pode dispensar"}
                   </p>
+                  {isCompany ? (
+                    <p className="text-xs text-slate-500">Este aviso é gerenciado no painel da empresa.</p>
+                  ) : (
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" className="border-white/20 text-white" onClick={() => edit(item)}>
                       <Pencil className="mr-1.5 h-4 w-4" />Editar
@@ -203,6 +228,7 @@ export default function PlatformAnnouncementsPage() {
                       <Trash2 className="mr-1.5 h-4 w-4" />Excluir
                     </Button>
                   </div>
+                  )}
                 </div>
               );
             })}

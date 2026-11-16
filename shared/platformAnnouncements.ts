@@ -1,4 +1,4 @@
-/** Regras e textos dos avisos criados pelo administrador geral. */
+/** Regras e textos dos avisos da plataforma e da empresa. */
 
 export const ANNOUNCEMENT_ROLES = ["company_admin", "supervisor", "promoter"] as const;
 export type AnnouncementRole = (typeof ANNOUNCEMENT_ROLES)[number];
@@ -11,6 +11,13 @@ export const ANNOUNCEMENT_ROLE_LABELS: Record<AnnouncementRole, string> = {
   supervisor: "Supervisor",
   promoter: "Promotor",
 };
+
+/** Funções que o admin/supervisor da empresa pode avisar. O admin da empresa nunca é alvo. */
+export const COMPANY_ANNOUNCEMENT_ROLES = ["supervisor", "promoter"] as const;
+export type CompanyAnnouncementRole = (typeof COMPANY_ANNOUNCEMENT_ROLES)[number];
+
+export type AnnouncementSource = "platform" | "company";
+export type AnnouncementTargetMode = "roles" | "members";
 
 export const ANNOUNCEMENT_TONE_LABELS: Record<AnnouncementTone, string> = {
   info: "Informação",
@@ -28,6 +35,11 @@ export type AnnouncementRecord = {
   audienceScope: AnnouncementAudienceScope | string;
   companyIds: number[];
   roles: readonly string[];
+  source?: AnnouncementSource | string | null;
+  companyId?: number | null;
+  targetMode?: AnnouncementTargetMode | string | null;
+  memberIds?: number[];
+  createdByMemberAccountId?: number | null;
 };
 
 export type AnnouncementViewer = {
@@ -35,6 +47,7 @@ export type AnnouncementViewer = {
   role: string;
   todayIso: string;
   dismissedIds?: number[];
+  memberAccountId?: number | null;
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -58,6 +71,11 @@ export function todayIsoSP(now = new Date()): string {
   return now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }
 
+export function parseAnnouncementTone(raw: unknown): AnnouncementTone {
+  const value = String(raw ?? "");
+  return (ANNOUNCEMENT_TONES as readonly string[]).includes(value) ? (value as AnnouncementTone) : "info";
+}
+
 export function parseAnnouncementRoles(raw: unknown): AnnouncementRole[] {
   const parts = Array.isArray(raw)
     ? raw.map((item) => String(item))
@@ -72,6 +90,18 @@ export function parseAnnouncementRoles(raw: unknown): AnnouncementRole[] {
 export function serializeAnnouncementRoles(roles: readonly string[]): string {
   const unique = parseAnnouncementRoles(roles);
   if (!unique.length) throw new Error("Escolha pelo menos uma função.");
+  return unique.join(",");
+}
+
+export function parseCompanyAnnouncementRoles(raw: unknown): CompanyAnnouncementRole[] {
+  return parseAnnouncementRoles(raw).filter((role): role is CompanyAnnouncementRole =>
+    (COMPANY_ANNOUNCEMENT_ROLES as readonly string[]).includes(role),
+  );
+}
+
+export function serializeCompanyAnnouncementRoles(roles: readonly string[]): string {
+  const unique = parseCompanyAnnouncementRoles(roles);
+  if (!unique.length) throw new Error("Escolha pelo menos uma função (promotor ou supervisor).");
   return unique.join(",");
 }
 
@@ -97,12 +127,62 @@ export function announcementIsLive(announcement: AnnouncementRecord, todayIso: s
 
 export function announcementVisibleTo(announcement: AnnouncementRecord, viewer: AnnouncementViewer): boolean {
   if (!announcementIsLive(announcement, viewer.todayIso)) return false;
+  if (viewer.dismissedIds?.includes(announcement.id)) return false;
+
+  const source = announcement.source || "platform";
+  if (source === "company") {
+    if (Number(announcement.companyId) !== Number(viewer.companyId)) return false;
+    if (viewer.role === "company_admin") return false;
+    if (
+      viewer.memberAccountId
+      && announcement.createdByMemberAccountId
+      && Number(viewer.memberAccountId) === Number(announcement.createdByMemberAccountId)
+    ) {
+      return false;
+    }
+    if ((announcement.targetMode || "roles") === "members") {
+      return Boolean(viewer.memberAccountId && (announcement.memberIds || []).includes(Number(viewer.memberAccountId)));
+    }
+    return announcement.roles.includes(viewer.role);
+  }
+
   if (!announcement.roles.includes(viewer.role)) return false;
   if (announcement.audienceScope === "selected") {
     if (!announcement.companyIds.includes(viewer.companyId)) return false;
   }
-  if (viewer.dismissedIds?.includes(announcement.id)) return false;
   return true;
+}
+
+export function canManageCompanyAnnouncement(
+  actor: { role: string; memberAccountId?: number | null; companyId?: number | null },
+  announcement: { source?: string | null; companyId?: number | null; createdByMemberAccountId?: number | null },
+): boolean {
+  if ((announcement.source || "platform") !== "company") return false;
+  if (Number(announcement.companyId) !== Number(actor.companyId)) return false;
+  if (actor.role === "company_admin") return true;
+  if (
+    actor.role === "supervisor"
+    && actor.memberAccountId
+    && announcement.createdByMemberAccountId
+    && Number(actor.memberAccountId) === Number(announcement.createdByMemberAccountId)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function announcementSenderLabel(input: {
+  source?: string | null;
+  companyName?: string | null;
+  authorName?: string | null;
+}): string {
+  if ((input.source || "platform") === "company") {
+    if (input.authorName && input.companyName) return `Aviso de ${input.authorName} (${input.companyName})`;
+    if (input.authorName) return `Aviso de ${input.authorName}`;
+    if (input.companyName) return `Aviso de ${input.companyName}`;
+    return "Aviso da empresa";
+  }
+  return "Aviso da GondUp";
 }
 
 export function announcementAdminStatus(announcement: AnnouncementRecord, todayIso: string): "paused" | "scheduled" | "ended" | "active" {

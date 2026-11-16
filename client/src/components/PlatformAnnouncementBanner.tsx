@@ -14,6 +14,8 @@ type Item = {
   buttonLabel: string | null;
   buttonUrl: string | null;
   dismissable: boolean;
+  senderLabel?: string | null;
+  source?: string | null;
 };
 
 const shells: Record<string, string> = {
@@ -39,6 +41,7 @@ function BannerCard({ item, onDismiss }: { item: Item; onDismiss: (id: number) =
         <Icon className="mt-0.5 h-5 w-5 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="break-words text-sm font-bold leading-5">{open ? item.title : headline}</p>
+          {item.senderLabel ? <p className="mt-1 text-xs font-medium text-current/80">{item.senderLabel}</p> : null}
           <div className="mt-3">
             <Button
               type="button"

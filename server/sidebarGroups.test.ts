@@ -8,7 +8,7 @@ describe("menu lateral da empresa", () => {
   it("administrador vê todos os grupos, sem submenus", () => {
     const r = buildCompanyGroups("company_admin", all);
     expect(labels(r)).toEqual([
-      ["Operação", ["Visão geral", "Lojas", "Roteiros", "Check-in / Check-out", "Produtos e validades"]],
+      ["Operação", ["Visão geral", "Avisos", "Lojas", "Roteiros", "Check-in / Check-out", "Produtos e validades"]],
       ["Equipe e ponto", ["Promotores e equipe", "Cartão-ponto", "Banco de horas", "Espelho de ponto", "Férias"]],
       ["Relatórios", ["Auditoria", "Ponto: prova legal", "Arquivos históricos"]],
     ]);
@@ -17,7 +17,7 @@ describe("menu lateral da empresa", () => {
   it("supervisor vê as mesmas telas do admin, sem Meus módulos", () => {
     const r = buildCompanyGroups("supervisor", all);
     expect(labels(r)).toEqual([
-      ["Operação", ["Visão geral", "Lojas", "Roteiros", "Check-in / Check-out", "Produtos e validades"]],
+      ["Operação", ["Visão geral", "Avisos", "Lojas", "Roteiros", "Check-in / Check-out", "Produtos e validades"]],
       ["Equipe e ponto", ["Promotores e equipe", "Cartão-ponto", "Banco de horas", "Espelho de ponto", "Férias"]],
       ["Relatórios", ["Auditoria", "Ponto: prova legal", "Arquivos históricos"]],
     ]);
@@ -25,9 +25,9 @@ describe("menu lateral da empresa", () => {
   });
   it("respeita módulos contratados", () => {
     const r = buildCompanyGroups("company_admin", (k) => k === "teamManagement");
-    expect(labels(r)).toEqual([["Operação", ["Visão geral"]], ["Equipe", ["Promotores e equipe"]]]);
+    expect(labels(r)).toEqual([["Operação", ["Visão geral", "Avisos"]], ["Equipe", ["Promotores e equipe"]]]);
     const withProducts = buildCompanyGroups("company_admin", (k) => k === "teamManagement" || k === "products");
-    expect(labels(withProducts)[0]).toEqual(["Operação", ["Visão geral", "Produtos e validades"]]);
+    expect(labels(withProducts)[0]).toEqual(["Operação", ["Visão geral", "Avisos", "Produtos e validades"]]);
   });
   it("sem ponto: some itens de ponto e o grupo vira Equipe", () => {
     const r = buildCompanyGroups("company_admin", (k) => k !== "timeTracking");

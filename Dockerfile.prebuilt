@@ -11,5 +11,11 @@ RUN pnpm install --frozen-lockfile --prod
 COPY dist ./dist
 COPY drizzle ./drizzle
 COPY scripts ./scripts
+# Código da versão publicado pelo GitHub Actions (usado no painel Erros ao vivo).
+COPY BUILD_SHA ./BUILD_SHA
+ARG BUILD_SHA=""
+ARG BUILD_TIME=""
+ENV BUILD_SHA=${BUILD_SHA}
+ENV BUILD_TIME=${BUILD_TIME}
 EXPOSE 3000
 CMD ["pnpm", "start"]

@@ -33,5 +33,9 @@ RUN pnpm install --frozen-lockfile --prod
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts ./scripts
+ARG BUILD_SHA=""
+ARG BUILD_TIME=""
+ENV BUILD_SHA=${BUILD_SHA}
+ENV BUILD_TIME=${BUILD_TIME}
 EXPOSE 3000
 CMD ["pnpm", "start"]

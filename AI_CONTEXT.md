@@ -78,6 +78,18 @@ Existe o plano oculto "Teste Pix (R$ 1)" (`id` 180003, `availableForNew=false`, 
 Menu da empresa (admin e supervisor): grupos Operação, Equipe e ponto, Relatórios e Conta — sem submenus antigos de Roteiros/Cartão-ponto. Em Conta há **Termos e privacidade** (`/termos`) para admin e supervisor (o admin também vê Meus módulos). O promotor agrupa Correções de ponto (`/ponto#correcoes`), Meus comprovantes e Meu espelho do mês no dropdown **Cartão ponto**, sem o item duplicado que ia para o mesmo lugar da correção, e também tem **Termos e privacidade** no menu.
 
 
+
+## Erros ao vivo
+
+Painel do super-admin em `/plataforma/scanner` (menu "Erros ao vivo"). Não é mais um teste local de fachada. `server/liveErrors.ts` + `shared/liveErrorCopy.ts`.
+
+- Lista os erros das últimas 24h e 7 dias (Sentry, org `ivanmh`, projeto `gondup`) resumidos em português: o que aconteceu, em qual tela, quantas vezes, quantos usuários, primeira e última vez em America/Sao_Paulo, gravidade (Grave / Atenção / Leve) e se está crescendo. Os termos técnicos e o link do Sentry ficam em "Ver detalhes técnicos".
+- Cada erro é classificado por regras (sem IA) em **Precisa corrigir** (TypeError/ReferenceError de código, erro 500, falha de banco, chunk/build persistente, crescente ou atingindo vários usuários) ou **Normal / esperado** (rede/offline, foto de check-in que caiu por sinal fraco, GPS/câmera negados, timeout, cancelamento, extensão do navegador, ruído do service worker, sessão expirada). A razão aparece numa frase. Precisa corrigir vai no topo, em destaque; Normal fica numa seção recolhida, com a contagem e sem alarme. Ruído do service worker é agrupado.
+- **Pedir correção** abre uma issue no GitHub (`IvanMHonemann/promotores-saas`), em português, com a tela, as contagens, o link do Sentry e os detalhes técnicos, com o label `erro-ao-vivo`. Se já houver issue aberta para aquele erro, o botão vira "Correção já pedida" com o link. O app **não corrige código sozinho**.
+- **Marcar como normal** move o erro para a seção Normal. Se o token do Sentry tiver permissão, a issue é ignorada lá; senão a marcação fica só na tabela `live_error_overrides`. Dá para desfazer (`unmarkNormal`).
+- Também mostra saúde do sistema: último backup no R2 (`backup_progress`), rotinas da madrugada (`platform_job_runs`, gravadas pelos endpoints `/api/scheduled/*`), versão no ar (`BUILD_SHA` na imagem), disco e memória vistos pelo aplicativo. Os quatro testes do aparelho (servidor, API/banco, GPS, armazenamento) continuam numa seção pequena. O "Terminal de Diagnóstico" de fachada foi removido.
+- Tokens: `SENTRY_AUTH_TOKEN` (event:read, project:read; issue:write é opcional para ignorar no Sentry) e `GITHUB_ISSUES_TOKEN` (fine-grained, Issues read/write só nesse repo). Sem eles, o painel funciona com os cartões "Conexão com o Sentry pendente" e "Conexão com o GitHub pendente". Tabelas na migração `0039` (`ensureLiveErrorTables` idempotente).
+
 ## Termos de Uso e Política de Privacidade
 
 Textos em `docs/juridico/termos-de-uso.md` e `docs/juridico/politica-de-privacidade.md`. Não editar `shared/legalTexts.ts` à mão: gerar com `scripts/gen-legal-texts.py`. Versão atual: **1.0**, vigente desde **16/11/2026** (`LEGAL_TEXT_VERSION` / `LEGAL_EFFECTIVE_DATE`). Recomenda-se revisão por advogado, principalmente ponto eletrônico (Portaria MTP 671/2021) e LGPD.
@@ -129,7 +141,7 @@ Landing: bloco "Siga nossa página no Instagram" e ícone no rodapé para https:
 
 ### Principais tabelas (`drizzle/schema.ts`)
 
-`companies`, `memberAccounts`, `promoterProfiles`, `clients`, `brands`, `retailChains`, `stores`, `teams`, `routes`, `weeklyRouteSchedules`, `visits`, `timeEvents`, `timeCorrectionRequests`, `storePhotos`, `visitPhotos`, `inventoryProducts`, `checklists` (+ questions/responses), `evidences`, `auditLogs`, `vacationSchedules`, planos/assinaturas/entitlements, `platform_announcements` e tabelas auxiliares de aviso.
+`companies`, `memberAccounts`, `promoterProfiles`, `clients`, `brands`, `retailChains`, `stores`, `teams`, `routes`, `weeklyRouteSchedules`, `visits`, `timeEvents`, `timeCorrectionRequests`, `storePhotos`, `visitPhotos`, `inventoryProducts`, `checklists` (+ questions/responses), `evidences`, `auditLogs`, `vacationSchedules`, planos/assinaturas/entitlements, `platform_announcements` e tabelas auxiliares de aviso, `legal_acceptances`, `live_error_overrides`, `platform_job_runs`.
 
 Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `promoter_store_assignments`, entre outras.
 
@@ -148,6 +160,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - `server/storeAccess.ts`, `server/storage.ts`, `server/entitlements.ts` / `shared/entitlements.ts`
 - `server/supervisorTeam.ts` — supervisor só gerencia promotores
 - `shared/personalPonto.ts` — quem tem ponto pessoal
+- `server/liveErrors.ts` / `shared/liveErrorCopy.ts` — painel Erros ao vivo
 - `server/routers.ts` — `appRouter`
 
 ## Funcionalidades implementadas (além do que está nas seções acima)
@@ -162,6 +175,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Offline: cadastro de lojas/clientes, sincronização de visitas, fila de fotos, cache de roteiro do dia.
 - Produtos e validades (com lixeira). Auditoria append-only. PWA com fallback offline.
 - Termos de Uso e Política de Privacidade (versão 1.0) nas páginas públicas e no menu de todos os papéis, com aceite registrado do admin da empresa (`legal_acceptances`).
+- Painel Erros ao vivo do super-admin (`/plataforma/scanner`): resumo em português, classificação Precisa corrigir vs Normal, pedido de correção no GitHub e marcação como normal, mais saúde do sistema (backup, rotinas, versão, disco e memória).
 - Platform admin escolhe `featureKeys` na criação da empresa e edita módulos em `CompanyFeaturesCard`. Ações "Nova empresa", "Novo usuário" e "Redefinir senha" no painel do admin geral devem permanecer visíveis (já foram removidas por engano e restauradas no PR #125).
 
 ## Decisões importantes
@@ -192,7 +206,8 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Google Maps é opcional (`VITE_GOOGLE_MAPS_API_KEY`).
 - Testes de banco exigem `EXTERNAL_DATABASE_URL`; a suíte completa não roda sem ambiente configurado. `landingSeo` também costuma falhar (texto da landing mudou).
 - Sobreposição de férias é check-then-act dentro de transação, sem `SELECT FOR UPDATE`.
-- Endereços das lojas e silenciar o erro do service worker no Sentry continuam pendentes.
+- Endereços das lojas e silenciar o erro do service worker no Sentry continuam pendentes. No painel Erros ao vivo esse ruído já entra como Normal / esperado e é agrupado.
+- Para o painel Erros ao vivo listar erros reais e abrir issue de correção, faltam `SENTRY_AUTH_TOKEN` e `GITHUB_ISSUES_TOKEN` no `.env` da VPS (o DSN do Sentry já existe). Sem eles, o painel mostra conexão pendente e o resto da saúde do sistema funciona.
 - Nos Termos e na Política, CNPJ e endereço do fornecedor ainda estão como `[PREENCHER]`. Os textos valem revisão de um advogado antes do uso formal com clientes.
 
 ## Como manter este arquivo

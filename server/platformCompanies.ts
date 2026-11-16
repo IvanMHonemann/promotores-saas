@@ -33,7 +33,7 @@ export async function listCompaniesOverview() {
     d.execute(sql`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
     d.execute(sql`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos, SUM(CASE WHEN active = 1 AND role = 'promoter' THEN 1 ELSE 0 END) AS staff FROM member_accounts GROUP BY companyId`),
     d.execute(sql`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
-    d.select().from(systemSettings).where(inArray(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, EXTRA_USERS_KEY])),
+    d.select().from(systemSettings).where(inArray(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, EXTRA_USERS_KEY, "company_legal_profile"])),
     listLatestLegalAcceptances(),
   ]);
   const planById = new Map(plans.map((p) => [p.id, p]));
@@ -41,8 +41,13 @@ export async function listCompaniesOverview() {
   const map = <T,>(r: any, key = "companyId") => new Map<number, T>(((r as any)[0] as any[]).map((x) => [Number(x[key]), x as T]));
   const payBy = map<any>(pays), countBy = map<any>(counts), adminBy = map<any>(admins);
   const flagBy = new Map<string, string>(flags.map((f: any) => [`${f.accountId}:${f.settingKey}`, f.settingValue]));
+  const legacyLegal = (companyId: number) => {
+    try { return JSON.parse(flagBy.get(`${companyId}:company_legal_profile`) || "") as { legalName?: string; document?: string; address?: string }; }
+    catch { return {}; }
+  };
   return rows.map((c) => {
     const plan = c.planId ? planById.get(c.planId) : null;
+    const legacy = legacyLegal(c.id);
     const monthlyAmount = flagBy.get(`${c.id}:${MONTHLY_AMOUNT_KEY}`) || (plan?.price != null ? String(plan.price) : null);
     const blockAfter = flagBy.get(`${c.id}:${BLOCK_AFTER_OVERDUE_KEY}`);
     const extraUsers = parseExtraUsers(flagBy.get(`${c.id}:${EXTRA_USERS_KEY}`));
@@ -52,11 +57,11 @@ export async function listCompaniesOverview() {
     const staffLimit = effectiveUserLimit({ maxUsers: planMaxUsers, extraUsers });
     return {
       id: c.id, name: c.name, active: c.active, createdAt: c.createdAt,
-      legalName: (c as any).legalName ?? null,
-      taxDocument: (c as any).taxDocument ?? null,
+      legalName: (c as any).legalName || legacy.legalName || null,
+      taxDocument: (c as any).taxDocument || legacy.document || null,
       addressCity: (c as any).addressCity ?? null,
       addressState: (c as any).addressState ?? null,
-      addressStreet: (c as any).addressStreet ?? null,
+      addressStreet: (c as any).addressStreet || legacy.address || null,
       archivedAt: flagBy.get(`${c.id}:archived_at`) ?? null,
       blockedReason: flagBy.get(`${c.id}:blocked_reason`) ?? null,
       planId: c.planId ?? null, planName: plan?.name ?? null, planPrice: plan?.price ?? null,

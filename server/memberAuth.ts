@@ -48,6 +48,7 @@ export async function authenticateMember(email: string, password: string): Promi
   if (await isRateLimited(key)) return null;
   const db = await getDb();
   if (!db) throw new Error("Database not connected");
+  await ensureCompanyRegistryColumns();
 
   const platformResult = await db.select().from(platformAdmins).where(eq(platformAdmins.email, normalizedEmail)).limit(1);
   const platform = platformResult[0];

@@ -12,7 +12,7 @@ describe("menu lateral da empresa", () => {
       ["Equipe e ponto", ["Promotores e equipe", "Cartão-ponto", "Banco de horas", "Espelho de ponto", "Férias"]],
       ["Relatórios", ["Auditoria", "Ponto: prova legal", "Arquivos históricos"]],
     ]);
-    expect(r.account.items.map((i) => i.label)).toEqual(["LGPD e privacidade", "Meus módulos", "Lixeira"]);
+    expect(r.account.items.map((i) => i.label)).toEqual(["LGPD e privacidade", "Termos e privacidade", "Meus módulos", "Lixeira"]);
   });
   it("supervisor vê as mesmas telas do admin, sem Meus módulos", () => {
     const r = buildCompanyGroups("supervisor", all);
@@ -21,7 +21,7 @@ describe("menu lateral da empresa", () => {
       ["Equipe e ponto", ["Promotores e equipe", "Cartão-ponto", "Banco de horas", "Espelho de ponto", "Férias"]],
       ["Relatórios", ["Auditoria", "Ponto: prova legal", "Arquivos históricos"]],
     ]);
-    expect(r.account.items.map((i) => i.label)).toEqual(["LGPD e privacidade", "Lixeira"]);
+    expect(r.account.items.map((i) => i.label)).toEqual(["LGPD e privacidade", "Termos e privacidade", "Lixeira"]);
   });
   it("respeita módulos contratados", () => {
     const r = buildCompanyGroups("company_admin", (k) => k === "teamManagement");
@@ -68,6 +68,7 @@ describe("menu lateral do promotor", () => {
       "Cartão ponto",
       "Minhas férias",
       "Meus dados (LGPD)",
+      "Termos e privacidade",
       "Lojas",
       "Meu roteiro",
       "Lixeira",
@@ -85,6 +86,7 @@ describe("menu lateral do promotor", () => {
       "Painel inicial",
       "Produtos e validades",
       "Meus dados (LGPD)",
+      "Termos e privacidade",
       "Lojas",
       "Meu roteiro",
       "Lixeira",

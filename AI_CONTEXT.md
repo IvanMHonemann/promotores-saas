@@ -75,7 +75,18 @@ Existe o plano oculto "Teste Pix (R$ 1)" (`id` 180003, `availableForNew=false`, 
 
 `hasPersonalTimeClock` é verdadeiro só para `promoter`. `companyAdminFeatureProcedure` aceita admin ou supervisor (`requireCompanyManager`). Procedimentos de preço/fatura/Pix (`billing.plans`, `mySubscription`, `payments`, `paymentReminder`) são `companyAdminProcedure`. `billing.access` permanece sem valores.
 
-Menu da empresa (admin e supervisor): grupos Operação, Equipe e ponto, Relatórios e Conta — sem submenus antigos de Roteiros/Cartão-ponto. O promotor agrupa Correções de ponto (`/ponto#correcoes`), Meus comprovantes e Meu espelho do mês no dropdown **Cartão ponto**, sem o item duplicado que ia para o mesmo lugar da correção.
+Menu da empresa (admin e supervisor): grupos Operação, Equipe e ponto, Relatórios e Conta — sem submenus antigos de Roteiros/Cartão-ponto. Em Conta há **Termos e privacidade** (`/termos`) para admin e supervisor (o admin também vê Meus módulos). O promotor agrupa Correções de ponto (`/ponto#correcoes`), Meus comprovantes e Meu espelho do mês no dropdown **Cartão ponto**, sem o item duplicado que ia para o mesmo lugar da correção, e também tem **Termos e privacidade** no menu.
+
+
+## Termos de Uso e Política de Privacidade
+
+Textos em `docs/juridico/termos-de-uso.md` e `docs/juridico/politica-de-privacidade.md`. Não editar `shared/legalTexts.ts` à mão: gerar com `scripts/gen-legal-texts.py`. Versão atual: **1.0**, vigente desde **16/11/2026** (`LEGAL_TEXT_VERSION` / `LEGAL_EFFECTIVE_DATE`). Recomenda-se revisão por advogado, principalmente ponto eletrônico (Portaria MTP 671/2021) e LGPD.
+
+- Páginas públicas `/termos` e `/privacidade` (sem login). Já há links no rodapé da landing e na tela de login. O item de menu **Termos e privacidade** (`/termos`) aparece para super-admin, admin, supervisor e promotor.
+- O **administrador da empresa** vê o modal "Atualizamos nossos Termos", com checkbox "Li e aceito os Termos de Uso e a Política de Privacidade". Pode ler os textos antes. Enquanto não aceitar, o modal reaparece a cada sessão (`sessionStorage`), mas **não bloqueia** o uso do sistema. Promotor e supervisor só têm o link. Sessão "acessar como empresa" não registra aceite.
+- Registro na tabela `legal_acceptances` (migração `0038`, `ensureLegalAcceptancesTable` idempotente): versão, data/hora, usuário, empresa e IP. Se a versão mudar, o aceite é pedido de novo. Não confundir com `privacy_acknowledgements` (ciência do aviso ao trabalhador / LGPD).
+- Na lista de empresas do admin geral, aparece se o admin aceitou e em qual versão.
+- Fornecedor: Ivan Mateus Honemann / GondUp, Sapiranga/RS, e-mail contato@gondup.com.br. **CNPJ e endereço ainda estão como [PREENCHER]** nos textos.
 
 ## Avisos
 
@@ -150,6 +161,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Dashboards da Central: lojas, fotos, produtos a vencer, visitas e alertas de validade, sem ranking de promotores.
 - Offline: cadastro de lojas/clientes, sincronização de visitas, fila de fotos, cache de roteiro do dia.
 - Produtos e validades (com lixeira). Auditoria append-only. PWA com fallback offline.
+- Termos de Uso e Política de Privacidade (versão 1.0) nas páginas públicas e no menu de todos os papéis, com aceite registrado do admin da empresa (`legal_acceptances`).
 - Platform admin escolhe `featureKeys` na criação da empresa e edita módulos em `CompanyFeaturesCard`. Ações "Nova empresa", "Novo usuário" e "Redefinir senha" no painel do admin geral devem permanecer visíveis (já foram removidas por engano e restauradas no PR #125).
 
 ## Decisões importantes
@@ -181,6 +193,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Testes de banco exigem `EXTERNAL_DATABASE_URL`; a suíte completa não roda sem ambiente configurado. `landingSeo` também costuma falhar (texto da landing mudou).
 - Sobreposição de férias é check-then-act dentro de transação, sem `SELECT FOR UPDATE`.
 - Endereços das lojas e silenciar o erro do service worker no Sentry continuam pendentes.
+- Nos Termos e na Política, CNPJ e endereço do fornecedor ainda estão como `[PREENCHER]`. Os textos valem revisão de um advogado antes do uso formal com clientes.
 
 ## Como manter este arquivo
 

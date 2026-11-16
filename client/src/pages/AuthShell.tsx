@@ -4,11 +4,11 @@ import { useLocation } from "wouter";
 import { BrandLogo } from "@/components/BrandLogo";
 
 /** Moldura simples das telas públicas de autenticação (esqueci/redefinir senha). */
-export function AuthShell({ title, subtitle, icon, children, backTo = "/login", backLabel = "Voltar ao login" }: { title: string; subtitle?: string; icon: ReactNode; children: ReactNode; backTo?: string; backLabel?: string }) {
+export function AuthShell({ title, subtitle, icon, children, backTo = "/login", backLabel = "Voltar ao login", wide = false }: { title: string; subtitle?: string; icon: ReactNode; children: ReactNode; backTo?: string; backLabel?: string; wide?: boolean }) {
   const [, navigate] = useLocation();
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#07111f] px-4 py-10 text-white">
-      <div className="w-full max-w-md rounded-[2rem] border border-white/10 bg-slate-900 p-6 shadow-2xl sm:p-10">
+    <main className={`flex min-h-screen justify-center bg-[#07111f] px-4 py-10 text-white ${wide ? "items-start" : "items-center"}`}>
+      <div className={`w-full rounded-[2rem] border border-white/10 bg-slate-900 p-6 shadow-2xl sm:p-10 ${wide ? "max-w-3xl" : "max-w-md"}`}>
         <button type="button" onClick={() => navigate(backTo)} className="mb-8 flex items-center gap-2 text-sm text-slate-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> {backLabel}</button>
         <BrandLogo variant="dark" height={38} />
         <div className="mt-8 mb-6">

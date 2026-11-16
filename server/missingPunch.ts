@@ -17,7 +17,7 @@ function local(d: Date) {
   return { date: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour}:${p.minute}` };
 }
 
-export type MissingPunch = { memberId: number; companyId: number; name: string; email: string | null; lastType: string; lastLabel: string; missing: string; lastTime: string; day: string; reason: "previous_day" | "past_end_time" };
+export type MissingPunch = { memberId: number; companyId: number; name: string; email: string | null; phone: string | null; lastType: string; lastLabel: string; missing: string; lastTime: string; day: string; reason: "previous_day" | "past_end_time" };
 
 export async function findMissingPunches(opts: { companyId?: number; memberId?: number } = {}): Promise<MissingPunch[]> {
   const database = await db.getDb();
@@ -43,7 +43,7 @@ export async function findMissingPunches(opts: { companyId?: number; memberId?: 
   const open: Array<{ companyId: number; memberAccountId: number; eventType: string; t: Date }> = (raw as any[]).map((r) => ({ companyId: Number(r.companyId), memberAccountId: Number(r.memberAccountId), eventType: String(r.eventType), t: new Date(r.deviceTime || r.serverTime) }));
   if (!open.length) return [];
   const ids = open.map((o) => o.memberAccountId);
-  const members = await database.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, name: memberAccounts.userName, email: memberAccounts.email, active: memberAccounts.active }).from(memberAccounts).where(inArray(memberAccounts.id, ids));
+  const members = await database.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, name: memberAccounts.userName, email: memberAccounts.email, phone: memberAccounts.phone, active: memberAccounts.active }).from(memberAccounts).where(inArray(memberAccounts.id, ids));
   const memberById = new Map(members.map((m) => [m.id, m]));
   const profiles = await database.select({ id: promoterProfiles.memberAccountId, end: promoterProfiles.workEndTime }).from(promoterProfiles).where(inArray(promoterProfiles.memberAccountId, ids));
   const endByMember = new Map(profiles.map((p) => [p.id, p.end]));
@@ -66,7 +66,7 @@ export async function findMissingPunches(opts: { companyId?: number; memberId?: 
       if (limit && now.hm >= limit && lt.hm < limit) reason = "past_end_time";
     }
     if (!reason) continue;
-    out.push({ memberId: e.memberAccountId, companyId: e.companyId, name: member.name, email: member.email, lastType: e.eventType, lastLabel: LABEL[e.eventType] ?? e.eventType, missing: NEXT[e.eventType] ?? "Saída", lastTime: e.t.toISOString(), day: lt.date, reason });
+    out.push({ memberId: e.memberAccountId, companyId: e.companyId, name: member.name, email: member.email, phone: member.phone ?? null, lastType: e.eventType, lastLabel: LABEL[e.eventType] ?? e.eventType, missing: NEXT[e.eventType] ?? "Saída", lastTime: e.t.toISOString(), day: lt.date, reason });
   }
   return out;
 }

@@ -7,6 +7,7 @@ import { lgpdRouter } from "./lgpd/router";
 import { timesheetArchiveRouter } from "./modules/timesheetArchive";
 import { vacationsRouter } from "./modules/vacations";
 import { platformCompaniesRouter } from "./modules/platformCompanies";
+import { announcementsRouter } from "./modules/platformAnnouncements";
 import { storePhotosRouter } from "./modules/storePhotos";
 import { storeClientsRouter } from "./modules/storeClients";
 import { productsRouter } from "./modules/products";
@@ -58,6 +59,7 @@ export const appRouter = router({
   timesheetArchive: timesheetArchiveRouter,
   vacations: vacationsRouter,
   platformCompanies: platformCompaniesRouter,
+  announcements: announcementsRouter,
   storePhotos: storePhotosRouter,
   storeClients: storeClientsRouter,
   entitlements: router({

@@ -44,6 +44,7 @@ const CheckInOutPage = lazy(() => import("./pages/admin/CheckInOutPage"));
 const ProductsPage = lazy(() => import("./pages/ProductsPage"));
 const TrashPage = lazy(() => import("./pages/TrashPage"));
 const PlatformCompaniesPage = lazy(() => import("./pages/platform/PlatformCompaniesPage"));
+const PlatformAnnouncementsPage = lazy(() => import("./pages/platform/PlatformAnnouncementsPage"));
 const PlatformAuditPage = lazy(() => import("./pages/platform/PlatformAuditPage"));
 const PlatformUsersPage = lazy(() => import("./pages/platform/PlatformUsersPage"));
 const PlatformCheckInOutTestPage = lazy(() => import("./pages/platform/PlatformCheckInOutTestPage"));
@@ -363,6 +364,7 @@ function Router() {
       <Route path="/minhas-ferias"><PromoterProtected><FeatureProtected featureKey="timeTracking"><MyVacationsPage /></FeatureProtected></PromoterProtected></Route>
       <Route path="/"><RootRoute /></Route>
       <Route path="/admin/empresas"><PlatformProtected><PlatformCompaniesPage /></PlatformProtected></Route>
+      <Route path="/admin/avisos"><PlatformProtected><PlatformAnnouncementsPage /></PlatformProtected></Route>
       <Route path="/admin/auditoria"><PlatformProtected><PlatformAuditPage /></PlatformProtected></Route>
       <Route path="/plataforma/teste-check-in-out"><PlatformTestProtected><PlatformCheckInOutTestPage /></PlatformTestProtected></Route>
       <Route path="/plataforma/ponto"><PlatformProtected><PlatformDashboard section="time" /></PlatformProtected></Route>

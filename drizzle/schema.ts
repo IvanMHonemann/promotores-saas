@@ -690,3 +690,48 @@ export const vacationSchedules = mysqlTable("vacation_schedules", {
 
 export type VacationSchedule = typeof vacationSchedules.$inferSelect;
 export type InsertVacationSchedule = typeof vacationSchedules.$inferInsert;
+
+/** Avisos do administrador geral para empresas e papéis escolhidos. */
+export const platformAnnouncements = mysqlTable("platform_announcements", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 200 }).notNull(),
+  body: text("body").notNull(),
+  tone: mysqlEnum("tone", ["info", "warning", "urgent"]).notNull().default("info"),
+  buttonLabel: varchar("buttonLabel", { length: 80 }),
+  buttonUrl: varchar("buttonUrl", { length: 500 }),
+  audienceScope: mysqlEnum("audienceScope", ["all", "selected"]).notNull().default("all"),
+  roles: varchar("roles", { length: 120 }).notNull(),
+  startsAt: date("startsAt"),
+  endsAt: date("endsAt"),
+  dismissable: boolean("dismissable").notNull().default(true),
+  active: boolean("active").notNull().default(true),
+  createdByPlatformAdminId: int("createdByPlatformAdminId"),
+  updatedByPlatformAdminId: int("updatedByPlatformAdminId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  activeIdx: index("platform_announcements_active_idx").on(table.active, table.startsAt, table.endsAt),
+}));
+
+export type PlatformAnnouncement = typeof platformAnnouncements.$inferSelect;
+export type InsertPlatformAnnouncement = typeof platformAnnouncements.$inferInsert;
+
+export const platformAnnouncementCompanies = mysqlTable("platform_announcement_companies", {
+  id: int("id").autoincrement().primaryKey(),
+  announcementId: int("announcementId").notNull(),
+  companyId: int("companyId").notNull(),
+}, (table) => ({
+  uniquePair: uniqueIndex("platform_announcement_companies_unique").on(table.announcementId, table.companyId),
+  companyIdx: index("platform_announcement_companies_company_idx").on(table.companyId),
+}));
+
+export const platformAnnouncementDismissals = mysqlTable("platform_announcement_dismissals", {
+  id: int("id").autoincrement().primaryKey(),
+  announcementId: int("announcementId").notNull(),
+  memberAccountId: int("memberAccountId").notNull(),
+  dismissedAt: timestamp("dismissedAt").defaultNow().notNull(),
+}, (table) => ({
+  uniquePair: uniqueIndex("platform_announcement_dismissals_unique").on(table.announcementId, table.memberAccountId),
+  memberIdx: index("platform_announcement_dismissals_member_idx").on(table.memberAccountId),
+}));
+

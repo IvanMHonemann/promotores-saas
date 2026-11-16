@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Package, Trash2, UserRound, UsersRound, X, Archive, ChevronDown, ChevronsLeft, Palmtree } from "lucide-react";
+import { Camera, Building2, ShieldAlert, Sparkles, Wallet, CalendarDays, ClipboardList, FileText, Clock3, CreditCard, LayoutDashboard, LogOut, MapPin, Menu, Megaphone, Package, Trash2, UserRound, UsersRound, X, Archive, ChevronDown, ChevronsLeft, Palmtree } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -62,6 +62,7 @@ export function SidebarNav() {
         { href: "/", label: "Visão geral", icon: LayoutDashboard },
         { href: "/admin/empresas", label: "Empresas", icon: Building2 },
         { href: "/admin/usuarios", label: "Usuários", icon: UsersRound },
+        { href: "/admin/avisos", label: "Avisos", icon: Megaphone },
         { href: "/admin/auditoria", label: "Auditoria geral", icon: ClipboardList },
         { href: "/plataforma/ponto", label: "Ponto eletrônico (teste)", icon: Clock3 },
         { href: "/plataforma/ponto-legal", label: "Ponto legal (plataforma)", icon: ShieldAlert },

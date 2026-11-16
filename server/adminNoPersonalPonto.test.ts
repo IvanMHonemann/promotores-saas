@@ -33,10 +33,10 @@ const punch = { eventType: "clock_in" as const, latitude: -23.5, longitude: -46.
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
-describe("administrador da empresa não tem ponto pessoal", () => {
+describe("administrador da empresa e supervisor não têm ponto pessoal", () => {
   it("quem tem ponto pessoal", () => {
     expect(hasPersonalTimeClock("promoter")).toBe(true);
-    expect(hasPersonalTimeClock("supervisor")).toBe(true);
+    expect(hasPersonalTimeClock("supervisor")).toBe(false);
     expect(hasPersonalTimeClock("company_admin")).toBe(false);
     expect(hasPersonalTimeClock("platform_admin")).toBe(false);
     expect(hasPersonalTimeClock(undefined)).toBe(false);
@@ -53,12 +53,18 @@ describe("administrador da empresa não tem ponto pessoal", () => {
     await expect(caller("company_admin").timeTracking.requestCorrection({ date: "2026-11-09", requestedType: "clock_in", requestedTime: "2026-11-09T12:00:00.000Z", justification: "x" })).rejects.toThrow(ADMIN_NO_PUNCH_MESSAGE);
   });
 
-  it("promotor e supervisor continuam batendo ponto (chegam ao registro)", async () => {
-    for (const role of ["promoter", "supervisor"]) {
+  it("administrador e supervisor: bater ponto é recusado e nada é gravado", async () => {
+    for (const role of ["company_admin", "supervisor"]) {
       const append = setup();
-      await expect(caller(role).timeTracking.registerEvent(punch)).rejects.toThrow("stop-after-append");
-      expect(append).toHaveBeenCalledOnce();
+      await expect(caller(role).timeTracking.registerEvent(punch)).rejects.toThrow(ADMIN_NO_PUNCH_MESSAGE);
+      expect(append).not.toHaveBeenCalled();
       vi.restoreAllMocks();
     }
+  });
+
+  it("promotor continua batendo ponto (chega ao registro)", async () => {
+    const append = setup();
+    await expect(caller("promoter").timeTracking.registerEvent(punch)).rejects.toThrow("stop-after-append");
+    expect(append).toHaveBeenCalledOnce();
   });
 });

@@ -47,13 +47,14 @@ describe("resolução de módulos", () => {
     expect(result.dashboard).toBe(false);
   });
 
-  it("não concede por padrão módulos fora das permissões padrão de supervisor", () => {
+  it("supervisor herda gestão da equipe e relatórios, mas não cópia de segurança", () => {
     const result = resolveEntitlements({
       planFeatures: [...PLAN_FEATURES.empresarial],
       role: "supervisor",
     });
-    expect(result.teamManagement).toBe(false);
+    expect(result.teamManagement).toBe(true);
+    expect(result.reports).toBe(true);
+    expect(result.timeTracking).toBe(true);
     expect(result.backup).toBe(false);
-    expect(result.reports).toBe(false);
   });
 });

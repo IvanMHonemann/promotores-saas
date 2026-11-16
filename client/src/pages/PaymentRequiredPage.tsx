@@ -9,7 +9,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 export default function PaymentRequiredPage() {
   const { user, logout } = useAuth();
   const reminder = trpc.billing.paymentReminder.useQuery(undefined, {
-    enabled: Boolean(user && user.role !== "platform_admin"),
+    enabled: Boolean(user && user.role === "company_admin"),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });

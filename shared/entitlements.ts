@@ -44,7 +44,7 @@ export const PLAN_FEATURES: Readonly<Record<"start" | "profissional" | "empresar
 
 const ALL_FEATURES = [...ENTITLEMENT_KEYS];
 const SUPERVISOR_CEILING: EntitlementKey[] = [
-  "dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "offline",
+  "dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "teamManagement", "offline",
 ];
 const PROMOTER_CEILING: EntitlementKey[] = ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn", "products"];
 
@@ -56,7 +56,7 @@ export const ROLE_FEATURE_CEILING: Readonly<Record<CompanyRole, readonly Entitle
 
 export const ROLE_FEATURE_DEFAULTS: Readonly<Record<CompanyRole, readonly EntitlementKey[]>> = {
   company_admin: ALL_FEATURES,
-  supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products"],
+  supervisor: ["dashboard", "clients", "pointsOfSale", "alerts", "timeTracking", "fieldOperations", "visitCheckIn", "products", "reports", "teamManagement"],
   promoter: ["dashboard", "timeTracking", "fieldOperations", "visitCheckIn", "products"],
 };
 

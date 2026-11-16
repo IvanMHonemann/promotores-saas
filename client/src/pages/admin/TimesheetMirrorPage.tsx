@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { MIRROR_HEADERS, mirrorRows, totalsLines } from "@shared/timesheetMirror";
 import { buildMirrorHtml, buildMirrorPdf, buildMirrorXlsx, companyLines, download, fileBase, memberLines, periodLabel, shareOrDownload, stamp, LEGEND, DISCLAIMER, type MirrorData } from "@/lib/mirrorExport";
 import { todayInZone } from "@shared/expiry";
+import { DateInput, MonthSelect } from "@/components/PtBrDateFields";
 
 const field = "mt-1 border-white/15 bg-slate-950/60 text-white";
 const select = "mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white";
@@ -85,8 +86,8 @@ export default function TimesheetMirrorPage() {
           <div><Label htmlFor="mirror-who">Funcionário</Label><select id="mirror-who" value={who} onChange={(e) => setWho(e.target.value)} className={select}><option value="all">Todos os funcionários</option>{(promoters.data || []).map((p) => <option key={p.id} value={p.id}>{p.name}{p.active ? "" : " (inativo)"}</option>)}</select></div>
           <div><Label htmlFor="mirror-mode">Período</Label><select id="mirror-mode" value={mode} onChange={(e) => setMode(e.target.value as any)} className={select}><option value="month">Mês completo</option><option value="custom">Período personalizado</option></select></div>
           {mode === "month"
-            ? <div><Label htmlFor="mirror-month">Mês</Label><Input id="mirror-month" type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={field} /></div>
-            : <div className="grid grid-cols-2 gap-2"><div><Label htmlFor="mirror-from">Data inicial</Label><Input id="mirror-from" type="date" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} className={field} /></div><div><Label htmlFor="mirror-to">Data final</Label><Input id="mirror-to" type="date" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} className={field} /></div></div>}
+            ? <div><Label htmlFor="mirror-month">Mês</Label><MonthSelect id="mirror-month" value={month} onChange={setMonth} className={select} /></div>
+            : <div className="grid grid-cols-2 gap-2"><div><Label htmlFor="mirror-from">Data inicial</Label><DateInput id="mirror-from" value={custom.from} onChange={(from) => setCustom({ ...custom, from })} className={`${field} h-10 w-full`} /></div><div><Label htmlFor="mirror-to">Data final</Label><DateInput id="mirror-to" value={custom.to} onChange={(to) => setCustom({ ...custom, to })} className={`${field} h-10 w-full`} /></div></div>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={generate} disabled={invalid || mirror.isFetching} className="bg-teal-300 font-bold text-slate-950 hover:bg-teal-200">{mirror.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}Visualizar espelho</Button>

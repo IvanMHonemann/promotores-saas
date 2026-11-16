@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { isCompanyManager } from "@shared/companyAccess";
 import DashboardLayout from "@/components/DashboardLayout";
 import { fullDayExcuseLabel, inferFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 import { formatGroupedCorrectionTitle, groupCorrectionItems } from "@shared/correctionGroups";
@@ -47,6 +48,7 @@ export default function OperationsDashboard() {
   const { user } = useAuth();
   const isCompanyAdmin = user?.role === "company_admin";
   const isSupervisor = user?.role === "supervisor";
+  const isManager = isCompanyManager(user?.role);
   const access = trpc.entitlements.mine.useQuery(undefined, { enabled: Boolean(user && user.role !== "platform_admin") });
   const hasFieldOperations = Boolean(access.data?.effective?.fieldOperations);
   const hasProducts = Boolean(access.data?.effective?.products);
@@ -54,12 +56,12 @@ export default function OperationsDashboard() {
   const hasTimeTracking = Boolean(access.data?.effective?.timeTracking);
   const stores = trpc.operations.stores.list.useQuery(undefined, { enabled: hasFieldOperations });
   const routes = trpc.operations.routes.list.useQuery(undefined, { enabled: hasFieldOperations });
-  const promoters = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations && isCompanyAdmin });
+  const promoters = trpc.operations.promoters.list.useQuery(undefined, { enabled: hasFieldOperations && isManager });
   const visits = trpc.operations.visits.list.useQuery({ date: today }, { enabled: hasFieldOperations });
   const storesWithStats = trpc.storePhotos.listStoresWithStats.useQuery(undefined, { enabled: hasFieldOperations, staleTime: 30000 });
   const alertsQuery = trpc.inventoryAlerts.useQuery(undefined, { enabled: hasProducts, staleTime: 60000 });
-  const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isCompanyAdmin && hasTimeTracking });
-  const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isCompanyAdmin && hasTimeTracking });
+  const presence = trpc.timeTracking.companyToday.useQuery({ timeZone }, { enabled: isManager && hasTimeTracking });
+  const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { enabled: isManager && hasTimeTracking });
   const utils = trpc.useUtils();
 
   const review = trpc.timeTracking.correctionRequests.review.useMutation({
@@ -120,12 +122,12 @@ export default function OperationsDashboard() {
     }
   };
   const visibleSection = !hasFieldOperations ? "overview" : section === "visits" && !hasVisitCheckIn ? "overview" : section;
-  const title = visibleSection === "routes" ? "Roteiros" : visibleSection === "visits" ? "Visitas" : isCompanyAdmin ? "Central da empresa" : isSupervisor ? "Painel do supervisor" : "Operação de campo";
+  const title = visibleSection === "routes" ? "Roteiros" : visibleSection === "visits" ? "Visitas" : isManager ? "Central da empresa" : "Operação de campo";
   const description = visibleSection === "routes"
-    ? isCompanyAdmin ? "Escolha o promotor, o dia da semana e as lojas que ele visita." : user?.role === "promoter" ? "Suas lojas em cada dia da semana." : "Consulte os roteiros da equipe."
+    ? isManager ? "Escolha o promotor, o dia da semana e as lojas que ele visita." : user?.role === "promoter" ? "Suas lojas em cada dia da semana." : "Consulte os roteiros da equipe."
     : visibleSection === "visits"
       ? "Acompanhe a execução das visitas planejadas."
-      : isCompanyAdmin
+      : isManager
         ? "Resumo da operação, presença da equipe e pendências da sua empresa."
         : "Resumo da operação de campo e desempenho da equipe.";
 
@@ -150,7 +152,7 @@ export default function OperationsDashboard() {
           presenceFailed={presence.isError}
           timeZone={timeZone}
           corrections={corrections.data}
-          isCompanyAdmin={isCompanyAdmin}
+          isCompanyAdmin={isManager}
           reviewNotes={reviewNotes}
           setReviewNotes={setReviewNotes}
           approve={approve}
@@ -162,7 +164,7 @@ export default function OperationsDashboard() {
         />
       )}
       {visibleSection === "routes" && (
-        <RoutesSection isCompanyAdmin={isCompanyAdmin} isPromoter={user?.role === "promoter"} stores={stores.data || []} today={today} />
+        <RoutesSection isCompanyAdmin={isManager} isPromoter={user?.role === "promoter"} stores={stores.data || []} today={today} />
       )}
       {visibleSection === "visits" && <VisitsModule visits={visits.data || []} metrics={metrics} loading={visits.isLoading} failed={visits.isError} />}
     </DashboardLayout>
@@ -183,7 +185,7 @@ function Overview({ hasProducts = false, isSupervisor = false, setupSteps = [], 
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{hasTimeTracking ? "Acompanhe a jornada da equipe, organize roteiros e veja a execução das visitas em um só lugar." : "Organize roteiros e veja a execução das visitas em um só lugar."}</p>
       </div>
       {isCompanyAdmin && hasFieldOperations && setupReady && <SetupChecklist steps={setupSteps} />}
-      {isSupervisor && hasFieldOperations && <AttentionCard pendingVisits={hasVisitCheckIn ? metrics.pending : 0} expiring={metrics.expiring} />}
+      {isSupervisor && !isCompanyAdmin && hasFieldOperations && <AttentionCard pendingVisits={hasVisitCheckIn ? metrics.pending : 0} expiring={metrics.expiring} />}
 
       {accessLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
       {hasFieldOperations && <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">

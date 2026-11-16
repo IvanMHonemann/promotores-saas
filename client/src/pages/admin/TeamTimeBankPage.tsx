@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
 import { todayInZone } from "@shared/expiry";
 import { filterAndSortTeamBank, formatSignedMinutes, teamBankCsv } from "@shared/timeBank";
+import { formatMonthYearPT } from "@shared/ptBrDate";
 
 const selectCls = "h-11 rounded-md border border-white/15 bg-slate-950/60 px-3 text-base text-white sm:h-10 sm:text-sm";
 const WEEKDAYS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -22,8 +23,7 @@ function monthOptions(current: string) {
   return Array.from({ length: 13 }, (_, i) => {
     const d = new Date(Date.UTC(y, m - 1 - i, 15));
     const value = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-    const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
-    return { value, label: label.charAt(0).toUpperCase() + label.slice(1) };
+    return { value, label: formatMonthYearPT(value, true) };
   });
 }
 

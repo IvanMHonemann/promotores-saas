@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
+import { DateInput } from "@/components/PtBrDateFields";
 import { LocationLabel } from "./geolocation";
 import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
@@ -266,12 +267,12 @@ export default function PromoterClockPage() {
             <CardContent>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <label htmlFor="history-date" className="text-sm font-semibold text-slate-200">Dia para visualizar</label>
-                <input
+                <DateInput
                   id="history-date"
-                  type="date"
+                  aria-label="Dia para visualizar"
                   value={selectedDate}
-                  onChange={(event) => {
-                    setSelectedDate(event.target.value);
+                  onChange={(value) => {
+                    setSelectedDate(value);
                     setSelectedEventId("");
                     setMissingTimes({});
                   }}

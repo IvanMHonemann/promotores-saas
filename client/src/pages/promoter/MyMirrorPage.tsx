@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, FileSignature, FileText, Loader2 } from "l
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { currentMonthSP, fmtDateTimeSP, fmtMinutes } from "@/lib/downloadBase64";
+import { MonthSelect } from "@/components/PtBrDateFields";
 import { buildMirrorPdf, download, fileBase, type MirrorData } from "@/lib/mirrorExport";
 
 const brDate = (iso: string) => iso.split("-").reverse().join("/");
@@ -89,7 +90,7 @@ export default function MyMirrorPage() {
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-white">
           <label htmlFor="mes" className="text-sm">Mês:</label>
-          <input id="mes" type="month" value={month} max={currentMonthSP()} onChange={(e) => { setMonth(e.target.value); setRead(false); }} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1 text-sm" />
+          <MonthSelect id="mes" value={month} max={currentMonthSP()} onChange={(v) => { setMonth(v); setRead(false); }} className="rounded-md border border-white/20 bg-slate-800 px-2 py-1 text-sm text-white" />
           {data && (
             <Button size="sm" variant="outline" disabled={pdfBusy} onClick={() => void downloadPdf()} className="border-white/20 text-white">
               {pdfBusy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FileText className="mr-1 h-4 w-4" />}

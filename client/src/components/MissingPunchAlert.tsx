@@ -25,7 +25,7 @@ function useDismiss(key: string | null) {
 export default function MissingPunchAlert() {
   const { user } = useAuth();
   const role = user?.role;
-  const isAdmin = role === "company_admin";
+  const isAdmin = role === "company_admin" || role === "supervisor";
   const isField = role === "promoter"; // supervisor não bate ponto
   const entitlements = trpc.entitlements.mine.useQuery(undefined, {
     enabled: Boolean(user && user.role !== "platform_admin"),

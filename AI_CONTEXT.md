@@ -86,7 +86,7 @@ Textos em `docs/juridico/termos-de-uso.md` e `docs/juridico/politica-de-privacid
 - O **administrador da empresa** vê o modal "Atualizamos nossos Termos", com checkbox "Li e aceito os Termos de Uso e a Política de Privacidade". Pode ler os textos antes. Enquanto não aceitar, o modal reaparece a cada sessão (`sessionStorage`), mas **não bloqueia** o uso do sistema. Promotor e supervisor só têm o link. Sessão "acessar como empresa" não registra aceite.
 - Registro na tabela `legal_acceptances` (migração `0038`, `ensureLegalAcceptancesTable` idempotente): versão, data/hora, usuário, empresa e IP. Se a versão mudar, o aceite é pedido de novo. Não confundir com `privacy_acknowledgements` (ciência do aviso ao trabalhador / LGPD).
 - Na lista de empresas do admin geral, aparece se o admin aceitou e em qual versão.
-- Fornecedor: Ivan Mateus Honemann / GondUp, Sapiranga/RS, e-mail contato@gondup.com.br. **CNPJ e endereço ainda estão como [PREENCHER]** nos textos.
+- Fornecedor: Ivan Mateus Honemann / GondUp, Sapiranga/RS, e-mail ivan.honemann@gmail.com. **CNPJ e endereço ainda estão como [PREENCHER]** nos textos.
 
 ## Avisos
 

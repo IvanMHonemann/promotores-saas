@@ -9,7 +9,7 @@ subtitle: "Versão 1.0 — vigente desde 16/11/2026"
 
 Esta Política de Privacidade descreve como o GondUp trata dados pessoais, em conformidade com a Lei nº 13.709/2018 (LGPD).
 
-O serviço é oferecido por **Ivan Mateus Honemann**, nome fantasia **GondUp**, com atuação em Sapiranga/RS, CNPJ [PREENCHER], endereço [PREENCHER], e-mail de contato contato@gondup.com.br (“GondUp”). Este é o canal para questões de privacidade, até que seja indicado um encarregado (DPO) ou outro canal específico.
+O serviço é oferecido por **Ivan Mateus Honemann**, nome fantasia **GondUp**, com atuação em Sapiranga/RS, CNPJ [PREENCHER], endereço [PREENCHER], e-mail de contato ivan.honemann@gmail.com (“GondUp”). Este é o canal para questões de privacidade, até que seja indicado um encarregado (DPO) ou outro canal específico.
 
 ## 2. Papéis: quem decide sobre os dados
 
@@ -69,7 +69,7 @@ Utilizamos conexões criptografadas (HTTPS/TLS), senhas armazenadas com hash, co
 
 O titular pode pedir confirmação e acesso, correção, anonimização ou eliminação do que não for de guarda obrigatória, portabilidade, informação sobre compartilhamento e revisão de decisões automatizadas (LGPD, art. 18).
 
-O trabalhador pode fazer o pedido no aplicativo, em **“Meus dados (LGPD)”**, ou por meio da empresa empregadora, que é a controladora e a responsável por responder. O GondUp, como operador, encaminha à empresa os pedidos que receber. O canal de contato do GondUp é contato@gondup.com.br.
+O trabalhador pode fazer o pedido no aplicativo, em **“Meus dados (LGPD)”**, ou por meio da empresa empregadora, que é a controladora e a responsável por responder. O GondUp, como operador, encaminha à empresa os pedidos que receber. O canal de contato do GondUp é ivan.honemann@gmail.com.
 
 ## 9. Cookies e tecnologias semelhantes
 

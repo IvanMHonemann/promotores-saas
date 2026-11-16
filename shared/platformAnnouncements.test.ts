@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   announcementAdminStatus,
   announcementExcerpt,
+  announcementSenderLabel,
   announcementVisibleTo,
+  canManageCompanyAnnouncement,
   filterAnnouncementsForViewer,
   isHttpUrl,
+  parseCompanyAnnouncementRoles,
   parseAnnouncementRoles,
   serializeAnnouncementRoles,
   splitMessageLinks,
@@ -74,5 +77,56 @@ describe("funções, links e resumo", () => {
       { type: "text", value: ", obrigado." },
     ]);
     expect(announcementExcerpt("Linha 1\nLinha 2", 20)).toBe("Linha 1 Linha 2");
+  });
+});
+
+describe("avisos da empresa", () => {
+  const today = "2026-11-16";
+  const company = {
+    id: 20,
+    active: true,
+    startsAt: null as string | null,
+    endsAt: null as string | null,
+    audienceScope: "all" as const,
+    companyIds: [],
+    roles: ["promoter", "supervisor"],
+    source: "company" as const,
+    companyId: 60001,
+    targetMode: "roles" as const,
+    memberIds: [] as number[],
+    createdByMemberAccountId: 2,
+  };
+
+  it("vai só para promotor e supervisor da própria empresa, nunca para o admin", () => {
+    expect(announcementVisibleTo(company, { companyId: 60001, role: "promoter", todayIso: today, memberAccountId: 10 })).toBe(true);
+    expect(announcementVisibleTo(company, { companyId: 60001, role: "supervisor", todayIso: today, memberAccountId: 3 })).toBe(true);
+    expect(announcementVisibleTo(company, { companyId: 60001, role: "company_admin", todayIso: today, memberAccountId: 1 })).toBe(false);
+    expect(announcementVisibleTo(company, { companyId: 90002, role: "promoter", todayIso: today, memberAccountId: 99 })).toBe(false);
+  });
+
+  it("o supervisor não recebe o aviso que ele mesmo criou", () => {
+    expect(announcementVisibleTo(company, { companyId: 60001, role: "supervisor", todayIso: today, memberAccountId: 2 })).toBe(false);
+  });
+
+  it("pessoas específicas: só o membro escolhido da empresa vê", () => {
+    const targeted = { ...company, targetMode: "members" as const, memberIds: [10], roles: [] };
+    expect(announcementVisibleTo(targeted, { companyId: 60001, role: "promoter", todayIso: today, memberAccountId: 10 })).toBe(true);
+    expect(announcementVisibleTo(targeted, { companyId: 60001, role: "promoter", todayIso: today, memberAccountId: 11 })).toBe(false);
+    expect(announcementVisibleTo(targeted, { companyId: 60001, role: "supervisor", todayIso: today, memberAccountId: 3 })).toBe(false);
+  });
+
+  it("o admin da empresa edita todos; o supervisor só os que criou; isolado por empresa", () => {
+    expect(canManageCompanyAnnouncement({ role: "company_admin", companyId: 60001, memberAccountId: 1 }, company)).toBe(true);
+    expect(canManageCompanyAnnouncement({ role: "supervisor", companyId: 60001, memberAccountId: 2 }, company)).toBe(true);
+    expect(canManageCompanyAnnouncement({ role: "supervisor", companyId: 60001, memberAccountId: 3 }, company)).toBe(false);
+    expect(canManageCompanyAnnouncement({ role: "company_admin", companyId: 90002, memberAccountId: 1 }, company)).toBe(false);
+    expect(canManageCompanyAnnouncement({ role: "promoter", companyId: 60001, memberAccountId: 10 }, company)).toBe(false);
+    expect(canManageCompanyAnnouncement({ role: "company_admin", companyId: 60001, memberAccountId: 1 }, { source: "platform", companyId: 60001 })).toBe(false);
+  });
+
+  it("monta o rótulo de quem enviou e restringe as funções da empresa", () => {
+    expect(announcementSenderLabel({ source: "company", authorName: "Ivan", companyName: "IvanMH" })).toBe("Aviso de Ivan (IvanMH)");
+    expect(announcementSenderLabel({ source: "platform" })).toBe("Aviso da GondUp");
+    expect(parseCompanyAnnouncementRoles(["company_admin", "promoter", "supervisor"])).toEqual(["supervisor", "promoter"]);
   });
 });

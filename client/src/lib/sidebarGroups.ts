@@ -11,6 +11,7 @@ export function buildCompanyGroups(role: string | undefined, hasFeature: (key: s
   const groups: NavGroup[] = [
     { id: "operacao", title: "Operação", items: [
       { href: "/#inicio", label: "Visão geral", icon: "dashboard" },
+      ...(manager ? [{ href: "/avisos", label: "Avisos", icon: "megaphone" }] : []),
       ...(field ? [{ href: "/lojas", label: "Lojas", icon: "store" }, { href: "/#roteiros", label: "Roteiros", icon: "calendar" }] : []),
       ...(field && checkIn && manager && hasFeature("reports") ? [{ href: "/check-in-out", label: "Check-in / Check-out", icon: "camera" }] : []),
       ...(role && hasFeature("products") ? [{ href: "/produtos", label: "Produtos e validades", icon: "package" }] : []),

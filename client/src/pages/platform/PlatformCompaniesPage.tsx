@@ -20,7 +20,14 @@ import GeneratePixDialog from "@/components/platform/GeneratePixDialog";
 const STATUS_LABEL: Record<string, string> = { trial: "Teste", test: "Teste", active: "Ativa", pending: "Pagamento pendente", overdue: "Em atraso", suspended: "Suspensa", canceled: "Cancelada", expired: "Expirada" };
 const sel = "mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white";
 const inp = "mt-1 border-white/15 bg-slate-950/60 text-white";
-const day = (v: unknown) => (v ? new Date(v as any).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—");
+const day = (v: unknown) => {
+  if (!v) return "—";
+  const raw = typeof v === "string" ? v : (v instanceof Date ? v.toISOString() : String(v));
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+  if (iso) return new Date(`${iso}T12:00:00-03:00`).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const d = new Date(v as any);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+};
 const iso = (v: unknown) => (v ? new Date(v as any).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : "");
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 const DEFAULT_COMPANY_FEATURES: EntitlementKey[] = ["dashboard", "fieldOperations", "timeTracking"];

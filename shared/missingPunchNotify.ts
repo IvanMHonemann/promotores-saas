@@ -1,19 +1,8 @@
-/** Mensagem e link de WhatsApp para avisar o promotor de batida faltante. Nada é enviado automaticamente. */
+/** Mensagem e WhatsApp para avisar o promotor de batida faltante. Nada é enviado automaticamente. */
 
 export function missingPunchStaffLabel(count: number): string {
   if (count === 1) return "1 funcionário";
   return `${count} funcionários`;
-}
-
-/** Só dígitos, com DDI 55 quando o número for brasileiro local (10 ou 11 dígitos). */
-export function normalizeWhatsAppPhone(raw: string | null | undefined): string | null {
-  let digits = String(raw ?? "").replace(/\D/g, "");
-  if (!digits) return null;
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("0") && (digits.length === 11 || digits.length === 12)) digits = digits.slice(1);
-  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) return digits;
-  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
-  return null;
 }
 
 export function formatMissingPunchDay(day: string): string {
@@ -50,10 +39,48 @@ export function missingPunchNotifyMessage(input: {
   return `Olá, ${name}! Consta falta de batida em ${date}: ${input.missing} (última marcação: ${last}). Por favor, regularize ou solicite a correção no GondUp.`;
 }
 
-export function missingPunchWhatsAppUrl(phone: string | null | undefined, message: string): string | null {
-  const digits = normalizeWhatsAppPhone(phone);
-  if (!digits) return null;
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+/** Link do WhatsApp sem número, para o app pedir que se escolha o contato. */
+export function missingPunchWhatsAppUrl(message: string): string {
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+}
+
+export type NotifyPromoterResult = "shared" | "whatsapp";
+
+/**
+ * No celular, tenta a folha de compartilhamento (navigator.share) para o supervisor/admin
+ * escolher o contato. Se não houver share, ou se falhar, abre o WhatsApp sem número.
+ * Cancelar a folha não abre o WhatsApp em seguida.
+ */
+export async function notifyPromoterMissingPunch(
+  message: string,
+  deps: {
+    share?: (data: { text: string }) => Promise<void>;
+    canShare?: boolean;
+    openUrl?: (url: string) => void;
+  } = {},
+): Promise<NotifyPromoterResult> {
+  const url = missingPunchWhatsAppUrl(message);
+  const share =
+    deps.share ??
+    (typeof navigator !== "undefined" && typeof navigator.share === "function"
+      ? (data: { text: string }) => navigator.share(data)
+      : undefined);
+  const canShare = deps.canShare ?? Boolean(share);
+  if (canShare && share) {
+    try {
+      await share({ text: message });
+      return "shared";
+    } catch (error) {
+      if (error && typeof error === "object" && "name" in error && (error as { name: string }).name === "AbortError") {
+        return "shared";
+      }
+    }
+  }
+  const open = deps.openUrl ?? ((href: string) => {
+    if (typeof window !== "undefined") window.open(href, "_blank", "noopener,noreferrer");
+  });
+  open(url);
+  return "whatsapp";
 }
 
 export function cartaoPontoHref(memberId: number, day?: string | null): string {

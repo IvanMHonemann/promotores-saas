@@ -64,11 +64,11 @@ Catálogo oficial em `subscription_plans` (criado/atualizado por `ensureSeedPlan
 
 ### Plano de teste Pix (temporário)
 
-Existe o plano oculto "Teste Pix (R$ 1)" (`id` 180003, `availableForNew=false`, módulos do Completo). Está aplicado **somente** na IvanMH, com `monthly_amount` 1,00 e vencimento em 18/11/2026, para o Ivan testar o Pix. Não alterar outras empresas nem os planos oficiais. Quando ele pedir para reverter: voltar a IvanMH ao Completo (`150005`) e `monthly_amount` 350,00, na assinatura corrente (id `90001`); deixar o plano 180003 no banco, oculto. Backup e instrução em `/workspace/qa/plano-teste-pix/`.
+Existe o plano oculto "Teste Pix (R$ 1)" (`id` 180003, `availableForNew=false`, módulos do Completo), guardado no banco caso precise de novo. A IvanMH voltou ao Completo (`150005`) com `monthly_amount` 350,00 na assinatura corrente (id `90001`), a pedido do Ivan em 16/11/2026. Não aplicar o plano de teste em outras empresas nem alterar os planos oficiais. Backup e instrução em `/workspace/qa/plano-teste-pix/`.
 
 ## Papéis
 
-- `platform_admin` — administrador geral da plataforma. Empresas, usuários de todas as contas, planos, extras, avisos da plataforma, auditoria geral. Não bate ponto.
+- `platform_admin` — administrador geral da plataforma. Empresas, usuários de todas as contas, planos, extras, avisos da plataforma, auditoria geral, e **Gerar Pix** de cobrança em cada empresa (`/admin/empresas`). Não bate ponto.
 - `company_admin` — administrador da empresa. Vê as telas da operação, equipe, ponto da equipe, relatórios e Meus módulos. **Não bate ponto** e não vê ponto pessoal (UI e API; PR #115 / #129). Pode cadastrar admin, supervisor e promotor.
 - `supervisor` — iguais às telas do admin da empresa, **sem** Meus módulos, pagamentos ou valores (API também recusa). **Não bate ponto**. Cadastra e edita **somente promotores** (`assertSupervisorPromoterOnly`, no servidor). Não recebe o aviso da empresa que ele mesmo criou. Fora do limite de funcionários.
 - `promoter` — ponto pessoal, roteiro, lojas atribuídas, produtos, férias próprias, LGPD. Não vê menu Avisos da empresa nem billing.
@@ -79,6 +79,11 @@ Menu da empresa (admin e supervisor): grupos Operação, Equipe e ponto, Relató
 
 
 
+
+
+## Pix gerado pelo administrador geral
+
+Em `/admin/empresas`, o super-admin tem o botão **Gerar Pix** na lista e no detalhe de cada empresa (`platformCompanies.pixQuote` e `platformCompanies.generatePix`, só `platformProcedure`). O valor padrão é o `monthly_amount` negociado, ou o preço do plano somado aos funcionários extras (`suggestedMonthlyAmount`). A composição aparece na tela e o valor pode ser ajustado antes de gerar. O resultado reutiliza `buildPixBrcode` / `getDefaultPixConfig` (o mesmo Pix do aviso de mensalidade) e mostra QR, copia e cola e um WhatsApp `wa.me/?text=` sem número (o app pede o contato). Se a empresa tem vencimento, a cobrança é gravada em `payments` como `PENDING` (Pix); **não** marca como paga e **não** altera a validade. Empresas reais só devem receber cobrança quando o Ivan pedir.
 
 ## Dados cadastrais da empresa e do funcionário
 
@@ -185,6 +190,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Offline: cadastro de lojas/clientes, sincronização de visitas, fila de fotos, cache de roteiro do dia.
 - Produtos e validades (com lixeira). Auditoria append-only. PWA com fallback offline.
 - Termos de Uso e Política de Privacidade (versão 1.0) nas páginas públicas e no menu de todos os papéis, com aceite registrado do admin da empresa (`legal_acceptances`).
+- O administrador geral gera um Pix de cobrança em `/admin/empresas` (QR, copia e cola e WhatsApp), com o valor do plano; a cobrança fica pendente até o pagamento ser registrado.
 - Cadastro da empresa (`/dados-empresa`) e dados do funcionário (CPF, PIS, RG, cargo, admissão) em Promotores e equipe. O promotor só edita e-mail e senha; o admin altera o cadastro do promotor (o supervisor, só de promotores). Documentos oficiais passam a usar esses dados.
 - Painel Erros ao vivo do super-admin (`/plataforma/scanner`): resumo em português, classificação Precisa corrigir vs Normal, pedido de correção no GitHub e marcação como normal, mais saúde do sistema (backup, rotinas, versão, disco e memória).
 - Platform admin escolhe `featureKeys` na criação da empresa e edita módulos em `CompanyFeaturesCard`. Ações "Nova empresa", "Novo usuário" e "Redefinir senha" no painel do admin geral devem permanecer visíveis (já foram removidas por engano e restauradas no PR #125).

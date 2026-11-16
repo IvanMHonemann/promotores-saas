@@ -4,6 +4,7 @@ import { platformProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { auditFromCtx } from "../audit";
 import * as pc from "../platformCompanies";
+import { generateCompanyPix, getCompanyPixQuote } from "../platformPix";
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const status = z.enum(["trial", "active", "pending", "overdue", "suspended", "canceled", "test", "expired"]);
@@ -54,6 +55,17 @@ export const platformCompaniesRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const r = await pc.setCompanyBilling(input);
     log(ctx, input.companyId, "update", `Atualizou cobrança da empresa #${input.companyId}`, input);
+    return r;
+  }),
+  /** Composição do valor (plano, extras, negociado) e vencimento, sem gravar nada. */
+  pixQuote: platformProcedure.input(z.object({ companyId: id })).query(({ input }) => getCompanyPixQuote(input.companyId)),
+  /** Gera o Pix (QR / copia e cola) e registra cobrança pendente. Não marca como pago e não altera a validade. */
+  generatePix: platformProcedure.input(z.object({
+    companyId: id,
+    amount: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const r = await generateCompanyPix(input.companyId, input.amount);
+    log(ctx, input.companyId, "create", `Gerou Pix de R$ ${r.amount} para a empresa #${input.companyId}${r.dueDate ? `, vencimento ${r.dueDate}` : ""}` + (r.recordedAsPending ? " (cobrança pendente)" : ""), { amount: r.amount, dueDate: r.dueDate, paymentId: r.paymentId });
     return r;
   }),
   /** Um clique: registra Pix recebido e avança a validade em 1 mês. */

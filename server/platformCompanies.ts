@@ -6,6 +6,8 @@ import * as db from "./db";
 import { companies, companySubscriptions, memberAccounts, memberSessions, payments, subscriptionPlans, systemSettings } from "../drizzle/schema.original";
 import { MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, BILLING_DAY_KEY, markCompanyPaid, resolveMonthlyAmount, resolveGraceDays, ensureBillingDay } from "./paymentReminder";
 import { EXTRA_USERS_KEY, effectiveUserLimit, parseExtraUsers, staffUsageLabel, suggestedMonthlyAmount } from "../shared/staffLimit";
+import { latestAcceptanceByCompany, termsAcceptanceSummary } from "../shared/legalOverview";
+import { listLatestLegalAcceptances } from "./legal";
 
 import { DEFAULT_OVERDUE_GRACE_DAYS } from "./subscriptionAccess";
 
@@ -23,15 +25,17 @@ async function database() {
 export async function listCompaniesOverview() {
   const d = await database();
   await db.ensureAdditionalUserPriceColumn();
-  const [rows, plans, pays, counts, admins, flags] = await Promise.all([
+  const [rows, plans, pays, counts, admins, flags, acceptances] = await Promise.all([
     d.select().from(companies).orderBy(companies.name),
     d.select().from(subscriptionPlans),
     d.execute(sql`SELECT companyId, MAX(paymentDate) AS lastPayment, COUNT(*) AS n FROM payments WHERE status IN ('RECEIVED','CONFIRMED','MOCK_APPROVED') GROUP BY companyId`),
     d.execute(sql`SELECT companyId, COUNT(*) AS total, SUM(active) AS ativos, SUM(CASE WHEN active = 1 AND role = 'promoter' THEN 1 ELSE 0 END) AS staff FROM member_accounts GROUP BY companyId`),
     d.execute(sql`SELECT companyId, MIN(email) AS email, MIN(userName) AS name FROM member_accounts WHERE role = 'company_admin' GROUP BY companyId`),
     d.select().from(systemSettings).where(inArray(systemSettings.settingKey, ["blocked_reason", "archived_at", MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, EXTRA_USERS_KEY])),
+    listLatestLegalAcceptances(),
   ]);
   const planById = new Map(plans.map((p) => [p.id, p]));
+  const acceptanceBy = latestAcceptanceByCompany(acceptances);
   const map = <T,>(r: any, key = "companyId") => new Map<number, T>(((r as any)[0] as any[]).map((x) => [Number(x[key]), x as T]));
   const payBy = map<any>(pays), countBy = map<any>(counts), adminBy = map<any>(admins);
   const flagBy = new Map<string, string>(flags.map((f: any) => [`${f.accountId}:${f.settingKey}`, f.settingValue]));
@@ -65,6 +69,7 @@ export async function listCompaniesOverview() {
       lastPayment: payBy.get(c.id)?.lastPayment ?? null, paymentsCount: Number(payBy.get(c.id)?.n ?? 0),
       users: Number(countBy.get(c.id)?.total ?? 0), activeUsers: Number(countBy.get(c.id)?.ativos ?? 0),
       adminEmail: adminBy.get(c.id)?.email ?? null, adminName: adminBy.get(c.id)?.name ?? null,
+      ...termsAcceptanceSummary(acceptanceBy.get(c.id)),
     };
   });
 }

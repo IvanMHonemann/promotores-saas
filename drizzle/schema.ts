@@ -750,3 +750,20 @@ export const platformAnnouncementMembers = mysqlTable("platform_announcement_mem
   memberIdx: index("platform_announcement_members_member_idx").on(table.memberAccountId),
 }));
 
+
+/** Aceite dos Termos de Uso e da Política de Privacidade pelo administrador da empresa. */
+export const legalAcceptances = mysqlTable("legal_acceptances", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull(),
+  memberAccountId: int("memberAccountId").notNull(),
+  version: varchar("version", { length: 32 }).notNull(),
+  acceptedAt: timestamp("acceptedAt").defaultNow().notNull(),
+  ipAddress: varchar("ipAddress", { length: 64 }),
+  userAgent: varchar("userAgent", { length: 512 }),
+}, (table) => ({
+  uniqueVersion: uniqueIndex("legal_acceptances_unique").on(table.companyId, table.memberAccountId, table.version),
+  companyVersionIdx: index("legal_acceptances_company_version_idx").on(table.companyId, table.version),
+}));
+
+export type LegalAcceptance = typeof legalAcceptances.$inferSelect;
+export type InsertLegalAcceptance = typeof legalAcceptances.$inferInsert;

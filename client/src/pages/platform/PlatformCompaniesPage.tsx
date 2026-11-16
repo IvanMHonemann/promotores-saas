@@ -12,6 +12,7 @@ import { trpc } from "@/lib/trpc";
 import { ENTITLEMENT_CATALOG, type EntitlementKey } from "@shared/entitlements";
 import { isSelectablePlan, nextPaidPeriod, planSelectLabel } from "@shared/commercialPlans";
 import { effectiveUserLimit, parseExtraUsers, staffUsageLabel, suggestedMonthlyAmount } from "@shared/staffLimit";
+import { termsAcceptanceLabel } from "@shared/legalOverview";
 import { toast } from "sonner";
 import { confirmAction } from "@/components/ConfirmDialog";
 
@@ -54,6 +55,7 @@ export default function PlatformCompaniesPage() {
         <div className="space-y-2">{rows.map((c) => { const st = stateOf(c); return <button key={c.id} type="button" onClick={() => { setSelectedId(c.id); setCreating(false); if (window.innerWidth < 1280) window.setTimeout(() => document.getElementById("empresa-selecionada")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }} className={`w-full rounded-xl border p-3 text-left transition ${selectedId === c.id ? "border-teal-300/60 bg-teal-300/10" : "border-white/10 bg-slate-950/40 hover:border-white/25"}`}>
           <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{c.name}</p><Badge className={st.tone}>{st.label}</Badge></div>
           <p className="mt-1 text-xs text-slate-400">{c.planName ?? "Sem plano"} · válido até {day(c.expiresAt)} · último pagamento {day(c.lastPayment)} · {c.activeUsers}/{c.users} usuários</p>
+          <p className={`mt-1 text-xs ${c.termsAcceptedCurrent ? "text-emerald-300/80" : "text-amber-200/80"}`}>{termsAcceptanceLabel(c, day)}</p>
         </button>; })}</div>
       </CardContent></Card>
       {creating ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CreateCompanyCard onCancel={() => setCreating(false)} onCreated={(id) => { setCreating(false); setSelectedId(id); refresh(); }} /></div> : selected ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CompanyPanel key={selected.id} company={selected} onChanged={refresh} /></div> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir, ou cadastre uma nova.</CardContent></Card>}
@@ -220,6 +222,7 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
   return <div className="space-y-4">
     <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2"><CardTitle className="flex items-center gap-2 text-lg"><Pencil className="h-4 w-4 text-teal-300" />{c.name}</CardTitle><Badge className={st.tone}>{st.label}</Badge></CardHeader><CardContent className="space-y-3 text-sm">
       <p className="text-slate-300">Responsável: {c.adminName ?? "—"} ({c.adminEmail ?? "sem e-mail"}) · criada em {day(c.createdAt)}</p>
+      <p className={c.termsAcceptedCurrent ? "text-emerald-200" : "text-amber-100"}>{termsAcceptanceLabel(c, day)}</p>
       {c.blockedReason && !c.active && <p className="rounded-lg bg-rose-500/10 p-2 text-rose-100">Motivo do bloqueio: {c.blockedReason}</p>}
       <div className="flex flex-wrap items-end gap-2"><div className="min-w-[220px] flex-1"><Label>Nome da empresa</Label><Input value={name} onChange={(e) => setName(e.target.value)} className={inp} /></div><Button disabled={rename.isPending || name.trim() === c.name || name.trim().length < 2} onClick={() => rename.mutate({ companyId: c.id, name })} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar nome</Button></div>
       <Button onClick={() => enterCompany(c.id, c.name, () => enterAs.mutateAsync({ companyId: c.id }))} disabled={Boolean(c.archivedAt)} variant="outline" className="h-auto min-h-10 whitespace-normal border-fuchsia-300/40 text-left text-fuchsia-200"><LogIn className="mr-2 h-4 w-4" />Acessar como esta empresa (editar tudo)</Button>

@@ -63,6 +63,7 @@ export function SidebarNav() {
         { href: "/admin/empresas", label: "Empresas", icon: Building2 },
         { href: "/admin/usuarios", label: "Usuários", icon: UsersRound },
         { href: "/admin/avisos", label: "Avisos", icon: Megaphone },
+        { href: "/termos", label: "Termos e privacidade", icon: FileText },
         { href: "/admin/auditoria", label: "Auditoria geral", icon: ClipboardList },
         { href: "/plataforma/ponto", label: "Ponto eletrônico (teste)", icon: Clock3 },
         { href: "/plataforma/ponto-legal", label: "Ponto legal (plataforma)", icon: ShieldAlert },

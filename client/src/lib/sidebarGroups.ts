@@ -31,6 +31,7 @@ export function buildCompanyGroups(role: string | undefined, hasFeature: (key: s
   ];
   const account: NavGroup = { id: "conta", title: "Conta", items: [
     ...(manager ? [{ href: "/lgpd", label: "LGPD e privacidade", icon: "shield" }] : []),
+    { href: "/termos", label: "Termos e privacidade", icon: "file" },
     ...(admin ? [{ href: "/meus-modulos", label: "Meus módulos", icon: "card" }] : []),
     { href: "/lixeira", label: "Lixeira", icon: "trash" },
   ] };
@@ -78,6 +79,7 @@ export function buildPromoterNav(hasFeature: (key: string) => boolean): Promoter
       { href: "/minhas-ferias", label: "Minhas férias", icon: "palm" },
     ] : []),
     { href: "/meus-dados", label: "Meus dados (LGPD)", icon: "shield" },
+    { href: "/termos", label: "Termos e privacidade", icon: "file" },
     { href: "/lojas", label: "Lojas", icon: "store" },
     { href: "/#roteiro", label: "Meu roteiro", icon: "audit" },
     { href: "/lixeira", label: "Lixeira", icon: "trash" },

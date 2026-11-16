@@ -16,6 +16,7 @@ def parse(name):
         cur["p"].append(line)
     return [{"h": s["h"], "p": s["p"]} for s in sections]
 out = "// GERADO por scripts/gen-legal-texts.py a partir de docs/juridico. Não edite à mão.\n"
-out += "export const LEGAL_TEXT_VERSION = \"2026-11-05 (versão preliminar)\";\n"
+out += "export const LEGAL_TEXT_VERSION = \"1.0\";\n"
+out += "export const LEGAL_EFFECTIVE_DATE = \"2026-11-16\";\n"
 out += "export const LEGAL_TEXTS: Record<\"termos\" | \"privacidade\", Array<{ h: string; p: string[] }>> = " + json.dumps({"termos": parse("termos-de-uso.md"), "privacidade": parse("politica-de-privacidade.md")}, ensure_ascii=False, indent=1) + ";\n"
 (root / "shared/legalTexts.ts").write_text(out, encoding="utf-8")

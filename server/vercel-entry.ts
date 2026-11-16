@@ -13,6 +13,7 @@ import { notifyOwner } from "./_core/notification";
 import { MAX_BODY_SIZE, isPayloadTooLargeError, payloadTooLargeBody } from "../shared/uploadLimits";
 import { initServerSentry, sentryErrorHandler } from "./sentry";
 import { formatArchiveSummary, formatBackupJobSummary, formatMaintenanceSummary, recordScheduledJob } from "./recordScheduledJob";
+import { ensureCompanyRegistryColumns } from "./companyRegistry";
 
 initServerSentry();
 
@@ -49,6 +50,7 @@ export async function createApp() {
     res.status(413).json(payloadTooLargeBody(path));
   });
   app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
+  void ensureCompanyRegistryColumns().catch((error) => console.warn("[registry] ensure columns failed", error instanceof Error ? error.message : error));
   app.all("/api/scheduled/database-maintenance", async (req, res) => {
     if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" }); // Vercel Cron usa GET
     if (!isScheduleRequestAuthorized(req)) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, ArrowUpRight, Building2, CheckCircle2, ChevronRight, ClipboardCheck, LayoutDashboard, LocateFixed, LogOut, Menu, RefreshCw, UsersRound, CreditCard, UserRound, X, Sparkles, ShieldAlert, Bug, Terminal, Search, CheckCircle, AlertTriangle, Cpu, Play } from "lucide-react";
+import { Activity, ArrowUpRight, Building2, ClipboardCheck, LocateFixed, RefreshCw, UsersRound, Sparkles, ShieldAlert, Terminal, Search, CheckCircle } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import TimeTrackingDemo from "./TimeTrackingDemo";
 import { AIChatBox, type Message, type PendingAttachment } from "@/components/AIChatBox";
 import { confirmAction } from "@/components/ConfirmDialog";
+import LiveErrorsPanel from "./LiveErrorsPanel";
 
 export type Section = "overview" | "companies" | "time" | "ai-support" | "code-scanner";
 const SECTION_PATH: Record<Section, string> = { overview: "/", companies: "/admin/empresas", time: "/plataforma/ponto", "ai-support": "/plataforma/ia", "code-scanner": "/plataforma/scanner" };
@@ -47,135 +48,9 @@ export default function PlatformDashboard({ section = "overview" }: { section?: 
 
   return <DashboardLayout title={title} description="Acompanhe a operação da sua plataforma em um só lugar." onRefresh={() => void companies.refetch()} refreshing={companies.isFetching}>
     {section === "ai-support" ? <PersistentAIChat /> : null}
-    {section === "code-scanner" ? <CodeScannerView /> : null}
+    {section === "code-scanner" ? <LiveErrorsPanel /> : null}
     {section === "time" ? <TimeTrackingDemo /> : section === "overview" ? <Overview total={total} active={active} attention={attention} activeUsers={activeUsers} onNavigate={selectSection} gpsStatus={gpsStatus} requestGps={requestGps} /> : null}
   </DashboardLayout>;
-}
-
-function CodeScannerView() {
-  const [scanning, setScanning] = useState(false);
-  const [scanComplete, setScanComplete] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  type Signal = { id: number; name: string; type: string; status: "ok" | "warning" | "pending"; latency: string; details: string };
-  const initialSignals: Signal[] = [
-    { id: 1, name: "Servidor (healthz)", type: "backend", status: "pending", latency: "—", details: "Ainda não verificado. Clique em Executar verificação." },
-    { id: 2, name: "API e banco de dados", type: "backend", status: "pending", latency: "—", details: "Ainda não verificado." },
-    { id: 3, name: "Permissão de GPS neste navegador", type: "sensor", status: "pending", latency: "—", details: "Ainda não verificado." },
-    { id: 4, name: "Armazenamento local do navegador", type: "storage", status: "pending", latency: "—", details: "Ainda não verificado." },
-  ];
-  const [signals, setSignals] = useState<Signal[]>(initialSignals);
-
-  // Verificações reais feitas a partir deste navegador (sem valores inventados).
-  const timed = async (url: string) => { const t = performance.now(); const r = await fetch(url, { credentials: "include", cache: "no-store" }); return { r, ms: `${Math.round(performance.now() - t)} ms` }; };
-  const runScan = async () => {
-    setScanning(true);
-    setScanComplete(false);
-    const next = initialSignals.map(s => ({ ...s }));
-    try { const { r, ms } = await timed("/healthz"); next[0] = { ...next[0], status: r.ok ? "ok" : "warning", latency: ms, details: r.ok ? "Servidor respondeu normalmente." : `Servidor respondeu com erro ${r.status}.` }; }
-    catch { next[0] = { ...next[0], status: "warning", details: "Sem resposta do servidor (verifique a conexão)." }; }
-    try { const { r, ms } = await timed("/api/trpc/auth.me"); next[1] = { ...next[1], status: r.ok ? "ok" : "warning", latency: ms, details: r.ok ? "API respondeu e consultou a sessão no banco." : `API respondeu com erro ${r.status}.` }; }
-    catch { next[1] = { ...next[1], status: "warning", details: "Sem resposta da API." }; }
-    try {
-      const perm = await (navigator.permissions?.query({ name: "geolocation" as PermissionName }));
-      const state = perm?.state;
-      next[2] = { ...next[2], status: state === "denied" ? "warning" : "ok", details: state === "granted" ? "GPS liberado neste navegador." : state === "denied" ? "GPS bloqueado neste navegador." : "O navegador vai pedir permissão ao usar o GPS." };
-    } catch { next[2] = { ...next[2], status: "warning", details: "Este navegador não informa o estado da permissão de GPS." }; }
-    try { localStorage.setItem("__scan", "1"); localStorage.removeItem("__scan"); next[3] = { ...next[3], status: "ok", details: "Leitura e gravação funcionando." }; }
-    catch { next[3] = { ...next[3], status: "warning", details: "Armazenamento local bloqueado (modo privado?)." }; }
-    setSignals(next);
-    setScanning(false);
-    setScanComplete(true);
-    const problems = next.filter(s => s.status === "warning").length;
-    if (problems) toast.warning(`Verificação concluída com ${problems} ponto(s) de atenção.`); else toast.success("Verificação concluída sem problemas.");
-  };
-
-  const filteredSignals = signals.filter(s => 
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    s.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.type.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  return (
-    <div className="space-y-6">
-      <div className="rounded-3xl border border-teal-300/25 bg-gradient-to-br from-slate-900 via-slate-900 to-teal-950/40 p-5 sm:p-7">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <Badge className="border border-teal-300/30 bg-teal-300/10 text-teal-200">Diagnóstico</Badge>
-            <h2 className="mt-2 text-2xl font-black text-white">Verificação do sistema</h2>
-            <p className="mt-1 text-sm text-slate-300">Testa servidor, API, GPS e armazenamento a partir deste navegador.</p>
-          </div>
-          <Button onClick={runScan} disabled={scanning} className="gap-2 bg-teal-300 text-slate-950 hover:bg-teal-200">
-            {scanning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {scanning ? "Verificando..." : "Executar verificação"}
-          </Button>
-        </div>
-      </div>
-
-      {/* Search and Filter bar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
-          <input 
-            type="text"
-            placeholder="Procurar erros, funções ou componentes..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-xl border border-white/10 bg-slate-900/90 pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-teal-300"
-          />
-        </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          {signals.length} verificações
-        </div>
-      </div>
-
-      {/* Signals Grid */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {filteredSignals.map((signal) => (
-          <div key={signal.id} className={`rounded-2xl border p-5 transition ${signal.status === "warning" ? "border-amber-400/40 bg-amber-500/10" : "border-white/10 bg-slate-900/80 hover:border-white/20"}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${signal.status === "warning" ? "bg-amber-400/20 text-amber-300" : "bg-teal-300/10 text-teal-300"}`}>
-                  {signal.status === "warning" ? <AlertTriangle className="h-5 w-5" /> : <CheckCircle className="h-5 w-5" />}
-                </div>
-                <div>
-                  <h3 className="font-bold text-white">{signal.name}</h3>
-                  <p className="text-xs text-slate-400 uppercase tracking-wider">Módulo: {signal.type}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <Badge className={signal.status === "warning" ? "bg-amber-400/20 text-amber-300 border-amber-400/40" : "bg-emerald-400/20 text-emerald-300 border-emerald-400/40"}>
-                  {signal.status === "warning" ? "Atenção" : signal.status === "pending" ? "Não verificado" : "Operacional"}
-                </Badge>
-                <p className="mt-1 text-xs text-slate-400">Latência: {signal.latency}</p>
-              </div>
-            </div>
-            <p className="mt-3 text-sm text-slate-300 border-t border-white/10 pt-3">
-              {signal.details}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Live Console Terminal simulation */}
-      <div className="rounded-2xl border border-white/10 bg-slate-950 p-5 font-mono text-xs">
-        <div className="mb-3 flex items-center justify-between border-b border-white/10 pb-3 text-slate-400">
-          <span className="flex items-center gap-2"><Terminal className="h-4 w-4 text-teal-300" /> Terminal de Diagnóstico & Logs</span>
-          <span>{scanComplete ? "Varredura concluída" : "Pronto para varredura"}</span>
-        </div>
-        <div className="space-y-1.5 text-slate-300">
-          <p className="text-emerald-400">[INFO] Sistema inicializado no ambiente GondUp.</p>
-          <p>[CHECK] Verificando integridade dos componentes TypeScript e React 19...</p>
-          <p>[CHECK] Rotas tRPC e autenticação JWT verificadas com sucesso.</p>
-          {scanComplete ? (
-            <p className="text-teal-300">[SUCCESS] Scanner finalizado: 5 componentes saudáveis, 1 aviso de GPS monitorado.</p>
-          ) : (
-            <p className="text-amber-300">[READY] Clique em &quot;Executar Varredura Agora&quot; para testar todas as funções do site.</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 const AI_CHAT_STORAGE_KEY = "promotores-saas:platform-ai-chat:v2";

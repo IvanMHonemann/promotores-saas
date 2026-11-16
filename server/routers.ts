@@ -9,6 +9,7 @@ import { vacationsRouter } from "./modules/vacations";
 import { platformCompaniesRouter } from "./modules/platformCompanies";
 import { announcementsRouter } from "./modules/platformAnnouncements";
 import { legalRouter } from "./legal";
+import { liveErrorsRouter } from "./liveErrors";
 import { storePhotosRouter } from "./modules/storePhotos";
 import { storeClientsRouter } from "./modules/storeClients";
 import { productsRouter } from "./modules/products";
@@ -350,6 +351,7 @@ export const appRouter = router({
   }),
 
   platform: router({
+    liveErrors: liveErrorsRouter,
     aiSupport: router({
       chat: platformProcedure
         .input(z.object({

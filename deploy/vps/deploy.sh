@@ -34,7 +34,8 @@ if [[ "$MODE" == "prebuilt" ]]; then
   PRE_SHA="$(tr -d '[:space:]' < "$PRE/BUILD_SHA" 2>/dev/null || true)"
   if [[ "$PRE_SHA" == "$NEW_SHA" && -s "$PRE/dist/index.js" && -s "$PRE/Dockerfile" ]]; then
     echo "build pronto do GitHub ($PRE_SHA): só instalando"
-    if ! docker build -t "$NEW_TAG" "$PRE"; then
+    BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if ! docker build -t "$NEW_TAG" --build-arg BUILD_SHA="$PRE_SHA" --build-arg BUILD_TIME="$BUILD_TIME" "$PRE"; then
       echo "AVISO: imagem do build pronto falhou; compilando aqui"
       build_local
     fi

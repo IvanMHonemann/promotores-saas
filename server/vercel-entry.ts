@@ -12,6 +12,7 @@ import { runScheduledMaintenance, runMissingPunchAlerts, runPhotoMaintenance } f
 import { notifyOwner } from "./_core/notification";
 import { MAX_BODY_SIZE, isPayloadTooLargeError, payloadTooLargeBody } from "../shared/uploadLimits";
 import { initServerSentry, sentryErrorHandler } from "./sentry";
+import { formatArchiveSummary, formatBackupJobSummary, formatMaintenanceSummary, recordScheduledJob } from "./recordScheduledJob";
 
 initServerSentry();
 
@@ -50,10 +51,11 @@ export async function createApp() {
   app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
   app.all("/api/scheduled/database-maintenance", async (req, res) => {
     if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" }); // Vercel Cron usa GET
+    if (!isScheduleRequestAuthorized(req)) {
+      return res.status(401).json({ error: "Schedule authentication required" });
+    }
+    const startedAt = new Date();
     try {
-      if (!isScheduleRequestAuthorized(req)) {
-        return res.status(401).json({ error: "Schedule authentication required" });
-      }
       const result = await runScheduledMaintenance();
       let missingPunch = null;
       try { missingPunch = await runMissingPunchAlerts(); } catch (e) { console.warn("[missing-punch]", e); }
@@ -61,9 +63,11 @@ export async function createApp() {
       try { photos = await runPhotoMaintenance(); } catch (e) { console.warn("[photos]", e); }
       let clock = null;
       try { const { runClockCheck } = await import("./ponto/clock"); clock = await runClockCheck("agendado"); } catch (e) { console.warn("[clock]", e); }
+      await recordScheduledJob("database-maintenance", startedAt, true, formatMaintenanceSummary(result));
       return res.json({ ok: true, result, missingPunch, photos, clock });
     } catch (error) {
       console.error("[Maintenance] failed:", error);
+      await recordScheduledJob("database-maintenance", startedAt, false, "A manutenção da madrugada falhou.");
       await notifyOwner({ title: "Falha no backup diário", content: "O backup automático falhou." }).catch(() => undefined);
       return res.status(500).json({ error: "Scheduled maintenance failed" });
     }
@@ -72,13 +76,17 @@ export async function createApp() {
   // Backup diário dedicado (mesmo segredo CRON/SCHEDULE). Pode ser chamado várias vezes no dia; retoma até completar.
   app.all("/api/scheduled/database-backup", async (req, res) => {
     if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+    if (!isScheduleRequestAuthorized(req)) {
+      return res.status(401).json({ error: "Schedule authentication required" });
+    }
+    const startedAt = new Date();
     try {
-      if (!isScheduleRequestAuthorized(req)) {
-        return res.status(401).json({ error: "Schedule authentication required" });
-      }
       const mysql = (await import("mysql2/promise")).default;
       const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
-      if (!url) return res.status(500).json({ error: "Database URL is not configured." });
+      if (!url) {
+        await recordScheduledJob("database-backup", startedAt, false, "Backup falhou: banco não configurado.");
+        return res.status(500).json({ error: "Database URL is not configured." });
+      }
       const connection = await mysql.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 10000 });
       try {
         const { runBackupStep, purgeOldR2Backups } = await import("./backup");
@@ -87,12 +95,14 @@ export async function createApp() {
         if (backup.complete && !(backup as any).reason) {
           try { retention = await purgeOldR2Backups(); } catch (e) { console.warn("[backup] retention failed", e); }
         }
+        await recordScheduledJob("database-backup", startedAt, true, formatBackupJobSummary(backup));
         return res.json({ ok: true, backup, retention });
       } finally {
         await connection.end();
       }
     } catch (error) {
       console.error("[Backup] failed:", error);
+      await recordScheduledJob("database-backup", startedAt, false, "O backup automático falhou.");
       await notifyOwner({ title: "Falha no backup diário", content: "O backup automático falhou." }).catch(() => undefined);
       return res.status(500).json({ error: "Scheduled backup failed" });
     }
@@ -101,15 +111,18 @@ export async function createApp() {
   // Arquivamento histórico de espelhos de ponto (meses fechados). Idempotente.
   app.all("/api/scheduled/archive-timesheets", async (req, res) => {
     if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+    if (!isScheduleRequestAuthorized(req)) {
+      return res.status(401).json({ error: "Schedule authentication required" });
+    }
+    const startedAt = new Date();
     try {
-      if (!isScheduleRequestAuthorized(req)) {
-        return res.status(401).json({ error: "Schedule authentication required" });
-      }
       const { runTimesheetArchiveJob } = await import("./modules/timesheetArchive");
       const archive = await runTimesheetArchiveJob({ limitCompanies: 30 });
+      await recordScheduledJob("archive-timesheets", startedAt, true, formatArchiveSummary(archive));
       return res.json({ ok: true, archive });
     } catch (error) {
       console.error("[Archive] failed:", error);
+      await recordScheduledJob("archive-timesheets", startedAt, false, "O arquivamento dos espelhos falhou.");
       return res.status(500).json({ error: "Timesheet archive failed" });
     }
   });

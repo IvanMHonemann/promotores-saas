@@ -767,3 +767,30 @@ export const legalAcceptances = mysqlTable("legal_acceptances", {
 
 export type LegalAcceptance = typeof legalAcceptances.$inferSelect;
 export type InsertLegalAcceptance = typeof legalAcceptances.$inferInsert;
+
+/** Marcação local de erros ao vivo (normal / correção pedida) quando o Sentry não pode ser alterado. */
+export const liveErrorOverrides = mysqlTable("live_error_overrides", {
+  id: int("id").autoincrement().primaryKey(),
+  sentryIssueId: varchar("sentryIssueId", { length: 64 }).notNull(),
+  classification: varchar("classification", { length: 16 }).notNull(),
+  githubIssueNumber: int("githubIssueNumber"),
+  githubIssueUrl: varchar("githubIssueUrl", { length: 255 }),
+  sentryIgnored: int("sentryIgnored").default(0).notNull(),
+  updatedBy: varchar("updatedBy", { length: 255 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  issueUnique: uniqueIndex("live_error_overrides_issue").on(table.sentryIssueId),
+}));
+
+/** Últimas execuções das rotinas agendadas (backup, manutenção, arquivamento). */
+export const platformJobRuns = mysqlTable("platform_job_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  job: varchar("job", { length: 64 }).notNull(),
+  ok: int("ok").notNull(),
+  summary: varchar("summary", { length: 500 }),
+  startedAt: timestamp("startedAt").notNull(),
+  finishedAt: timestamp("finishedAt").defaultNow().notNull(),
+}, (table) => ({
+  jobFinishedIdx: index("platform_job_runs_job_finished").on(table.job, table.finishedAt),
+}));
+

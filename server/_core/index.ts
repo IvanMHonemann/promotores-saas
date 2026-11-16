@@ -15,6 +15,7 @@ import { isScheduleRequestAuthorized } from "../scheduleAuth";
 import crypto from "node:crypto";
 import { MAX_BODY_SIZE, isPayloadTooLargeError, payloadTooLargeBody } from "../../shared/uploadLimits";
 import { initServerSentry, sentryErrorHandler } from "../sentry";
+import { formatBackupJobSummary, formatMaintenanceSummary, recordScheduledJob } from "../recordScheduledJob";
 
 initServerSentry();
 
@@ -118,14 +119,17 @@ export async function createApp(): Promise<Express> {
   });
 
 app.all("/api/scheduled/database-maintenance", async (req, res) => {
+    if (!isScheduleRequestAuthorized(req)) {
+      return res.status(401).json({ error: "Schedule authentication required" });
+    }
+    const startedAt = new Date();
     try {
-      if (!isScheduleRequestAuthorized(req)) {
-        return res.status(401).json({ error: "Schedule authentication required" });
-      }
       const result = await runScheduledMaintenance();
+      await recordScheduledJob("database-maintenance", startedAt, true, formatMaintenanceSummary(result));
       return res.json({ ok: true, result });
     } catch (error) {
       console.error("[Maintenance] Scheduled backup failed:", error);
+      await recordScheduledJob("database-maintenance", startedAt, false, "A manutenção da madrugada falhou.");
       await notifyOwner({ title: "Falha no backup diário", content: "O backup automático e a limpeza programada falharam. Verifique os logs do projeto e o armazenamento persistente configurado." }).catch(() => undefined);
       return res.status(500).json({ error: "Scheduled maintenance failed" });
     }
@@ -133,13 +137,17 @@ app.all("/api/scheduled/database-maintenance", async (req, res) => {
 
   app.all("/api/scheduled/database-backup", async (req, res) => {
     if (req.method !== "GET" && req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+    if (!isScheduleRequestAuthorized(req)) {
+      return res.status(401).json({ error: "Schedule authentication required" });
+    }
+    const startedAt = new Date();
     try {
-      if (!isScheduleRequestAuthorized(req)) {
-        return res.status(401).json({ error: "Schedule authentication required" });
-      }
       const mysql = (await import("mysql2/promise")).default;
       const url = process.env.EXTERNAL_DATABASE_URL ?? process.env.DATABASE_URL;
-      if (!url) return res.status(500).json({ error: "Database URL is not configured." });
+      if (!url) {
+        await recordScheduledJob("database-backup", startedAt, false, "Backup falhou: banco não configurado.");
+        return res.status(500).json({ error: "Database URL is not configured." });
+      }
       const connection = await mysql.createConnection({ uri: url, ssl: { rejectUnauthorized: true }, connectTimeout: 10000 });
       try {
         const { runBackupStep, purgeOldR2Backups } = await import("../backup");
@@ -148,12 +156,14 @@ app.all("/api/scheduled/database-maintenance", async (req, res) => {
         if (backup.complete && !(backup as any).reason) {
           try { retention = await purgeOldR2Backups(); } catch (e) { console.warn("[backup] retention failed", e); }
         }
+        await recordScheduledJob("database-backup", startedAt, true, formatBackupJobSummary(backup));
         return res.json({ ok: true, backup, retention });
       } finally {
         await connection.end();
       }
     } catch (error) {
       console.error("[Backup] failed:", error);
+      await recordScheduledJob("database-backup", startedAt, false, "O backup automático falhou.");
       await notifyOwner({ title: "Falha no backup diário", content: "O backup automático falhou." }).catch(() => undefined);
       return res.status(500).json({ error: "Scheduled backup failed" });
     }

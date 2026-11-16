@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import {
+  cartaoPontoHref,
+  missingPunchNotifyMessage,
+  missingPunchStaffLabel,
+  missingPunchWhatsAppUrl,
+} from "@shared/missingPunchNotify";
 
 const fmt = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
 
@@ -21,7 +27,7 @@ function useDismiss(key: string | null) {
   return { dismissed, dismiss };
 }
 
-/** Alerta de batida faltante: ao promotor (para corrigir) e ao administrador (para acompanhar). Não cria marcações. */
+/** Alerta de batida faltante: ao promotor (para corrigir) e ao administrador/supervisor (para notificar). Não cria marcações. */
 export default function MissingPunchAlert() {
   const { user } = useAuth();
   const role = user?.role;
@@ -65,12 +71,54 @@ export default function MissingPunchAlert() {
   }
   if (isAdmin && all.data?.length && !adminDismiss.dismissed) {
     return (
-      <div role="alert" className="relative mb-5 flex items-start gap-3 rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 pr-14 text-amber-100">
+      <div role="alert" className="relative mb-5 flex items-start gap-3 overflow-hidden rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4 pr-14 text-amber-100">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
         <div className="min-w-0 flex-1 text-sm">
-          <p className="font-bold">Falta de batida: {all.data.length} funcionário(s)</p>
-          <ul className="mt-1 space-y-0.5">{all.data.slice(0, 8).map((m) => <li key={m.memberId}>{m.name} — última: {m.lastLabel} em {fmt(m.lastTime)}; falta: {m.missing}</li>)}</ul>
-          <a href="/cartao-ponto" className="mt-1 inline-block font-semibold underline">Abrir cartão-ponto</a>
+          <p className="font-bold">Falta de batida: {missingPunchStaffLabel(all.data.length)}</p>
+          <ul className="mt-2 space-y-3">
+            {all.data.slice(0, 8).map((m) => {
+              const message = missingPunchNotifyMessage({
+                name: m.name,
+                day: m.day,
+                missing: m.missing,
+                lastLabel: m.lastLabel,
+                lastTime: m.lastTime,
+              });
+              const href = missingPunchWhatsAppUrl((m as { phone?: string | null }).phone, message);
+              return (
+                <li key={m.memberId} className="min-w-0">
+                  <p className="break-words">
+                    <a href={cartaoPontoHref(m.memberId, m.day)} className="font-semibold underline underline-offset-2 hover:text-white">
+                      {m.name}
+                    </a>
+                    {" — "}última: {m.lastLabel} em {fmt(m.lastTime)}; falta: {m.missing}
+                  </p>
+                  {href ? (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 inline-flex h-9 items-center rounded-lg bg-teal-300 px-3 text-sm font-bold text-slate-950 hover:bg-teal-200"
+                    >
+                      Notificar promotor
+                    </a>
+                  ) : (
+                    <p className="mt-1">
+                      <button
+                        type="button"
+                        disabled
+                        title="Cadastre o WhatsApp do promotor"
+                        className="inline-flex h-9 cursor-not-allowed items-center rounded-lg bg-white/10 px-3 text-sm font-bold text-amber-100/50"
+                      >
+                        Notificar promotor
+                      </button>
+                      <span className="mt-1 block text-xs text-amber-100/80">Cadastre o WhatsApp do promotor</span>
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
         <button
           type="button"

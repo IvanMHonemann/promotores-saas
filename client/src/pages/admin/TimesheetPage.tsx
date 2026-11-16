@@ -20,9 +20,20 @@ function monthLabel(ym: string) {
 
 const labels: Record<string, string> = { clock_in: "Entrada", break_start: "Intervalo", break_end: "Retorno", clock_out: "Saída" };
 
+function cartaoPontoQuery() {
+  const params = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+  const memberId = Number(params.get("memberId"));
+  const month = params.get("month");
+  return {
+    memberId: Number.isInteger(memberId) && memberId > 0 ? memberId : null,
+    month: month && /^\d{4}-\d{2}$/.test(month) ? month : null,
+  };
+}
+
 export default function TimesheetPage() {
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [month, setMonth] = useState(() => todayInZone().slice(0, 7));
+  const query = cartaoPontoQuery();
+  const [selectedId, setSelectedId] = useState<number | null>(query.memberId);
+  const [month, setMonth] = useState(() => query.month || todayInZone().slice(0, 7));
   const [autoTime, setAutoTime] = useState("");
   const autoSetting = trpc.settings.getAutoClockOut.useQuery(undefined, { staleTime: 60000 });
   const setAuto = trpc.settings.setAutoClockOut.useMutation({ onSuccess: () => toast.success("Horário salvo.") });

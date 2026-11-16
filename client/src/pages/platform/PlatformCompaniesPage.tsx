@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Ban, Building2, CalendarCheck, CheckCircle2, LogIn, Loader2, Pencil, Plus, RotateCcw, Trash2, UserPlus, Wallet } from "lucide-react";
+import { Ban, Building2, CalendarCheck, CheckCircle2, LogIn, Loader2, Pencil, Plus, QrCode, RotateCcw, Trash2, UserPlus, Wallet } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { enterCompany } from "@/components/ActingAsBanner";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import { effectiveUserLimit, parseExtraUsers, staffUsageLabel, suggestedMonthlyA
 import { termsAcceptanceLabel } from "@shared/legalOverview";
 import { toast } from "sonner";
 import { confirmAction } from "@/components/ConfirmDialog";
+import GeneratePixDialog from "@/components/platform/GeneratePixDialog";
 
 const STATUS_LABEL: Record<string, string> = { trial: "Teste", test: "Teste", active: "Ativa", pending: "Pagamento pendente", overdue: "Em atraso", suspended: "Suspensa", canceled: "Cancelada", expired: "Expirada" };
 const sel = "mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white";
@@ -42,6 +43,7 @@ export default function PlatformCompaniesPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [pixFor, setPixFor] = useState<{ id: number; name: string } | null>(null);
   const rows = useMemo(() => (list.data || []).filter((c) => (showArchived ? true : !c.archivedAt) && c.name.toLowerCase().includes(q.trim().toLowerCase())), [list.data, q, showArchived]);
   const selected = (list.data || []).find((c) => c.id === selectedId) ?? null;
   const refresh = () => { void utils.platformCompanies.overview.invalidate(); void utils.platformCompanies.payments.invalidate(); void utils.platformPayments.list.invalidate(); void utils.platform.companies.list.invalidate(); };
@@ -57,10 +59,26 @@ export default function PlatformCompaniesPage() {
           <p className="mt-1 text-xs text-slate-400">{c.legalName || "Razão social não cadastrada"}{c.taxDocument ? ` · CNPJ/CPF ${c.taxDocument}` : " · sem CNPJ/CPF"}{(c.addressCity || c.addressState) ? ` · ${[c.addressCity, c.addressState].filter(Boolean).join("/")}` : ""}</p>
           <p className="mt-1 text-xs text-slate-400">{c.planName ?? "Sem plano"} · válido até {day(c.expiresAt)} · último pagamento {day(c.lastPayment)} · {c.activeUsers}/{c.users} usuários</p>
           <p className={`mt-1 text-xs ${c.termsAcceptedCurrent ? "text-emerald-300/80" : "text-amber-200/80"}`}>{termsAcceptanceLabel(c, day)}</p>
+          {!c.archivedAt && (
+            <div className="mt-2 flex justify-end">
+              <Button size="sm" className="bg-teal-300 text-slate-950 hover:bg-teal-200" onClick={(e) => { e.stopPropagation(); setSelectedId(c.id); setCreating(false); setPixFor({ id: c.id, name: c.name }); }}>
+                <QrCode className="mr-1.5 h-3.5 w-3.5" />Gerar Pix
+              </Button>
+            </div>
+          )}
         </button>; })}</div>
       </CardContent></Card>
-      {creating ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CreateCompanyCard onCancel={() => setCreating(false)} onCreated={(id) => { setCreating(false); setSelectedId(id); refresh(); }} /></div> : selected ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CompanyPanel key={selected.id} company={selected} onChanged={refresh} /></div> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir, ou cadastre uma nova.</CardContent></Card>}
+      {creating ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CreateCompanyCard onCancel={() => setCreating(false)} onCreated={(id) => { setCreating(false); setSelectedId(id); refresh(); }} /></div> : selected ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CompanyPanel key={selected.id} company={selected} onChanged={refresh} onGeneratePix={() => setPixFor({ id: selected.id, name: selected.name })} /></div> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir, ou cadastre uma nova.</CardContent></Card>}
     </div>
+    {pixFor && (
+      <GeneratePixDialog
+        companyId={pixFor.id}
+        companyName={pixFor.name}
+        open={Boolean(pixFor)}
+        onOpenChange={(open) => { if (!open) setPixFor(null); }}
+        onGenerated={refresh}
+      />
+    )}
   </DashboardLayout>;
 }
 
@@ -110,7 +128,7 @@ function CreateCompanyCard({ onCancel, onCreated }: { onCancel: () => void; onCr
   );
 }
 
-function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: () => void }) {
+function CompanyPanel({ company: c, onChanged, onGeneratePix }: { company: Company; onChanged: () => void; onGeneratePix: () => void }) {
   const plans = trpc.platform.plans.list.useQuery(undefined, { staleTime: 60000 });
   const payments = trpc.platformCompanies.payments.useQuery({ companyId: c.id });
   const ok = (msg: string) => () => { toast.success(msg); onChanged(); };
@@ -249,7 +267,10 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
         </div>
         {editingDue && <div className="mt-2 max-w-xs"><Label>Nova data de vencimento</Label><Input type="date" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className={inp} /></div>}
       </div>
-      <Button disabled={!planId || saving || setPlan.isPending || setBilling.isPending} onClick={() => void saveAll()} className="bg-teal-300 text-slate-950 hover:bg-teal-200">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Salvar</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={!planId || saving || setPlan.isPending || setBilling.isPending} onClick={() => void saveAll()} className="bg-teal-300 text-slate-950 hover:bg-teal-200">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Salvar</Button>
+        <Button type="button" onClick={onGeneratePix} className="bg-teal-300 text-slate-950 hover:bg-teal-200"><QrCode className="mr-2 h-4 w-4" />Gerar Pix</Button>
+      </div>
       <p className="text-xs text-slate-400">Depois do vencimento + tolerância, a empresa só vê a tela de Pix/WhatsApp até você registrar o pagamento.</p>
 
       <div className="space-y-3 border-t border-white/10 pt-4">
@@ -262,7 +283,7 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
         <p className="text-xs text-slate-400">A validade será estendida automaticamente de {day(`${paidPeriod.periodFrom}T12:00:00-03:00`)} até {day(`${paidPeriod.periodTo}T12:00:00-03:00`)} (hoje ou o vencimento atual, o que for maior, mais 1 mês).</p>
         <Button disabled={pay.isPending || !c.planId || !/^\d+(\.\d{1,2})?$/.test(payAmount)} onClick={registerPay} className="h-auto min-h-10 bg-emerald-500 text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4 shrink-0" />Registrar pagamento</Button>
         {!c.planId && <p className="text-xs text-amber-200">Salve o plano da empresa acima antes de registrar o pagamento.</p>}
-        <div className="space-y-1 border-t border-white/10 pt-3 text-sm">{(payments.data || []).map((p: any) => <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2"><span>{money(p.amount)} · pago em {day(p.paymentDate)} · {p.status}</span><Button size="sm" variant="ghost" className="text-rose-200" onClick={() => { void confirmAction({ title: "Excluir este registro de pagamento?", confirmLabel: "Confirmar" }).then((okConfirm) => okConfirm && delPay.mutate({ companyId: c.id, paymentId: p.id })); }}><Trash2 className="h-4 w-4" /></Button></div>)}{!payments.data?.length && <p className="text-slate-400">Nenhum pagamento registrado.</p>}</div>
+        <div className="space-y-1 border-t border-white/10 pt-3 text-sm">{(payments.data || []).map((p: any) => <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2"><span>{money(p.amount)} · {p.status === "PENDING" ? `pendente · vence em ${day(p.dueDate)}` : `pago em ${day(p.paymentDate)}`} · {p.status === "PENDING" ? "Pendente" : p.status}</span><Button size="sm" variant="ghost" className="text-rose-200" onClick={() => { void confirmAction({ title: "Excluir este registro de pagamento?", confirmLabel: "Confirmar" }).then((okConfirm) => okConfirm && delPay.mutate({ companyId: c.id, paymentId: p.id })); }}><Trash2 className="h-4 w-4" /></Button></div>)}{!payments.data?.length && <p className="text-slate-400">Nenhum pagamento registrado.</p>}</div>
       </div>
     </CardContent></Card>
 

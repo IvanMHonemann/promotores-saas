@@ -6,7 +6,7 @@ import {
   cartaoPontoHref,
   missingPunchNotifyMessage,
   missingPunchStaffLabel,
-  missingPunchWhatsAppUrl,
+  notifyPromoterMissingPunch,
 } from "@shared/missingPunchNotify";
 
 const fmt = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
@@ -84,7 +84,6 @@ export default function MissingPunchAlert() {
                 lastLabel: m.lastLabel,
                 lastTime: m.lastTime,
               });
-              const href = missingPunchWhatsAppUrl((m as { phone?: string | null }).phone, message);
               return (
                 <li key={m.memberId} className="min-w-0">
                   <p className="break-words">
@@ -93,28 +92,13 @@ export default function MissingPunchAlert() {
                     </a>
                     {" — "}última: {m.lastLabel} em {fmt(m.lastTime)}; falta: {m.missing}
                   </p>
-                  {href ? (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 inline-flex h-9 items-center rounded-lg bg-teal-300 px-3 text-sm font-bold text-slate-950 hover:bg-teal-200"
-                    >
-                      Notificar promotor
-                    </a>
-                  ) : (
-                    <p className="mt-1">
-                      <button
-                        type="button"
-                        disabled
-                        title="Cadastre o WhatsApp do promotor"
-                        className="inline-flex h-9 cursor-not-allowed items-center rounded-lg bg-white/10 px-3 text-sm font-bold text-amber-100/50"
-                      >
-                        Notificar promotor
-                      </button>
-                      <span className="mt-1 block text-xs text-amber-100/80">Cadastre o WhatsApp do promotor</span>
-                    </p>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => { void notifyPromoterMissingPunch(message); }}
+                    className="mt-1 inline-flex h-9 items-center rounded-lg bg-teal-300 px-3 text-sm font-bold text-slate-950 hover:bg-teal-200"
+                  >
+                    Notificar promotor
+                  </button>
                 </li>
               );
             })}

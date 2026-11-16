@@ -30,6 +30,7 @@ export function buildCompanyGroups(role: string | undefined, hasFeature: (key: s
     ] },
   ];
   const account: NavGroup = { id: "conta", title: "Conta", items: [
+    ...(manager ? [{ href: "/dados-empresa", label: "Dados da empresa", icon: "building" }] : []),
     ...(manager ? [{ href: "/lgpd", label: "LGPD e privacidade", icon: "shield" }] : []),
     { href: "/termos", label: "Termos e privacidade", icon: "file" },
     ...(admin ? [{ href: "/meus-modulos", label: "Meus módulos", icon: "card" }] : []),

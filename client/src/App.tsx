@@ -38,6 +38,7 @@ const LgpdPage = lazy(() => import("./pages/admin/LgpdPage"));
 const PontoLegalPage = lazy(() => import("./pages/admin/PontoLegalPage"));
 const PlatformPontoLegalPage = lazy(() => import("./pages/platform/PlatformPontoLegalPage"));
 const TimesheetMirrorPage = lazy(() => import("./pages/admin/TimesheetMirrorPage"));
+const CompanyRegistryPage = lazy(() => import("./pages/CompanyRegistryPage"));
 const TeamTimeBankPage = lazy(() => import("./pages/admin/TeamTimeBankPage"));
 const TimesheetArchivePage = lazy(() => import("./pages/admin/TimesheetArchivePage"));
 const CheckInOutPage = lazy(() => import("./pages/admin/CheckInOutPage"));
@@ -64,6 +65,7 @@ const ROUTE_PRELOADS: Array<[RegExp, () => Promise<unknown>]> = [
   [/^\/ponto-legal/, () => import("./pages/admin/PontoLegalPage")],
   [/^\/ponto/, () => import("./pages/promoter/PromoterClockPage")],
   [/^\/espelho-ponto/, () => import("./pages/admin/TimesheetMirrorPage")],
+  [/^\/dados-empresa/, () => import("./pages/CompanyRegistryPage")],
   [/^\/banco-de-horas/, () => import("./pages/admin/TeamTimeBankPage")],
   [/^\/arquivos-historicos/, () => import("./pages/admin/TimesheetArchivePage")],
   [/^\/check-in-out/, () => import("./pages/admin/CheckInOutPage")],
@@ -350,6 +352,7 @@ function Router() {
       <Route path="/lojas"><CommercialProtected><FeatureProtected featureKey="fieldOperations"><StoresPage /></FeatureProtected></CommercialProtected></Route>
       <Route path="/lixeira"><CommercialProtected><TrashPage /></CommercialProtected></Route>
       <Route path="/ponto"><PromoterProtected><FeatureProtected featureKey="timeTracking"><PromoterClockPage /></FeatureProtected></PromoterProtected></Route>
+      <Route path="/dados-empresa"><CompanyManagerProtected><CompanyRegistryPage /></CompanyManagerProtected></Route>
       <Route path="/espelho-ponto"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><TimesheetMirrorPage /></FeatureProtected></CompanyManagerProtected></Route>
       <Route path="/banco-de-horas/:memberId"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><TeamTimeBankPage /></FeatureProtected></CompanyManagerProtected></Route>
       <Route path="/banco-de-horas"><CompanyManagerProtected><FeatureProtected featureKey="timeTracking"><TeamTimeBankPage /></FeatureProtected></CompanyManagerProtected></Route>

@@ -75,9 +75,19 @@ Existe o plano oculto "Teste Pix (R$ 1)" (`id` 180003, `availableForNew=false`, 
 
 `hasPersonalTimeClock` é verdadeiro só para `promoter`. `companyAdminFeatureProcedure` aceita admin ou supervisor (`requireCompanyManager`). Procedimentos de preço/fatura/Pix (`billing.plans`, `mySubscription`, `payments`, `paymentReminder`) são `companyAdminProcedure`. `billing.access` permanece sem valores.
 
-Menu da empresa (admin e supervisor): grupos Operação, Equipe e ponto, Relatórios e Conta — sem submenus antigos de Roteiros/Cartão-ponto. Em Conta há **Termos e privacidade** (`/termos`) para admin e supervisor (o admin também vê Meus módulos). O promotor agrupa Correções de ponto (`/ponto#correcoes`), Meus comprovantes e Meu espelho do mês no dropdown **Cartão ponto**, sem o item duplicado que ia para o mesmo lugar da correção, e também tem **Termos e privacidade** no menu.
+Menu da empresa (admin e supervisor): grupos Operação, Equipe e ponto, Relatórios e Conta — sem submenus antigos de Roteiros/Cartão-ponto. Em Conta, admin e supervisor veem **Dados da empresa** (`/dados-empresa`) em primeiro lugar, depois LGPD, **Termos e privacidade** (`/termos`) e Lixeira (o admin também vê Meus módulos). O promotor agrupa Correções de ponto (`/ponto#correcoes`), Meus comprovantes e Meu espelho do mês no dropdown **Cartão ponto**, sem o item duplicado que ia para o mesmo lugar da correção, e também tem **Termos e privacidade** no menu.
 
 
+
+
+## Dados cadastrais da empresa e do funcionário
+
+Tela **Dados da empresa** (`/dados-empresa`) e dados do membro em Promotores e equipe / Minha conta. Campos opcionais no cadastro inicial; validam formato só se preenchidos (CNPJ/CPF com dígito, PIS, CEP). Migração `0040` (colunas nullable em `companies` e `member_accounts`); `ensureCompanyRegistryColumns` é idempotente. Gravamos também em `system_settings` (`company_legal_profile` e `labor_profile:{id}`) para o espelho, AFD/AEJ e comprovantes antigos continuarem funcionando. A jornada (horário, dias, minutos) permanece no JSON do perfil trabalhista.
+
+- Empresa: razão social, nome fantasia, CNPJ ou CPF (MEI), inscrição estadual, unidade/estabelecimento, endereço completo (CEP, logradouro, número, complemento, bairro, cidade, UF), telefone e e-mail de contato. Só o `company_admin` (ou a plataforma) edita; o supervisor consulta. Lembrete discreto só para o admin, se faltarem razão social, CNPJ/CPF ou rua+cidade; dispensável no dia; não aparece em `/dados-empresa`.
+- Funcionário (todos os papéis, colunas em `member_accounts`): CPF, PIS/NIS, RG, nascimento, cargo, admissão, telefone. Admin altera qualquer membro. Supervisor altera só promotores (mesma trava de hoje). **O promotor não altera dados cadastrais**, nem os próprios: na Minha conta esses campos são só leitura. O promotor altera só e-mail (`registry.changeMyEmail`, exige senha atual) e senha. O endpoint do promotor não aceita CPF/PIS/RG etc.
+- Documentos (espelho, comprovante, AFD/AEJ, Ponto: prova legal) leem primeiro as colunas, com fallback do JSON. Mensagens de pendência apontam para `/dados-empresa` e Promotores e equipe, não mais só para o Espelho de ponto. O super-admin vê razão social, CNPJ e cidade na lista de empresas.
+- `/meus-dados` continua sendo a página de direitos LGPD do promotor, distinta do cadastro.
 
 ## Erros ao vivo
 
@@ -175,6 +185,7 @@ Tabelas auxiliares (criadas em runtime quando necessário): `store_owners`, `pro
 - Offline: cadastro de lojas/clientes, sincronização de visitas, fila de fotos, cache de roteiro do dia.
 - Produtos e validades (com lixeira). Auditoria append-only. PWA com fallback offline.
 - Termos de Uso e Política de Privacidade (versão 1.0) nas páginas públicas e no menu de todos os papéis, com aceite registrado do admin da empresa (`legal_acceptances`).
+- Cadastro da empresa (`/dados-empresa`) e dados do funcionário (CPF, PIS, RG, cargo, admissão) em Promotores e equipe. O promotor só edita e-mail e senha; o admin altera o cadastro do promotor (o supervisor, só de promotores). Documentos oficiais passam a usar esses dados.
 - Painel Erros ao vivo do super-admin (`/plataforma/scanner`): resumo em português, classificação Precisa corrigir vs Normal, pedido de correção no GitHub e marcação como normal, mais saúde do sistema (backup, rotinas, versão, disco e memória).
 - Platform admin escolhe `featureKeys` na criação da empresa e edita módulos em `CompanyFeaturesCard`. Ações "Nova empresa", "Novo usuário" e "Redefinir senha" no painel do admin geral devem permanecer visíveis (já foram removidas por engano e restauradas no PR #125).
 

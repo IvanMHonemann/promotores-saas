@@ -54,6 +54,7 @@ export default function PlatformCompaniesPage() {
         {list.isError && <p role="alert" className="text-sm text-rose-200">{list.error.message}</p>}
         <div className="space-y-2">{rows.map((c) => { const st = stateOf(c); return <button key={c.id} type="button" onClick={() => { setSelectedId(c.id); setCreating(false); if (window.innerWidth < 1280) window.setTimeout(() => document.getElementById("empresa-selecionada")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); }} className={`w-full rounded-xl border p-3 text-left transition ${selectedId === c.id ? "border-teal-300/60 bg-teal-300/10" : "border-white/10 bg-slate-950/40 hover:border-white/25"}`}>
           <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{c.name}</p><Badge className={st.tone}>{st.label}</Badge></div>
+          <p className="mt-1 text-xs text-slate-400">{c.legalName || "Razão social não cadastrada"}{c.taxDocument ? ` · CNPJ/CPF ${c.taxDocument}` : " · sem CNPJ/CPF"}{(c.addressCity || c.addressState) ? ` · ${[c.addressCity, c.addressState].filter(Boolean).join("/")}` : ""}</p>
           <p className="mt-1 text-xs text-slate-400">{c.planName ?? "Sem plano"} · válido até {day(c.expiresAt)} · último pagamento {day(c.lastPayment)} · {c.activeUsers}/{c.users} usuários</p>
           <p className={`mt-1 text-xs ${c.termsAcceptedCurrent ? "text-emerald-300/80" : "text-amber-200/80"}`}>{termsAcceptanceLabel(c, day)}</p>
         </button>; })}</div>
@@ -222,6 +223,7 @@ function CompanyPanel({ company: c, onChanged }: { company: Company; onChanged: 
   return <div className="space-y-4">
     <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2"><CardTitle className="flex items-center gap-2 text-lg"><Pencil className="h-4 w-4 text-teal-300" />{c.name}</CardTitle><Badge className={st.tone}>{st.label}</Badge></CardHeader><CardContent className="space-y-3 text-sm">
       <p className="text-slate-300">Responsável: {c.adminName ?? "—"} ({c.adminEmail ?? "sem e-mail"}) · criada em {day(c.createdAt)}</p>
+      <p className="text-slate-300">Cadastro: {c.legalName || "—"} · {c.taxDocument || "sem CNPJ/CPF"} · {[c.addressStreet, c.addressCity, c.addressState].filter(Boolean).join(", ") || "endereço não cadastrado"}</p>
       <p className={c.termsAcceptedCurrent ? "text-emerald-200" : "text-amber-100"}>{termsAcceptanceLabel(c, day)}</p>
       {c.blockedReason && !c.active && <p className="rounded-lg bg-rose-500/10 p-2 text-rose-100">Motivo do bloqueio: {c.blockedReason}</p>}
       <div className="flex flex-wrap items-end gap-2"><div className="min-w-[220px] flex-1"><Label>Nome da empresa</Label><Input value={name} onChange={(e) => setName(e.target.value)} className={inp} /></div><Button disabled={rename.isPending || name.trim() === c.name || name.trim().length < 2} onClick={() => rename.mutate({ companyId: c.id, name })} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar nome</Button></div>

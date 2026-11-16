@@ -11,6 +11,8 @@ import { PasswordInput } from "@/components/PasswordInput";
 import { trpc } from "@/lib/trpc";
 import { ENTITLEMENT_CATALOG, ROLE_FEATURE_CEILING, type CompanyRole, type EntitlementKey, type PermissionMode } from "@shared/entitlements";
 import { toast } from "sonner";
+import { MemberRegistryFields, registryFromMember } from "@/components/registry/MemberRegistryFields";
+import { emptyMemberRegistry, type MemberRegistry } from "@shared/registryFields";
 
 const ROLE_LABEL: Record<string, string> = {
   company_admin: "Administrador",
@@ -31,6 +33,13 @@ type Member = {
   employeeCode?: string | null;
   workStartTime?: string | null;
   workEndTime?: string | null;
+  phone?: string | null;
+  cpf?: string | null;
+  pis?: string | null;
+  rg?: string | null;
+  birthDate?: string | null;
+  jobTitle?: string | null;
+  admissionDate?: string | null;
 };
 
 function hhmm(value?: string | null) {
@@ -131,6 +140,8 @@ export default function AdminUsersPage() {
 
 function CreateUserCard({ actorRole, stores, onCancel, onCreated }: { actorRole?: string; stores: Array<{ id: number; name: string }>; onCancel: () => void; onCreated: (id: number) => void }) {
   const [form, setForm] = useState({ userName: "", email: "", password: "", role: "promoter" as CompanyRole, storeIds: [] as number[] });
+  const [registry, setRegistry] = useState<MemberRegistry>(emptyMemberRegistry());
+  const [showRegistry, setShowRegistry] = useState(false);
   const promoterOnly = actorRole === "supervisor";
   const create = trpc.companyUsers.create.useMutation({
     onSuccess: (data) => { toast.success("Usuário criado. Um e-mail com o acesso foi enviado."); onCreated(data.accountId); },
@@ -147,6 +158,7 @@ function CreateUserCard({ actorRole, stores, onCancel, onCreated }: { actorRole?
       password: form.password,
       role: promoterOnly ? "promoter" : form.role,
       storeIds: (promoterOnly || form.role === "promoter") ? form.storeIds : undefined,
+      registry,
     });
   };
   return (
@@ -169,6 +181,17 @@ function CreateUserCard({ actorRole, stores, onCancel, onCreated }: { actorRole?
         {(promoterOnly || form.role === "promoter") && (
           <StorePicker stores={stores} selected={form.storeIds} onToggle={toggleStore} />
         )}
+        <div className="rounded-xl border border-white/10 p-3">
+          <button type="button" className="text-sm font-semibold text-teal-200" onClick={() => setShowRegistry((v) => !v)}>
+            {showRegistry ? "Ocultar dados cadastrais (opcional)" : "Adicionar dados cadastrais (opcional)"}
+          </button>
+          {showRegistry && (
+            <div className="mt-3">
+              <p className="mb-3 text-xs text-slate-400">CPF, PIS, RG, cargo e admissão podem ficar em branco e ser preenchidos depois pelo administrador.</p>
+              <MemberRegistryFields value={registry} onChange={setRegistry} />
+            </div>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button disabled={create.isPending} onClick={submit} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Cadastrar</Button>
           <Button variant="outline" className="border-white/20 text-white" onClick={onCancel}>Cancelar</Button>
@@ -199,6 +222,7 @@ function MemberPanel({ actorRole, member, stores, weekly, weeklyReady, storesRea
   const [routes, setRoutes] = useState<Record<number, number[]>>({});
   const [modes, setModes] = useState<Partial<Record<EntitlementKey, PermissionMode>>>({});
   const [newPassword, setNewPassword] = useState("");
+  const [registry, setRegistry] = useState<MemberRegistry>(registryFromMember(member));
 
   useEffect(() => {
     setUserName(member.userName);
@@ -207,6 +231,7 @@ function MemberPanel({ actorRole, member, stores, weekly, weeklyReady, storesRea
     setEmployeeCode(member.employeeCode || "");
     setWorkStartTime(hhmm(member.workStartTime));
     setWorkEndTime(hhmm(member.workEndTime));
+    setRegistry(registryFromMember(member));
   }, [member]);
 
   useEffect(() => {
@@ -251,10 +276,11 @@ function MemberPanel({ actorRole, member, stores, weekly, weeklyReady, storesRea
         workEndTime: workEndTime || null,
         weeklyRoutes: weeklyReady ? Object.entries(routes).filter(([, ids]) => ids.length).map(([weekday, ids]) => ({ weekday: Number(weekday), storeIds: ids })) : undefined,
         storeIds: storesReady ? storeIds : undefined,
+        registry,
       });
       return;
     }
-    update.mutate({ id: member.id, userName: userName.trim(), email: email.trim(), role });
+    update.mutate({ id: member.id, userName: userName.trim(), email: email.trim(), role, registry });
   };
   const savePerms = () => {
     const ceiling = new Set(ROLE_FEATURE_CEILING[member.role]);
@@ -295,6 +321,10 @@ function MemberPanel({ actorRole, member, stores, weekly, weeklyReady, storesRea
                 <div><Label>Fim da jornada</Label><Input type="time" value={workEndTime} onChange={(e) => setWorkEndTime(e.target.value)} className={inp} /></div>
               </>
             )}
+          </div>
+          <div className="rounded-xl border border-white/10 p-3">
+            <p className="mb-3 text-sm font-semibold text-slate-200">Dados cadastrais (CPF, PIS, RG, cargo e admissão). Nenhum campo é obrigatório.</p>
+            <MemberRegistryFields value={registry} onChange={canEdit ? setRegistry : undefined} disabled={!canEdit} />
           </div>
           {canEdit && <Button disabled={update.isPending || updatePromoter.isPending} onClick={saveProfile} className="bg-teal-300 text-slate-950 hover:bg-teal-200">Salvar cadastro</Button>}
         </CardContent>

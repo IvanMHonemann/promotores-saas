@@ -41,3 +41,52 @@ export function parseSchedule(text: string): Array<[string, string]> | null {
   return out.length <= 4 ? out : null;
 }
 export const formatSchedule = (s: Array<[string, string]> | null | undefined) => (s || []).map(([a, b]) => `${a}-${b}`).join(", ");
+
+
+export function formatCpf(value: unknown): string {
+  const d = onlyDigitsStr(value);
+  if (d.length !== 11) return String(value ?? "").trim();
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
+export function formatCnpj(value: unknown): string {
+  const d = onlyDigitsStr(value);
+  if (d.length !== 14) return String(value ?? "").trim();
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
+
+export function formatCpfOrCnpj(value: unknown): string {
+  const d = onlyDigitsStr(value);
+  if (d.length === 11) return formatCpf(d);
+  if (d.length === 14) return formatCnpj(d);
+  return String(value ?? "").trim();
+}
+
+export function formatCep(value: unknown): string {
+  const d = onlyDigitsStr(value);
+  if (d.length !== 8) return String(value ?? "").trim();
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
+export function isValidCep(value: unknown): boolean {
+  const d = onlyDigitsStr(value);
+  return d.length === 8;
+}
+
+/** PIS/PASEP/NIS (11 dígitos com dígito verificador). */
+export function isValidPis(value: unknown): boolean {
+  const d = onlyDigitsStr(value);
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const weights = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  let sum = 0;
+  for (let i = 0; i < 10; i++) sum += Number(d[i]) * weights[i];
+  const r = sum % 11;
+  const dv = r < 2 ? 0 : 11 - r;
+  return dv === Number(d[10]);
+}
+
+export function formatPis(value: unknown): string {
+  const d = onlyDigitsStr(value);
+  if (d.length !== 11) return String(value ?? "").trim();
+  return `${d.slice(0, 3)}.${d.slice(3, 8)}.${d.slice(8, 10)}-${d.slice(10)}`;
+}

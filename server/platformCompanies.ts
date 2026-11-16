@@ -25,6 +25,8 @@ async function database() {
 export async function listCompaniesOverview() {
   const d = await database();
   await db.ensureAdditionalUserPriceColumn();
+  const { ensureCompanyRegistryColumns } = await import("./companyRegistry");
+  await ensureCompanyRegistryColumns();
   const [rows, plans, pays, counts, admins, flags, acceptances] = await Promise.all([
     d.select().from(companies).orderBy(companies.name),
     d.select().from(subscriptionPlans),
@@ -50,6 +52,11 @@ export async function listCompaniesOverview() {
     const staffLimit = effectiveUserLimit({ maxUsers: planMaxUsers, extraUsers });
     return {
       id: c.id, name: c.name, active: c.active, createdAt: c.createdAt,
+      legalName: (c as any).legalName ?? null,
+      taxDocument: (c as any).taxDocument ?? null,
+      addressCity: (c as any).addressCity ?? null,
+      addressState: (c as any).addressState ?? null,
+      addressStreet: (c as any).addressStreet ?? null,
       archivedAt: flagBy.get(`${c.id}:archived_at`) ?? null,
       blockedReason: flagBy.get(`${c.id}:blocked_reason`) ?? null,
       planId: c.planId ?? null, planName: plan?.name ?? null, planPrice: plan?.price ?? null,

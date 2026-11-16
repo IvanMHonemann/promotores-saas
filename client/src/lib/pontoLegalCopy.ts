@@ -32,9 +32,9 @@ export function isCompanyActionableWarning(w: string): boolean {
 }
 
 export function simplifyExportWarning(w: string): string {
-  if (/cnpj|cpf da empresa|empregador/i.test(w)) return "Falta o CNPJ (ou CPF) da empresa. Cadastre em Espelho de ponto → Dados da empresa.";
-  if (/cpf.*funcion|perfil trabalhista/i.test(w)) return w.replace(/perfil trabalhista/gi, "cadastro do funcionário (Espelho de ponto)").replace(/marcação\(ões\)/gi, "batida(s)");
-  if (/jornada contratual|registro 04/i.test(w)) return "Há funcionário sem horário de trabalho cadastrado. Preencha a jornada no Espelho de ponto → Dados da empresa / funcionário.";
+  if (/cnpj|cpf da empresa|empregador/i.test(w)) return "Falta o CNPJ (ou CPF) da empresa. Cadastre em Dados da empresa.";
+  if (/cpf.*funcion|perfil trabalhista/i.test(w)) return w.replace(/perfil trabalhista/gi, "cadastro do funcionário (Promotores e equipe)").replace(/marcação\(ões\)/gi, "batida(s)");
+  if (/jornada contratual|registro 04/i.test(w)) return "Há funcionário sem horário de trabalho cadastrado. Preencha a jornada no Espelho de ponto.";
   if (/horário contratual|entrada\/saída previstos/i.test(w)) return "O arquivo usa só a carga horária diária; os horários previstos de entrada e saída ainda não são cadastrados no sistema.";
   return w;
 }

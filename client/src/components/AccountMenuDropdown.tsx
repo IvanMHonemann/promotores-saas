@@ -1,4 +1,4 @@
-import { Clock3, CreditCard, KeyRound, LogOut, UserRound, RefreshCw } from "lucide-react";
+import { Building2, Clock3, CreditCard, KeyRound, LogOut, UserRound, RefreshCw } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { isCompanyManager } from "@shared/companyAccess";
 import {
@@ -109,6 +109,14 @@ export default function AccountMenuDropdown({ tone = "dark" }: AccountMenuDropdo
             Minha conta
           </a>
         </DropdownMenuItem>
+        {isManager && (
+          <DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
+            <a href="/dados-empresa">
+              <Building2 className="text-teal-300" />
+              Dados da empresa
+            </a>
+          </DropdownMenuItem>
+        )}
         {!isPlatformAdmin && canViewTimeBank && (
           <DropdownMenuItem asChild className="cursor-pointer gap-3 py-2.5 text-slate-200 focus:bg-white/10 focus:text-white">
             <a href={isManager ? "/banco-de-horas" : "/minha-conta#banco-de-horas"}>

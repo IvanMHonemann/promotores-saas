@@ -1,4 +1,5 @@
 import { createTtlCache } from "./ttlCache";
+import { ensureCompanyRegistryColumns } from "./companyRegistry";
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { and, eq, gt, inArray, lte } from "drizzle-orm";
 import { companies, companySubscriptions, memberAccounts, memberSessions, platformAdmins, platformSessions, subscriptionPlans } from "../drizzle/schema.original";
@@ -388,7 +389,8 @@ export async function createCompanyUser(input: { companyId: number; userName: st
 export async function listMemberAccounts(companyId?: number) {
   const db = await getDb();
   if (!db) return [];
-  const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt, employeeCode: promoterProfiles.employeeCode, workStartTime: promoterProfiles.workStartTime, workEndTime: promoterProfiles.workEndTime }).from(memberAccounts).leftJoin(promoterProfiles, and(eq(promoterProfiles.memberAccountId, memberAccounts.id), eq(promoterProfiles.companyId, memberAccounts.companyId)));
+  await ensureCompanyRegistryColumns();
+  const query = db.select({ id: memberAccounts.id, companyId: memberAccounts.companyId, userName: memberAccounts.userName, email: memberAccounts.email, role: memberAccounts.role, active: memberAccounts.active, createdAt: memberAccounts.createdAt, phone: memberAccounts.phone, cpf: memberAccounts.cpf, pis: memberAccounts.pis, rg: memberAccounts.rg, birthDate: memberAccounts.birthDate, jobTitle: memberAccounts.jobTitle, admissionDate: memberAccounts.admissionDate, employeeCode: promoterProfiles.employeeCode, workStartTime: promoterProfiles.workStartTime, workEndTime: promoterProfiles.workEndTime }).from(memberAccounts).leftJoin(promoterProfiles, and(eq(promoterProfiles.memberAccountId, memberAccounts.id), eq(promoterProfiles.companyId, memberAccounts.companyId)));
   const rows = companyId ? await query.where(eq(memberAccounts.companyId, companyId)) : await query;
   return rows.map((row) => ({ ...row, role: normalizeMemberRole(String(row.role)) }));
 }

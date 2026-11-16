@@ -6,6 +6,7 @@ import MissingPunchAlert from "@/components/MissingPunchAlert";
 import RejectedCorrectionAlert from "@/components/RejectedCorrectionAlert";
 import PaymentReminderBanner from "@/components/PaymentReminderBanner";
 import PlatformAnnouncementBanner from "@/components/PlatformAnnouncementBanner";
+import CompanyRegistryBanner from "@/components/CompanyRegistryBanner";
 import UpdateAvailableBanner from "@/components/UpdateAvailableBanner";
 import AccountMenuDropdown from "@/components/AccountMenuDropdown";
 import { SidebarMenuButton, SidebarNav } from "@/components/SidebarNav";
@@ -63,6 +64,7 @@ export default function DashboardLayout({ title, description, help, children, re
           <ErrorBoundary resetKey="layout-alerts">
             <PaymentReminderBanner />
             <PlatformAnnouncementBanner />
+            <CompanyRegistryBanner />
             <RejectedCorrectionAlert />
             <MissingPunchAlert />
             <PrivacyNoticeGate />

@@ -12,7 +12,7 @@ import { buildCompanyGroups, buildPromoterNav, isItemActive, loadGroupState, sav
 
 const groupIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard, store: MapPin, calendar: CalendarDays, camera: Camera, package: Package, users: UsersRound,
-  clock: Clock3, file: FileText, palm: Palmtree, audit: ClipboardList, archive: Archive, shield: ShieldAlert, card: CreditCard, trash: Trash2, megaphone: Megaphone,
+  clock: Clock3, file: FileText, building: Building2, palm: Palmtree, audit: ClipboardList, archive: Archive, shield: ShieldAlert, card: CreditCard, trash: Trash2, megaphone: Megaphone,
 };
 
 const roleLabels: Record<string, string> = {

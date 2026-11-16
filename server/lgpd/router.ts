@@ -15,6 +15,7 @@ import {
 import { auditFromCtx, requestMeta } from "../audit";
 import { PRIVACY_NOTICE_VERSION, privacyNoticeText } from "../../shared/privacyNotice";
 import { sha256 } from "../ponto/repFormat";
+import { getLaborIdentity } from "../companyRegistry";
 
 let ready: Promise<void> | null = null;
 export async function ensureLgpdTables(): Promise<void> {
@@ -67,10 +68,11 @@ export async function collectSubjectData(companyId: number, memberId: number) {
   await ensureLgpdTables();
   const database = await db.getDb();
   if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
-  const [account] = await database.select({ id: memberAccounts.id, nome: memberAccounts.userName, email: memberAccounts.email, telefone: memberAccounts.phone, perfil: memberAccounts.role, ativo: memberAccounts.active, criadoEm: memberAccounts.createdAt, atualizadoEm: memberAccounts.updatedAt })
+  const [account] = await database.select({ id: memberAccounts.id, nome: memberAccounts.userName, email: memberAccounts.email, telefone: memberAccounts.phone, perfil: memberAccounts.role, ativo: memberAccounts.active, criadoEm: memberAccounts.createdAt, atualizadoEm: memberAccounts.updatedAt, cpf: memberAccounts.cpf, pis: memberAccounts.pis, rg: memberAccounts.rg, dataNascimento: memberAccounts.birthDate, cargo: memberAccounts.jobTitle, dataAdmissao: memberAccounts.admissionDate } as any)
     .from(memberAccounts).where(and(eq(memberAccounts.id, memberId), eq(memberAccounts.companyId, companyId))).limit(1);
   if (!account) throw new TRPCError({ code: "NOT_FOUND", message: "Funcionário não encontrado nesta empresa." });
   const laborRaw = await db.getSetting(`labor_profile:${memberId}`, companyId, "");
+  const identity = await getLaborIdentity(companyId, memberId);
   const myVisits = await database.select().from(visits).where(and(eq(visits.companyId, companyId), eq(visits.promoterId, memberId)));
   const visitIds = myVisits.map((v) => v.id);
   return {
@@ -78,7 +80,7 @@ export async function collectSubjectData(companyId: number, memberId: number) {
     observacao: "Exportação dos dados pessoais do titular (LGPD art. 18, II e V). Senhas e tokens de sessão não são exportados.",
     conta: account,
     perfilPromotor: (await database.select().from(promoterProfiles).where(eq(promoterProfiles.memberAccountId, memberId)))[0] ?? null,
-    perfilTrabalhista: laborRaw ? JSON.parse(laborRaw) : null,
+    perfilTrabalhista: { ...(laborRaw ? JSON.parse(laborRaw) : {}), ...identity },
     marcacoesDePonto: await database.select().from(timeEvents).where(and(eq(timeEvents.companyId, companyId), eq(timeEvents.memberAccountId, memberId))),
     pedidosDeCorrecao: await database.select().from(timeCorrectionRequests).where(and(eq(timeCorrectionRequests.companyId, companyId), eq(timeCorrectionRequests.memberAccountId, memberId))),
     aceitesDoEspelho: await rows(sql`SELECT month, decision, documentHash, comment, ipAddress, userAgent, acceptedAt FROM timesheet_acceptances WHERE companyId = ${companyId} AND memberAccountId = ${memberId}`).catch(() => []),

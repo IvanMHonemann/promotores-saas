@@ -12,6 +12,7 @@ import { loadAdjustmentsByEvent, loadMemberVacations, loadMirrorEventRows, loadM
 import { readTimeAlert } from "../../shared/punchTime";
 import { buildMemberReports } from "./timeBank";
 import { closedPeriodBalance, monthBounds } from "../../shared/timeBank";
+import { getCompanyRegistry, getLegalSnapshotForCompany, getMemberRegistry, saveCompanyRegistry, saveMemberRegistry } from "../companyRegistry";
 
 const TZ = "America/Sao_Paulo";
 const monthStr = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Mês inválido (use AAAA-MM).");
@@ -105,13 +106,18 @@ export const timesheetMirrorRouter = router({
     return out;
   }),
   getCompanyProfile: companyAdminFeatureProcedure("timeTracking").query(async ({ ctx }) => {
-    const database = await db.getDb();
-    const company = database ? (await database.select({ name: companies.name }).from(companies).where(eq(companies.id, ctx.accountId)).limit(1))[0] : null;
-    const legal = await readJson<z.infer<typeof legalSchema>>("company_legal_profile", ctx.accountId);
-    return { name: company?.name ?? "", legal: legal ?? { legalName: "", document: "", establishment: "", address: "" } };
+    const snap = await getLegalSnapshotForCompany(ctx.accountId);
+    return { name: snap.name, legal: snap.legal };
   }),
   saveCompanyProfile: companyAdminFeatureProcedure("timeTracking").input(legalSchema).mutation(async ({ ctx, input }) => {
-    await db.setSetting("company_legal_profile", JSON.stringify(input), ctx.accountId);
+    const current = await getCompanyRegistry(ctx.accountId);
+    const registry = { ...current.registry };
+    registry.legalName = (input.legalName || "").trim() || registry.legalName;
+    registry.taxDocument = (input.document || "").trim() || registry.taxDocument;
+    registry.establishment = (input.establishment || "").trim() || registry.establishment;
+    const address = (input.address || "").trim();
+    if (address && !registry.addressStreet && !registry.addressCity) registry.addressStreet = address;
+    await saveCompanyRegistry(ctx.accountId, registry);
     void auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "company_legal_profile", description: "Atualizou dados de identificação da empresa para o espelho de ponto", newData: input });
     return { success: true as const };
   }),
@@ -125,7 +131,17 @@ export const timesheetMirrorRouter = router({
   saveLaborProfile: companyAdminFeatureProcedure("timeTracking").input(z.object({ memberId: z.number().int().positive(), profile: laborSchema })).mutation(async ({ ctx, input }) => {
     const [member] = await companyMembers(ctx.accountId, [input.memberId]);
     if (!member) throw new TRPCError({ code: "NOT_FOUND", message: "Funcionário não encontrado." });
+    const current = await getMemberRegistry(ctx.accountId, input.memberId);
     await db.setSetting(`labor_profile:${input.memberId}`, JSON.stringify(input.profile), ctx.accountId);
+    if (current) {
+      await saveMemberRegistry(ctx.accountId, input.memberId, {
+        ...current.registry,
+        cpf: input.profile.cpf ?? current.registry.cpf,
+        pis: input.profile.pis ?? current.registry.pis,
+        jobTitle: input.profile.jobTitle ?? current.registry.jobTitle,
+        admissionDate: input.profile.admissionDate ?? current.registry.admissionDate,
+      });
+    }
     void auditFromCtx(ctx, { action: "update", module: "time_tracking", entityType: "labor_profile", entityId: input.memberId, entityLabel: member.name, description: `Atualizou perfil trabalhista de ${member.name}`, newData: input.profile });
     return { success: true as const };
   }),
@@ -142,8 +158,9 @@ export const timesheetMirrorRouter = router({
       await ensureAdjustmentsTable();
       const members = await companyMembers(ctx.accountId, input.memberIds);
       if (input.memberIds?.length && members.length !== new Set(input.memberIds).size) throw new TRPCError({ code: "NOT_FOUND", message: "Funcionário não encontrado nesta empresa." });
-      const company = (await database.select({ name: companies.name }).from(companies).where(eq(companies.id, ctx.accountId)).limit(1))[0];
-      const legal = await readJson<z.infer<typeof legalSchema>>("company_legal_profile", ctx.accountId);
+      const snap = await getLegalSnapshotForCompany(ctx.accountId);
+      const company = { name: snap.name };
+      const legal = snap.legal;
       // Consultas em lote (4 no total, independentes do nº de funcionários) em vez de 3+ por funcionário.
       const memberIds = members.map((m) => m.id);
       // Consultas em lote via buildMemberReports (mesma regra do banco de horas); filtra pelo horário efetivo

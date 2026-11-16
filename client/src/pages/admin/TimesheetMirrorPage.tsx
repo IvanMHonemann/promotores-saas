@@ -1,4 +1,4 @@
-import { formatSchedule, isValidCpf, isValidCpfOrCnpj, parseSchedule } from "@shared/brDocs";
+import { formatSchedule, isValidCpf, parseSchedule } from "@shared/brDocs";
 import { useMemo, useState } from "react";
 import { FileSpreadsheet, FileText, Loader2, MessageCircle, Printer, Save, Settings2 } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -131,13 +131,11 @@ export default function TimesheetMirrorPage() {
 
 function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: any[]; onSaved: () => void }) {
   const company = trpc.timesheetMirror.getCompanyProfile.useQuery(undefined, { staleTime: 30000 });
-  const saveCompany = trpc.timesheetMirror.saveCompanyProfile.useMutation({ onSuccess: () => { toast.success("Dados da empresa salvos."); onSaved(); }, onError: (e) => toast.error(e.message) });
   const saveLabor = trpc.timesheetMirror.saveLaborProfile.useMutation({ onSuccess: () => { toast.success("Perfil do funcionário salvo."); onSaved(); }, onError: (e) => toast.error(e.message) });
   const mirrorOptions = trpc.timesheetMirror.getMirrorOptions.useQuery(undefined, { staleTime: 30000 });
   const saveOptions = trpc.timesheetMirror.saveMirrorOptions.useMutation({ onSuccess: () => { toast.success("Configuração de feriados salva."); void mirrorOptions.refetch(); onSaved(); }, onError: (e) => toast.error(e.message) });
-  const [legal, setLegal] = useState<any>(null);
   const [labor, setLabor] = useState<{ id: string; v: any } | null>(null);
-  const legalValue = legal ?? company.data?.legal ?? { legalName: "", document: "", establishment: "", address: "" };
+  const legalValue = company.data?.legal ?? { legalName: "", document: "", establishment: "", address: "" };
   const member = useMemo(() => promoters.find((p) => String(p.id) === who), [promoters, who]);
   const stored = member?.labor || {};
   const lv = labor && labor.id === who ? labor.v : {
@@ -158,17 +156,16 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
     } });
   };
   return <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle>Dados para o espelho</CardTitle></CardHeader><CardContent className="space-y-6">
-    <div className="space-y-3"><p className="text-sm text-slate-300">Identificação do empregador. Campos em branco aparecem como “Não informado” no relatório.</p>
-      <div className="grid gap-3 md:grid-cols-2">
-        <div><Label>Razão social / nome</Label><Input value={legalValue.legalName} onChange={(e) => setLegal({ ...legalValue, legalName: e.target.value })} className={field} /></div>
-        <div><Label>CNPJ ou CPF</Label><Input value={legalValue.document} onChange={(e) => setLegal({ ...legalValue, document: e.target.value })} className={field} />{legalValue.document && !isValidCpfOrCnpj(legalValue.document) && <p className="mt-1 text-xs text-rose-300">CNPJ/CPF inválido</p>}</div>
-        <div><Label>Estabelecimento</Label><Input value={legalValue.establishment} onChange={(e) => setLegal({ ...legalValue, establishment: e.target.value })} className={field} /></div>
-        <div><Label>Endereço</Label><Input value={legalValue.address} onChange={(e) => setLegal({ ...legalValue, address: e.target.value })} className={field} /></div>
-      </div>
-      <Button onClick={() => saveCompany.mutate(legalValue)} disabled={saveCompany.isPending} className="bg-teal-300 text-slate-950 hover:bg-teal-200"><Save className="mr-2 h-4 w-4" />Salvar empresa</Button></div>
+    <div className="space-y-3"><p className="text-sm text-slate-300">A identificação do empregador (razão social, CNPJ e endereço) agora fica em Dados da empresa. Campos em branco aparecem como “Não informado” no relatório.</p>
+      <p className="rounded-lg border border-white/10 bg-slate-950/40 p-3 text-sm text-slate-200">
+        {legalValue.legalName || company.data?.name || "Razão social ainda não cadastrada"}
+        {legalValue.document ? ` · ${legalValue.document}` : " · CNPJ/CPF pendente"}
+        {legalValue.address ? ` · ${legalValue.address}` : " · endereço pendente"}
+      </p>
+      <a href="/dados-empresa" className="inline-flex items-center rounded-md bg-teal-300 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-teal-200">Abrir Dados da empresa</a></div>
     <div className="space-y-2 border-t border-white/10 pt-4"><p className="text-sm text-slate-300">Feriados: os nacionais (inclusive 20/11 desde 2024) são abonados automaticamente. Carnaval e Corpus Christi são ponto facultativo.</p>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={mirrorOptions.isLoading || saveOptions.isPending} checked={Boolean(mirrorOptions.data?.optionalHolidaysAsHoliday)} onChange={(e) => saveOptions.mutate({ optionalHolidaysAsHoliday: e.target.checked })} />Minha empresa concede Carnaval e Corpus Christi (abonar como feriado)</label></div>
-    <div className="space-y-3 border-t border-white/10 pt-4"><p className="text-sm text-slate-300">Perfil trabalhista — selecione um funcionário no filtro acima. Sem jornada e dias configurados, horas previstas, extras e faltas não são calculadas.</p>
+    <div className="space-y-3 border-t border-white/10 pt-4"><p className="text-sm text-slate-300">Jornada e perfil trabalhista — selecione um funcionário no filtro acima. CPF, cargo e admissão também podem ser preenchidos em Promotores e equipe. Sem jornada e dias configurados, horas previstas, extras e faltas não são calculadas.</p>
       {!member ? <p className="text-sm text-amber-200">Escolha um funcionário específico para editar o perfil.</p> : <>
         <div className="grid gap-3 md:grid-cols-3">
           <div><Label>Cargo/função</Label><Input value={lv.jobTitle} onChange={(e) => setLv({ jobTitle: e.target.value })} className={field} /></div>

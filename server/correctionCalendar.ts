@@ -41,6 +41,8 @@ export type CorrectionCalendarDay = {
   date: string;
   mark: CorrectionDayMark;
   reason?: string;
+  /** Nome do feriado abonado automaticamente (nacional ou facultativo tratado como feriado). */
+  holiday?: string | null;
 };
 
 export type CorrectionCalendarResult = {
@@ -114,7 +116,7 @@ export async function getMyCorrectionCalendarDays(opts: {
       nowHm: now.hm,
       lastPunchHm: punches.at(-1)?.hm ?? null,
     });
-    return { date, mark: classified.mark, reason: classified.reason };
+    return { date, mark: classified.mark, reason: classified.reason, holiday: holiday?.name ?? null };
   });
 
   return {

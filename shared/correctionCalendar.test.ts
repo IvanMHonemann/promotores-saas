@@ -77,6 +77,17 @@ describe("classifyCorrectionDay", () => {
 
   it("feriado, férias ou abono aprovado desfaz a falta", () => {
     expect(classifyCorrectionDay(base({ excused: true, punches: [] })).mark).toBe("ok");
+    expect(classifyCorrectionDay(base({ date: "2026-11-02", excused: true, isWorkday: true, punches: [] })).mark).toBe("ok");
+  });
+
+  it("quem trabalha no feriado ainda pode precisar corrigir jornada incompleta", () => {
+    const r = classifyCorrectionDay(base({ date: "2026-11-02", excused: true, isWorkday: true, punches: ["clock_in"] }));
+    expect(r.mark).toBe("needs_correction");
+    expect(r.reason).toBe("Jornada incompleta");
+    expect(classifyCorrectionDay(base({
+      date: "2026-11-02", excused: true, isWorkday: true,
+      punches: ["clock_in", "break_start", "break_end", "clock_out"],
+    })).mark).toBe("ok");
   });
 
   it("jornada incompleta em dia passado precisa de correção", () => {

@@ -62,10 +62,12 @@ export function todayIncompleteShouldAlert(opts: {
 export function classifyCorrectionDay(facts: CorrectionDayFacts): { mark: CorrectionDayMark; reason?: string } {
   if (facts.date > facts.today) return { mark: "ok" };
   if (facts.hasPendingCorrection) return { mark: "pending", reason: "Correção já pedida" };
-  if (facts.excused) return { mark: "ok" };
+  // Feriado, férias ou abono: dia sem batida não pede correção (já é abonado).
+  // Se a pessoa trabalhou no feriado, a jornada incompleta ainda pode precisar de ajuste.
+  if (facts.excused && facts.punches.length === 0) return { mark: "ok" };
 
   const incomplete = facts.punches.length > 0 && journeyIsIncomplete(facts.punches);
-  const missingOnWorkday = facts.punches.length === 0 && facts.isWorkday === true;
+  const missingOnWorkday = facts.punches.length === 0 && facts.isWorkday === true && !facts.excused;
   const isToday = facts.date === facts.today;
 
   if (isToday) {

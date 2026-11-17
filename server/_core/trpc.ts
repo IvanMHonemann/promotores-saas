@@ -34,6 +34,8 @@ const requireCompanyUser = t.middleware(async opts => {
       });
     }
   }
+  const { assertPromoterNotOnVacation } = await import("../vacationLock");
+  await assertPromoterNotOnVacation(opts.ctx);
   return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
 });
 
@@ -69,6 +71,10 @@ const requireCompanyMemberNoBillingGate = t.middleware(async opts => {
   }
   const companyRoles: AccessLevel[] = ["company_admin", "supervisor", "promoter"];
   if (!companyRoles.includes(user.role)) throw new TRPCError({ code: "FORBIDDEN", message: "Perfil sem permissão comercial." });
+  if (opts.type === "mutation") {
+    const { assertPromoterNotOnVacation } = await import("../vacationLock");
+    await assertPromoterNotOnVacation(opts.ctx);
+  }
   return opts.next({ ctx: { ...opts.ctx, user, accountId: opts.ctx.accountId } });
 });
 

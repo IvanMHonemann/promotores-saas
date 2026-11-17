@@ -351,6 +351,8 @@ export const companyRegistryRouter = router({
   changeMyEmail: protectedProcedure
     .input(changeMyEmailInput)
     .mutation(async ({ ctx, input }) => {
+      const { assertPromoterNotOnVacation } = await import("./vacationLock");
+      await assertPromoterNotOnVacation(ctx);
       if (ctx.user?.role === "platform_admin" || !ctx.memberAccountId || !ctx.accountId) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "A conta da plataforma não usa este e-mail." });
       }
@@ -374,6 +376,8 @@ export const companyRegistryRouter = router({
 
   /** Só admin/supervisor (não promotor) editam os próprios dados cadastrais. Promotor é recusado. */
   saveMyIdentity: protectedProcedure.input(memberRegistryInput).mutation(async ({ ctx, input }) => {
+    const { assertPromoterNotOnVacation } = await import("./vacationLock");
+    await assertPromoterNotOnVacation(ctx);
     if (ctx.user?.role === "platform_admin" || !ctx.memberAccountId || !ctx.accountId) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "A conta da plataforma não tem estes dados." });
     }

@@ -170,6 +170,17 @@ export const vacationsRouter = router({
     return rows.map((row) => ({ ...row, startDate: asDateStr(row.startDate), endDate: asDateStr(row.endDate) }));
   }),
 
+  /** Usado pela tela de bloqueio. Liberado mesmo com o restante da API barrada nas férias. */
+  myActive: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user?.role !== "promoter" || !ctx.memberAccountId || !ctx.accountId) {
+      return { active: false as const };
+    }
+    const { findActiveVacationForMember } = await import("../vacationLock");
+    const active = await findActiveVacationForMember(ctx.accountId, ctx.memberAccountId);
+    if (!active) return { active: false as const };
+    return { active: true as const, startDate: active.startDate, endDate: active.endDate };
+  }),
+
   create: commercialFeatureProcedure("timeTracking")
     .input(z.object({
       memberAccountId: z.number().int().positive(),

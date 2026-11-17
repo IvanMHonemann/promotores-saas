@@ -10,6 +10,7 @@ import { auditFromCtx } from "../audit";
 import { recordAdjustment } from "./timesheetMirror";
 async function safeAdjustment(data: Parameters<typeof recordAdjustment>[0]) { try { await recordAdjustment(data); } catch (error) { console.error("adjustment log failed", error); } }
 import { findMissingPunches } from "../missingPunch";
+import { getMyCorrectionCalendarDays } from "../correctionCalendar";
 import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/timesheetMirror";
 import { ensureCorrectionExtras, loadApprovedDayExcuses, saveCorrectionAttachment } from "./correctionExtras";
 import { storageGetSignedUrl } from "../storage";
@@ -435,6 +436,16 @@ export const timeTrackingRouter = router({
     // Volta a aparecer só se o pedido for recusado (ou não existir).
     return found.filter((m) => !covered.has(`${m.memberId}:${m.day}`));
   }),
+
+  /** Dias do mês, só do próprio promotor, para sinalizar no calendário de correção. */
+  myCorrectionDays: commercialFeatureProcedure("timeTracking")
+    .input(z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.accountId || !ctx.memberAccountId) {
+        return { month: input.month, today: "", nowHm: "", days: [], needsCorrectionCount: 0 };
+      }
+      return getMyCorrectionCalendarDays({ companyId: ctx.accountId, memberId: ctx.memberAccountId, month: input.month });
+    }),
 
   myHistory: commercialFeatureProcedure("timeTracking")
     .input(z.object({ limit: z.number().min(1).max(100).default(100), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), includeDisregarded: z.boolean().optional() }).optional())

@@ -272,6 +272,12 @@ function CompanyPanel({ company: c, onChanged, onGeneratePix }: { company: Compa
       <Button onClick={() => enterCompany(c.id, c.name, () => enterAs.mutateAsync({ companyId: c.id }))} disabled={Boolean(c.archivedAt)} variant="outline" className="h-auto min-h-10 whitespace-normal border-fuchsia-300/40 text-left text-fuchsia-200"><LogIn className="mr-2 h-4 w-4" />Acessar como esta empresa (editar tudo)</Button>
     </CardContent></Card>
 
+    {c.archivedAt ? (
+      <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarCheck className="h-4 w-4 text-teal-300" />Plano e pagamento</CardTitle></CardHeader><CardContent className="space-y-2 text-sm text-slate-300">
+        <p>Empresa encerrada e arquivada. Plano, Pix e pagamento ficam bloqueados para não reativar o acesso por engano.</p>
+        <p>Vencimento que estava cadastrado: {day(c.expiresAt)}. Restaure a empresa se precisar alterar cobrança ou plano.</p>
+      </CardContent></Card>
+    ) : (
     <Card className="border-white/10 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarCheck className="h-4 w-4 text-teal-300" />Plano e pagamento</CardTitle></CardHeader><CardContent className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <div><Label>Plano</Label><select value={planId} onChange={(e) => onPlanChange(e.target.value)} className={sel}><option value="">Selecione…</option>{planOptions.map((p: any) => <option key={p.id} value={p.id}>{planSelectLabel(p)}</option>)}</select></div>
@@ -310,20 +316,21 @@ function CompanyPanel({ company: c, onChanged, onGeneratePix }: { company: Compa
         <div className="space-y-1 border-t border-white/10 pt-3 text-sm">{(payments.data || []).map((p: any) => <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2"><span>{money(p.amount)} · {p.status === "PENDING" ? `pendente · vence em ${day(p.dueDate)}` : `pago em ${day(p.paymentDate)}`} · {p.status === "PENDING" ? "Pendente" : p.status}</span><Button size="sm" variant="ghost" className="text-rose-200" onClick={() => { void confirmAction({ title: "Excluir este registro de pagamento?", confirmLabel: "Confirmar" }).then((okConfirm) => okConfirm && delPay.mutate({ companyId: c.id, paymentId: p.id })); }}><Trash2 className="h-4 w-4" /></Button></div>)}{!payments.data?.length && <p className="text-slate-400">Nenhum pagamento registrado.</p>}</div>
       </div>
     </CardContent></Card>
+    )}
 
-    <CompanyFeaturesCard companyId={c.id} />
+    {!c.archivedAt && <CompanyFeaturesCard companyId={c.id} />}
 
     <Card className="border-rose-300/20 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Ban className="h-4 w-4 text-rose-300" />Bloqueio e exclusão</CardTitle></CardHeader><CardContent className="space-y-3">
       {c.archivedAt ? <div className="space-y-3">
-        <p className="text-sm text-slate-300">Empresa excluída em {day(c.archivedAt)} (bloqueada, dados preservados).</p>
+        <p className="text-sm text-slate-300">Empresa encerrada em {day(c.archivedAt)}. Fica bloqueada (ninguém entra) e os dados são preservados, inclusive o ponto.</p>
         <Button variant="outline" onClick={() => archive.mutate({ companyId: c.id, archived: false })} className="border-white/25 text-white"><RotateCcw className="mr-2 h-4 w-4" />Restaurar empresa</Button>
-        <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3"><p className="text-sm font-semibold text-rose-100">Exclusão definitiva (irreversível)</p><p className="text-xs text-rose-100/80">Apaga todos os dados, usuários, fotos e registros desta empresa. Digite o nome exato para confirmar.</p><Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={c.name} className={inp} /><Button disabled={purge.isPending || confirm.trim() !== c.name.trim()} onClick={() => purge.mutate({ companyId: c.id, confirmName: confirm })} className="mt-2 bg-rose-600 text-white hover:bg-rose-500"><Trash2 className="mr-2 h-4 w-4" />Excluir definitivamente</Button></div>
+        <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3"><p className="text-sm font-semibold text-rose-100">Exclusão definitiva (irreversível)</p><p className="text-xs text-rose-100/80">Apaga usuários, fotos e o cadastro desta empresa. Se houver marcações de ponto, a exclusão é bloqueada: a Portaria 671 e a CLT pedem a guarda desses registros, em geral por 5 anos. Só use aqui quando não houver ponto a preservar, ou depois do prazo legal, com o AFD/espelho já exportado. Digite o nome exato para confirmar.</p><Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={c.name} className={inp} /><Button disabled={purge.isPending || confirm.trim() !== c.name.trim()} onClick={() => purge.mutate({ companyId: c.id, confirmName: confirm })} className="mt-2 bg-rose-600 text-white hover:bg-rose-500"><Trash2 className="mr-2 h-4 w-4" />Excluir definitivamente</Button></div>
       </div> : <>
         <div><Label>Motivo do bloqueio (mostrado à empresa)</Label><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex.: pagamento em atraso" className={inp} /></div>
         <div className="flex flex-wrap gap-2">
           {c.active ? <Button onClick={() => { void confirmAction({ title: `Bloquear ${c.name}? Todos os usuários serão desconectados.`, confirmLabel: "Confirmar" }).then((ok) => ok && block.mutate({ companyId: c.id, blocked: true, reason })); }} className="bg-amber-400 text-slate-950 hover:bg-amber-300"><Ban className="mr-2 h-4 w-4" />Bloquear (falta de pagamento)</Button>
             : <Button onClick={() => block.mutate({ companyId: c.id, blocked: false })} className="bg-emerald-500 text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4" />Desbloquear</Button>}
-          <Button variant="outline" onClick={() => { void confirmAction({ title: `Excluir ${c.name}? Ela será bloqueada e arquivada; os dados só são apagados se você excluir definitivamente depois.`, confirmLabel: "Confirmar" }).then((ok) => ok && archive.mutate({ companyId: c.id, archived: true })); }} className="border-rose-300/40 text-rose-200"><Trash2 className="mr-2 h-4 w-4" />Excluir empresa</Button>
+          <Button variant="outline" onClick={() => { void confirmAction({ title: `Encerrar ${c.name}? Ela some da lista, fica bloqueada (ninguém entra) e os dados, inclusive o ponto, ficam guardados. A exclusão definitiva é um passo separado, depois.`, confirmLabel: "Confirmar" }).then((ok) => ok && archive.mutate({ companyId: c.id, archived: true })); }} className="border-rose-300/40 text-rose-200"><Trash2 className="mr-2 h-4 w-4" />Encerrar e arquivar</Button>
         </div>
       </>}
     </CardContent></Card>

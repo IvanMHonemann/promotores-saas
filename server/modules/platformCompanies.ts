@@ -18,6 +18,7 @@ export const platformCompaniesRouter = router({
   enterAs: platformProcedure.input(z.object({ companyId: id })).mutation(async ({ ctx, input }) => {
     const company = await db.getCompanyById(input.companyId);
     if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+    await pc.assertCompanyNotArchived(input.companyId);
     void auditFromCtx(ctx, { action: "security", module: "platform", entityType: "company", entityId: company.id, entityLabel: company.name, description: `Administrador da plataforma acessou a empresa ${company.name}`, companyId: company.id } as any);
     return { success: true as const };
   }),
@@ -64,6 +65,7 @@ export const platformCompaniesRouter = router({
     companyId: id,
     amount: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/).optional(),
   })).mutation(async ({ ctx, input }) => {
+    await pc.assertCompanyNotArchived(input.companyId);
     const r = await generateCompanyPix(input.companyId, input.amount);
     log(ctx, input.companyId, "create", `Gerou Pix de R$ ${r.amount} para a empresa #${input.companyId}${r.dueDate ? `, vencimento ${r.dueDate}` : ""}` + (r.recordedAsPending ? " (cobrança pendente)" : ""), { amount: r.amount, dueDate: r.dueDate, paymentId: r.paymentId });
     return r;

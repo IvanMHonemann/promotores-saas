@@ -22,6 +22,31 @@ async function database() {
   return d;
 }
 
+/** Empresa encerrada/arquivada pelo administrador da plataforma (ainda existe no banco). */
+export async function getArchivedAt(companyId: number): Promise<string> {
+  return (await db.getSetting("archived_at", companyId, "")) || "";
+}
+
+/** Impede cobrança, plano ou reativação enquanto a empresa estiver arquivada. Restaurar primeiro. */
+export async function assertCompanyNotArchived(companyId: number): Promise<void> {
+  const archived = await getArchivedAt(companyId);
+  if (archived) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Esta empresa está excluída (arquivada). Restaure-a antes de alterar plano, cobrança ou acesso.",
+    });
+  }
+}
+
+/** Bloqueia exclusão definitiva se ainda houver marcações de ponto (guarda da Portaria 671 / CLT). */
+export function purgeBlockedByTimeClock(eventCount: number): string | null {
+  const n = Math.max(0, Math.trunc(eventCount || 0));
+  if (n <= 0) return null;
+  const label = n === 1 ? "1 marcação de ponto" : `${n} marcações de ponto`;
+  return `Esta empresa tem ${label}. A Portaria 671 e a CLT pedem a guarda desses registros, em geral por 5 anos. A exclusão definitiva está bloqueada. Exporte o AFD e o espelho e só apague depois do prazo legal, com confirmação explícita.`;
+}
+
+
 export async function listCompaniesOverview() {
   const d = await database();
   await db.ensureAdditionalUserPriceColumn();
@@ -90,6 +115,7 @@ export async function setCompanyBlocked(companyId: number, blocked: boolean, rea
   const d = await database();
   const company = await db.getCompanyById(companyId);
   if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+  if (!blocked) await assertCompanyNotArchived(companyId);
   await db.updateCompany(companyId, { active: !blocked });
   if (blocked) await db.setSetting("blocked_reason", (reason || "").trim().slice(0, 300) || "Acesso bloqueado pelo administrador da plataforma.", companyId);
   else await d.delete(systemSettings).where(and(eq(systemSettings.accountId, companyId), eq(systemSettings.settingKey, "blocked_reason")));
@@ -106,6 +132,7 @@ export async function setCompanyPlan(input: { companyId: number; planId: number;
   const d = await database();
   const company = await db.getCompanyById(input.companyId);
   if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+  await assertCompanyNotArchived(input.companyId);
   const plan = await db.getSubscriptionPlanById(input.planId);
   if (!plan) throw new TRPCError({ code: "NOT_FOUND", message: "Plano não encontrado." });
   if (input.endsAt && input.endsAt < input.startsAt) throw new TRPCError({ code: "BAD_REQUEST", message: "A validade final não pode ser anterior ao início." });
@@ -130,6 +157,7 @@ export async function setCompanyPlan(input: { companyId: number; planId: number;
 export async function registerCompanyPayment(input: { companyId: number; amount: string; paymentDate: string; periodFrom: string; periodTo: string; billingType: "BOLETO" | "CREDIT_CARD" | "PIX" | "UNDEFINED"; planId?: number | null; graceDays?: number; note?: string | null }) {
   const company = await db.getCompanyById(input.companyId);
   if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+  await assertCompanyNotArchived(input.companyId);
   if (input.periodTo < input.periodFrom) throw new TRPCError({ code: "BAD_REQUEST", message: "O fim do período pago não pode ser anterior ao início." });
   const planId = input.planId ?? company.planId;
   if (!planId) throw new TRPCError({ code: "BAD_REQUEST", message: "Selecione um plano para esta empresa antes de registrar o pagamento." });
@@ -190,6 +218,15 @@ export async function purgeCompany(companyId: number, confirmName: string) {
   const conn = await pool.getConnection();
   const deleted: Record<string, number> = {};
   try {
+    // Marcações de ponto têm guarda legal (Portaria 671 / CLT, em geral 5 anos): não apagar.
+    try {
+      const [evRows]: any = await conn.query("SELECT COUNT(*) AS n FROM time_events WHERE companyId = ?", [companyId]);
+      const blocked = purgeBlockedByTimeClock(Number(evRows?.[0]?.n || 0));
+      if (blocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: blocked });
+    } catch (e) {
+      if (e instanceof TRPCError) throw e;
+      // Tabela ausente não impede o fluxo; o caso com marcações é que precisa ser barrado.
+    }
     const [cols]: any = await conn.query(`SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME IN ('companyId','accountId')`);
     const [memberIdsRows]: any = await conn.query("SELECT id FROM member_accounts WHERE companyId = ?", [companyId]);
     const memberIds: number[] = memberIdsRows.map((r: any) => r.id);
@@ -226,6 +263,7 @@ export async function setCompanyBilling(input: {
 }) {
   const company = await db.getCompanyById(input.companyId);
   if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
+  await assertCompanyNotArchived(input.companyId);
   if (input.extraUsers != null) {
     await db.setSetting(EXTRA_USERS_KEY, String(parseExtraUsers(input.extraUsers)), input.companyId);
   }

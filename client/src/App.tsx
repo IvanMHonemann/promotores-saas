@@ -51,6 +51,7 @@ const PlatformAuditPage = lazy(() => import("./pages/platform/PlatformAuditPage"
 const PlatformUsersPage = lazy(() => import("./pages/platform/PlatformUsersPage"));
 const PlatformCheckInOutTestPage = lazy(() => import("./pages/platform/PlatformCheckInOutTestPage"));
 const PaymentRequiredPage = lazy(() => import("./pages/PaymentRequiredPage"));
+const VacationLockPage = lazy(() => import("./pages/VacationLockPage"));
 
 /**
  * Abertura mais rápida: já começa a baixar a tela da rota atual enquanto o login/assinatura/módulos são
@@ -115,12 +116,21 @@ import { installSpaNavigation } from "@/lib/spaNavigation";
 function SubscriptionGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const actingAs = Boolean(typeof window !== "undefined" && readActAs());
+  const vacation = trpc.vacations.myActive.useQuery(undefined, {
+    enabled: Boolean(user && user.role === "promoter" && !actingAs),
+    staleTime: 30_000,
+    retry: false,
+  });
   const access = trpc.billing.access.useQuery(undefined, {
     enabled: Boolean(user && user.role !== "platform_admin" && user.companyId),
     staleTime: 30_000,
     retry: false,
   });
   if (loading) return <LoadingScreen />;
+  if (user?.role === "promoter" && !actingAs && vacation.data?.active) {
+    return <VacationLockPage startDate={vacation.data.startDate} endDate={vacation.data.endDate} />;
+  }
+  if (user?.role === "promoter" && !actingAs && vacation.isLoading) return <LoadingScreen />;
   if (shouldApplyPaymentLock({ role: user?.role, companyId: user?.companyId, actingAs, allowed: access.data?.allowed })) {
     return <PaymentRequiredPage />;
   }

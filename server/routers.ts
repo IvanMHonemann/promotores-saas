@@ -253,6 +253,8 @@ export const appRouter = router({
       })
       .input(z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8, "A nova senha deve ter pelo menos 8 caracteres") }))
       .mutation(async ({ ctx, input }) => {
+        const { assertPromoterNotOnVacation } = await import("./vacationLock");
+        await assertPromoterNotOnVacation(ctx);
         const changed = ctx.user.role === "platform_admin"
           ? await memberAuth.changePlatformPassword(ctx.platformAdminId ?? ctx.user.id, input.currentPassword, input.newPassword)
           : await memberAuth.changeMemberPassword(ctx.memberAccountId ?? Math.abs(ctx.user.id), input.currentPassword, input.newPassword);
@@ -270,6 +272,8 @@ export const appRouter = router({
         avatarDataUrl: z.string().max(400_000).optional().nullable(),
       }))
       .mutation(async ({ ctx, input }) => {
+        const { assertPromoterNotOnVacation } = await import("./vacationLock");
+        await assertPromoterNotOnVacation(ctx);
         if (ctx.user.role === "platform_admin") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Perfil de plataforma não usa esta rota." });
         }
@@ -317,6 +321,8 @@ export const appRouter = router({
       })
       .input(z.object({ currentPassword: z.string().min(1) }))
       .mutation(async ({ ctx, input }) => {
+        const { assertPromoterNotOnVacation } = await import("./vacationLock");
+        await assertPromoterNotOnVacation(ctx);
         if (ctx.user.role === "platform_admin") {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Indisponível para admin da plataforma nesta tela." });
         }

@@ -12,6 +12,8 @@ export type CorrectionDayFacts = {
   punches: PunchType[]; // ordem cronológica, só as que contam
   hasPendingCorrection: boolean;
   excused: boolean; // feriado abonado, férias ou abono aprovado
+  /** Feriado reconhecido automaticamente (nacional ou facultativo configurado). */
+  autoHoliday?: boolean;
   isWorkday: boolean | null; // null = jornada semanal não configurada
   workEndTime?: string | null; // HH:MM
   nowHm?: string | null; // horário atual em Brasília, para o dia de hoje
@@ -62,9 +64,9 @@ export function todayIncompleteShouldAlert(opts: {
 export function classifyCorrectionDay(facts: CorrectionDayFacts): { mark: CorrectionDayMark; reason?: string } {
   if (facts.date > facts.today) return { mark: "ok" };
   if (facts.hasPendingCorrection) return { mark: "pending", reason: "Correção já pedida" };
-  // Feriado, férias ou abono: dia sem batida não pede correção (já é abonado).
-  // Se a pessoa trabalhou no feriado, a jornada incompleta ainda pode precisar de ajuste.
-  if (facts.excused && facts.punches.length === 0) return { mark: "ok" };
+  // Férias ou abono aprovado: o dia já está justificado, mesmo se houver alguma batida.
+  // Feriado automático sem batida não pede correção. Se a pessoa trabalhou no feriado e a jornada ficou incompleta, aí sim pede ajuste.
+  if (facts.excused && (facts.punches.length === 0 || !facts.autoHoliday)) return { mark: "ok" };
 
   const incomplete = facts.punches.length > 0 && journeyIsIncomplete(facts.punches);
   const missingOnWorkday = facts.punches.length === 0 && facts.isWorkday === true && !facts.excused;

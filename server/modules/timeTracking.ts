@@ -15,7 +15,8 @@ import { buildMirror, type LaborProfile, type MirrorEvent } from "../../shared/t
 import { ensureCorrectionExtras, loadApprovedDayExcuses, saveCorrectionAttachment } from "./correctionExtras";
 import { storageGetSignedUrl } from "../storage";
 import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared/punchTime";
-import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
+import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, withInclusionSupersede } from "./mirrorData";
+import { inclusionBlockedMessage } from "../../shared/inclusionSupersede";
 import { buildMemberReports, closedPeriodBalance } from "./timeBank";
 import { monthBounds } from "../../shared/timeBank";
 import { ensureDayTreatmentsTable, getActiveTreatment, reverseDayTreatment, saveDayTreatment } from "./dayTreatments";
@@ -330,9 +331,9 @@ export const timeTrackingRouter = router({
       const end = new Date(Date.UTC(year, mon, 1));
       await ensurePunchLedger();
       // Desconsideradas continuam na lista (marcadas em `disregard`) para o admin ver e poder reconsiderar.
-      return effectiveRows(await database.select().from(timeEvents)
+      return withInclusionSupersede(await effectiveRows(await database.select().from(timeEvents)
         .where(and(eq(timeEvents.memberAccountId, input.memberId), eq(timeEvents.companyId, ctx.accountId), gte(effectiveEventTime, start), lt(effectiveEventTime, end)))
-        .orderBy(effectiveEventTime), { keepDisregarded: true });
+        .orderBy(effectiveEventTime), { keepDisregarded: true }));
     }),
 
   /**
@@ -556,8 +557,9 @@ export const timeTrackingRouter = router({
         .orderBy(desc(effectiveEventTime))
         .limit(input?.limit || 100);
       // Padrão: só batidas que contam. A tela de ponto pede as desconsideradas para mostrá-las riscadas.
-      if (input?.includeDisregarded) return effectiveRows(rows, { keepDisregarded: true });
-      return (await effectiveRows(rows)).map((r) => ({ ...r, disregard: null }));
+      const tagged = withInclusionSupersede(await effectiveRows(rows, { keepDisregarded: true }));
+      if (input?.includeDisregarded) return tagged;
+      return tagged.filter((r) => !r.disregard);
     }),
 
   myTimeSummary: commercialFeatureProcedure("timeTracking")
@@ -685,6 +687,10 @@ export const timeTrackingRouter = router({
         const dayEvents = dayRows.map((r) => ({ id: r.id, type: r.type, time: r.deviceTime || r.serverTime }));
         const orderError = punchOrderError(dayEvents as any, { type: input.requestedType, time: requestedTime, replaceId: timeEventId });
         if (orderError) throw new TRPCError({ code: "BAD_REQUEST", message: orderError });
+        if (!timeEventId) {
+          const blocked = inclusionBlockedMessage(dayEvents, input.requestedType, requestedTime);
+          if (blocked) throw new TRPCError({ code: "BAD_REQUEST", message: blocked });
+        }
       }
 
       // Evita pedidos duplicados por toque duplo / reenvio simultâneo.

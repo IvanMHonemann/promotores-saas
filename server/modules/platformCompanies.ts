@@ -93,10 +93,21 @@ export const platformCompaniesRouter = router({
     log(ctx, input.companyId, input.archived ? "delete" : "restore", `${input.archived ? "Excluiu (arquivou)" : "Restaurou"} a empresa ${c.name}`);
     return { success: true as const };
   }),
-  /** Exclusão definitiva e irreversível; exige o nome da empresa e que ela já esteja excluída. */
+  /** Exclusão permanente e irreversível (ativa ou arquivada). Exige nome ou CNPJ. Gera cópia final antes; se a cópia falhar, não apaga. */
   purge: platformProcedure.input(z.object({ companyId: id, confirmName: z.string().min(1) })).mutation(async ({ ctx, input }) => {
-    const r = await pc.purgeCompany(input.companyId, input.confirmName);
-    log(ctx, input.companyId, "permanent_delete", `Excluiu DEFINITIVAMENTE a empresa ${r.company.name} (#${input.companyId})`, { deleted: r.deleted, filesDeleted: r.filesDeleted });
-    return { success: true as const, deleted: r.deleted };
+    pc.assertPermanentPurgeRole(ctx.user?.role);
+    const r = await pc.purgeCompanyPermanently(input.companyId, input.confirmName, ctx.user?.role);
+    log(
+      ctx,
+      input.companyId,
+      "permanent_delete",
+      `Excluiu PERMANENTEMENTE a empresa ${r.company.name} (#${input.companyId}). Cópia final: ${r.backup.key}`,
+      { deleted: r.deleted, filesDeleted: r.filesDeleted, backupKey: r.backup.key, backupFileName: r.backup.fileName },
+    );
+    return {
+      success: true as const,
+      deleted: r.deleted,
+      backup: { key: r.backup.key, downloadUrl: r.backup.url, fileName: r.backup.fileName },
+    };
   }),
 });

@@ -1,5 +1,4 @@
 /** Gestão de empresas pelo administrador da plataforma: visão geral, plano/validade, pagamentos, bloqueio, arquivamento e exclusão. */
-import { guardedStorageDelete } from "./mediaKeys";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
@@ -8,6 +7,9 @@ import { MONTHLY_AMOUNT_KEY, BLOCK_AFTER_OVERDUE_KEY, BILLING_DAY_KEY, markCompa
 import { EXTRA_USERS_KEY, effectiveUserLimit, parseExtraUsers, staffUsageLabel, suggestedMonthlyAmount } from "../shared/staffLimit";
 import { latestAcceptanceByCompany, termsAcceptanceSummary } from "../shared/legalOverview";
 import { listLatestLegalAcceptances } from "./legal";
+import { getCompanyRegistry } from "./companyRegistry";
+import { applyCompanyCascade, canPermanentlyPurge, confirmMatchesCompany, isRetentionBackupKey, purgeLegalWarning, type SchemaColumn } from "../shared/companyPurge";
+import { guardedStorageDelete, TENANT_MEDIA_AREAS } from "./mediaKeys";
 
 import { DEFAULT_OVERDUE_GRACE_DAYS } from "./subscriptionAccess";
 
@@ -38,13 +40,32 @@ export async function assertCompanyNotArchived(companyId: number): Promise<void>
   }
 }
 
-/** Bloqueia exclusão definitiva se ainda houver marcações de ponto (guarda da Portaria 671 / CLT). */
-export function purgeBlockedByTimeClock(eventCount: number): string | null {
-  const n = Math.max(0, Math.trunc(eventCount || 0));
-  if (n <= 0) return null;
-  const label = n === 1 ? "1 marcação de ponto" : `${n} marcações de ponto`;
-  return `Esta empresa tem ${label}. A Portaria 671 e a CLT pedem a guarda desses registros, em geral por 5 anos. A exclusão definitiva está bloqueada. Exporte o AFD e o espelho e só apague depois do prazo legal, com confirmação explícita.`;
+
+/** @deprecated O bloqueio rígido foi substituído pela cópia final obrigatória. Mantido só para chamadas antigas. */
+export function purgeBlockedByTimeClock(_eventCount: number): string | null {
+  return null;
 }
+
+export function assertPermanentPurgeRole(role: string | null | undefined) {
+  if (!canPermanentlyPurge(role)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Só o administrador da plataforma pode excluir uma empresa em caráter permanente." });
+  }
+}
+
+export async function deleteCompanyMediaFiles(companyId: number): Promise<number> {
+  const { storageListKeys, storageDelete } = await import("./storage");
+  let filesDeleted = 0;
+  for (const area of TENANT_MEDIA_AREAS) {
+    const keys = await storageListKeys(`${area}/${companyId}/`);
+    for (const k of keys) {
+      if (isRetentionBackupKey(k)) continue;
+      try { if (await guardedStorageDelete(storageDelete, k, companyId)) filesDeleted++; } catch { /* segue */ }
+    }
+  }
+  return filesDeleted;
+}
+
+export { purgeLegalWarning };
 
 
 export async function listCompaniesOverview() {
@@ -194,53 +215,78 @@ export async function archiveCompany(companyId: number, archived: boolean) {
 }
 
 /**
- * Exclusão DEFINITIVA e irreversível: apaga todos os dados da empresa (todas as tabelas com companyId/accountId),
- * as sessões, e os arquivos de fotos do armazenamento. Só para empresas já arquivadas.
+ * Exclusão PERMANENTE e irreversível, inclusive com marcações de ponto.
+ * Só o administrador da plataforma. Vale para empresa ativa ou já arquivada.
+ * Gera antes a cópia final no prefixo de retenção; se a cópia falhar, nada é apagado.
+ * A confirmação exige o nome exato da empresa ou o CNPJ/CPF.
  */
-export async function purgeCompany(companyId: number, confirmName: string) {
-  const company = await db.getCompanyById(companyId);
+export async function purgeCompanyPermanently(
+  companyId: number,
+  confirmName: string,
+  role: string | null | undefined,
+  deps?: {
+    getCompany?: (companyId: number) => Promise<{ id: number; name: string; taxDocument?: string | null } | undefined>;
+    createBackup?: (companyId: number) => Promise<{ key: string; url: string; fileName: string; bytes?: number; warnings?: string[] }>;
+    deleteMedia?: (companyId: number) => Promise<number>;
+    runCascade?: () => Promise<Record<string, number>>;
+  },
+) {
+  assertPermanentPurgeRole(role);
+  const company = await (deps?.getCompany ?? db.getCompanyById)(companyId);
   if (!company) throw new TRPCError({ code: "NOT_FOUND", message: "Empresa não encontrada." });
-  if (company.name.trim() !== confirmName.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "O nome digitado não confere com o da empresa." });
-  const archived = await db.getSetting("archived_at", companyId, "");
-  if (!archived) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Exclua (arquive) a empresa primeiro; a exclusão definitiva só vale para empresas já excluídas." });
+  let taxDocument = (company as any).taxDocument as string | null | undefined;
+  if (!deps?.getCompany) {
+    try {
+      const registry = await getCompanyRegistry(companyId);
+      taxDocument = taxDocument || registry.registry.taxDocument || null;
+    } catch { /* cadastro pode não existir */ }
+  }
+  if (!confirmMatchesCompany({ name: company.name, taxDocument }, confirmName)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "O nome ou o CNPJ digitado não confere com o da empresa." });
+  }
 
-  // arquivos de fotos (a lixeira também guarda chaves)
-  let filesDeleted = 0;
+  const { createCompanyRetentionBackup } = await import("./companyRetentionBackup");
+  const createBackup = deps?.createBackup ?? createCompanyRetentionBackup;
+  let backup: { key: string; url: string; fileName: string; bytes?: number; warnings?: string[] };
   try {
-    const d = await database();
-    const [photoRows]: any = await d.execute(sql`SELECT fileKey, thumbnailKey FROM store_photos WHERE companyId = ${companyId}`);
-    const { storageDelete } = await import("./storage");
-    for (const p of photoRows as any[]) { for (const k of [p.fileKey, p.thumbnailKey]) if (k) { try { if (await guardedStorageDelete(storageDelete, k, companyId)) filesDeleted++; } catch { /* segue */ } } }
-  } catch { /* tabela pode não existir */ }
+    backup = await createBackup(companyId);
+  } catch (e) {
+    if (e instanceof TRPCError) throw e;
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `Não foi possível gerar a cópia final de segurança. A empresa não foi excluída. ${e instanceof Error ? e.message : ""}`.trim(),
+    });
+  }
+  if (!backup?.key || !isRetentionBackupKey(backup.key, companyId)) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível gerar a cópia final de segurança. A empresa não foi excluída." });
+  }
+
+  const deleteMedia = deps?.deleteMedia ?? deleteCompanyMediaFiles;
+  let filesDeleted = 0;
+  try { filesDeleted = await deleteMedia(companyId); } catch { /* a cópia já está guardada; segue a exclusão do banco */ }
+
+  if (deps?.runCascade) {
+    const deleted = await deps.runCascade();
+    return { company, deleted, filesDeleted, backup };
+  }
 
   const pool = await db.getPool();
   if (!pool) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
   const conn = await pool.getConnection();
   const deleted: Record<string, number> = {};
   try {
-    // Marcações de ponto têm guarda legal (Portaria 671 / CLT, em geral 5 anos): não apagar.
-    try {
-      const [evRows]: any = await conn.query("SELECT COUNT(*) AS n FROM time_events WHERE companyId = ?", [companyId]);
-      const blocked = purgeBlockedByTimeClock(Number(evRows?.[0]?.n || 0));
-      if (blocked) throw new TRPCError({ code: "PRECONDITION_FAILED", message: blocked });
-    } catch (e) {
-      if (e instanceof TRPCError) throw e;
-      // Tabela ausente não impede o fluxo; o caso com marcações é que precisa ser barrado.
-    }
     const [cols]: any = await conn.query(`SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME IN ('companyId','accountId')`);
     const [memberIdsRows]: any = await conn.query("SELECT id FROM member_accounts WHERE companyId = ?", [companyId]);
-    const memberIds: number[] = memberIdsRows.map((r: any) => r.id);
+    const memberIds: number[] = (memberIdsRows as any[]).map((r: any) => r.id);
     await conn.query("SET FOREIGN_KEY_CHECKS = 0");
     await conn.beginTransaction();
-    if (memberIds.length) { const [r]: any = await conn.query("DELETE FROM member_sessions WHERE memberAccountId IN (?)", [memberIds]); deleted.member_sessions = r.affectedRows; }
-    const skip = new Set(["companies"]);
-    for (const { t, c } of cols as Array<{ t: string; c: string }>) {
-      if (skip.has(t) || !/^[A-Za-z0-9_]+$/.test(t)) continue;
-      const [r]: any = await conn.query(`DELETE FROM \`${t}\` WHERE \`${c}\` = ?`, [companyId]);
-      if (r.affectedRows) deleted[t] = (deleted[t] ?? 0) + r.affectedRows;
-    }
-    const [r]: any = await conn.query("DELETE FROM companies WHERE id = ?", [companyId]);
-    deleted.companies = r.affectedRows;
+    const exec = {
+      query: async (sqlText: string, params?: unknown[]) => {
+        const [r]: any = await conn.query(sqlText, params as any);
+        return { affectedRows: r?.affectedRows || 0 };
+      },
+    };
+    Object.assign(deleted, await applyCompanyCascade(exec, companyId, cols as SchemaColumn[], memberIds));
     await conn.commit();
   } catch (e) {
     await conn.rollback().catch(() => undefined);
@@ -249,7 +295,12 @@ export async function purgeCompany(companyId: number, confirmName: string) {
     await conn.query("SET FOREIGN_KEY_CHECKS = 1").catch(() => undefined);
     conn.release();
   }
-  return { company, deleted, filesDeleted };
+  return { company, deleted, filesDeleted, backup };
+}
+
+/** Compatível com o roteador antigo: exige papel de plataforma e a confirmação por nome ou CNPJ. */
+export async function purgeCompany(companyId: number, confirmName: string, role: string | null | undefined = "platform_admin") {
+  return purgeCompanyPermanently(companyId, confirmName, role);
 }
 
 

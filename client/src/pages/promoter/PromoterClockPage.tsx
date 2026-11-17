@@ -9,12 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import CorrectionDateCalendar from "@/components/CorrectionDateCalendar";
-import HistoryDayStepper from "@/components/HistoryDayStepper";
 import { LocationLabel } from "./geolocation";
 import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
 import { defaultCorrectionJustification, formatGroupedCorrectionTitle, groupCorrectionItems, justificationRequiresText } from "@shared/correctionGroups";
 import { punchOrderError, sortPunches } from "@shared/punchOrder";
+import { formatDayLabelPt } from "@shared/correctionCalendar";
 
 type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
 type JustificationType = "normal" | "holiday" | "day_off" | "medical_certificate" | "other";
@@ -292,20 +292,11 @@ export default function PromoterClockPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-white">
-                <CalendarDays className="h-5 w-5 text-teal-300" /> Calendário, horários e localização
+                <CalendarDays className="h-5 w-5 text-teal-300" /> Calendário, horários e correções
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-slate-200">Dia para visualizar</p>
-                <HistoryDayStepper
-                  id="history-date"
-                  value={selectedDate}
-                  today={today}
-                  onChange={pickDate}
-                  onOpenCalendar={() => document.getElementById("correcoes")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                />
-              </div>
+              {calendar("correction-date")}
               {dayExcuse && (
                 <div className="mt-4 rounded-xl border border-teal-300/30 bg-teal-400/10 p-4">
                   <p className="font-bold text-teal-100">{fullDayExcuseLabel(inferFullDayExcuseType(dayExcuse))} neste dia</p>
@@ -331,7 +322,8 @@ export default function PromoterClockPage() {
                   </button>
                 </div>
               )}
-              <div className="mt-4 space-y-3">
+              <div className="mt-5 space-y-3">
+                <h2 className="text-sm font-semibold text-slate-200">Batidas de {formatDayLabelPt(selectedDate)}</h2>
                 {history.isLoading && <p className="text-sm text-slate-300">Carregando marcações...</p>}
                 {!history.isLoading && !allEvents.length && <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-slate-300">Nenhuma marcação neste dia.</p>}
                 {allEvents.map((event: any) => (
@@ -357,22 +349,11 @@ export default function PromoterClockPage() {
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        </div>
 
-        <div id="correcoes" className="scroll-mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-white">
-                <ShieldCheck className="h-5 w-5 text-teal-300" /> Pedir correção ou inclusão de ponto
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-4 space-y-2">
-                <p className="text-sm font-semibold text-slate-200">Escolha o dia</p>
-                {calendar("correction-date")}
-              </div>
+              <div id="correcoes" className="mt-6 scroll-mt-6 border-t border-white/10 pt-6">
+                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white">
+                  <ShieldCheck className="h-5 w-5 text-teal-300" /> Pedir correção ou inclusão de ponto
+                </h2>
               <p className="mb-2 text-sm font-semibold text-slate-200">O que aconteceu?</p>
               <div role="radiogroup" aria-label="O que aconteceu?" className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {([
@@ -514,6 +495,7 @@ export default function PromoterClockPage() {
                     );
                   })}
                 </div>
+              </div>
               </div>
             </CardContent>
           </Card>

@@ -68,7 +68,7 @@ async function companyMembers(companyId: number, memberIds?: number[]) {
   return rows.filter((r) => r.role !== "company_admin");
 }
 
-async function buildPdfBuffer(opts: {
+export async function buildMirrorPdfBuffer(opts: {
   companyName: string; memberName: string; employeeCode: string | null;
   from: string; to: string; report: ReturnType<typeof buildMirror>;
 }): Promise<Buffer> {
@@ -148,7 +148,7 @@ export async function archiveClosedMonth(companyId: number, year: number, month:
       const labor = await readJson<LaborProfile>(`labor_profile:${m.id}`, companyId);
       const events: MirrorEvent[] = toMirrorEvents(byMember.get(m.id) || [], adjByEvent);
       const report = buildMirror({ events, from, to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [], vacations: vacationsByMember.get(m.id) || [], treatments: treatmentsByMember.get(m.id) || [], options, today });
-      const buf = await buildPdfBuffer({
+      const buf = await buildMirrorPdfBuffer({
         companyName: company?.name ?? "", memberName: m.name, employeeCode: m.employeeCode ?? null, from, to, report,
       });
       const hash = createHash("sha256").update(buf).digest("hex");

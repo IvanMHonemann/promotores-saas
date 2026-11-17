@@ -16,6 +16,7 @@ import { termsAcceptanceLabel } from "@shared/legalOverview";
 import { toast } from "sonner";
 import { confirmAction } from "@/components/ConfirmDialog";
 import GeneratePixDialog from "@/components/platform/GeneratePixDialog";
+import { confirmMatchesCompany, purgeLegalWarning } from "@shared/companyPurge";
 
 const STATUS_LABEL: Record<string, string> = { trial: "Teste", test: "Teste", active: "Ativa", pending: "Pagamento pendente", overdue: "Em atraso", suspended: "Suspensa", canceled: "Cancelada", expired: "Expirada" };
 const sel = "mt-1 h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-white";
@@ -53,6 +54,7 @@ export default function PlatformCompaniesPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [pixFor, setPixFor] = useState<{ id: number; name: string } | null>(null);
+  const [lastBackup, setLastBackup] = useState<{ name: string; url: string; fileName: string } | null>(null);
   const rows = useMemo(() => (list.data || []).filter((c) => (showArchived ? true : !c.archivedAt) && c.name.toLowerCase().includes(q.trim().toLowerCase())), [list.data, q, showArchived]);
   const selected = (list.data || []).find((c) => c.id === selectedId) ?? null;
   const refresh = () => { void utils.platformCompanies.overview.invalidate(); void utils.platformCompanies.payments.invalidate(); void utils.platformPayments.list.invalidate(); void utils.platform.companies.list.invalidate(); };
@@ -92,8 +94,18 @@ export default function PlatformCompaniesPage() {
           )}
         </button>; })}</div>
       </CardContent></Card>
-      {creating ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CreateCompanyCard onCancel={() => setCreating(false)} onCreated={(id) => { setCreating(false); setSelectedId(id); refresh(); }} /></div> : selected ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CompanyPanel key={selected.id} company={selected} onChanged={refresh} onGeneratePix={() => setPixFor({ id: selected.id, name: selected.name })} /></div> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir, ou cadastre uma nova.</CardContent></Card>}
+      {creating ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CreateCompanyCard onCancel={() => setCreating(false)} onCreated={(id) => { setCreating(false); setSelectedId(id); refresh(); }} /></div> : selected ? <div id="empresa-selecionada" className="min-w-0 scroll-mt-4"><CompanyPanel key={selected.id} company={selected} onChanged={refresh} onGeneratePix={() => setPixFor({ id: selected.id, name: selected.name })} onPurged={(b) => { setLastBackup(b); setSelectedId(null); }} /></div> : <Card className="border-dashed border-white/15 bg-slate-900/40 text-slate-300"><CardContent className="p-8 text-center text-sm">Selecione uma empresa para editar módulos, validade, bloquear ou excluir, ou cadastre uma nova.</CardContent></Card>}
     </div>
+    {lastBackup && (
+      <div className="fixed bottom-4 left-1/2 z-[80] w-[min(92vw,32rem)] -translate-x-1/2 rounded-2xl border border-teal-300/30 bg-slate-950 p-4 text-sm text-white shadow-2xl">
+        <p className="font-semibold text-teal-100">Cópia final de {lastBackup.name}</p>
+        <p className="mt-1 text-slate-300">A empresa foi excluída permanentemente. A cópia ficou no arquivo de retenção.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <a href={lastBackup.url} download={lastBackup.fileName} rel="noopener" className="inline-flex h-10 items-center rounded-xl bg-teal-300 px-4 font-semibold text-slate-950 hover:bg-teal-200">Baixar cópia</a>
+          <Button type="button" variant="outline" className="h-10 border-white/20 text-white" onClick={() => setLastBackup(null)}>Fechar</Button>
+        </div>
+      </div>
+    )}
     {pixFor && (
       <GeneratePixDialog
         companyId={pixFor.id}
@@ -152,7 +164,7 @@ function CreateCompanyCard({ onCancel, onCreated }: { onCancel: () => void; onCr
   );
 }
 
-function CompanyPanel({ company: c, onChanged, onGeneratePix }: { company: Company; onChanged: () => void; onGeneratePix: () => void }) {
+function CompanyPanel({ company: c, onChanged, onGeneratePix, onPurged }: { company: Company; onChanged: () => void; onGeneratePix: () => void; onPurged: (b: { name: string; url: string; fileName: string }) => void }) {
   const plans = trpc.platform.plans.list.useQuery(undefined, { staleTime: 60000 });
   const payments = trpc.platformCompanies.payments.useQuery({ companyId: c.id });
   const ok = (msg: string) => () => { toast.success(msg); onChanged(); };
@@ -165,7 +177,27 @@ function CompanyPanel({ company: c, onChanged, onGeneratePix }: { company: Compa
   const block = trpc.platformCompanies.setBlocked.useMutation({ onSuccess: ok("Situação atualizada."), onError: fail });
   const archive = trpc.platformCompanies.archive.useMutation({ onSuccess: ok("Empresa atualizada."), onError: fail });
   const enterAs = trpc.platformCompanies.enterAs.useMutation();
-  const purge = trpc.platformCompanies.purge.useMutation({ onSuccess: () => { toast.success("Empresa excluída definitivamente."); onChanged(); }, onError: fail });
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const purge = trpc.platformCompanies.purge.useMutation({
+    onSuccess: (r) => {
+      const url = r.backup?.downloadUrl;
+      const fileName = r.backup?.fileName || "copia-final.zip";
+      if (url) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      toast.success("Empresa excluída permanentemente. A cópia final foi guardada e o download começou.");
+      setPurgeOpen(false);
+      if (url) onPurged({ name: c.name, url, fileName });
+      onChanged();
+    },
+    onError: fail,
+  });
 
   const [name, setName] = useState(c.name);
   const [planId, setPlanId] = useState(String(c.planId ?? ""));
@@ -322,19 +354,71 @@ function CompanyPanel({ company: c, onChanged, onGeneratePix }: { company: Compa
 
     <Card className="border-rose-300/20 bg-slate-900/70 text-white"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Ban className="h-4 w-4 text-rose-300" />Bloqueio e exclusão</CardTitle></CardHeader><CardContent className="space-y-3">
       {c.archivedAt ? <div className="space-y-3">
-        <p className="text-sm text-slate-300">Empresa encerrada em {day(c.archivedAt)}. Fica bloqueada (ninguém entra) e os dados são preservados, inclusive o ponto.</p>
+        <p className="text-sm text-slate-300">Empresa encerrada em {day(c.archivedAt)}. Fica bloqueada (ninguém entra) e os dados são preservados, inclusive o ponto. Esta é a opção segura.</p>
         <Button variant="outline" onClick={() => archive.mutate({ companyId: c.id, archived: false })} className="border-white/25 text-white"><RotateCcw className="mr-2 h-4 w-4" />Restaurar empresa</Button>
-        <div className="rounded-xl border border-rose-400/30 bg-rose-500/10 p-3"><p className="text-sm font-semibold text-rose-100">Exclusão definitiva (irreversível)</p><p className="text-xs text-rose-100/80">Apaga usuários, fotos e o cadastro desta empresa. Se houver marcações de ponto, a exclusão é bloqueada: a Portaria 671 e a CLT pedem a guarda desses registros, em geral por 5 anos. Só use aqui quando não houver ponto a preservar, ou depois do prazo legal, com o AFD/espelho já exportado. Digite o nome exato para confirmar.</p><Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={c.name} className={inp} /><Button disabled={purge.isPending || confirm.trim() !== c.name.trim()} onClick={() => purge.mutate({ companyId: c.id, confirmName: confirm })} className="mt-2 bg-rose-600 text-white hover:bg-rose-500"><Trash2 className="mr-2 h-4 w-4" />Excluir definitivamente</Button></div>
       </div> : <>
         <div><Label>Motivo do bloqueio (mostrado à empresa)</Label><Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ex.: pagamento em atraso" className={inp} /></div>
         <div className="flex flex-wrap gap-2">
           {c.active ? <Button onClick={() => { void confirmAction({ title: `Bloquear ${c.name}? Todos os usuários serão desconectados.`, confirmLabel: "Confirmar" }).then((ok) => ok && block.mutate({ companyId: c.id, blocked: true, reason })); }} className="bg-amber-400 text-slate-950 hover:bg-amber-300"><Ban className="mr-2 h-4 w-4" />Bloquear (falta de pagamento)</Button>
             : <Button onClick={() => block.mutate({ companyId: c.id, blocked: false })} className="bg-emerald-500 text-white hover:bg-emerald-400"><CheckCircle2 className="mr-2 h-4 w-4" />Desbloquear</Button>}
-          <Button variant="outline" onClick={() => { void confirmAction({ title: `Encerrar ${c.name}? Ela some da lista, fica bloqueada (ninguém entra) e os dados, inclusive o ponto, ficam guardados. A exclusão definitiva é um passo separado, depois.`, confirmLabel: "Confirmar" }).then((ok) => ok && archive.mutate({ companyId: c.id, archived: true })); }} className="border-rose-300/40 text-rose-200"><Trash2 className="mr-2 h-4 w-4" />Encerrar e arquivar</Button>
+          <Button variant="outline" onClick={() => { void confirmAction({ title: `Encerrar ${c.name}? Ela some da lista, fica bloqueada (ninguém entra) e os dados, inclusive o ponto, ficam guardados. Esta é a opção segura. A exclusão permanente é um passo separado, depois.`, confirmLabel: "Confirmar" }).then((ok) => ok && archive.mutate({ companyId: c.id, archived: true })); }} className="border-rose-300/40 text-rose-200"><Trash2 className="mr-2 h-4 w-4" />Encerrar e arquivar</Button>
         </div>
       </>}
+      <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3">
+        <p className="text-sm font-semibold text-rose-100">Excluir permanentemente</p>
+        <p className="mt-1 text-xs text-rose-100/80">Apaga de vez usuários, batidas, correções, avisos, cobranças e arquivos. Só use se tiver certeza; o recomendado é encerrar e arquivar. Antes de apagar, o sistema gera uma cópia final e a oferece para download.</p>
+        <Button type="button" onClick={() => { setConfirm(""); setPurgeOpen(true); }} className="mt-2 bg-rose-600 text-white hover:bg-rose-500"><Trash2 className="mr-2 h-4 w-4" />Excluir permanentemente</Button>
+      </div>
+      {purgeOpen && (
+        <PermanentDeleteModal
+          company={c}
+          confirm={confirm}
+          onConfirmChange={setConfirm}
+          pending={purge.isPending}
+          onClose={() => { if (!purge.isPending) setPurgeOpen(false); }}
+          onSubmit={() => purge.mutate({ companyId: c.id, confirmName: confirm })}
+        />
+      )}
     </CardContent></Card>
   </div>;
+}
+
+function PermanentDeleteModal({ company: c, confirm, onConfirmChange, pending, onClose, onSubmit }: {
+  company: Company;
+  confirm: string;
+  onConfirmChange: (v: string) => void;
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  const matches = confirmMatchesCompany({ name: c.name, taxDocument: c.taxDocument }, confirm);
+  return (
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose} role="presentation">
+      <div role="alertdialog" aria-modal="true" aria-labelledby="purge-title" onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg rounded-t-3xl border border-rose-400/30 bg-[#0b1626] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] text-white shadow-2xl sm:rounded-3xl">
+        <h2 id="purge-title" className="text-lg font-bold text-rose-100">Excluir {c.name} permanentemente?</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-200">{purgeLegalWarning(0).replace("Esta empresa não tem marcações de ponto registradas. ", "")}</p>
+        <label className="mt-4 block text-sm font-semibold text-slate-200">
+          Digite o nome exato da empresa ou o CNPJ/CPF para confirmar
+          <Input
+            value={confirm}
+            onChange={(e) => onConfirmChange(e.target.value)}
+            placeholder={c.taxDocument ? `${c.name} ou ${c.taxDocument}` : c.name}
+            className={`${inp} mt-1`}
+            autoComplete="off"
+            disabled={pending}
+          />
+        </label>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="outline" disabled={pending} onClick={onClose} className="h-12 border-white/15 text-slate-200">Cancelar</Button>
+          <Button type="button" disabled={pending || !matches} onClick={onSubmit} className="h-12 bg-rose-600 text-white hover:bg-rose-500 disabled:bg-slate-700 disabled:text-slate-400">
+            {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+            {pending ? "Gerando cópia e excluindo…" : "Gerar cópia e excluir"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function CompanyFeaturesCard({ companyId }: { companyId: number }) {

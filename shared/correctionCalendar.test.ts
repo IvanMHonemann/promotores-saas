@@ -4,6 +4,7 @@ import {
   countDaysNeedingCorrection,
   journeyIsIncomplete,
   monthWeeks,
+  monthLabelPt,
   shiftMonth,
   todayIncompleteShouldAlert,
   type CorrectionDayFacts,
@@ -131,5 +132,11 @@ describe("monthWeeks (domingo primeiro) e contagem", () => {
     expect(shiftMonth("2026-11", 1)).toBe("2026-12");
     expect(shiftMonth("2026-11", -1)).toBe("2026-10");
     expect(shiftMonth("2026-01", -1)).toBe("2025-12");
+  });
+
+  it("rótulo do mês em português, só a primeira letra maiúscula", () => {
+    expect(monthLabelPt("2026-11")).toBe("Novembro de 2026");
+    expect(monthLabelPt("2026-03")).toBe("Março de 2026");
+    expect(monthLabelPt("2026-11")).not.toBe("Novembro De 2026");
   });
 });

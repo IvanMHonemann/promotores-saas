@@ -109,6 +109,27 @@ export function shiftMonth(month: string, delta: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Soma ou subtrai dias civis (AAAA-MM-DD), sem passar pelo fuso local. */
+export function shiftDay(date: string, delta: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Data inválida.");
+  const [y, m, d] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(y, m - 1, d + delta));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** "Terça-feira, 17 de novembro de 2026" */
+export function formatDayLabelPt(date: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("Data inválida.");
+  const label = new Date(`${date}T12:00:00-03:00`).toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "America/Sao_Paulo",
+  });
+  return label.charAt(0).toLocaleUpperCase("pt-BR") + label.slice(1);
+}
+
 export function monthLabelPt(month: string): string {
   const [y, m] = month.split("-").map(Number);
   const names = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];

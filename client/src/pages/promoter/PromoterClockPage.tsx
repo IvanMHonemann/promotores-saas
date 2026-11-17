@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
 import CorrectionDateCalendar from "@/components/CorrectionDateCalendar";
+import HistoryDayStepper from "@/components/HistoryDayStepper";
 import { LocationLabel } from "./geolocation";
 import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
@@ -297,7 +298,13 @@ export default function PromoterClockPage() {
             <CardContent>
               <div className="space-y-2">
                 <p className="text-sm font-semibold text-slate-200">Dia para visualizar</p>
-                {calendar("history-date")}
+                <HistoryDayStepper
+                  id="history-date"
+                  value={selectedDate}
+                  today={today}
+                  onChange={pickDate}
+                  onOpenCalendar={() => document.getElementById("correcoes")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                />
               </div>
               {dayExcuse && (
                 <div className="mt-4 rounded-xl border border-teal-300/30 bg-teal-400/10 p-4">

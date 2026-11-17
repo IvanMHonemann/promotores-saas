@@ -5,6 +5,8 @@ import {
   journeyIsIncomplete,
   monthWeeks,
   monthLabelPt,
+  formatDayLabelPt,
+  shiftDay,
   shiftMonth,
   todayIncompleteShouldAlert,
   type CorrectionDayFacts,
@@ -138,5 +140,17 @@ describe("monthWeeks (domingo primeiro) e contagem", () => {
     expect(monthLabelPt("2026-11")).toBe("Novembro de 2026");
     expect(monthLabelPt("2026-03")).toBe("Março de 2026");
     expect(monthLabelPt("2026-11")).not.toBe("Novembro De 2026");
+  });
+
+  it("avança e volta o dia civil, inclusive virada de mês", () => {
+    expect(shiftDay("2026-11-17", -1)).toBe("2026-11-16");
+    expect(shiftDay("2026-11-17", 1)).toBe("2026-11-18");
+    expect(shiftDay("2026-11-01", -1)).toBe("2026-10-31");
+    expect(shiftDay("2026-12-31", 1)).toBe("2027-01-01");
+  });
+
+  it("rótulo do dia em português, sem capitalizar o de", () => {
+    expect(formatDayLabelPt("2026-11-17")).toBe("Terça-feira, 17 de novembro de 2026");
+    expect(formatDayLabelPt("2026-11-17")).not.toContain("De novembro");
   });
 });

@@ -9,8 +9,38 @@ import type { MirrorEvent, MirrorOptions, VacationRange } from "../../shared/tim
 import { readTimeAlert } from "../../shared/punchTime";
 import { readClockAlert } from "../../shared/offlineClock";
 import { effectiveRows, ensurePunchLedger, type Disregard } from "../ponto/ledger";
+import { INCLUSION_SUPERSEDE_REASON, idsSupersededByInclusionGrouped } from "../../shared/inclusionSupersede";
 
 /** Horário efetivo da marcação — o MESMO usado no cálculo do espelho (deviceTime, senão serverTime). */
+
+/** Marca originais substituídos por inclusão/ajuste aprovado, sem gravar nada no banco. */
+export function withInclusionSupersede<T extends {
+  id: number;
+  eventType?: string;
+  type?: string;
+  deviceTime?: Date | string | null;
+  serverTime?: Date | string | null;
+  origin?: string | null;
+  memberAccountId?: number;
+  disregard?: Disregard | null;
+}>(rows: T[]): T[] {
+  if (!rows.length) return rows;
+  const gone = new Set(idsSupersededByInclusionGrouped(rows.map((r) => ({
+    id: r.id,
+    type: String(r.eventType || r.type || ""),
+    time: r.deviceTime || r.serverTime || 0,
+    origin: r.origin,
+    alreadyOut: Boolean(r.disregard),
+    memberId: r.memberAccountId,
+  }))));
+  if (!gone.size) return rows;
+  return rows.map((r) => {
+    if (!gone.has(r.id) || r.disregard) return r;
+    const virtual: Disregard = { id: 0, reason: INCLUSION_SUPERSEDE_REASON, decidedByName: null, createdAt: "" };
+    return { ...r, disregard: virtual };
+  });
+}
+
 export const effectiveEventTime = sql`COALESCE(${timeEvents.deviceTime}, ${timeEvents.serverTime})`;
 
 /** Janela com folga para turnos que cruzam a meia-noite; o corte por dia local é feito no cálculo. */
@@ -33,9 +63,10 @@ export async function loadMirrorEventRows(companyId: number, memberIds: number[]
   await ensurePunchLedger();
   // Marcações substituídas por ajuste aprovado ficam no banco (e no AFD), mas não entram no cálculo.
   // Desconsideradas vêm marcadas (disregard) para o espelho listá-las só em Ocorrências.
-  return effectiveRows(await database.select().from(timeEvents)
+  const rows = await effectiveRows(await database.select().from(timeEvents)
     .where(and(eq(timeEvents.companyId, companyId), inArray(timeEvents.memberAccountId, memberIds), gte(effectiveEventTime, start), lt(effectiveEventTime, end)))
     .orderBy(effectiveEventTime), { keepDisregarded: true });
+  return withInclusionSupersede(rows);
 }
 
 /** Férias programadas (status "scheduled") que tocam o período, por funcionário. Falha na tabela = sem férias (não derruba o espelho). */

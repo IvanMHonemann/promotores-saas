@@ -335,7 +335,7 @@ export default function PromoterClockPage() {
                         <p className={`text-sm text-slate-300 ${event.disregard ? "line-through" : ""}`}>Horário: {new Date(event.deviceTime || event.serverTime).toLocaleTimeString("pt-BR")}</p>
                       </div>
                       {event.disregard ? (
-                        <Badge variant="outline" className="w-fit border-slate-400 bg-slate-700/40 text-slate-200">Desconsiderada pela empresa</Badge>
+                        <Badge variant="outline" className="w-fit border-slate-400 bg-slate-700/40 text-slate-200">{event.disregard.id === 0 ? "Substituída pela correção" : "Desconsiderada pela empresa"}</Badge>
                       ) : (
                         <Badge variant="outline" className="w-fit border-emerald-300 bg-emerald-50 text-emerald-700">
                           <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Registrado
@@ -393,7 +393,7 @@ export default function PromoterClockPage() {
                   ) : isFullDay ? (
                     <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Data do abono: {new Date(`${selectedDate}T12:00:00`).toLocaleDateString("pt-BR")}. Horários não são necessários.</p>
                   ) : missingList.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Nenhuma batida faltante detectada neste dia.</p>
+                    <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Nenhuma batida faltante neste dia. Se o horário de uma batida já registrada estiver errado, use “Bati no horário errado” para corrigir essa batida, sem incluir outra do mesmo tipo.</p>
                   ) : (
                     <div className="space-y-3">
                       <p className="text-sm font-semibold text-slate-200">Batidas faltantes detectadas — informe o horário de cada uma:</p>

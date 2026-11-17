@@ -17,6 +17,7 @@ import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared
 import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
 import { buildMemberReports, closedPeriodBalance } from "./timeBank";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
+import { hasPendingSamePunch, saoPauloDayRange } from "../../shared/saoPauloDay";
 import { defaultCorrectionJustification, justificationRequiresText } from "../../shared/correctionGroups";
 import { punchOrderError } from "@shared/punchOrder";
 import { ADMIN_NO_PUNCH_MESSAGE, hasPersonalTimeClock } from "@shared/personalPonto";
@@ -445,8 +446,8 @@ export const timeTrackingRouter = router({
       if (!database) return [];
       const conditions = [eq(timeEvents.memberAccountId, memberId), eq(timeEvents.companyId, companyId)];
       if (input?.date) {
-        const start = new Date(`${input.date}T00:00:00.000Z`);
-        const end = new Date(start.getTime() + 86400000);
+        // Dia civil em Brasília, não meia-noite UTC: 23:55 de 16/11 (02:55Z do dia 17) precisa entrar no dia 16.
+        const { start, end } = saoPauloDayRange(input.date);
         conditions.push(gte(effectiveEventTime, start), lt(effectiveEventTime, end));
       }
       await ensurePunchLedger();
@@ -577,10 +578,10 @@ export const timeTrackingRouter = router({
 
       if (!fullDay && input.requestedType) {
         const day = excuseDay(requestedTime);
-        const start = new Date(`${day}T00:00:00-03:00`), end = new Date(`${day}T23:59:59.999-03:00`);
+        const { start, end } = saoPauloDayRange(day);
         await ensurePunchLedger();
         const dayRows = await effectiveRows(await database.select({ id: timeEvents.id, companyId: timeEvents.companyId, type: timeEvents.eventType, deviceTime: timeEvents.deviceTime, serverTime: timeEvents.serverTime }).from(timeEvents)
-          .where(and(eq(timeEvents.companyId, companyId), eq(timeEvents.memberAccountId, memberId), gte(effectiveEventTime, start), lte(effectiveEventTime, end))));
+          .where(and(eq(timeEvents.companyId, companyId), eq(timeEvents.memberAccountId, memberId), gte(effectiveEventTime, start), lt(effectiveEventTime, end))));
         const dayEvents = dayRows.map((r) => ({ id: r.id, type: r.type, time: r.deviceTime || r.serverTime }));
         const orderError = punchOrderError(dayEvents as any, { type: input.requestedType, time: requestedTime, replaceId: timeEventId });
         if (orderError) throw new TRPCError({ code: "BAD_REQUEST", message: orderError });
@@ -602,7 +603,7 @@ export const timeTrackingRouter = router({
       }).from(timeCorrectionRequests).where(and(
         eq(timeCorrectionRequests.companyId, companyId),
         eq(timeCorrectionRequests.memberAccountId, memberId),
-        sql`${timeCorrectionRequests.status} IN ('pending', 'approved')`,
+        eq(timeCorrectionRequests.status, "pending"),
       )).orderBy(desc(timeCorrectionRequests.createdAt)).limit(100);
 
       if (input.attachmentBase64) {
@@ -612,19 +613,21 @@ export const timeTrackingRouter = router({
 
       if (fullDay) {
         const day = excuseDay(requestedTime);
-        if (existing.some((row) => looksLikeFullDayExcuse(row) && excuseDay(row.requestedTime) === day)) {
-          throw new TRPCError({ code: "CONFLICT", message: "Já existe um abono pendente ou aprovado para este dia." });
+        const blocked = hasPendingSamePunch(
+          existing.map((row) => ({ ...row, isFullDay: looksLikeFullDayExcuse(row) })),
+          { day, fullDay: true, dayOf: excuseDay },
+        );
+        if (blocked) {
+          throw new TRPCError({ code: "CONFLICT", message: "Já existe um abono pendente para este dia." });
         }
       } else {
         const day = excuseDay(requestedTime);
-        const samePunch = existing.some((row) =>
-          !looksLikeFullDayExcuse(row)
-          && excuseDay(row.requestedTime) === day
-          && row.requestedType === input.requestedType
-          && (row.timeEventId ?? null) === (timeEventId ?? null)
+        const blocked = hasPendingSamePunch(
+          existing.map((row) => ({ ...row, isFullDay: looksLikeFullDayExcuse(row) })),
+          { day, requestedType: input.requestedType, timeEventId, dayOf: excuseDay },
         );
-        if (samePunch) {
-          throw new TRPCError({ code: "CONFLICT", message: "Já existe um pedido pendente ou aprovado para esta batida neste dia." });
+        if (blocked) {
+          throw new TRPCError({ code: "CONFLICT", message: "Já existe um pedido pendente para esta batida neste dia." });
         }
       }
 

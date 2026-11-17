@@ -60,7 +60,7 @@ export default function CorrectionDateCalendar({
         >
           <ChevronLeft className="h-5 w-5" />
         </Button>
-        <p className="text-center text-sm font-bold capitalize text-white">{monthLabelPt(month)}</p>
+        <p className="text-center text-sm font-bold text-white">{monthLabelPt(month)}</p>
         <Button
           type="button"
           size="sm"

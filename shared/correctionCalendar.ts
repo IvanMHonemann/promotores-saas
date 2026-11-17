@@ -112,7 +112,8 @@ export function shiftMonth(month: string, delta: number): string {
 export function monthLabelPt(month: string): string {
   const [y, m] = month.split("-").map(Number);
   const names = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-  return `${names[(m || 1) - 1]} de ${y}`;
+  const name = names[(m || 1) - 1];
+  return `${name.charAt(0).toLocaleUpperCase("pt-BR")}${name.slice(1)} de ${y}`;
 }
 
 export const WEEKDAYS_PT_SUNDAY_FIRST = ["D", "S", "T", "Q", "Q", "S", "S"] as const;

@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import DashboardLayout from "@/components/DashboardLayout";
-import { DateInput } from "@/components/PtBrDateFields";
+import CorrectionDateCalendar from "@/components/CorrectionDateCalendar";
 import { LocationLabel } from "./geolocation";
 import { PunchPanel, localDayKey } from "@/components/PunchPanel";
 import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksLikeFullDayExcuse } from "@shared/correctionExcuse";
@@ -44,11 +44,17 @@ async function compressImage(file: File): Promise<string> {
 
 export default function PromoterClockPage() {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const today = localDayKey(new Date(), timeZone);
+  const todaySp = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const today = todaySp || localDayKey(new Date(), timeZone);
   const [selectedDate, setSelectedDate] = useState(() => {
     // "Enviar nova correção" abre /ponto?date=AAAA-MM-DD já no dia certo.
     const fromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("date") : null;
     return fromUrl && /^\d{4}-\d{2}-\d{2}$/.test(fromUrl) && fromUrl <= today ? fromUrl : today;
+  });
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const fromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("date") : null;
+    const initial = fromUrl && /^\d{4}-\d{2}-\d{2}$/.test(fromUrl) && fromUrl <= today ? fromUrl : today;
+    return initial.slice(0, 7);
   });
   const [mode, setMode] = useState<"add" | "correct">("add");
   const [selectedEventId, setSelectedEventId] = useState("");
@@ -67,6 +73,29 @@ export default function PromoterClockPage() {
   const history = trpc.timeTracking.myHistory.useQuery({ limit: 100, date: selectedDate, includeDisregarded: true });
   const missingPunch = trpc.timeTracking.myMissingPunch.useQuery(undefined, { staleTime: 60000 });
   const corrections = trpc.timeTracking.myCorrections.useQuery();
+  const correctionDays = trpc.timeTracking.myCorrectionDays.useQuery({ month: calendarMonth || today.slice(0, 7) });
+
+  const pickDate = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value > today) return;
+    setSelectedDate(value);
+    setCalendarMonth(value.slice(0, 7));
+    setSelectedEventId("");
+    setMissingTimes({});
+  };
+
+  const calendar = (id?: string) => (
+    <CorrectionDateCalendar
+      id={id}
+      value={selectedDate}
+      month={calendarMonth || today.slice(0, 7)}
+      today={today}
+      days={correctionDays.data?.days}
+      needsCorrectionCount={correctionDays.data?.needsCorrectionCount}
+      onChange={pickDate}
+      onMonthChange={setCalendarMonth}
+    />
+  );
+
 
   // Todas as batidas do dia (inclui as desconsideradas pelo administrador, exibidas riscadas).
   const allEvents = sortPunches(history.data ?? [], (e) => e.deviceTime || e.serverTime, (e) => e.eventType);
@@ -109,6 +138,7 @@ export default function PromoterClockPage() {
       void utils.timeTracking.myCorrections.invalidate();
       void utils.timeTracking.myHistory.invalidate();
       void utils.timeTracking.myMissingPunch.invalidate();
+      void utils.timeTracking.myCorrectionDays.invalidate();
     },
     onError: (error) => toast.error(error.message || "Não foi possível enviar o pedido"),
   });
@@ -265,19 +295,9 @@ export default function PromoterClockPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <label htmlFor="history-date" className="text-sm font-semibold text-slate-200">Dia para visualizar</label>
-                <DateInput
-                  id="history-date"
-                  aria-label="Dia para visualizar"
-                  value={selectedDate}
-                  onChange={(value) => {
-                    setSelectedDate(value);
-                    setSelectedEventId("");
-                    setMissingTimes({});
-                  }}
-                  className="h-10 rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100"
-                />
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-200">Dia para visualizar</p>
+                {calendar("history-date")}
               </div>
               {dayExcuse && (
                 <div className="mt-4 rounded-xl border border-teal-300/30 bg-teal-400/10 p-4">
@@ -342,6 +362,10 @@ export default function PromoterClockPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              <div className="mb-4 space-y-2">
+                <p className="text-sm font-semibold text-slate-200">Escolha o dia</p>
+                {calendar("correction-date")}
+              </div>
               <p className="mb-2 text-sm font-semibold text-slate-200">O que aconteceu?</p>
               <div role="radiogroup" aria-label="O que aconteceu?" className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {([

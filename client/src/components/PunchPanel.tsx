@@ -63,6 +63,7 @@ export function PunchPanel() {
   const queue = useMemo(() => outbox.filter((i) => i.kind === "punch" && i.status !== "failed").map((i) => ({ id: i.id, eventType: i.payload.eventType as PunchType, deviceTime: i.deviceTime })), [outbox]);
 
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const todayKey = localDayKey(new Date(), timeZone);
   const utils = trpc.useUtils();
   const { run } = useBusy();
   const [now, setNow] = useState(() => new Date());
@@ -76,14 +77,14 @@ export function PunchPanel() {
   }, []);
 
   const shift = trpc.timeTracking.shiftStatus.useQuery({ timeZone });
-  const historyQuery = trpc.timeTracking.myHistory.useQuery({ limit: 30 });
+  const historyQuery = trpc.timeTracking.myHistory.useQuery({ limit: 100, date: todayKey });
   if (historyQuery.data) cacheSet("punch-history", historyQuery.data);
   const history = { ...historyQuery, data: historyQuery.data ?? cacheGet<any[]>("punch-history") ?? undefined };
   const summary = trpc.timeTracking.myTimeSummary.useQuery(undefined, { staleTime: 60_000 });
   const register = trpc.timeTracking.registerEvent.useMutation();
 
-  const todayKey = localDayKey(now, timeZone);
   const today = useMemo(() => {
+    const todayKey = localDayKey(now, timeZone);
     const serverEvents = (history.data || []).filter((e: any) => localDayKey(eventTime(e), timeZone) === todayKey);
     // Inclui batidas da fila offline para avançar a tela
     const queuedEvents = queue.map((q) => ({
@@ -94,7 +95,7 @@ export function PunchPanel() {
       queued: true,
     })).filter((e) => localDayKey(eventTime(e), timeZone) === todayKey);
     return [...serverEvents, ...queuedEvents].sort((a: any, b: any) => eventTime(a).getTime() - eventTime(b).getTime());
-  }, [history.data, queue, timeZone, todayKey]);
+  }, [history.data, queue, timeZone, now]);
 
   const last = today[today.length - 1] as any;
   const lastType = (last?.eventType as PunchType | undefined) ?? undefined;

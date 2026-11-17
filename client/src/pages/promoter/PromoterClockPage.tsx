@@ -135,11 +135,11 @@ export default function PromoterClockPage() {
     e.preventDefault();
     if (sending || correction.isPending) return;
     const reason = justification.trim();
-    const open = (corrections.data || []).map((row) => row.request).filter((request) => request.status === "pending" || request.status === "approved");
+    const open = (corrections.data || []).map((row) => row.request).filter((request) => request.status === "pending");
     const dayOpen = open.filter((request) => new Date(request.requestedTime).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) === selectedDate);
     if (isFullDay) {
       if (dayOpen.some((request) => looksLikeFullDayExcuse(request))) {
-        toast.error("Já existe um abono pendente ou aprovado para este dia");
+        toast.error("Já existe um abono pendente para este dia");
         return;
       }
       setSending(true);
@@ -212,9 +212,9 @@ export default function PromoterClockPage() {
     }
     const original = events.find((item) => item.id === eventId);
     if (!original) return;
-    const already = (corrections.data || []).some(({ request }) => (request.status === "pending" || request.status === "approved") && request.timeEventId === eventId);
+    const already = (corrections.data || []).some(({ request }) => request.status === "pending" && request.timeEventId === eventId);
     if (already) {
-      toast.error("Já existe um pedido pendente ou aprovado para esta batida");
+      toast.error("Já existe um pedido pendente para esta batida");
       return;
     }
     const orderErr = punchOrderError(dayPunches, { type: original.eventType as EventType, time: new Date(`${selectedDate}T${correctTime}:00`), replaceId: eventId });

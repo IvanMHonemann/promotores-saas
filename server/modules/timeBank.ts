@@ -4,9 +4,10 @@
  */
 import { sql } from "drizzle-orm";
 import * as db from "../db";
-import { buildMirror, type LaborProfile, type MirrorReport } from "../../shared/timesheetMirror";
+import { buildMirror, todayInTimeZone, type LaborProfile, type MirrorReport } from "../../shared/timesheetMirror";
 import { closedPeriodBalance } from "../../shared/timeBank";
 import { loadApprovedDayExcuses } from "./correctionExtras";
+import { loadDayTreatments } from "./dayTreatments";
 import { loadAdjustmentsByEvent, loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, toMirrorEvents } from "./mirrorData";
 
 export type MemberReport = { memberId: number; labor: LaborProfile | null; report: MirrorReport; lastEventAt: string | null };
@@ -34,17 +35,19 @@ export async function buildMemberReports(companyId: number, memberIds: number[],
   const eventRows = await loadMirrorEventRows(companyId, memberIds, from, to);
   const eventsByMember = new Map<number, typeof eventRows>();
   for (const r of eventRows) eventsByMember.set(r.memberAccountId, [...(eventsByMember.get(r.memberAccountId) || []), r]);
-  const [adjByEvent, laborByMember, excusesByMember, vacationsByMember, options] = await Promise.all([
+  const [adjByEvent, laborByMember, excusesByMember, vacationsByMember, treatmentsByMember, options] = await Promise.all([
     loadAdjustmentsByEvent(companyId, memberIds),
     loadLaborProfiles(companyId, memberIds),
     loadApprovedDayExcuses(companyId, memberIds, from, to),
     loadMemberVacations(companyId, memberIds, from, to),
+    loadDayTreatments(companyId, memberIds, from, to),
     loadMirrorOptions(companyId),
   ]);
+  const today = todayInTimeZone(timeZone);
   for (const id of memberIds) {
     const rows = eventsByMember.get(id) || [];
     const labor = laborByMember.get(id) ?? null;
-    const report = buildMirror({ events: toMirrorEvents(rows, adjByEvent), from, to, timeZone, labor, excuses: excusesByMember.get(id) || [], vacations: vacationsByMember.get(id) || [], options });
+    const report = buildMirror({ events: toMirrorEvents(rows, adjByEvent), from, to, timeZone, labor, excuses: excusesByMember.get(id) || [], vacations: vacationsByMember.get(id) || [], treatments: treatmentsByMember.get(id) || [], options, today });
     const last = rows.length ? rows[rows.length - 1] : null;
     out.set(id, { memberId: id, labor, report, lastEventAt: last ? (last.deviceTime || last.serverTime).toISOString() : null });
   }

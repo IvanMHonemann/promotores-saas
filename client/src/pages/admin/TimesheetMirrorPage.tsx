@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { MIRROR_HEADERS, mirrorRows, totalsLines } from "@shared/timesheetMirror";
+import TimeHmField from "@/components/TimeHmField";
 import { buildMirrorHtml, buildMirrorPdf, buildMirrorXlsx, companyLines, download, fileBase, memberLines, periodLabel, shareOrDownload, stamp, LEGEND, DISCLAIMER, type MirrorData } from "@/lib/mirrorExport";
 import { todayInZone } from "@shared/expiry";
 import { DateInput, MonthSelect } from "@/components/PtBrDateFields";
@@ -118,7 +119,7 @@ export default function TimesheetMirrorPage() {
           <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => void onPdf(false, r)} className="border-white/20 text-white"><FileText className="mr-1 h-4 w-4" />PDF individual</Button><Button size="sm" variant="outline" onClick={() => void onXlsx(false, r)} className="border-white/20 text-white"><FileSpreadsheet className="mr-1 h-4 w-4" />Excel individual</Button></div></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-x-8 gap-y-1 text-sm md:grid-cols-2">{[...companyLines(data), ...memberLines(r)].map(([k, v], i) => <p key={i}><span className="text-slate-400">{k}: </span><span className="font-medium">{v}</span></p>)}</div>
-            <div className="overflow-x-auto rounded-lg border border-white/10"><table className="w-full min-w-[1100px] text-xs"><thead className="bg-white/5"><tr>{MIRROR_HEADERS.map((h) => <th key={h} className="px-2 py-2 text-left font-semibold text-slate-200">{h}</th>)}</tr></thead><tbody>
+            <div className="overflow-x-auto rounded-lg border border-white/10"><table className="w-full min-w-[1240px] text-xs"><thead className="bg-white/5"><tr>{MIRROR_HEADERS.map((h) => <th key={h} className="px-2 py-2 text-left font-semibold text-slate-200">{h}</th>)}</tr></thead><tbody>
               {mirrorRows(r.report).map((row, i) => <tr key={i} className={`border-t border-white/5 ${row[12] ? "bg-amber-400/5" : ""}`}>{row.map((c, j) => <td key={j} className={`px-2 py-1.5 align-top ${j === 12 ? "min-w-[260px] text-amber-200" : ""}`}>{c}</td>)}</tr>)}
             </tbody></table></div>
             <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">{totalsLines(r.report.totals).map(([k, v]) => <div key={k} className="flex justify-between gap-3 rounded-lg bg-white/5 px-3 py-2"><span className="text-slate-300">{k}</span><b>{v}</b></div>)}</div>
@@ -178,7 +179,7 @@ function SettingsPanel({ who, promoters, onSaved }: { who: string; promoters: an
         </div>
         <div><Label>Dias de trabalho</Label><div className="mt-1 flex flex-wrap gap-2">{WEEKDAY_NAMES.map((n, i) => <label key={n} className="flex items-center gap-1 rounded-md border border-white/15 px-2 py-1 text-sm"><input type="checkbox" checked={lv.workdays.includes(i)} onChange={(e) => setLv({ workdays: e.target.checked ? [...lv.workdays, i].sort() : lv.workdays.filter((d: number) => d !== i) })} />{n}</label>)}</div></div>
         <div className="flex flex-wrap items-end gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={lv.nightEnabled} onChange={(e) => setLv({ nightEnabled: e.target.checked })} />Apurar adicional noturno (com hora reduzida)</label>
-          {lv.nightEnabled && <><div><Label>Início</Label><Input type="time" value={lv.nightStart} onChange={(e) => setLv({ nightStart: e.target.value })} className={field} /></div><div><Label>Fim</Label><Input type="time" value={lv.nightEnd} onChange={(e) => setLv({ nightEnd: e.target.value })} className={field} /></div></>}</div>
+          {lv.nightEnabled && <><div><Label>Início</Label><TimeHmField value={lv.nightStart} onChange={(v) => setLv({ nightStart: v })} /></div><div><Label>Fim</Label><TimeHmField value={lv.nightEnd} onChange={(v) => setLv({ nightEnd: v })} /></div></>}</div>
         <Button onClick={submitLabor} disabled={saveLabor.isPending} className="bg-teal-300 text-slate-950 hover:bg-teal-200"><Save className="mr-2 h-4 w-4" />Salvar perfil de {member.name}</Button></>}
     </div>
   </CardContent></Card>;

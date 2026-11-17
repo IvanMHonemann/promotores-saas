@@ -422,6 +422,29 @@ export const timeCorrectionRequests = mysqlTable("time_correction_requests", {
 export type TimeCorrectionRequest = typeof timeCorrectionRequests.$inferSelect;
 export type InsertTimeCorrectionRequest = typeof timeCorrectionRequests.$inferInsert;
 
+/** Decisão do administrador sobre falta (abonar ou banco de horas). Não altera marcações originais. */
+export const timeDayTreatments = mysqlTable("time_day_treatments", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").notNull().references(() => companies.id, { onDelete: "restrict" }),
+  memberAccountId: int("memberAccountId").notNull().references(() => memberAccounts.id, { onDelete: "restrict" }),
+  day: varchar("day", { length: 10 }).notNull(),
+  decision: varchar("decision", { length: 32 }).notNull(),
+  notes: text("notes"),
+  decidedByUserId: int("decidedByUserId"),
+  decidedByName: varchar("decidedByName", { length: 255 }),
+  decidedAt: timestamp("decidedAt").defaultNow().notNull(),
+  reversedAt: timestamp("reversedAt"),
+  reversedByUserId: int("reversedByUserId"),
+  reversedByName: varchar("reversedByName", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  memberDayIdx: index("time_day_treatments_member_day").on(table.companyId, table.memberAccountId, table.day),
+  companyIdx: index("time_day_treatments_company").on(table.companyId),
+}));
+
+export type TimeDayTreatment = typeof timeDayTreatments.$inferSelect;
+export type InsertTimeDayTreatment = typeof timeDayTreatments.$inferInsert;
+
 /** Checklists / formulários. */
 export const checklists = mysqlTable("checklists", {
   id: int("id").autoincrement().primaryKey(),

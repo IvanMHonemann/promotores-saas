@@ -10,8 +10,9 @@ import { commercialFeatureProcedure, companyAdminFeatureProcedure, platformProce
 import * as db from "../db";
 import { companies, memberAccounts, promoterProfiles, timeEvents } from "../../drizzle/schema";
 import { auditFromCtx, requestMeta } from "../audit";
-import { buildMirror, type LaborProfile } from "../../shared/timesheetMirror";
+import { buildMirror, todayInTimeZone, type LaborProfile } from "../../shared/timesheetMirror";
 import { loadApprovedDayExcuses } from "../modules/correctionExtras";
+import { loadDayTreatments } from "../modules/dayTreatments";
 import { effectiveEventTime, loadAdjustmentsByEvent, loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, toMirrorEvents } from "../modules/mirrorData";
 import { activeDisregards, ensurePunchLedger, toLedgerRow, DEFAULT_TZ, supersededIds } from "./ledger";
 import { buildAej, buildAfd, onlyDigits, sha256, toAejSequence, toLatin1, verifyLedger, formatD, type AejMark, type AejWorker } from "./repFormat";
@@ -80,8 +81,9 @@ export async function memberMonthMirror(companyId: number, memberId: number, mon
   const labor = await readJson<LaborProfile>(`labor_profile:${memberId}`, companyId);
   const excuses = (await loadApprovedDayExcuses(companyId, [memberId], from, to)).get(memberId) || [];
   const vacations = (await loadMemberVacations(companyId, [memberId], from, to)).get(memberId) || [];
+  const treatments = (await loadDayTreatments(companyId, [memberId], from, to)).get(memberId) || [];
   const options = await loadMirrorOptions(companyId);
-  const report = buildMirror({ events: toMirrorEvents(rows, adj), from, to, timeZone: TZ, labor, excuses, vacations, options });
+  const report = buildMirror({ events: toMirrorEvents(rows, adj), from, to, timeZone: TZ, labor, excuses, vacations, treatments, options, today: todayInTimeZone(TZ) });
   const employer = await employerOf(companyId);
   const document = {
     v: 1, month, employer: { name: employer.name, document: employer.document },

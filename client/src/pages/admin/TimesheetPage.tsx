@@ -12,6 +12,8 @@ import { todayInZone } from "@shared/expiry";
 import { confirmWithInput } from "@/components/ConfirmDialog";
 import { MonthSelect } from "@/components/PtBrDateFields";
 import { formatMonthYearPT } from "@shared/ptBrDate";
+import TimeHmField from "@/components/TimeHmField";
+import { fmtMinutes, situationLabel } from "@shared/timesheetMirror";
 
 /** "2026-11" → "novembro de 2026". */
 function monthLabel(ym: string) {
@@ -42,6 +44,15 @@ export default function TimesheetPage() {
   const corrections = trpc.timeTracking.correctionRequests.pending.useQuery(undefined, { staleTime: 15000 });
   const history = trpc.timeTracking.companyHistory.useQuery({ memberId: selectedId!, month }, { enabled: Boolean(selectedId), staleTime: 10000 });
   const excuses = trpc.timeTracking.companyApprovedExcuses.useQuery({ memberId: selectedId!, month }, { enabled: Boolean(selectedId), staleTime: 10000 });
+  const absences = trpc.timeTracking.monthAbsences.useQuery({ memberId: selectedId!, month }, { enabled: Boolean(selectedId), staleTime: 10000 });
+  const treatAbsence = trpc.timeTracking.treatAbsence.useMutation({
+    onSuccess: () => { utils.timeTracking.monthAbsences.invalidate(); toast.success("Decisão registrada. As marcações originais não foram alteradas."); },
+    onError: (e) => toast.error(e.message || "Não foi possível registrar a decisão."),
+  });
+  const reverseTreatment = trpc.timeTracking.reverseAbsenceTreatment.useMutation({
+    onSuccess: () => { utils.timeTracking.monthAbsences.invalidate(); toast.success("Decisão revertida."); },
+    onError: (e) => toast.error(e.message || "Não foi possível reverter."),
+  });
   const reviewMany = trpc.timeTracking.correctionRequests.reviewMany.useMutation({
     onSuccess: (data) => { toast.success(`${data.count} horário(s) analisados juntos.`); void corrections.refetch(); },
     onError: (e) => toast.error(e.message || "Não foi possível analisar."),
@@ -94,6 +105,83 @@ export default function TimesheetPage() {
             </CardContent>
           </Card>
         </div>
+
+        {selectedId && (
+          <Card className="border-amber-300/25 bg-amber-300/5 text-white">
+            <CardHeader><CardTitle className="text-base">Faltas e justificativas de {monthLabel(month)}</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {absences.isLoading && <p className="text-sm text-slate-400">Carregando...</p>}
+              {!absences.isLoading && !(absences.data || []).length && <p className="text-sm text-slate-400">Nenhuma falta, jornada pendente ou abono neste mês.</p>}
+              {(absences.data || []).map((row) => (
+                <div key={row.date} className="rounded-lg border border-white/10 bg-slate-950/40 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-teal-300">
+                      {new Date(row.date + "T12:00:00").toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" })}
+                      <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-xs font-semibold text-slate-100">{situationLabel(row.situation) || row.situation}</span>
+                    </p>
+                    <span className="text-xs text-slate-400">Saldo {fmtMinutes(row.diffMinutes, true)}</span>
+                  </div>
+                  {row.treatment && (
+                    <p className="mt-1 text-xs text-slate-300">
+                      Decisão: {row.treatment.decision === "excuse" ? "Abonado" : "Banco de horas (devendo)"}
+                      {row.treatment.by ? ` · por ${row.treatment.by}` : ""}
+                      {row.treatment.notes ? ` · ${row.treatment.notes}` : ""}
+                    </p>
+                  )}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {row.situation === "falta" && row.treatment?.decision !== "excuse" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-teal-300 text-slate-950 hover:bg-teal-200"
+                        disabled={treatAbsence.isPending}
+                        onClick={async () => {
+                          const reason = await confirmWithInput({ title: "Abonar este dia?", danger: false, description: "O dia conta como trabalhado e o saldo fica zero. As marcações originais não são alteradas. Você pode reverter depois.", confirmLabel: "Abonar", input: { label: "Motivo (opcional)", placeholder: "Ex.: atestado já conferido, acordo com o promotor" } });
+                          if (reason === null) return;
+                          treatAbsence.mutate({ memberId: selectedId!, date: row.date, decision: "excuse", notes: reason || undefined });
+                        }}
+                      >
+                        Abonar
+                      </Button>
+                    )}
+                    {row.situation === "falta" && row.treatment?.decision !== "time_bank" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-amber-300/40 text-amber-100 hover:bg-amber-300/10"
+                        disabled={treatAbsence.isPending}
+                        onClick={async () => {
+                          const reason = await confirmWithInput({ title: "Lançar no banco de horas devendo?", danger: false, description: "As horas previstas deste dia continuam como débito no banco de horas. As marcações originais não são alteradas. Você pode reverter depois.", confirmLabel: "Lançar no banco", input: { label: "Motivo (opcional)", placeholder: "Ex.: falta sem justificativa válida" } });
+                          if (reason === null) return;
+                          treatAbsence.mutate({ memberId: selectedId!, date: row.date, decision: "time_bank", notes: reason || undefined });
+                        }}
+                      >
+                        Banco de horas (devendo)
+                      </Button>
+                    )}
+                    {row.treatment && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-white/20 text-slate-200"
+                        disabled={reverseTreatment.isPending}
+                        onClick={async () => {
+                          const reason = await confirmWithInput({ title: "Reverter esta decisão?", danger: false, description: "O dia volta a ser calculado automaticamente (falta em débito, se ainda não houver correção ou justificativa aprovada).", confirmLabel: "Reverter", input: { label: "Motivo (opcional)", placeholder: "Ex.: decisão lançada no dia errado" } });
+                          if (reason === null) return;
+                          reverseTreatment.mutate({ memberId: selectedId!, date: row.date, notes: reason || undefined });
+                        }}
+                      >
+                        Reverter
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {selectedId && (
           <Card className="border-white/10 bg-slate-900/70 text-white">
@@ -248,7 +336,7 @@ export default function TimesheetPage() {
             <div>
               <label htmlFor="auto-time" className="text-sm font-semibold text-white">Avisar se o promotor não encerrar a jornada até:</label>
               <p className="mt-0.5 text-sm text-slate-300">Depois desse horário, o promotor e o administrador recebem um aviso. Nenhuma batida é criada automaticamente.</p>
-              <input id="auto-time" type="time" value={autoTime || autoSetting.data || ""} onChange={(e) => setAutoTime(e.target.value)} className="mt-2 block h-11 rounded-lg border border-white/15 bg-slate-950 px-3 text-white [color-scheme:dark]" />
+              <div className="mt-2 max-w-xs"><TimeHmField id="auto-time" value={autoTime || autoSetting.data || ""} onChange={setAutoTime} /></div>
             </div>
             <Button className="h-11 bg-teal-400 text-slate-950" disabled={setAuto.isPending} onClick={() => setAuto.mutate({ time: autoTime || autoSetting.data || "" })}>Salvar</Button>
           </div>

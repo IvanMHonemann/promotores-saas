@@ -15,6 +15,7 @@ import { fullDayExcuseLabel, inferFullDayExcuseType, isFullDayExcuseType, looksL
 import { defaultCorrectionJustification, formatGroupedCorrectionTitle, groupCorrectionItems, justificationRequiresText } from "@shared/correctionGroups";
 import { punchOrderError, sortPunches } from "@shared/punchOrder";
 import { formatDayLabelPt } from "@shared/correctionCalendar";
+import TimeHmField from "@/components/TimeHmField";
 
 type EventType = "clock_in" | "break_start" | "break_end" | "clock_out";
 type JustificationType = "normal" | "holiday" | "day_off" | "medical_certificate" | "other";
@@ -399,7 +400,7 @@ export default function PromoterClockPage() {
                       {missingList.map((type) => (
                         <div key={type} className="flex flex-col gap-2 rounded-xl border border-white/10 bg-slate-950/40 p-3 sm:flex-row sm:items-center">
                           <span className="min-w-0 flex-1 text-sm font-semibold text-slate-100">{labels[type]}</span>
-                          <input type="time" value={missingTimes[type] || ""} onChange={(e) => setMissingTimes((prev) => ({ ...prev, [type]: e.target.value }))} className="h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 text-sm text-slate-100 sm:w-36" />
+                          <TimeHmField aria-label={`Horário de ${labels[type]}`} value={missingTimes[type] || ""} onChange={(v) => setMissingTimes((prev) => ({ ...prev, [type]: v }))} className="w-full sm:w-44" />
                         </div>
                       ))}
                     </div>
@@ -442,7 +443,7 @@ export default function PromoterClockPage() {
                   </div>
                   <label className="block space-y-2 text-sm font-semibold text-slate-200">
                     Horário correto
-                    <input required type="time" value={correctTime} onChange={(e) => setCorrectTime(e.target.value)} className="h-10 w-full rounded-md border border-white/15 bg-slate-950/60 px-3 font-normal text-slate-100" />
+                    <TimeHmField required aria-label="Horário correto" value={correctTime} onChange={setCorrectTime} />
                   </label>
                   <div className="space-y-2">
                     <p className="text-sm font-semibold text-slate-200">Motivo</p>

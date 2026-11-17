@@ -64,7 +64,7 @@ describe("classifyCorrectionDay", () => {
   it("dia útil passado sem marcação precisa de correção", () => {
     const r = classifyCorrectionDay(base({ date: "2026-11-10", punches: [] }));
     expect(r.mark).toBe("needs_correction");
-    expect(r.reason).toBe("Batida faltando");
+    expect(r.reason).toBe("Falta");
   });
 
   it("fim de semana sem jornada prevista e sem marcação não é sinalizado", () => {

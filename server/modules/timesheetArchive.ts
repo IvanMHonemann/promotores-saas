@@ -10,10 +10,11 @@ import { and, eq, gte, lt, inArray, sql } from "drizzle-orm";
 import { companyAdminFeatureProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 import { companies, memberAccounts, promoterProfiles, timeEvents } from "../../drizzle/schema";
-import { buildMirror, type LaborProfile, type MirrorEvent, MIRROR_HEADERS, mirrorRows, totalsLines, fmtDate } from "../../shared/timesheetMirror";
+import { buildMirror, todayInTimeZone, type LaborProfile, type MirrorEvent, MIRROR_HEADERS, mirrorRows, totalsLines, fmtDate } from "../../shared/timesheetMirror";
 import { storagePut, storageGetSignedUrl } from "../storage";
 import { ensureAdjustmentsTable } from "./timesheetMirror";
 import { loadApprovedDayExcuses } from "./correctionExtras";
+import { loadDayTreatments } from "./dayTreatments";
 import { loadAdjustmentsByEvent, loadMemberVacations, loadMirrorEventRows, loadMirrorOptions, toMirrorEvents } from "./mirrorData";
 import { readTimeAlert } from "../../shared/punchTime";
 
@@ -85,7 +86,7 @@ async function buildPdfBuffer(opts: {
   doc.text(`Gerado em: ${new Date().toLocaleString("pt-BR", { timeZone: TZ })}`, 150, y);
   y += 7;
   doc.setFontSize(7).setFont("helvetica", "bold").setFillColor(226, 232, 240);
-  const widths = [18, 9, 22, 22, 22, 22, 16, 14, 14, 14, 14, 16];
+  const widths = [16, 8, 16, 18, 18, 18, 18, 14, 12, 12, 12, 12, 14];
   const obsW = W - 2 * M - widths.reduce((a, b) => a + b, 0);
   const cols = [...widths, obsW];
   doc.rect(M, y, W - 2 * M, 6, "F");
@@ -137,14 +138,16 @@ export async function archiveClosedMonth(companyId: number, year: number, month:
 
   const excusesByMember = await loadApprovedDayExcuses(companyId, ids, from, to);
   const vacationsByMember = await loadMemberVacations(companyId, ids, from, to);
+  const treatmentsByMember = await loadDayTreatments(companyId, ids, from, to);
   const options = await loadMirrorOptions(companyId);
   const adjByEvent = await loadAdjustmentsByEvent(companyId, ids);
+  const today = todayInTimeZone(TZ);
   const results: ArchiveResult[] = [];
   for (const m of members) {
     try {
       const labor = await readJson<LaborProfile>(`labor_profile:${m.id}`, companyId);
       const events: MirrorEvent[] = toMirrorEvents(byMember.get(m.id) || [], adjByEvent);
-      const report = buildMirror({ events, from, to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [], vacations: vacationsByMember.get(m.id) || [], options });
+      const report = buildMirror({ events, from, to, timeZone: TZ, labor, excuses: excusesByMember.get(m.id) || [], vacations: vacationsByMember.get(m.id) || [], treatments: treatmentsByMember.get(m.id) || [], options, today });
       const buf = await buildPdfBuffer({
         companyName: company?.name ?? "", memberName: m.name, employeeCode: m.employeeCode ?? null, from, to, report,
       });

@@ -226,7 +226,7 @@ async function pdfFor(data: MirrorData, r: MirrorResult, doc: jsPDF, first: bool
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10;
   const contentW = W - 2 * M;
   const bottom = H - 20; // espaço reservado ao rodapé, inclusive nomes longos
-  const widths = [19, 8, 18, 20, 20, 18, 15, 13, 13, 13, 13, 15];
+  const widths = [16, 8, 16, 16, 16, 16, 16, 14, 12, 12, 12, 12, 14];
   const cols = [...widths, contentW - widths.reduce((a, b) => a + b, 0)];
   let y = M;
   const hashShort = (r.documentHash || r.acceptance?.documentHash || "").slice(0, 12);

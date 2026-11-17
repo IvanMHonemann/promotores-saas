@@ -79,7 +79,7 @@ export function classifyCorrectionDay(facts: CorrectionDayFacts): { mark: Correc
   }
 
   if (incomplete) return { mark: "needs_correction", reason: "Jornada incompleta" };
-  if (missingOnWorkday) return { mark: "needs_correction", reason: "Batida faltando" };
+  if (missingOnWorkday) return { mark: "needs_correction", reason: "Falta" };
   return { mark: "ok" };
 }
 

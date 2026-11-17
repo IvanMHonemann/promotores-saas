@@ -72,6 +72,11 @@ export type DayRow = {
   overtimeMinutes: number | null;
   nightMinutes: number | null;
   issues: string[];
+  /** Situação profissional do dia (Falta, Abonado, Folga, etc.). */
+  situation: DaySituation;
+  /** Minutos de variação ignorados pela tolerância da CLT art. 58 §1º. */
+  toleranceMinutes?: number;
+  treatment?: DayTreatmentInput;
   holiday?: string | null;
   excuse?: { type: FullDayExcuseType; label: string; justification?: string | null } | null;
   /** Ponto facultativo (Carnaval, Corpus Christi) quando a empresa NÃO o trata como feriado: não abonado. */
@@ -120,12 +125,111 @@ function nightOverlap(aMs: number, bMs: number, tz: string, start: number, end: 
 
 export type DayExcuseInput = { date: string; type: string; justification?: string | null };
 export type VacationRange = { startDate: string; endDate: string }; // YYYY-MM-DD, inclusive
+/** Decisão do administrador sobre uma falta ou justificativa (não altera as marcações originais). */
+export type DayTreatmentInput = {
+  date: string;
+  decision: "excuse" | "time_bank";
+  notes?: string | null;
+  by?: string | null;
+  at?: string | null;
+};
+export type DaySituation =
+  | "trabalho"
+  | "falta"
+  | "abonado"
+  | "atestado"
+  | "folga"
+  | "feriado"
+  | "ferias"
+  | "pendente"
+  | "dsr"
+  | "facultativo"
+  | "fora";
+export const SITUATION_LABELS: Record<DaySituation, string> = {
+  trabalho: "Trabalho",
+  falta: "Falta",
+  abonado: "Abonado",
+  atestado: "Atestado",
+  folga: "Folga",
+  feriado: "Feriado",
+  ferias: "Férias",
+  pendente: "Pendente",
+  dsr: "DSR",
+  facultativo: "Ponto facultativo",
+  fora: "",
+};
+export function situationLabel(s: DaySituation): string {
+  return SITUATION_LABELS[s] || "";
+}
 export type MirrorOptions = {
   /** Se true, Carnaval e Corpus Christi (ponto facultativo) são tratados como feriado abonado. Padrão: false. */
   optionalHolidaysAsHoliday?: boolean;
+  /**
+   * Data civil "hoje" no fuso do relatório (AAAA-MM-DD).
+   * Dias previstos sem marcação só viram Falta (débito) quando a data é anterior a hoje.
+   * Hoje e o futuro não são negativados. Se omitido, usa a data atual no fuso do relatório.
+   */
+  today?: string;
 };
 
-export function buildMirror(input: { events: MirrorEvent[]; from: string; to: string; timeZone?: string; labor?: LaborProfile | null; excuses?: DayExcuseInput[]; vacations?: VacationRange[]; options?: MirrorOptions }): MirrorReport {
+export function todayInTimeZone(timeZone: string, now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+export function hmToMinutes(hm: string): number {
+  const [h, m] = hm.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+export type ToleranceInput = {
+  workedMinutes: number;
+  expectedMinutes: number;
+  firstInHm?: string | null;
+  lastOutHm?: string | null;
+  schedule?: Array<[string, string]> | null;
+};
+
+/**
+ * Tolerância da CLT art. 58 §1º, com a leitura usual do TST:
+ * variações que não excedam 5 minutos em cada marcação, limitado a 10 minutos no dia,
+ * não são descontadas nem computadas como extra. Se a variação de uma marcação
+ * passar de 5 minutos, aquela marcação não goza da tolerância. Se o total
+ * tolerável passar de 10 minutos, a diferença do dia conta por inteiro.
+ * Sem horário contratual cadastrado, vale só o limite diário de 10 minutos.
+ */
+export function applyDailyTolerance(input: ToleranceInput): { diffMinutes: number; toleranceMinutes: number } {
+  const raw = Math.round(input.workedMinutes - input.expectedMinutes);
+  if (raw === 0) return { diffMinutes: 0, toleranceMinutes: 0 };
+
+  let ignore = 0;
+  const schedule = input.schedule;
+  if (schedule && schedule.length && input.firstInHm && input.lastOutHm) {
+    const contractStart = hmToMinutes(schedule[0][0]);
+    const contractEnd = hmToMinutes(schedule[schedule.length - 1][1]);
+    const firstIn = hmToMinutes(input.firstInHm);
+    const lastOut = hmToMinutes(input.lastOutHm);
+    const inVar = Math.abs(firstIn - contractStart);
+    const outVar = Math.abs(lastOut - contractEnd);
+    const inTol = inVar <= 5 ? inVar : 0;
+    const outTol = outVar <= 5 ? outVar : 0;
+    ignore = inTol + outTol;
+    if (ignore > 10) return { diffMinutes: raw, toleranceMinutes: 0 };
+  } else if (Math.abs(raw) <= 10) {
+    ignore = Math.abs(raw);
+  } else {
+    return { diffMinutes: raw, toleranceMinutes: 0 };
+  }
+
+  if (ignore <= 0) return { diffMinutes: raw, toleranceMinutes: 0 };
+  if (raw > 0) {
+    const diff = Math.max(0, raw - ignore);
+    return { diffMinutes: diff, toleranceMinutes: raw - diff };
+  }
+  const diff = Math.min(0, raw + ignore);
+  return { diffMinutes: diff, toleranceMinutes: -raw + diff };
+}
+
+export function buildMirror(input: { events: MirrorEvent[]; from: string; to: string; timeZone?: string; labor?: LaborProfile | null; excuses?: DayExcuseInput[]; vacations?: VacationRange[]; treatments?: DayTreatmentInput[]; options?: MirrorOptions; today?: string }): MirrorReport {
   const tz = input.timeZone || "America/Sao_Paulo";
   const labor = input.labor || null;
   const sorted = [...input.events].sort((a, b) => a.time.localeCompare(b.time) || a.id - b.id);
@@ -153,7 +257,14 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     if (ev.type === "clock_out") cur = null;
   }
   const byDate = new Map<string, Shift[]>();
-  for (const s of shifts) { if (s.date >= input.from && s.date <= input.to) byDate.set(s.date, [...(byDate.get(s.date) || []), s]); }
+  const coveredByOvernight = new Set<string>();
+  for (const s of shifts) {
+    if (s.date >= input.from && s.date <= input.to) byDate.set(s.date, [...(byDate.get(s.date) || []), s]);
+    for (const ev of s.events) {
+      const evDate = localParts(ev.time, tz).date;
+      if (evDate !== s.date) coveredByOvernight.add(evDate);
+    }
+  }
 
   const workdays = labor?.workdays && labor.workdays.length ? new Set(labor.workdays) : null;
   const daily = labor?.dailyMinutes && labor.dailyMinutes > 0 ? labor.dailyMinutes : null;
@@ -162,6 +273,15 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
   for (const item of input.excuses || []) {
     if (item.date >= input.from && item.date <= input.to && isFullDayExcuseType(item.type) && !excusesByDate.has(item.date)) {
       excusesByDate.set(item.date, item);
+    }
+  }
+
+  const admission = labor?.admissionDate ? String(labor.admissionDate).slice(0, 10) : null;
+  const today = String(input.today || input.options?.today || todayInTimeZone(tz)).slice(0, 10);
+  const treatmentsByDate = new Map<string, DayTreatmentInput>();
+  for (const item of input.treatments || []) {
+    if (item.date >= input.from && item.date <= input.to && (item.decision === "excuse" || item.decision === "time_bank") && !treatmentsByDate.has(item.date)) {
+      treatmentsByDate.set(item.date, item);
     }
   }
 
@@ -228,6 +348,11 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
       ? { type: excuseRow.type, label: fullDayExcuseLabel(excuseRow.type), justification: excuseRow.justification || null }
       : null;
     const excused = Boolean(holiday || excuse || onVacation);
+    const beforeAdmission = Boolean(admission && d < admission);
+    const isFuture = d > today;
+    const isToday = d === today;
+    const treatment = treatmentsByDate.get(d) || undefined;
+    const incomplete = issues.some((i) => i.startsWith("Jornada incompleta") || i.includes("sem entrada") || i.includes("sem saída") || i.includes("sem início") || i.includes("seguidos"));
 
     // Feriado nacional: abona falta de batida automaticamente, mas permite ponto normal se houver marcações.
     if (holiday) {
@@ -239,23 +364,89 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     }
     if (onVacation) issues.push(hasMarks ? "Férias programadas — há marcações neste dia (conferir)" : "Férias — dia abonado");
     if (optionalHoliday) issues.push(`Ponto facultativo: ${optionalHoliday} — não abonado automaticamente (a empresa pode abonar pela correção de ponto ou ativar esse abono na configuração)`);
-    if (!hasMarks && isWorkday && !excused) {
-      issues.push("Sem marcações em dia previsto — verificar falta, abono ou justificativa (não informados)");
-    }
     // Domingo sem marcação e fora da jornada: indica DSR (descanso semanal remunerado) para o espelho da empresa.
     if (!hasMarks && weekdayOf(d) === 0 && !isWorkday && !holiday && !onVacation && !excuse) {
       issues.push("DSR (descanso semanal remunerado)");
     }
 
-    const expected = (daily != null && isWorkday && !excused) ? daily : (daily != null && !workdays ? null : null);
-    const w = Math.round(worked);
-    const diff = expected != null && hasMarks ? w - expected : null;
+    const overnightCover = !hasMarks && coveredByOvernight.has(d);
+    if (overnightCover) issues.push("Coberto pela jornada iniciada no dia anterior (não é falta)");
+    const willDebitAbsence = Boolean(
+      !hasMarks && isWorkday && daily != null && !excused && !beforeAdmission && !isFuture && !isToday && !overnightCover && treatment?.decision !== "excuse"
+    );
+    if (!hasMarks && isWorkday && !excused && !beforeAdmission) {
+      if (willDebitAbsence) {
+        if (treatment?.decision === "time_bank") {
+          issues.push("Falta lançada no banco de horas (devendo), conforme decisão do administrador");
+        } else {
+          issues.push("Falta: horas do dia lançadas como débito até correção, justificativa válida ou decisão do administrador (abonar ou banco de horas)");
+        }
+      } else if (isToday) {
+        issues.push("Dia de trabalho ainda em curso — a falta só é lançada depois que o dia termina");
+      } else if (!isFuture) {
+        issues.push("Sem marcações em dia previsto — verificar falta, abono ou justificativa (não informados)");
+      }
+    }
+    if (hasMarks && incomplete && !isToday && !isFuture && isWorkday && !excused) {
+      issues.push("Pendente de correção: o saldo deste dia é provisório até as marcações serem completadas ou justificadas");
+    }
+
+    let expected: number | null = (daily != null && isWorkday && !excused && !beforeAdmission) ? daily : null;
+    let w = Math.round(worked);
+    let diff: number | null = null;
+    let overtime: number | null = null;
+    let toleranceMinutes = 0;
+
+    if (treatment?.decision === "excuse" && isWorkday && daily != null && !hasMarks && !beforeAdmission) {
+      expected = daily;
+      w = daily;
+      diff = 0;
+      overtime = 0;
+      issues.push("Dia abonado pelo administrador: conta como trabalhado, saldo zero");
+    } else if (willDebitAbsence) {
+      expected = daily;
+      w = 0;
+      diff = -(daily as number);
+      overtime = 0;
+    } else if (hasMarks && expected != null) {
+      const firstIn = marks.find((m) => m.type === "clock_in");
+      const lastOut = [...marks].reverse().find((m) => m.type === "clock_out");
+      const adj = applyDailyTolerance({
+        workedMinutes: w,
+        expectedMinutes: expected,
+        firstInHm: firstIn ? localParts(firstIn.time, tz).hm : null,
+        lastOutHm: lastOut ? localParts(lastOut.time, tz).hm : null,
+        schedule: labor?.schedule || null,
+      });
+      diff = adj.diffMinutes;
+      toleranceMinutes = adj.toleranceMinutes;
+      overtime = Math.max(0, diff);
+      if (toleranceMinutes > 0) issues.push(`Tolerância legal aplicada: ${toleranceMinutes} min (CLT art. 58 §1º)`);
+    }
+
+    let situation: DaySituation = "fora";
+    if (beforeAdmission) situation = "fora";
+    else if (onVacation) situation = "ferias";
+    else if (holiday) situation = "feriado";
+    else if (excuse?.type === "medical_certificate") situation = "atestado";
+    else if (excuse?.type === "day_off") situation = "folga";
+    else if (excuse?.type === "holiday") situation = "feriado";
+    else if (excuse || treatment?.decision === "excuse") situation = "abonado";
+    else if (willDebitAbsence) situation = "falta";
+    else if (hasMarks && incomplete) situation = "pendente";
+    else if (hasMarks) situation = "trabalho";
+    else if (!hasMarks && weekdayOf(d) === 0 && !isWorkday && !holiday && !onVacation && !excuse) situation = "dsr";
+    else if (optionalHoliday && !hasMarks) situation = "facultativo";
+
     days.push({
       date: d, weekday: weekdayOf(d), marks, workedMinutes: w, breakMinutes: Math.round(brk),
       expectedMinutes: expected, diffMinutes: diff,
-      overtimeMinutes: diff != null ? Math.max(0, diff) : null,
+      overtimeMinutes: overtime,
       nightMinutes: night && hasMarks ? nightMin : null,
       issues,
+      situation,
+      toleranceMinutes: toleranceMinutes || undefined,
+      treatment,
       holiday: holiday?.name ?? null,
       excuse,
       optionalHoliday,
@@ -266,23 +457,24 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
   }
 
   const marked = days.filter((x) => x.marks.length);
-  const sum = (f: (x: DayRow) => number | null) => marked.reduce((a, x) => a + (f(x) || 0), 0);
+  const sumMarked = (f: (x: DayRow) => number | null) => marked.reduce((a, x) => a + (f(x) || 0), 0);
+  const sumAll = (f: (x: DayRow) => number | null) => days.reduce((a, x) => a + (f(x) || 0), 0);
   const configured = daily != null && workdays != null;
   const totals: MirrorTotals = {
-    daysWithMarks: marked.length, workedMinutes: sum((x) => x.workedMinutes), breakMinutes: sum((x) => x.breakMinutes),
+    daysWithMarks: marked.length, workedMinutes: sumAll((x) => x.workedMinutes), breakMinutes: sumMarked((x) => x.breakMinutes),
     expectedMinutes: configured ? days.reduce((a, x) => a + (x.expectedMinutes || 0), 0) : null,
-    balanceMinutes: configured ? sum((x) => x.diffMinutes) : null,
-    overtimeMinutes: configured ? sum((x) => x.overtimeMinutes) : null,
-    deficitMinutes: configured ? marked.reduce((a, x) => a + Math.max(0, -(x.diffMinutes || 0)), 0) : null,
-    nightMinutes: night ? sum((x) => x.nightMinutes) : null,
-    nightReducedMinutes: night ? Math.round(sum((x) => x.nightMinutes) * 60 / 52.5) : null,
+    balanceMinutes: configured ? sumAll((x) => x.diffMinutes) : null,
+    overtimeMinutes: configured ? sumAll((x) => x.overtimeMinutes) : null,
+    deficitMinutes: configured ? days.reduce((a, x) => a + Math.max(0, -(x.diffMinutes || 0)), 0) : null,
+    nightMinutes: night ? sumMarked((x) => x.nightMinutes) : null,
+    nightReducedMinutes: night ? Math.round(sumMarked((x) => x.nightMinutes) * 60 / 52.5) : null,
     incompleteDays: marked.filter((x) => x.issues.some((i) => i.startsWith("Jornada incompleta") || i.includes("sem entrada") || i.includes("sem saída") || i.includes("sem início") || i.includes("seguidos"))).length,
     adjustedMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "adjusted" || m.kind === "legacy_adjusted").length, 0),
     automaticMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.kind === "automatic").length, 0),
     offlineMarks: marked.reduce((a, x) => a + x.marks.filter((m) => m.offline).length, 0),
     disregardedMarks: days.reduce((a, x) => a + (x.disregarded?.length || 0), 0),
     pendingSyncMarks: marked.reduce((a, x) => a + x.marks.filter((m) => !m.synced).length, 0),
-    daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday && !x.excuse && !x.vacation).length : null,
+    daysWithoutMarksOnWorkday: workdays ? days.filter((x) => !x.marks.length && workdays.has(x.weekday) && !x.holiday && !x.excuse && !x.vacation && x.situation !== "abonado" && x.date <= today && (!admission || x.date >= admission) && !x.issues.some((i) => i.startsWith("Coberto pela jornada"))).length : null,
   };
   if (!daily) notes.push("Jornada contratada não configurada para este funcionário: horas previstas, diferenças e horas extras não foram calculadas.");
   if (!workdays) notes.push("Dias de trabalho da semana não configurados: faltas e dias previstos não foram apurados.");
@@ -293,7 +485,10 @@ export function buildMirror(input: { events: MirrorEvent[]; from: string; to: st
     : "Carnaval e Corpus Christi são ponto facultativo e NÃO são abonados automaticamente; a empresa pode ativar esse abono na configuração. Feriados estaduais e municipais não são identificados.");
   notes.push("Férias programadas (cadastro de Férias) abonam o dia inteiro como \"Férias\", sem criar batidas.");
   notes.push("Folga, feriado e atestado aprovados na correção de ponto abonam o dia inteiro, sem criar batidas.");
-  notes.push("Banco de horas, compensções, abonos manuais e tolerância (CLT art. 58 §1º) dependem de regras/convenção não cadastradas e não foram aplicados.");
+  notes.push("Dia de trabalho previsto já encerrado, sem marcação, férias, feriado, abono ou atestado, é lançado como Falta: as horas previstas entram como débito no saldo e no banco de horas, até correção, justificativa válida ou decisão do administrador.");
+  notes.push("O administrador pode abonar o dia (conta como trabalhado, saldo zero) ou lançar no banco de horas devendo (mantém o débito). A decisão fica registrada, pode ser revertida, e não altera as marcações originais.");
+  notes.push("Tolerância da CLT art. 58 §1º: variações de até 5 minutos por marcação, no limite de 10 minutos no dia, não são descontadas nem computadas como extra. Se a variação passar desses limites, a diferença do dia conta por inteiro.");
+  notes.push("Dias anteriores à admissão, folgas, feriados, férias e atestados aprovados não geram débito. O dia de hoje e datas futuras não são lançados como Falta até o dia terminar.");
   return { from: input.from, to: input.to, timeZone: tz, days, totals, notes };
 }
 
@@ -392,18 +587,19 @@ export function disregardedText(list: DayRow["disregarded"], tz: string): string
   return `${list.length > 1 ? "Batidas desconsideradas" : "Batida desconsiderada"}: ${parts.join("; ")}`;
 }
 
-export const MIRROR_HEADERS = ["Data", "Dia", "Entrada", "Início intervalo", "Retorno intervalo", "Saída", "Trabalhadas", "Intervalo", "Previstas", "Diferença", "Extras", "Adic. noturno", "Ocorrências"];
+export const MIRROR_HEADERS = ["Data", "Dia", "Situação", "Entrada", "Início intervalo", "Retorno intervalo", "Saída", "Trabalhadas", "Intervalo", "Previstas", "Diferença", "Extras", "Adic. noturno", "Ocorrências"];
 export function mirrorRows(report: MirrorReport): string[][] {
   const tz = report.timeZone;
   return report.days.map((d) => {
     const pick = (t: MarkType) => d.marks.filter((m) => m.type === t).map((m) => fmtMark(m, tz)).join(" / ") || "—";
     const has = d.marks.length > 0;
+    const showHours = has || d.diffMinutes != null || d.situation === "falta" || d.situation === "abonado";
     const adj = treatmentTexts(d.marks, tz);
     const dis = disregardedText(d.disregarded, tz);
     if (dis) adj.push(dis);
     const issues = [...d.issues, ...adj].join("; ") || "";
-    return [fmtDate(d.date), WEEKDAYS[d.weekday], pick("clock_in"), pick("break_start"), pick("break_end"), pick("clock_out"),
-      has ? fmtMinutes(d.workedMinutes) : "—", has ? fmtMinutes(d.breakMinutes) : "—", fmtMinutes(d.expectedMinutes), fmtMinutes(d.diffMinutes, true), fmtMinutes(d.overtimeMinutes), fmtMinutes(d.nightMinutes), issues];
+    return [fmtDate(d.date), WEEKDAYS[d.weekday], situationLabel(d.situation) || "—", pick("clock_in"), pick("break_start"), pick("break_end"), pick("clock_out"),
+      showHours ? fmtMinutes(d.workedMinutes) : "—", has ? fmtMinutes(d.breakMinutes) : "—", fmtMinutes(d.expectedMinutes), fmtMinutes(d.diffMinutes, true), fmtMinutes(d.overtimeMinutes), fmtMinutes(d.nightMinutes), issues];
   });
 }
 export function totalsLines(t: MirrorTotals): Array<[string, string]> {

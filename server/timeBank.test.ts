@@ -18,7 +18,7 @@ describe("closedPeriodBalance (mesma regra do promotor e do administrador)", () 
       // qua 11/11 (hoje): aberta
       ev(5, "clock_in", "2026-11-11T11:00:00Z"),
     ];
-    const report = buildMirror({ events, from: "2026-11-01", to: "2026-11-30", timeZone: "America/Sao_Paulo", labor });
+    const report = buildMirror({ events, from: "2026-11-09", to: "2026-11-11", timeZone: "America/Sao_Paulo", labor, today: "2026-11-11" });
     const b = closedPeriodBalance(report, labor, "2026-11-11");
     expect(b.configured).toBe(true);
     expect(b.openShift).toBe(true);

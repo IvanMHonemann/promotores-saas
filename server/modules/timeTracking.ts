@@ -17,6 +17,8 @@ import { storageGetSignedUrl } from "../storage";
 import { readTimeAlert, resolvePunchTime, TIME_ALERT_MARKER } from "../../shared/punchTime";
 import { loadMemberVacations, loadMirrorEventRows, loadMirrorOptions } from "./mirrorData";
 import { buildMemberReports, closedPeriodBalance } from "./timeBank";
+import { monthBounds } from "../../shared/timeBank";
+import { ensureDayTreatmentsTable, getActiveTreatment, reverseDayTreatment, saveDayTreatment } from "./dayTreatments";
 import { excuseDay, fullDayExcuseLabel, isFullDayExcuseType, looksLikeFullDayExcuse, noonInSaoPaulo } from "../../shared/correctionExcuse";
 import { hasPendingSamePunch, saoPauloDayRange } from "../../shared/saoPauloDay";
 import { defaultCorrectionJustification, justificationRequiresText } from "../../shared/correctionGroups";
@@ -381,6 +383,93 @@ export const timeTrackingRouter = router({
       const to = `${input.month}-${String(lastDay).padStart(2, "0")}`;
       const map = await loadApprovedDayExcuses(ctx.accountId, [input.memberId], from, to);
       return map.get(input.memberId) || [];
+    }),
+
+  /** Faltas e tratamentos do mês (cálculo em leitura, sem alterar batidas). */
+  monthAbsences: companyAdminFeatureProcedure("timeTracking")
+    .input(z.object({ memberId: z.number().int().positive(), month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }))
+    .query(async ({ ctx, input }) => {
+      const { from, to } = monthBounds(input.month);
+      const reports = await buildMemberReports(ctx.accountId, [input.memberId], from, to, "America/Sao_Paulo");
+      const report = reports.get(input.memberId)?.report;
+      if (!report) return [];
+      return report.days
+        .filter((d) => d.situation === "falta" || d.situation === "abonado" || d.situation === "pendente" || d.treatment)
+        .map((d) => ({
+          date: d.date,
+          situation: d.situation,
+          expectedMinutes: d.expectedMinutes,
+          workedMinutes: d.workedMinutes,
+          diffMinutes: d.diffMinutes,
+          treatment: d.treatment || null,
+          issues: d.issues,
+        }));
+    }),
+
+  treatAbsence: companyAdminFeatureProcedure("timeTracking")
+    .input(z.object({
+      memberId: z.number().int().positive(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      decision: z.enum(["excuse", "time_bank"]),
+      notes: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureDayTreatmentsTable();
+      const database = await db.getDb();
+      if (!database) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Banco de dados indisponível." });
+      const member = (await database.select({ id: memberAccounts.id }).from(memberAccounts).where(and(eq(memberAccounts.id, input.memberId), eq(memberAccounts.companyId, ctx.accountId))).limit(1))[0];
+      if (!member) throw new TRPCError({ code: "NOT_FOUND", message: "Funcionário não encontrado nesta empresa." });
+      const by = ctx.user?.name || `Administrador #${ctx.memberAccountId ?? "?"}`;
+      await saveDayTreatment({
+        companyId: ctx.accountId,
+        memberId: input.memberId,
+        day: input.date,
+        decision: input.decision,
+        notes: input.notes || null,
+        decidedByUserId: ctx.memberAccountId ?? null,
+        decidedByName: by,
+      });
+      const label = input.decision === "excuse" ? "abonou o dia" : "lançou o dia no banco de horas (devendo)";
+      await auditFromCtx(ctx, {
+        action: "update",
+        module: "time_tracking",
+        entityType: "time_day_treatment",
+        entityId: input.memberId,
+        description: `Administrador ${label} ${input.date} do funcionário #${input.memberId}${input.notes ? `. Motivo: ${input.notes}` : ""}`,
+        newData: { memberId: input.memberId, date: input.date, decision: input.decision, notes: input.notes || null },
+      });
+      return { success: true as const };
+    }),
+
+  reverseAbsenceTreatment: companyAdminFeatureProcedure("timeTracking")
+    .input(z.object({
+      memberId: z.number().int().positive(),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      notes: z.string().trim().max(1000).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await ensureDayTreatmentsTable();
+      const current = await getActiveTreatment(ctx.accountId, input.memberId, input.date);
+      if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "Não há decisão ativa neste dia para reverter." });
+      const by = ctx.user?.name || `Administrador #${ctx.memberAccountId ?? "?"}`;
+      await reverseDayTreatment({
+        companyId: ctx.accountId,
+        memberId: input.memberId,
+        day: input.date,
+        reversedByUserId: ctx.memberAccountId ?? null,
+        reversedByName: by,
+        notes: input.notes || null,
+      });
+      await auditFromCtx(ctx, {
+        action: "update",
+        module: "time_tracking",
+        entityType: "time_day_treatment",
+        entityId: input.memberId,
+        description: `Administrador reverteu a decisão (${current.decision}) do dia ${input.date} do funcionário #${input.memberId}`,
+        oldData: { decision: current.decision, notes: current.notes, decidedBy: current.decidedByName },
+        newData: { memberId: input.memberId, date: input.date, reversed: true, notes: input.notes || null },
+      });
+      return { success: true as const };
     }),
 
   myMissingPunch: commercialFeatureProcedure("timeTracking").query(async ({ ctx }) => {

@@ -32,8 +32,8 @@ describe("espelho de ponto", () => {
     const adj = { originalType: "clock_out", originalTime: "2026-10-07T08:30:00Z", justification: "esqueceu" };
     const r = buildMirror({ events: [ev(1, "clock_in", "2026-10-07T01:00:00Z"), ev(2, "clock_out", "2026-10-07T09:00:00Z", { adjustment: adj })], from: "2026-10-06", to: "2026-10-06" });
     expect(r.totals.adjustedMarks).toBe(1);
-    expect(mirrorRows(r)[0][5]).toContain("*"); // Saída ajustada
-    expect(mirrorRows(r)[0][12]).toContain("esqueceu");
+    expect(mirrorRows(r)[0][6]).toContain("*"); // Saída ajustada
+    expect(mirrorRows(r)[0][13]).toContain("esqueceu");
   });
   it("marca DSR em domingo sem batida", () => {
     const r = buildMirror({ events: [], from: "2026-10-04", to: "2026-10-04", labor }); // domingo
@@ -97,7 +97,7 @@ describe("validade de produtos", () => {
 
 describe("espelho de ponto: texto das ocorrências", () => {
   const base = [ev(1, "clock_in", "2026-10-07T11:00:00Z"), ev(5, "break_end", "2026-10-07T16:19:00Z"), ev(4, "clock_out", "2026-10-07T21:00:00Z")];
-  const rows = (events: any[]) => mirrorRows(buildMirror({ events, from: "2026-10-07", to: "2026-10-07" }))[0][12];
+  const rows = (events: any[]) => mirrorRows(buildMirror({ events, from: "2026-10-07", to: "2026-10-07" }))[0][13];
   it("batida incluída não aparece como 'original X → X'", () => {
     const adj = { originalType: "missing", originalTime: "2026-10-07T15:19:00Z", justification: "Esqueci", reviewedBy: "Ivan" };
     const text = rows([...base, ev(2, "break_start", "2026-10-07T15:19:00Z", { adjustment: adj })]);
@@ -126,7 +126,7 @@ describe("espelho de ponto: dia com várias inclusões (caso 24/10)", () => {
     inc(6, "break_end", "2026-10-24T16:00:00Z", "Esqueci"), inc(7, "break_end", "2026-10-24T16:18:00Z", "Esquecimento"),
   ];
   const r = buildMirror({ events, from: "2026-10-24", to: "2026-10-24" });
-  const text = mirrorRows(r)[0][12];
+  const text = mirrorRows(r)[0][13];
   it("não diz 'sem entrada' quando a entrada existe", () => {
     expect(text).not.toContain("sem entrada");
     expect(text).toContain("Dois inícios de intervalo seguidos");
@@ -139,7 +139,7 @@ describe("espelho de ponto: dia com várias inclusões (caso 24/10)", () => {
     expect(text.match(/Batidas incluídas/g)?.length).toBe(1);
   });
   it("ainda mostra todas as batidas efetivas com +", () => {
-    expect(mirrorRows(r)[0][3]).toBe("11:08+ / 12:18+ / 12:19+");
+    expect(mirrorRows(r)[0][4]).toBe("11:08+ / 12:18+ / 12:19+");
   });
   it("ocorrências não se repetem no mesmo dia", () => {
     expect(new Set(r.days[0].issues).size).toBe(r.days[0].issues.length);

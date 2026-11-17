@@ -32,10 +32,10 @@ describe("batida desconsiderada: cálculo e espelho", () => {
   const after = buildMirror({ events: day24(true), from: "2026-10-24", to: "2026-10-24" });
   const row = mirrorRows(after)[0];
   it("sai das colunas principais", () => {
-    expect(row[3]).toBe("11:08+");
-    expect(row[4]).toBe("12:08+");
-    expect(row[3]).not.toContain("12:18");
-    expect(row[4]).not.toContain("13:18");
+    expect(row[4]).toBe("11:08+");
+    expect(row[5]).toBe("12:08+");
+    expect(row[4]).not.toContain("12:18");
+    expect(row[5]).not.toContain("13:18");
   });
   it("sai do cálculo de horas e intervalo", () => {
     // 07:34-11:08 (3h34) + 12:08-17:00 (4h52) = 8h26; intervalo 1h
@@ -47,7 +47,7 @@ describe("batida desconsiderada: cálculo e espelho", () => {
   });
   it("não gera aviso de pareamento e aparece curto em Ocorrências", () => {
     expect(after.days[0].issues).toEqual([]);
-    expect(row[12]).toBe("Batidas incluídas manualmente: 11:08, 12:08 — Esqueci (por Ivan); Batidas desconsideradas: 12:18, 13:18 — Inclusão em duplicidade (por Ivan)");
+    expect(row[13]).toBe("Batidas incluídas manualmente: 11:08, 12:08 — Esqueci (por Ivan); Batidas desconsideradas: 12:18, 13:18 — Inclusão em duplicidade (por Ivan)");
   });
   it("legenda e totais do PDF só citam desconsideradas quando há", () => {
     const mk = (report: any) => ({ member: { id: 1, name: "T", role: "promoter", employeeCode: null }, labor: null, report } as any);
@@ -60,7 +60,7 @@ describe("batida desconsiderada: cálculo e espelho", () => {
     const r = buildMirror({ events: [ev(9, "clock_in", "2026-10-25T12:00:00Z", { disregarded: dis })], from: "2026-10-25", to: "2026-10-25" });
     expect(r.days[0].marks).toEqual([]);
     expect(r.totals.daysWithMarks).toBe(0);
-    expect(mirrorRows(r)[0][12]).toContain("Batida desconsiderada: 09:00 — Inclusão em duplicidade (por Ivan)");
+    expect(mirrorRows(r)[0][13]).toContain("Batida desconsiderada: 09:00 — Inclusão em duplicidade (por Ivan)");
   });
 });
 

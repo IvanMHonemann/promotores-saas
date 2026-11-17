@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import TimeHmField from "@/components/TimeHmField";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/PasswordInput";
 import { trpc } from "@/lib/trpc";
@@ -317,8 +318,8 @@ function MemberPanel({ actorRole, member, stores, weekly, weeklyReady, storesRea
             {member.role === "promoter" && (
               <>
                 <div><Label>Matrícula</Label><Input value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} className={inp} /></div>
-                <div><Label>Início da jornada</Label><Input type="time" value={workStartTime} onChange={(e) => setWorkStartTime(e.target.value)} className={inp} /></div>
-                <div><Label>Fim da jornada</Label><Input type="time" value={workEndTime} onChange={(e) => setWorkEndTime(e.target.value)} className={inp} /></div>
+                <div><Label>Início da jornada</Label><TimeHmField value={workStartTime} onChange={setWorkStartTime} /></div>
+                <div><Label>Fim da jornada</Label><TimeHmField value={workEndTime} onChange={setWorkEndTime} /></div>
               </>
             )}
           </div>

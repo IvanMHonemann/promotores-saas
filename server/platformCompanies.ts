@@ -118,6 +118,9 @@ export async function setCompanyPlan(input: { companyId: number; planId: number;
     subscriptionStartedAt: startOfDay(input.startsAt), subscriptionExpiresAt: end,
     // tolerância explícita (padrão 5 dias): acesso até o fim do dia de validade + graceDays
     gracePeriodEndsAt: end ? addDaysDate(end, Math.max(0, input.graceDays ?? DEFAULT_OVERDUE_GRACE_DAYS)) : null,
+    // Se a situação for teste, alinha trialEndsAt à validade informada para não ficar um
+    // trialEndsAt antigo (ex.: 14 dias da criação) bloqueando antes da data configurada.
+    ...((input.status === "trial" || input.status === "test") ? { trialEndsAt: end } : {}),
   } as any).where(eq(companies.id, input.companyId));
   if (input.endsAt) await ensureBillingDay(input.companyId, input.endsAt);
   return { success: true as const };

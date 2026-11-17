@@ -97,6 +97,8 @@ function preloadCurrentRoute() {
 }
 preloadCurrentRoute();
 import { useAuth } from "./_core/hooks/useAuth";
+import { readActAs } from "@/components/ActingAsBanner";
+import { shouldApplyPaymentLock } from "@shared/paymentLock";
 import { isStandaloneDisplay } from "./pwa/hooks";
 import { Loader2 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
@@ -109,20 +111,21 @@ import { useEffect } from "react";
 import { installSpaNavigation } from "@/lib/spaNavigation";
 
 
-/** Se a assinatura passou da tolerância, só mostra a tela de pagamento (exceto admin da plataforma). */
+/** Se a assinatura passou da tolerância, só mostra a tela de pagamento (exceto admin da plataforma, inclusive quando está "acessando como" uma empresa). */
 function SubscriptionGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const actingAs = Boolean(typeof window !== "undefined" && readActAs());
   const access = trpc.billing.access.useQuery(undefined, {
     enabled: Boolean(user && user.role !== "platform_admin" && user.companyId),
     staleTime: 30_000,
     retry: false,
   });
   if (loading) return <LoadingScreen />;
-  if (!user || user.role === "platform_admin" || !user.companyId) return <>{children}</>;
-  if (access.isLoading) return <LoadingScreen />;
-  if (access.data && access.data.allowed === false) {
+  if (shouldApplyPaymentLock({ role: user?.role, companyId: user?.companyId, actingAs, allowed: access.data?.allowed })) {
     return <PaymentRequiredPage />;
   }
+  if (!user || user.role === "platform_admin" || !user.companyId || actingAs) return <>{children}</>;
+  if (access.isLoading) return <LoadingScreen />;
   return <>{children}</>;
 }
 

@@ -34,17 +34,24 @@ function parseDate(value: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** A data mais tardia entre as informadas (ignora nulos). */
+export function laterDate(...values: Array<Date | null | undefined>): Date | null {
+  const dates = values.filter((d): d is Date => d instanceof Date && !Number.isNaN(d.getTime()));
+  if (!dates.length) return null;
+  return dates.reduce((a, b) => (a.getTime() >= b.getTime() ? a : b));
+}
+
 /**
  * Verifica se a empresa pode usar o sistema comercial.
  * PLATFORM_ADMIN não passa por aqui (não tem companyId).
  */
 const accessCache = createTtlCache<AccessDecision>(30_000);
-export function checkSubscriptionAccess(companyId: number): Promise<AccessDecision> {
-  if (process.env.NODE_ENV === "test") return loadSubscriptionAccess(companyId);
+export function checkSubscriptionAccess(companyId: number, now?: Date): Promise<AccessDecision> {
+  if (process.env.NODE_ENV === "test" || now) return loadSubscriptionAccess(companyId, now);
   return accessCache.get(String(companyId), () => loadSubscriptionAccess(companyId));
 }
 
-async function loadSubscriptionAccess(companyId: number): Promise<AccessDecision> {
+async function loadSubscriptionAccess(companyId: number, now = new Date()): Promise<AccessDecision> {
   const company = await db.getCompanyById(companyId);
   if (!company) {
     return { allowed: false, status: "none", reason: "Empresa não encontrada." };
@@ -81,16 +88,22 @@ async function loadSubscriptionAccess(companyId: number): Promise<AccessDecision
     pendingSince = parseDate(sub.startsAt) || parseDate(sub.createdAt) || pendingSince;
   }
 
-  const now = new Date();
-
   switch (status) {
     case "trial":
     case "test": {
-      const end = trialEndsAt || expiresAt;
-      if (end && now > end) {
-        return { allowed: false, status, expiresAt: end, reason: "Período de teste encerrado." };
+      // A validade e a data de bloqueio configuradas pelo administrador geral
+      // prevalecem sobre o trialEndsAt original, se forem mais tardias.
+      // Ex.: teste inicial de 14 dias já vencido, mas vencimento em 30/11 e
+      // bloqueio após atraso — o acesso segue até essa data, não trava no fim do teste.
+      const end = laterDate(trialEndsAt, expiresAt);
+      if (!end || now <= end) {
+        return { allowed: true, status, expiresAt: end, graceUntil };
       }
-      return { allowed: true, status, expiresAt: end };
+      const grace = graceUntil || (expiresAt ? new Date(expiresAt.getTime() + DEFAULT_OVERDUE_GRACE_DAYS * 24 * 3600 * 1000) : null);
+      if (grace && now <= grace) {
+        return { allowed: true, status: "overdue", expiresAt: end, graceUntil: grace, reason: "Período de tolerância." };
+      }
+      return { allowed: false, status, expiresAt: end, graceUntil: grace, reason: "Período de teste encerrado." };
     }
     case "active":
       if (expiresAt && now > expiresAt) {

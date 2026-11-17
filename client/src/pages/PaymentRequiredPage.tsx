@@ -1,9 +1,10 @@
-import { AlertTriangle, Loader2, LogOut } from "lucide-react";
+import { AlertTriangle, Loader2, LogOut, QrCode } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { PaymentReminderPanel } from "@/components/PaymentReminderBanner";
 import { BrandLogo } from "@/components/BrandLogo";
+import { exitCompany, readActAs } from "@/components/ActingAsBanner";
 
 /** Tela exclusiva após o fim da tolerância: só pagamento (Pix / WhatsApp). */
 export default function PaymentRequiredPage() {
@@ -23,9 +24,20 @@ export default function PaymentRequiredPage() {
       <section className="w-full max-w-xl rounded-3xl border border-rose-400/40 bg-slate-950/90 p-6 shadow-2xl shadow-rose-950/40">
         <div className="mb-4 flex items-center justify-between gap-3">
           <BrandLogo />
-          <Button variant="ghost" className="text-slate-300" onClick={() => void logout()}>
-            <LogOut className="mr-2 h-4 w-4" />Sair
-          </Button>
+          {readActAs() ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="ghost" className="text-slate-300" onClick={() => exitCompany()}>
+                Voltar à plataforma
+              </Button>
+              <Button className="bg-teal-300 text-slate-950 hover:bg-teal-200" onClick={() => exitCompany(`/admin/empresas?pix=${readActAs()!.id}`)}>
+                <QrCode className="mr-2 h-4 w-4" />Gerar Pix
+              </Button>
+            </div>
+          ) : (
+            <Button variant="ghost" className="text-slate-300" onClick={() => void logout()}>
+              <LogOut className="mr-2 h-4 w-4" />Sair
+            </Button>
+          )}
         </div>
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-1 h-6 w-6 shrink-0 text-rose-300" />

@@ -1,5 +1,6 @@
-import { ShieldAlert } from "lucide-react";
+import { QrCode, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { trpc } from "@/lib/trpc";
 
 export const ACT_AS_KEY = "promotores-saas-act-as";
 export function readActAs(): { id: number; name: string } | null {
@@ -14,17 +15,67 @@ export function enterCompany(id: number, name: string, beforeEnter?: () => Promi
   try { localStorage.setItem(ACT_AS_KEY, JSON.stringify({ id, name })); localStorage.removeItem("promotores-saas-auth-user"); } catch { /* ignora */ }
   window.location.href = "/";
 }
-export function exitCompany() {
+export function exitCompany(path = "/admin/empresas") {
   try { localStorage.removeItem(ACT_AS_KEY); localStorage.removeItem("promotores-saas-auth-user"); } catch { /* ignora */ }
-  window.location.href = "/admin/empresas";
+  window.location.href = path;
 }
+
+function formatDay(value: unknown): string | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  trial: "Em período de teste",
+  test: "Em período de teste",
+  active: "Assinatura ativa",
+  pending: "Pagamento pendente",
+  overdue: "Pagamento em atraso",
+  suspended: "Assinatura suspensa",
+  canceled: "Assinatura cancelada",
+  expired: "Assinatura expirada",
+  none: "Sem plano",
+};
 
 /** Faixa fixa quando o administrador da plataforma está agindo dentro de uma empresa. */
 export default function ActingAsBanner() {
   const act = readActAs();
   if (!act) return null;
-  return <div role="status" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-fuchsia-300/30 bg-fuchsia-400/10 p-3 text-sm text-fuchsia-100">
-    <span className="flex items-center gap-2"><ShieldAlert className="h-4 w-4" />Você está acessando <b>{act.name}</b> como administrador da plataforma. Tudo o que fizer fica registrado na auditoria.</span>
-    <Button size="sm" onClick={exitCompany} className="bg-fuchsia-300 text-slate-950 hover:bg-fuchsia-200">Voltar à plataforma</Button>
+  return <div role="status" className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-fuchsia-300/30 bg-fuchsia-400/10 p-3 text-sm text-fuchsia-100">
+    <span className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 shrink-0" />Você está acessando <b>{act.name}</b> como administrador da plataforma. Tudo o que fizer fica registrado na auditoria.</span>
+    <Button size="sm" onClick={() => exitCompany()} className="bg-fuchsia-300 text-slate-950 hover:bg-fuchsia-200">Voltar à plataforma</Button>
   </div>;
+}
+
+/** Aviso discreto do estado de pagamento da empresa, com atalho para Gerar Pix. Não trava a tela. */
+export function ActingAsStatusBanner() {
+  const act = readActAs();
+  const access = trpc.billing.access.useQuery(undefined, { enabled: Boolean(act), staleTime: 30_000, retry: false });
+  if (!act) return null;
+  const data = access.data;
+  const blockedForUsers = data?.allowed === false;
+  const status = STATUS_LABEL[String(data?.status ?? "")] ?? (data ? "Situação de pagamento" : "Carregando situação de pagamento…");
+  const due = formatDay(data?.expiresAt);
+  const grace = formatDay(data?.graceUntil);
+  const detail = blockedForUsers
+    ? (data?.reason ? `Os usuários desta empresa estão bloqueados: ${data.reason}` : "Os usuários desta empresa estão bloqueados por pagamento.")
+    : due
+      ? `Os usuários entram normalmente até ${grace && grace !== due ? `${due}; o bloqueio está previsto para depois de ${grace}` : due}.`
+      : "Os usuários desta empresa entram normalmente.";
+  return (
+    <div role="status" className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3 text-sm ${blockedForUsers ? "border-amber-300/40 bg-amber-400/10 text-amber-50" : "border-white/10 bg-white/[.04] text-slate-200"}`}>
+      <span>
+        <b className="font-semibold">{status}.</b>{" "}{detail}
+      </span>
+      <Button
+        size="sm"
+        onClick={() => exitCompany(`/admin/empresas?pix=${act.id}`)}
+        className="bg-teal-300 text-slate-950 hover:bg-teal-200"
+      >
+        <QrCode className="mr-1.5 h-4 w-4" />Gerar Pix
+      </Button>
+    </div>
+  );
 }

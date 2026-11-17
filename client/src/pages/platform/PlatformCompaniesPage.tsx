@@ -23,9 +23,11 @@ const inp = "mt-1 border-white/15 bg-slate-950/60 text-white";
 const day = (v: unknown) => {
   if (!v) return "—";
   const raw = typeof v === "string" ? v : (v instanceof Date ? v.toISOString() : String(v));
-  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
-  if (iso) return new Date(`${iso}T12:00:00-03:00`).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-  const d = new Date(v as any);
+  // Só data de calendário (ou meia-noite UTC de uma coluna DATE): meio-dia em Brasília, como no #142.
+  // Timestamp com horário (ex.: fim do dia 30/11 gravado como 2026-12-01T02:59:59.000Z) usa o fuso direto.
+  const dateOnly = raw.match(/^(\d{4}-\d{2}-\d{2})(?:[T ](?:00:00:00(?:\.\d+)?)Z?)?$/);
+  if (dateOnly) return new Date(`${dateOnly[1]}T12:00:00-03:00`).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 };
 const iso = (v: unknown) => (v ? new Date(v as any).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : "");
@@ -54,6 +56,21 @@ export default function PlatformCompaniesPage() {
   const rows = useMemo(() => (list.data || []).filter((c) => (showArchived ? true : !c.archivedAt) && c.name.toLowerCase().includes(q.trim().toLowerCase())), [list.data, q, showArchived]);
   const selected = (list.data || []).find((c) => c.id === selectedId) ?? null;
   const refresh = () => { void utils.platformCompanies.overview.invalidate(); void utils.platformCompanies.payments.invalidate(); void utils.platformPayments.list.invalidate(); void utils.platform.companies.list.invalidate(); };
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !list.data) return;
+    const raw = new URLSearchParams(window.location.search).get("pix");
+    const id = raw ? Number(raw) : NaN;
+    if (!Number.isInteger(id) || id <= 0) return;
+    const company = list.data.find((c) => c.id === id);
+    if (!company || company.archivedAt) return;
+    setSelectedId(id);
+    setCreating(false);
+    setPixFor({ id: company.id, name: company.name });
+    const url = new URL(window.location.href);
+    url.searchParams.delete("pix");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }, [list.data]);
 
   return <DashboardLayout title="Empresas" description="Crie empresas e gerencie módulos, validade, bloqueio e exclusão." refreshing={list.isFetching} onRefresh={refresh}>
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">

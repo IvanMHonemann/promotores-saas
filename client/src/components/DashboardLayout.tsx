@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import ActingAsBanner from "@/components/ActingAsBanner";
+import ActingAsBanner, { ActingAsStatusBanner } from "@/components/ActingAsBanner";
 import MissingPunchAlert from "@/components/MissingPunchAlert";
 import RejectedCorrectionAlert from "@/components/RejectedCorrectionAlert";
 import PaymentReminderBanner from "@/components/PaymentReminderBanner";
@@ -60,6 +60,7 @@ export default function DashboardLayout({ title, description, help, children, re
             </div>
           </header>
           <ActingAsBanner />
+          <ActingAsStatusBanner />
           <UpdateAvailableBanner />
           <ErrorBoundary resetKey="layout-alerts">
             <PaymentReminderBanner />

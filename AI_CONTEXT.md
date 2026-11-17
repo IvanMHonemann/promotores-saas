@@ -85,6 +85,12 @@ Menu da empresa (admin e supervisor): grupos Operação, Equipe e ponto, Relató
 
 Em `/admin/empresas`, o super-admin tem o botão **Gerar Pix** na lista e no detalhe de cada empresa (`platformCompanies.pixQuote` e `platformCompanies.generatePix`, só `platformProcedure`). O valor padrão é o `monthly_amount` negociado, ou o preço do plano somado aos funcionários extras (`suggestedMonthlyAmount`). A composição aparece na tela e o valor pode ser ajustado antes de gerar. O resultado reutiliza `buildPixBrcode` / `getDefaultPixConfig` (o mesmo Pix do aviso de mensalidade) e mostra QR, copia e cola e um WhatsApp `wa.me/?text=` sem número (o app pede o contato). Se a empresa tem vencimento, a cobrança é gravada em `payments` como `PENDING` (Pix); **não** marca como paga e **não** altera a validade. Empresas reais só devem receber cobrança quando o Ivan pedir.
 
+## Bloqueio por pagamento e “acessar como empresa”
+
+A data de bloqueio configurada no painel (vencimento + “Bloquear após atraso”) é a que vale, inclusive quando a situação da empresa é **Teste**. Um `trialEndsAt` antigo (ex.: os 14 dias da criação) não pode travar o acesso antes dessa data. Até o vencimento o acesso fica liberado; na tolerância, também, no máximo com aviso de pagamento pendente; só depois da data de bloqueio aparece a tela “Acesso bloqueado por falta de pagamento”.
+
+O administrador geral em **Acessar como esta empresa** nunca fica preso nessa tela: entra na empresa, vê um banner com a situação e um atalho para **Gerar Pix**, e sai com **Voltar à plataforma**. Os usuários reais da empresa continuam seguindo a regra acima. A API já liberava o `actingAsPlatform`; a trava era só no `SubscriptionGate` do front, que via o super-admin como `company_admin`.
+
 ## Dados cadastrais da empresa e do funcionário
 
 Tela **Dados da empresa** (`/dados-empresa`) e dados do membro em Promotores e equipe / Minha conta. Campos opcionais no cadastro inicial; validam formato só se preenchidos (CNPJ/CPF com dígito, PIS, CEP). Migração `0040` (colunas nullable em `companies` e `member_accounts`); `ensureCompanyRegistryColumns` é idempotente. Gravamos também em `system_settings` (`company_legal_profile` e `labor_profile:{id}`) para o espelho, AFD/AEJ e comprovantes antigos continuarem funcionando. A jornada (horário, dias, minutos) permanece no JSON do perfil trabalhista.

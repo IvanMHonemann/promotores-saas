@@ -81,13 +81,17 @@ describe("classifyCorrectionDay", () => {
   });
 
   it("quem trabalha no feriado ainda pode precisar corrigir jornada incompleta", () => {
-    const r = classifyCorrectionDay(base({ date: "2026-11-02", excused: true, isWorkday: true, punches: ["clock_in"] }));
+    const r = classifyCorrectionDay(base({ date: "2026-11-02", excused: true, autoHoliday: true, isWorkday: true, punches: ["clock_in"] }));
     expect(r.mark).toBe("needs_correction");
     expect(r.reason).toBe("Jornada incompleta");
     expect(classifyCorrectionDay(base({
-      date: "2026-11-02", excused: true, isWorkday: true,
+      date: "2026-11-02", excused: true, autoHoliday: true, isWorkday: true,
       punches: ["clock_in", "break_start", "break_end", "clock_out"],
     })).mark).toBe("ok");
+  });
+
+  it("atestado ou abono aprovado com alguma batida não volta a pedir correção", () => {
+    expect(classifyCorrectionDay(base({ date: "2026-11-10", excused: true, autoHoliday: false, punches: ["clock_in"] })).mark).toBe("ok");
   });
 
   it("jornada incompleta em dia passado precisa de correção", () => {

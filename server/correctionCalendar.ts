@@ -111,6 +111,7 @@ export async function getMyCorrectionCalendarDays(opts: {
       punches: punches.map((p) => p.type),
       hasPendingCorrection: hasPending,
       excused,
+      autoHoliday: Boolean(holiday),
       isWorkday: workdays ? workdays.has(weekdayOf(date)) : null,
       workEndTime,
       nowHm: now.hm,

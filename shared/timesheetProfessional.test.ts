@@ -393,4 +393,29 @@ describe("motor profissional do cartão-ponto (fuso América/São Paulo)", () =>
     expect(r.totals.balanceMinutes).toBeNull();
     expect(r.totals.daysWithoutMarksOnWorkday).toBeNull();
   });
+
+  it("quem trabalha no feriado tem as horas no trabalhado, sem débito de previsto e sem adicional próprio", () => {
+    // Independência 07/09/2026 (segunda). 08:00–12:00 e 13:00–17:00 em Brasília.
+    const r = buildMirror({
+      events: [
+        ev(1, "clock_in", "2026-09-07T11:00:00Z"),
+        ev(2, "break_start", "2026-09-07T15:00:00Z"),
+        ev(3, "break_end", "2026-09-07T16:00:00Z"),
+        ev(4, "clock_out", "2026-09-07T20:00:00Z"),
+      ],
+      from: "2026-09-07",
+      to: "2026-09-07",
+      labor,
+      today: "2026-11-17",
+    });
+    expect(r.days[0].situation).toBe("feriado");
+    expect(situationLabel(r.days[0].situation)).toBe("Feriado");
+    expect(r.days[0].workedMinutes).toBe(480);
+    expect(r.days[0].expectedMinutes).toBeNull();
+    expect(r.days[0].diffMinutes).toBeNull();
+    expect(r.days[0].overtimeMinutes).toBeNull();
+    expect(r.totals.workedMinutes).toBe(480);
+    expect(r.totals.deficitMinutes).toBe(0);
+    expect(r.totals.overtimeMinutes).toBe(0);
+  });
 });

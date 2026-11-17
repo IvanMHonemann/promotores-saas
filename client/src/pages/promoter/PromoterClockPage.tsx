@@ -106,7 +106,12 @@ export default function PromoterClockPage() {
   const dayPunches = events.map((e) => ({ id: e.id, type: e.eventType as EventType, time: e.deviceTime || e.serverTime }));
   const typesPresent = new Set(events.map((e) => e.eventType as EventType));
 
+  const dayHoliday = correctionDays.data?.days?.find((d) => d.date === selectedDate)?.holiday || null;
+  const autoExcusedHoliday = Boolean(dayHoliday) && events.length === 0;
+
   const missingList = useMemo(() => {
+    // Feriado sem batida já é abonado automaticamente: não pedir inclusão de ponto.
+    if (autoExcusedHoliday) return [] as EventType[];
     const result = new Set<EventType>();
     for (const type of order) {
       if (!typesPresent.has(type)) result.add(type);
@@ -115,7 +120,7 @@ export default function PromoterClockPage() {
     const ends = events.filter((e) => e.eventType === "break_end").length;
     if (starts > ends) result.add("break_end");
     return [...result].sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  }, [events, typesPresent]);
+  }, [events, typesPresent, autoExcusedHoliday]);
 
   const correction = trpc.timeTracking.requestCorrection.useMutation({
     onSuccess: (_data, variables) => {
@@ -386,12 +391,19 @@ export default function PromoterClockPage() {
                 </p>
               )}
 
+              {autoExcusedHoliday && (
+                <p className="mb-4 rounded-xl border border-teal-300/30 bg-teal-400/10 p-3 text-sm text-teal-100">
+                  Feriado ({dayHoliday}) — abonado automaticamente. Não é preciso pedir correção pela falta de batida. Se trabalhar neste dia, bata o ponto normalmente.
+                </p>
+              )}
               {mode === "add" ? (
                 <form onSubmit={submitAdd} className="space-y-4">
                   {isFullDay && dayExcuse ? (
                     <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Já existe um abono {dayExcuse.status === "approved" ? "aprovado" : "pendente"} neste dia.</p>
                   ) : isFullDay ? (
                     <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Data do abono: {new Date(`${selectedDate}T12:00:00`).toLocaleDateString("pt-BR")}. Horários não são necessários.</p>
+                  ) : autoExcusedHoliday ? (
+                    <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Neste feriado não faltam batidas a incluir. O dia já entra como Feriado no cartão-ponto. Se trabalhar, use “Bater ponto” no início do dia; se uma batida ficar com o horário errado, use “Bati no horário errado”.</p>
                   ) : missingList.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-300">Nenhuma batida faltante neste dia. Se o horário de uma batida já registrada estiver errado, use “Bati no horário errado” para corrigir essa batida, sem incluir outra do mesmo tipo.</p>
                   ) : (

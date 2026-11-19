@@ -20,6 +20,7 @@ import { buildReceiptData, buildReceiptPdf, receiptEmailHtml } from "./receipt";
 import { sendEmail } from "../email";
 import { getLaborIdentity, getLegalSnapshotForCompany } from "../companyRegistry";
 import { latestClockChecks, runClockCheck, MAX_DRIFT_MS } from "./clock";
+import { loadCertificate, signCadesDetached, signPades, loadP12Buffer, SignatureError } from "./signature";
 
 const TZ = DEFAULT_TZ;
 const monthStr = z.string().regex(/^\d{4}-\d{2}$/);
@@ -204,9 +205,23 @@ export const pontoLegalRouter = router({
     .input(z.object({ eventId: z.number().int().positive() }))
     .mutation(async ({ ctx, input }) => {
       const { data } = await loadReceipt(ctx, input.eventId);
-      const pdf = await buildReceiptPdf(data);
-      void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "punch_receipt", entityId: input.eventId, description: `Baixou comprovante de ponto (NSR ${data.nsr ?? "-"})` } as any);
-      return { fileName: `comprovante-ponto-NSR${String(data.nsr ?? input.eventId).padStart(9, "0")}.pdf`, base64: pdf.toString("base64") };
+      let pdf = await buildReceiptPdf(data);
+      let signed = false;
+      let signError: string | null = null;
+      try {
+        const p12 = loadP12Buffer();
+        const password = process.env.REP_SIGN_CERT_PASSWORD;
+        if (p12 && password) {
+          pdf = await signPades(pdf, p12, password);
+          signed = true;
+        } else {
+          signError = "Certificado não configurado. PDF gerado sem assinatura digital.";
+        }
+      } catch (e: any) {
+        signError = e instanceof SignatureError ? e.message : "Assinatura digital do recibo não gerada.";
+      }
+      void auditFromCtx(ctx, { action: "export", module: "time_tracking", entityType: "punch_receipt", entityId: input.eventId, description: `Baixou comprovante de ponto (NSR ${data.nsr ?? "-"})${signed ? " assinado" : " sem assinatura"}` } as any);
+      return { fileName: `comprovante-ponto-NSR${String(data.nsr ?? input.eventId).padStart(9, "0")}.pdf`, base64: pdf.toString("base64"), signed, signError };
     }),
 
   emailReceipt: commercialFeatureProcedure("timeTracking")

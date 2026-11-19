@@ -9,7 +9,9 @@
  * - Tratamentos têm cadeia de hash própria. Qualquer alteração direta no banco quebra as cadeias e aparece na
  *   verificação de integridade (verifyLedger).
  *
- * O "estabelecimento" é a empresa (companyId). Empresas com mais de um CNPJ/filial precisam de uma conta por CNPJ.
+ * O "estabelecimento" é a empresa (companyId). Conforme FAQ do MTE, cada estabelecimento (CNPJ de 14 dígitos)
+ * deve ter sua própria sequência de NSR. Empresas com mais de um CNPJ/filial precisam de uma conta por CNPJ.
+ * A sequência atual (por companyId) atende ao requisito desde que cada estabelecimento use uma conta própria.
  */
 import { sql, inArray, and, eq } from "drizzle-orm";
 import * as db from "../db";

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { daysUntil, todayInZone } from "@shared/expiry";
-import { AlertTriangle, Camera, ClipboardList, Clock3, Loader2, MapPin, PackagePlus } from "lucide-react";
+import { AlertTriangle, Camera, ClipboardList, Clock3, FileSignature, Loader2, MapPin, PackagePlus } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { cacheGet, cacheSet, isOnline } from "@/lib/offlineCache";
@@ -30,6 +30,40 @@ function formatVisitClock(iso: string | Date | null | undefined) {
   const d = iso instanceof Date ? iso : new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+}
+
+
+function MonthlyMirrorNotice() {
+  const now = new Date();
+  const day = now.getDate();
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const nearEnd = day >= lastDay - 2;
+  const earlyMonth = day <= 5;
+  if (!nearEnd && !earlyMonth) return null;
+
+  const target = new Date(now.getFullYear(), now.getMonth() - (earlyMonth ? 1 : 0), 1);
+  const month = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}`;
+  const monthLabel = target.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+  const q = trpc.pontoLegal.myMirror.useQuery({ month }, { staleTime: 60_000 });
+  const alreadyDecided = q.data?.acceptance?.stillValid === true;
+
+  if (alreadyDecided) return null;
+
+  return (
+    <div className="rounded-2xl border border-rose-400/60 bg-rose-950/50 p-4 text-sm text-rose-50">
+      <p className="mb-2 flex items-center gap-2 font-bold">
+        <FileSignature className="h-5 w-5" />
+        Ação obrigatória: conferir e assinar o espelho de ponto
+      </p>
+      <p className="mb-3">
+        O mês de <b>{monthLabel}</b> precisa ser conferido. Você deve <b>confirmar</b> ou <b>contestar</b> o espelho de ponto. Essa etapa é obrigatória.
+      </p>
+      <a href="/meu-espelho" className="inline-flex items-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-500">
+        Conferir e assinar agora
+      </a>
+    </div>
+  );
 }
 
 export default function PromoterDashboard() {
@@ -139,6 +173,8 @@ export default function PromoterDashboard() {
         {access.isLoading && <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm text-slate-300"><Loader2 className="h-4 w-4 animate-spin" /> Carregando módulos da empresa...</div>}
         {/* Ponto primeiro: o botão de Entrada fica no topo da tela; o guia ("aqui em cima") vem depois do roteiro. */}
         {hasTimeTracking && <PunchPanel />}
+        {hasTimeTracking && <MonthlyMirrorNotice />}
+
 
         {hasFieldOperations && hasVisitCheckIn && hasTimeTracking && !shift.isLoading && !active && !shift.error && (
           <div className="rounded-2xl border border-amber-300/40 bg-amber-300/15 p-4 text-sm font-medium text-amber-50">

@@ -172,8 +172,13 @@ export default function MyMirrorPage() {
                 <p className="text-xs text-slate-400">* Horário ajustado por correção aprovada. A = saída automática. Passe o dedo/mouse para ver o horário original — ele nunca é apagado.</p>
               </CardContent>
             </Card>
+            {!acc && (
+              <div className="rounded-lg border border-rose-400/50 bg-rose-950/40 p-3 text-sm text-rose-100">
+                <b>Obrigatório:</b> você deve confirmar ou contestar este espelho de ponto. Sem essa etapa o mês não fica regularizado.
+              </div>
+            )}
             <Card className="border-white/10 bg-slate-900/70 text-white">
-              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSignature className="h-4 w-4 text-teal-300" />Confirmar ou contestar</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><FileSignature className="h-4 w-4 text-teal-300" />Confirmar ou contestar (obrigatório)</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <p className="text-slate-300">
                   Ao confirmar, guardamos a data e hora, o endereço da conexão, o aparelho usado e um código que identifica exatamente

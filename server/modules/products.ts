@@ -2,7 +2,7 @@
  * Módulo "Produtos e validades" (featureKey `products`).
  *
  * - Tudo filtrado por empresa (companyId) no servidor.
- * - Promotor vê os produtos que cadastrou e os das lojas atribuídas a ele; edita/exclui só os próprios.
+ * - Promotor vê somente os produtos que ele mesmo cadastrou; edita/exclui só os próprios.
  *   Administrador e supervisor vêem e mexem em tudo da empresa.
  * - Mesmo produto + loja + indústria + lote + validade: soma a quantidade em vez de criar outra linha.
  * - Cadastro com UUID do aparelho (clientRequestId): reenvio nunca duplica nem soma duas vezes.
@@ -14,7 +14,7 @@ import { sql, type SQL } from "drizzle-orm";
 import * as db from "../db";
 import { commercialFeatureProcedure, router } from "../_core/trpc";
 import { auditFromCtx } from "../audit";
-import { assertStoreAccess, ensurePromoterStoreAssignmentsTable, hasFullStoreAccess, scopeMemberId, storeAssignedToPromoter } from "../storeAccess";
+import { assertStoreAccess, ensurePromoterStoreAssignmentsTable, hasFullStoreAccess, scopeMemberId } from "../storeAccess";
 import { ensureStoreClientsSchema } from "../storeClients";
 import { detectImageMime, guardedStorageDelete, isTenantMediaKey, safeKeySegment } from "../mediaKeys";
 import { MAX_PHOTO_BASE64_CHARS, PHOTO_TOO_LARGE_MESSAGE } from "../../shared/uploadLimits";
@@ -64,7 +64,7 @@ export type ListFilters = z.infer<typeof listFilters>;
 export function buildWhere(ctx: Ctx, f: ListFilters, today: string, alertDays: number): SQL {
   const parts: SQL[] = [sql`ip.companyId = ${ctx.accountId}`];
   const memberId = hasFullStoreAccess(ctx as any) ? null : (ctx.memberAccountId ?? -1);
-  if (memberId !== null) parts.push(sql`(ip.createdByMemberId = ${memberId} OR (ip.storeId IS NOT NULL AND ${storeAssignedToPromoter(sql`ip.storeId`, memberId)}))`);
+  if (memberId !== null) parts.push(sql`ip.createdByMemberId = ${memberId}`);
   if (f.mine && ctx.memberAccountId) parts.push(sql`ip.createdByMemberId = ${ctx.memberAccountId}`);
   const search = f.search?.trim();
   if (search) {

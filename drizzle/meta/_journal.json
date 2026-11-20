@@ -1,0 +1,111 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1790182721336,
+      "tag": "0000_wandering_sasquatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1790182757628,
+      "tag": "0001_sour_leopardon",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1790184460364,
+      "tag": "0002_chemical_misty_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1790185442027,
+      "tag": "0003_known_lethal_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1790186284749,
+      "tag": "0004_remarkable_crusher_hogan",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1790246956430,
+      "tag": "0005_funny_shinko_yamashiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1790251984532,
+      "tag": "0006_uneven_wilson_fisk",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1791120000000,
+      "tag": "0009_audit_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1791168000000,
+      "tag": "0010_extinguisher_public_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791667915456,
+      "tag": "0012_time_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791671852464,
+      "tag": "0013_operations_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791673954484,
+      "tag": "0014_entitlements",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791694707074,
+      "tag": "0015_weekly_route_schedules",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791720282334,
+      "tag": "0016_inventory_products",
+      "breakpoints": false
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791776181847,
+      "tag": "0017_promoter_profiles",
+      "breakpoints": false
+    }
+  ]
+}

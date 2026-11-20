@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /$
+Allow: /termos
+Allow: /privacidade
+Disallow: /api/
+Disallow: /admin/
+Sitemap: https://gondup.com/sitemap.xml

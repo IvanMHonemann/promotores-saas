@@ -1,0 +1,27 @@
+{
+  "name": "GondUp — Gestão de equipes de campo",
+  "short_name": "GondUp",
+  "id": "/",
+  "description": "Gestão de equipes, roteiros, visitas e ponto eletrônico.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "browser"],
+  "launch_handler": { "client_mode": ["focus-existing", "auto"] },
+  "orientation": "portrait-primary",
+  "background_color": "#03130d",
+  "theme_color": "#03130d",
+  "lang": "pt-BR",
+  "prefer_related_applications": false,
+  "related_applications": [
+    {
+      "platform": "webapp",
+      "url": "https://gondup.com/manifest.json"
+    }
+  ],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

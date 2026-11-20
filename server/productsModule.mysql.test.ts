@@ -84,9 +84,9 @@ run("produtos e validades no MySQL", () => {
     expect(p2.items.length).toBe(0);
   });
 
-  it("promotor vê só o próprio e lojas atribuídas; não exclui o dos outros", async () => {
+  it("promotor vê e gerencia somente o que ele mesmo cadastrou", async () => {
     const mine = await other.list({});
-    // Bia (8) não tem loja atribuída: vê só o que ela cadastrou.
+    // Promotor só vê o que ele mesmo cadastrou.
     expect(mine.items.map((p: any) => p.description)).toEqual(["Antigo"]);
     expect(mine.items[0].canManage).toBe(true);
     const ana = await promoter.list({});

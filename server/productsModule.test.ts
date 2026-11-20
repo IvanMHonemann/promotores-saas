@@ -120,14 +120,14 @@ describe("módulo por empresa", () => {
 });
 
 describe("escopo e filtros no servidor", () => {
-  it("sempre filtra pela empresa; promotor só vê o próprio ou lojas atribuídas", () => {
+  it("sempre filtra pela empresa; promotor só vê o que ele mesmo cadastrou", () => {
     const admin = toSql(buildWhere(ctxOf("company_admin"), {}, "2026-11-05", 30));
     expect(admin.sql).toContain("ip.companyId = ?");
     expect(admin.params).toContain(60001);
     expect(admin.sql).not.toContain("createdByMemberId");
     const promoter = toSql(buildWhere(ctxOf("promoter", 7), {}, "2026-11-05", 30));
     expect(promoter.sql).toContain("ip.createdByMemberId = ?");
-    expect(promoter.sql).toContain("promoter_store_assignments");
+    expect(promoter.sql).not.toContain("promoter_store_assignments");
   });
   it("'alerta' inclui vencidos (sem limite inferior) e usa a janela da empresa", () => {
     const q = toSql(buildWhere(ctxOf("company_admin"), { expiry: "alert" }, "2026-11-05", 7));
